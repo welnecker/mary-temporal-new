@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-MaryService (refatorado v3.1 - Timeline-Aware Persona + Continuidade Espacial)
+MaryService (v3.1 – Timeline-Aware Persona + Continuidade Espacial)
 """
 
 import logging
@@ -38,7 +38,7 @@ def _current_user_key() -> str:
 
 
 # ==========================================================
-# NSFW TOGGLE (mantido)
+# NSFW TOGGLE
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
@@ -89,7 +89,6 @@ def clear_user_cache(usuario_key: str) -> None:
 # NSFW ENABLE
 # ==========================================================
 def nsfw_enabled(usuario_key: str) -> bool:
-    # prioridade para toggle da UI
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
 
@@ -159,14 +158,23 @@ class MaryService(BaseCharacter):
         usuario_key = _current_user_key()
         timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
 
-        # mudança de local
+        # 🔁 Mudança explícita de local
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             clear_user_cache(usuario_key)
             return f"_Eu te puxo comigo até o {novo_local}…_"
 
-        # ✅ persona DEPENDE da timeline
+        # 🔒 Fixar timeline canônica no backend
+        try:
+            facts_now = cached_get_facts(usuario_key)
+            tl_fixed = str(facts_now.get("mary.timeline.fixed") or "").strip()
+            if not tl_fixed:
+                set_fact(usuario_key, "mary.timeline.fixed", timeline, {"fonte": "timeline_fixada"})
+        except Exception:
+            pass
+
+        # 🎭 Persona correta pela timeline
         persona_text, _ = get_persona(timeline)
 
         facts = cached_get_facts(usuario_key)
@@ -175,12 +183,10 @@ class MaryService(BaseCharacter):
 
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key) else SAFE_SENSUAL_STYLE
 
-        # ✅ Não force “esposa” aqui: isso vem do persona_text.
-        # ✅ Não force “Massariol”: se quiser manter, ok, mas não contradiga a timeline.
         system = f"""
 {spatial_context}
 
-VOCÊ É A PERSONAGEM MARY, E DEVE SEGUIR A PERSONA ABAIXO SEM CONTRADIÇÕES.
+VOCÊ É A PERSONAGEM MARY.
 
 TIMELINE ATUAL: {timeline}
 
@@ -192,17 +198,17 @@ Local: {scene_loc}
 Tempo: {scene_time}
 Ação: {scene_action}
 
-REGRAS:
-- Não misture timelines.
-- Se TIMELINE=universitaria: não trate como casada, não trate como morando junto.
-- Se TIMELINE=cumplice: siga a persona de casada.
+REGRAS ABSOLUTAS:
+- NÃO misture timelines.
+- Timeline universitária NÃO é casada e NÃO mora junto.
+- Timeline cúmplice segue a persona de casamento.
+- Nunca contradiga a timeline ativa.
 
 {nsfw_block}
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # histórico do backend (já separado por usuario_key com timeline)
         for d in cached_get_history(usuario_key)[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
@@ -212,6 +218,15 @@ REGRAS:
                 messages.append({"role": "assistant", "content": a})
 
         messages.append({"role": "user", "content": prompt})
+
+        # =========================
+        # 🔁 Chamada + retry + fallback
+        # =========================
+        def _extract_text(resp: dict) -> str:
+            try:
+                return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+            except Exception:
+                return ""
 
         data, used_model, _ = route_chat_strict(
             model,
@@ -224,9 +239,44 @@ REGRAS:
             },
         )
 
-        texto = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        texto = _extract_text(data)
+
         if not texto:
-            return "⚠️ O modelo retornou vazio."
+            data2, used_model2, _ = route_chat_strict(
+                model,
+                {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": 0.4,
+                    "top_p": 0.95,
+                    "max_tokens": 1200,
+                },
+            )
+            texto = _extract_text(data2)
+            if texto:
+                data = data2
+                used_model = used_model2
+
+        if not texto:
+            fallback_model = "deepseek/deepseek-chat-v3-0324"
+            if fallback_model != model:
+                data3, used_model3, _ = route_chat_strict(
+                    fallback_model,
+                    {
+                        "model": fallback_model,
+                        "messages": messages,
+                        "temperature": 0.6,
+                        "top_p": 0.95,
+                        "max_tokens": 1200,
+                    },
+                )
+                texto = _extract_text(data3)
+                if texto:
+                    data = data3
+                    used_model = used_model3
+
+        if not texto:
+            return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
 
         save_interaction(usuario_key, prompt, texto, used_model or model)
         clear_user_cache(usuario_key)
