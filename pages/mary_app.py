@@ -259,7 +259,11 @@ def _garantir_estado_inicial() -> None:
             st.session_state["model"] = _choose_default_model(modelos)
 
     if "mary_nsfw_on" not in st.session_state:
-        st.session_state["mary_nsfw_on"] = True
+    if st.session_state.get("mary_timeline") == "universitaria":
+        st.session_state["mary_nsfw_on"] = False
+    else:
+        st.session_state["mary_nsfw_on"] = False
+
     if "mary_intro_done" not in st.session_state:
         st.session_state["mary_intro_done"] = False
     if "visual_limit" not in st.session_state:
