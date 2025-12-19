@@ -294,24 +294,55 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
 
 
 def _gerar_fala_inicial_e_salvar_backend() -> str:
+    # 1) Descobre a timeline atual
+    timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip()
+
+    # 2) Chave única da intro escolhida POR timeline
+    #    (fica salva no facts do usuário_key atual)
+    intro_fact_key = f"mary.intro_escolhida.{timeline}"
+
+    # 3) Keys do backend (novo + legado) — usamos a principal (nova)
+    keys = _keys_para_mary()
+    usuario_key = keys[0]
+
+    # 4) Se já existe intro escolhida, usa ela
+    try:
+        facts = get_facts(usuario_key) or {}
+        intro_salva = str(facts.get(intro_fact_key) or "").strip()
+        if intro_salva:
+            return intro_salva
+    except Exception:
+        pass
+
+    # 5) Senão, pega as opções do persona.py
     try:
         _, history_boot = get_persona()
     except Exception:
         history_boot = []
 
-    intro = ""
+    opcoes = []
     if isinstance(history_boot, list):
         for msg in history_boot:
-            if isinstance(msg, dict) and msg.get("content"):
-                intro = str(msg["content"]).strip()
-                break
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
+                opcoes.append(str(msg["content"]).strip())
 
-    if not intro:
-        intro = "Oi… eu tô aqui. Vamos começar do zero, do jeito certo."
+    # fallback seguro
+    if not opcoes:
+        opcoes = ["Oi… eu tô aqui. Vamos começar do zero, do jeito certo."]
 
+    # 6) Escolha determinística (sem random): por enquanto, índice fixo por timeline
+    #    (você pode mudar depois: ex: universitária usa índice 1)
+    idx = 0
+    intro = opcoes[idx] if idx < len(opcoes) else opcoes[0]
+
+    # 7) Salva a intro escolhida em FACTS (para manter canônico)
     try:
-        keys = _keys_para_mary()
-        usuario_key = keys[0]
+        set_fact(usuario_key, intro_fact_key, intro, {"fonte": "intro_fixada"})
+    except Exception:
+        pass
+
+    # 8) Opcional: salva também como interação visível no histórico (como você já fazia)
+    try:
         if not st.session_state.get("mary_intro_done", False):
             save_interaction(usuario_key, "[FALA_INICIAL_MARY]", intro, "mary-persona-static")
     except Exception as e:
