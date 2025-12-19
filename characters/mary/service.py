@@ -175,6 +175,19 @@ class MaryService(BaseCharacter):
         persona_text, history_boot = get_persona()
         facts = cached_get_facts(usuario_key)
 
+        # ==========================================================
+        # INTRO CANÔNICA POR TIMELINE (FIXAÇÃO)
+        # ==========================================================
+        intro_key = "mary.intro.fixed"
+        
+        intro_fixed = facts.get(intro_key)
+        
+        if not intro_fixed and history_boot:
+            # escolhe UMA introdução e fixa
+            intro_fixed = history_boot[0]["content"]
+            set_fact(usuario_key, intro_key, intro_fixed, {"fonte": "persona"})
+
+
         scene_loc, scene_time, scene_action = _get_scene_state(usuario_key, facts)
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
 
