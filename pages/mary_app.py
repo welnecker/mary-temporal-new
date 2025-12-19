@@ -15,7 +15,6 @@ from characters.mary.persona import get_persona
 from core.service_router import list_models
 from core.database import db_status
 from core.repositories import (
-    save_interaction,
     get_history_docs,
     get_history_docs_multi,
     get_facts,
@@ -223,9 +222,9 @@ def _invalidate_backend_cache() -> None:
 
 def _keys_para_mary() -> list[str]:
     """
-    🔒 MODO ATUAL (SEM TIMELINE NO BACKEND):
+    🔒 MODO ATUAL:
     Use UMA única key (a mesma que o service usa).
-    Isso evita inconsistência (UI procurando em uid::mary::timeline enquanto o backend salva em uid::mary).
+    Isso evita inconsistência entre UI e backend.
     """
     return [_current_user_key()]
 
@@ -234,7 +233,6 @@ def _choose_default_model(available: list[str]) -> str:
     if available and DEFAULT_MODEL in available:
         return DEFAULT_MODEL
     if available:
-        # não força excluir grok; apenas evita como default se houver outros
         non_grok = [m for m in available if "grok" not in (m or "").lower()]
         return non_grok[0] if non_grok else available[0]
     return FALLBACK_MODEL
@@ -278,9 +276,8 @@ def _garantir_estado_inicial() -> None:
         st.session_state["last_submit_text"] = ""
 
     # ===== PERSONA TEMPORAL (UI ONLY, por enquanto) =====
-    # Nota: como o backend/service ainda NÃO usa ::timeline na key, isso é só visual/controle de UI.
     if "mary_timeline" not in st.session_state:
-        st.session_state["mary_timeline"] = "cumplice"  # padrão atual
+        st.session_state["mary_timeline"] = "cumplice"
     if "mary_timeline_locked" not in st.session_state:
         st.session_state["mary_timeline_locked"] = False
 
@@ -293,62 +290,28 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
                 del st.session_state[ck]
 
 
+# ==========================================================
+# ✅ FALA INICIAL: APP NÃO DECIDE, SÓ LÊ (do service)
+# ==========================================================
 def _gerar_fala_inicial_e_salvar_backend() -> str:
-    # 1) Descobre a timeline atual
-    timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip()
+    """
+    Regra: mary_app.py NÃO escolhe nem salva intro.
+    Ele apenas lê a intro canônica já fixada pelo service em:
+      - fact: "mary.intro.fixed"
 
-    # 2) Chave única da intro escolhida POR timeline
-    #    (fica salva no facts do usuário_key atual)
-    intro_fact_key = f"mary.intro_escolhida.{timeline}"
+    Se não existir (primeiro boot / fallback), usa um texto curto.
+    """
+    usuario_key = _current_user_key()
 
-    # 3) Keys do backend (novo + legado) — usamos a principal (nova)
-    keys = _keys_para_mary()
-    usuario_key = keys[0]
-
-    # 4) Se já existe intro escolhida, usa ela
     try:
         facts = get_facts(usuario_key) or {}
-        intro_salva = str(facts.get(intro_fact_key) or "").strip()
-        if intro_salva:
-            return intro_salva
+        intro = str(facts.get("mary.intro.fixed") or "").strip()
+        if intro:
+            return intro
     except Exception:
         pass
 
-    # 5) Senão, pega as opções do persona.py
-    try:
-        _, history_boot = get_persona()
-    except Exception:
-        history_boot = []
-
-    opcoes = []
-    if isinstance(history_boot, list):
-        for msg in history_boot:
-            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
-                opcoes.append(str(msg["content"]).strip())
-
-    # fallback seguro
-    if not opcoes:
-        opcoes = ["Oi… eu tô aqui. Vamos começar do zero, do jeito certo."]
-
-    # 6) Escolha determinística (sem random): por enquanto, índice fixo por timeline
-    #    (você pode mudar depois: ex: universitária usa índice 1)
-    idx = 0
-    intro = opcoes[idx] if idx < len(opcoes) else opcoes[0]
-
-    # 7) Salva a intro escolhida em FACTS (para manter canônico)
-    try:
-        set_fact(usuario_key, intro_fact_key, intro, {"fonte": "intro_fixada"})
-    except Exception:
-        pass
-
-    # 8) Opcional: salva também como interação visível no histórico (como você já fazia)
-    try:
-        if not st.session_state.get("mary_intro_done", False):
-            save_interaction(usuario_key, "[FALA_INICIAL_MARY]", intro, "mary-persona-static")
-    except Exception as e:
-        st.error(f"⚠️ Erro ao salvar fala inicial: {e}")
-
-    return intro
+    return "Oi… eu tô aqui."
 
 
 def _colar_fala_inicial_na_tela() -> None:
@@ -441,9 +404,6 @@ def _apagar_eventos_mary_fact(usuario_key: str) -> int:
 
 
 def _delete_last_turn(keys: list[str]) -> bool:
-    """
-    Delete do último registro no backend (history) e limpeza de caches.
-    """
     ok = False
     for k in keys:
         try:
@@ -466,7 +426,7 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.2 (FIX: keys únicas + indent + lock/unlock persona + caches)")
+    st.caption("🧩 mary_app.py v3.3 (FIX: intro canônica vem do service via fact mary.intro.fixed)")
 
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
@@ -517,7 +477,6 @@ def main() -> None:
                     _clear_service_caches_for_keys(keys)
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
-                    # ✅ destrava persona para permitir nova escolha após “reset” real
                     st.session_state["mary_timeline_locked"] = False
                     st.success(f"✅ Apaguei do BD (history): {n} registros.")
                     st.rerun()
@@ -548,14 +507,12 @@ def main() -> None:
         if not all_models:
             all_models = [FALLBACK_MODEL]
 
-        # se o estado atual não existe mais, volta pro default
         if st.session_state.get("model") not in all_models:
             st.session_state["model"] = _choose_default_model(all_models)
 
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
 
-        # ✅ selectbox fixa qualquer modelo escolhido (inclusive grok)
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         st.markdown("---")
@@ -577,7 +534,6 @@ def main() -> None:
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)"):
             st.session_state["chat_history"] = []
-            # ❗ visual apenas: não destrava persona (senão muda no meio sem reset do BD)
             st.rerun()
 
         st.markdown("---")
@@ -593,14 +549,13 @@ def main() -> None:
             st.session_state["backend_hist_cache"] = None
             st.session_state["backend_hist_cache_ts"] = 0.0
             _clear_service_caches_for_keys(keys)
-            # ✅ destrava persona porque é “reinício” do fluxo de fala inicial
             st.session_state["mary_timeline_locked"] = False
-            st.success("Persona recarregada. Fala inicial será regenerada.")
+            st.success("Persona recarregada. Fala inicial será relida do service (mary.intro.fixed).")
             st.rerun()
 
     # ===== BOOT =====
     if not st.session_state["chat_history"]:
-        has_any = False  # ✅ sempre definido
+        has_any = False
 
         backend_hist = _carregar_chat_visual_do_backend(force=False)
 
@@ -609,9 +564,7 @@ def main() -> None:
             st.session_state["mary_intro_done"] = True
             has_any = True
         else:
-            # Confirma se NÃO existe histórico na key
-            keys = _keys_para_mary()
-            for k in keys:
+            for k in _keys_para_mary():
                 try:
                     if (get_history_docs(k, limit=1) or []):
                         has_any = True
@@ -645,11 +598,9 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary...")
     if prompt:
-        # 🔒 trava persona após o primeiro envio
         if not st.session_state["mary_timeline_locked"]:
             st.session_state["mary_timeline_locked"] = True
 
-        # ✅ debounce anti-duplicação
         now = time.time()
         last_ts = float(st.session_state.get("last_submit_ts", 0.0))
         last_txt = str(st.session_state.get("last_submit_text", ""))
@@ -681,7 +632,7 @@ def main() -> None:
         st.session_state["chat_input"] = ""
 
         if not (resposta or "").strip():
-            st.warning("⚠️ O modelo retornou vazio. Veja a sidebar (último erro) ou rode o diagnóstico.")
+            st.warning("⚠️ O modelo retornou vazio.")
             st.stop()
 
         with st.chat_message("assistant"):
