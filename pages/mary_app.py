@@ -302,14 +302,13 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
 # ==========================================================
 def _gerar_fala_inicial_e_salvar_backend() -> str:
     """
-    Regra: mary_app.py NÃO escolhe nem salva intro.
-    Ele apenas lê a intro canônica já fixada pelo service em:
-      - fact: "mary.intro.fixed"
-
-    Se não existir (primeiro boot / fallback), usa um texto curto.
+    Regra prática:
+    1) Se existir fact 'mary.intro.fixed', usa ele.
+    2) Se NÃO existir, escolhe uma intro da persona (determinística) e fixa em 'mary.intro.fixed'.
     """
     usuario_key = _current_user_key()
 
+    # 1) tenta ler fact canônico
     try:
         facts = get_facts(usuario_key) or {}
         intro = str(facts.get("mary.intro.fixed") or "").strip()
@@ -318,7 +317,31 @@ def _gerar_fala_inicial_e_salvar_backend() -> str:
     except Exception:
         pass
 
-    return "Oi… eu tô aqui."
+    # 2) não existe -> pega opções da persona.py e fixa
+    try:
+        _, history_boot = get_persona()
+    except Exception:
+        history_boot = []
+
+    opcoes = []
+    if isinstance(history_boot, list):
+        for msg in history_boot:
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
+                opcoes.append(str(msg["content"]).strip())
+
+    # fallback seguro (só se persona vier vazia)
+    if not opcoes:
+        intro_escolhida = "Oi… eu tô aqui."
+    else:
+        # escolha determinística (sem random) — por enquanto: primeira opção
+        intro_escolhida = opcoes[0]
+
+    try:
+        set_fact(usuario_key, "mary.intro.fixed", intro_escolhida, {"fonte": "persona_intro_fixada"})
+    except Exception:
+        pass
+
+    return intro_escolhida
 
 
 def _colar_fala_inicial_na_tela() -> None:
