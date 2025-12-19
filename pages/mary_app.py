@@ -146,7 +146,6 @@ def _apply_dark_ui() -> None:
     )
 
 
-
 def _format_paragraphs(text: str) -> str:
     t = (text or "").strip()
     if not t:
@@ -223,12 +222,12 @@ def _invalidate_backend_cache() -> None:
 
 
 def _keys_para_mary() -> list[str]:
-    usuario_key = _current_user_key()  # ex: Janio Donisete::mary
-    usuario_legado = str(st.session_state.get("user_id") or "").strip()  # ex: Janio Donisete
-    keys = [usuario_key]
-    if usuario_legado and usuario_legado != usuario_key:
-        keys.append(usuario_legado)
-    return keys
+    """
+    🔒 MODO ATUAL (SEM TIMELINE NO BACKEND):
+    Use UMA única key (a mesma que o service usa).
+    Isso evita inconsistência (UI procurando em uid::mary::timeline enquanto o backend salva em uid::mary).
+    """
+    return [_current_user_key()]
 
 
 def _choose_default_model(available: list[str]) -> str:
@@ -277,6 +276,13 @@ def _garantir_estado_inicial() -> None:
         st.session_state["last_submit_ts"] = 0.0
     if "last_submit_text" not in st.session_state:
         st.session_state["last_submit_text"] = ""
+
+    # ===== PERSONA TEMPORAL (UI ONLY, por enquanto) =====
+    # Nota: como o backend/service ainda NÃO usa ::timeline na key, isso é só visual/controle de UI.
+    if "mary_timeline" not in st.session_state:
+        st.session_state["mary_timeline"] = "cumplice"  # padrão atual
+    if "mary_timeline_locked" not in st.session_state:
+        st.session_state["mary_timeline_locked"] = False
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
@@ -338,7 +344,6 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
         st.error("💥 Falha ao carregar histórico do backend (isso causa o ‘reset’ no refresh).")
         st.write("Chaves consultadas:", keys)
         st.code(traceback.format_exc())
-        # IMPORTANTÍSSIMO: não finge que está vazio — retorna e deixa o app parar aqui
         st.stop()
 
     hist: list[tuple[str, str]] = []
@@ -353,7 +358,6 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
     st.session_state["backend_hist_cache"] = hist
     st.session_state["backend_hist_cache_ts"] = now
     return hist
-
 
 
 def _apagar_hist_bd_novo_e_legado() -> int:
@@ -407,8 +411,7 @@ def _apagar_eventos_mary_fact(usuario_key: str) -> int:
 
 def _delete_last_turn(keys: list[str]) -> bool:
     """
-    Delete do último registro no backend, tentando novo + legado.
-    Depois limpa caches do Service e invalida cache visual.
+    Delete do último registro no backend (history) e limpeza de caches.
     """
     ok = False
     for k in keys:
@@ -432,24 +435,48 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.1 (FIX: apagar turno + limpar cache do service + debounce + erro visível)")
+    st.caption("🧩 mary_app.py v3.2 (FIX: keys únicas + indent + lock/unlock persona + caches)")
 
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
     st.title("Mary – Esposa Cúmplice 💍💍")
 
+    # ===== PERSONA TEMPORAL (UI ONLY, ANTES DO CHAT) =====
+    personas = {
+        "Mary – Esposa Cúmplice": "cumplice",
+        "Mary – Universitária (linha alternativa)": "universitaria",
+    }
+
+    label_atual = next(
+        k for k, v in personas.items()
+        if v == st.session_state["mary_timeline"]
+    )
+
+    st.selectbox(
+        "🎭 Linha temporal da Mary",
+        list(personas.keys()),
+        index=list(personas.keys()).index(label_atual),
+        disabled=st.session_state["mary_timeline_locked"],
+        key="persona_label",
+    )
+
+    st.session_state["mary_timeline"] = personas[st.session_state["persona_label"]]
+
+    if st.session_state["mary_timeline_locked"]:
+        st.caption("🔒 Persona travada até limpar a conversa (ou apagar histórico).")
+
     # ===== BACKEND =====
     keys = _keys_para_mary()
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
-        st.write("Chaves usadas (novo + legado):", keys)
+        st.write("Chaves usadas:", keys)
 
         if st.button("🔎 Diagnóstico agora"):
             st.json(_diagnostico_hist(keys))
 
         colA, colB = st.columns(2)
         with colA:
-            confirmar = st.checkbox("Confirmo apagar TODO histórico do BD (history) para novo+legado", value=False)
+            confirmar = st.checkbox("Confirmo apagar TODO histórico do BD (history)", value=False)
             if st.button("🔥 APAGAR HISTÓRICO DO BD (AGORA)", type="primary"):
                 if not confirmar:
                     st.error("Marque a confirmação.")
@@ -459,7 +486,9 @@ def main() -> None:
                     _clear_service_caches_for_keys(keys)
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
-                    st.success(f"✅ Apaguei do BD (history): {n} registros (novo+legado).")
+                    # ✅ destrava persona para permitir nova escolha após “reset” real
+                    st.session_state["mary_timeline_locked"] = False
+                    st.success(f"✅ Apaguei do BD (history): {n} registros.")
                     st.rerun()
 
         with colB:
@@ -479,6 +508,7 @@ def main() -> None:
 
         st.text_input("👤 Usuário", value="Janio Donisete", disabled=True)
         st.caption(f"🔑 usuario_key atual: {_current_user_key()}")
+        st.caption(f"🕰️ Timeline (UI): {st.session_state['mary_timeline']}")
 
         try:
             all_models = list_models() or []
@@ -505,19 +535,18 @@ def main() -> None:
 
         if st.button("Apagar último turno (backend)"):
             ok = _delete_last_turn(keys)
-
             if ok:
                 st.session_state["chat_history"] = _carregar_chat_visual_do_backend(force=True)
                 st.success("✅ Último turno apagado e tela atualizada.")
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
-
             st.rerun()
 
         st.markdown("---")
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)"):
             st.session_state["chat_history"] = []
+            # ❗ visual apenas: não destrava persona (senão muda no meio sem reset do BD)
             st.rerun()
 
         st.markdown("---")
@@ -533,22 +562,23 @@ def main() -> None:
             st.session_state["backend_hist_cache"] = None
             st.session_state["backend_hist_cache_ts"] = 0.0
             _clear_service_caches_for_keys(keys)
+            # ✅ destrava persona porque é “reinício” do fluxo de fala inicial
+            st.session_state["mary_timeline_locked"] = False
             st.success("Persona recarregada. Fala inicial será regenerada.")
             st.rerun()
 
     # ===== BOOT =====
-    # ===== BOOT =====
     if not st.session_state["chat_history"]:
         has_any = False  # ✅ sempre definido
-    
+
         backend_hist = _carregar_chat_visual_do_backend(force=False)
-    
+
         if backend_hist:
             st.session_state["chat_history"] = backend_hist
             st.session_state["mary_intro_done"] = True
-            has_any = True  # ✅ já sabemos que existe
+            has_any = True
         else:
-            # Confirma de verdade se NÃO existe histórico em nenhuma key
+            # Confirma se NÃO existe histórico na key
             keys = _keys_para_mary()
             for k in keys:
                 try:
@@ -561,15 +591,13 @@ def main() -> None:
                     st.write("Key:", k)
                     st.code(traceback.format_exc())
                     st.stop()
-    
+
         if has_any:
-            # se backend_hist veio vazio MAS existe histórico → alerta de merge/filtro
             if not backend_hist:
                 st.warning("⚠️ Existe histórico no BD, mas o merge retornou vazio. Verifique get_history_docs_multi / filtros.")
         else:
             if not st.session_state.get("mary_intro_done", False):
                 _colar_fala_inicial_na_tela()
-
 
     # ===== RENDER =====
     hist = st.session_state.get("chat_history", [])
@@ -586,6 +614,10 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary...")
     if prompt:
+        # 🔒 trava persona após o primeiro envio
+        if not st.session_state["mary_timeline_locked"]:
+            st.session_state["mary_timeline_locked"] = True
+
         # ✅ debounce anti-duplicação
         now = time.time()
         last_ts = float(st.session_state.get("last_submit_ts", 0.0))
