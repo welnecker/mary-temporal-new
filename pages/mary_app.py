@@ -251,37 +251,40 @@ def _garantir_estado_inicial() -> None:
     except Exception:
         modelos = []
 
-    # garante model persistente: só troca se vazio ou inválido
     if "model" not in st.session_state or not st.session_state["model"]:
         st.session_state["model"] = _choose_default_model(modelos)
     else:
         if modelos and st.session_state["model"] not in modelos:
             st.session_state["model"] = _choose_default_model(modelos)
 
+    # 🔧 FIX DE INDENTAÇÃO (AQUI ESTAVA O ERRO)
     if "mary_nsfw_on" not in st.session_state:
-    if st.session_state.get("mary_timeline") == "universitaria":
-        st.session_state["mary_nsfw_on"] = False
-    else:
-        st.session_state["mary_nsfw_on"] = False
+        if st.session_state.get("mary_timeline") == "universitaria":
+            st.session_state["mary_nsfw_on"] = False
+        else:
+            st.session_state["mary_nsfw_on"] = False
 
     if "mary_intro_done" not in st.session_state:
         st.session_state["mary_intro_done"] = False
+
     if "visual_limit" not in st.session_state:
         st.session_state["visual_limit"] = DEFAULT_VISUAL_LIMIT
+
     if "backend_hist_cache" not in st.session_state:
         st.session_state["backend_hist_cache"] = None
+
     if "backend_hist_cache_ts" not in st.session_state:
         st.session_state["backend_hist_cache_ts"] = 0.0
 
-    # debounce
     if "last_submit_ts" not in st.session_state:
         st.session_state["last_submit_ts"] = 0.0
+
     if "last_submit_text" not in st.session_state:
         st.session_state["last_submit_text"] = ""
 
-    # ===== PERSONA TEMPORAL (UI ONLY, por enquanto) =====
     if "mary_timeline" not in st.session_state:
         st.session_state["mary_timeline"] = "cumplice"
+
     if "mary_timeline_locked" not in st.session_state:
         st.session_state["mary_timeline_locked"] = False
 
