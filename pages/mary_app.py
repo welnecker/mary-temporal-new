@@ -187,7 +187,7 @@ def _get_service() -> MaryService:
 def _invalidate_backend_cache() -> None:
     st.session_state["backend_hist_cache"] = None
     st.session_state["backend_hist_cache_ts"] = 0.0
-
+     st.session_state["backend_hist_cache_key"] = ""   # <<< ADICIONE
 
 def _keys_para_mary() -> list[str]:
     # A key REAL é a do service, e ela inclui timeline (uid::mary::{timeline})
@@ -215,6 +215,10 @@ def _garantir_estado_inicial() -> None:
 
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
+
+    if "backend_hist_cache_key" not in st.session_state:
+    st.session_state["backend_hist_cache_key"] = ""
+
 
     # modelos disponíveis
     try:
@@ -308,12 +312,16 @@ def _colar_fala_inicial_na_tela() -> None:
 
 def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str]]:
     now = time.time()
+    keys = _keys_para_mary()
+    cache_key = "|".join(keys)
 
     if not force:
         cached = st.session_state.get("backend_hist_cache")
         ts = float(st.session_state.get("backend_hist_cache_ts", 0.0))
-        if cached is not None and (now - ts) < 2.0:
+        ck = str(st.session_state.get("backend_hist_cache_key", ""))
+        if cached is not None and (now - ts) < 2.0 and ck == cache_key:
             return cached
+
 
     keys = _keys_para_mary()
 
@@ -337,6 +345,7 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
 
     st.session_state["backend_hist_cache"] = hist
     st.session_state["backend_hist_cache_ts"] = now
+    st.session_state["backend_hist_cache_key"] = cache_key   # <<< ADICIONE
     return hist
 
 
@@ -389,18 +398,16 @@ def _apagar_eventos_mary_fact(usuario_key: str) -> int:
     return removed
 
 
-def _delete_last_turn(keys: list[str]) -> bool:
-    ok = False
-    for k in keys:
-        try:
-            ok = bool(delete_last_interaction(k))
-            if ok:
-                break
-        except Exception:
-            pass
+def _delete_last_turn_active() -> bool:
+    usuario_key = _current_user_key()
+
+    try:
+        ok = bool(delete_last_interaction(usuario_key))
+    except Exception:
+        ok = False
 
     _invalidate_backend_cache()
-    _clear_service_caches_for_keys(keys)
+    _clear_service_caches_for_keys([usuario_key])
     return ok
 
 
@@ -538,15 +545,16 @@ def main() -> None:
         st.subheader("Turnos")
 
         if st.button("Apagar último turno (backend)"):
-            # sempre usa keys atuais
-            keys_now = _keys_para_mary()
-            ok = _delete_last_turn(keys_now)
+            ok = _delete_last_turn_active()
             if ok:
-                st.session_state["chat_history"] = _carregar_chat_visual_do_backend(force=True)
-                st.success("✅ Último turno apagado e tela atualizada.")
+                # deixa o BOOT recarregar corretamente
+                st.session_state["chat_history"] = []
+                st.session_state["mary_intro_done"] = False
+                st.success("✅ Último turno apagado (Mary ativa).")
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
+
 
         st.markdown("---")
         st.subheader("Limpar tela")
