@@ -11,7 +11,7 @@ import streamlit as st
 import characters.mary.persona as mary_persona
 from characters.mary.service import MaryService, _current_user_key
 from characters.mary.persona import get_persona
-
+import core.repositories as crep
 from core.service_router import list_models
 from core.database import db_status
 from core.repositories import (
@@ -566,6 +566,8 @@ def main() -> None:
         st.subheader("🎭 Persona")
         st.caption("Arquivo ativo:")
         st.code(inspect.getfile(mary_persona.get_persona))
+        st.caption("repositories.py ativo:")
+        st.code(inspect.getfile(crep.delete_last_interaction))
 
         if st.button("♻️ Recarregar persona AGORA"):
             importlib.reload(mary_persona)
