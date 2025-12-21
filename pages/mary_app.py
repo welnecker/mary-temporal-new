@@ -187,7 +187,7 @@ def _get_service() -> MaryService:
 def _invalidate_backend_cache() -> None:
     st.session_state["backend_hist_cache"] = None
     st.session_state["backend_hist_cache_ts"] = 0.0
-     st.session_state["backend_hist_cache_key"] = ""   # <<< ADICIONE
+    st.session_state["backend_hist_cache_key"] = ""   # <<< ADICIONE
 
 def _keys_para_mary() -> list[str]:
     # A key REAL é a do service, e ela inclui timeline (uid::mary::{timeline})
