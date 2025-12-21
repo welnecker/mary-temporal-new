@@ -7,8 +7,8 @@ from datetime import datetime
 from .database import get_col
 
 # coleções
-_state  = lambda: get_col("state_data")
-_hist   = lambda: get_col("history")
+_state = lambda: get_col("state_data")
+_hist = lambda: get_col("history")
 _events = lambda: get_col("events")
 
 
@@ -39,10 +39,8 @@ def _delete_dotted(root: Dict[str, Any], dotted_key: str) -> bool:
     if not isinstance(cur, dict) or leaf not in cur:
         return False
 
-    # remove a folha
     del cur[leaf]
 
-    # prune dicts vazios, de baixo pra cima
     while stack:
         parent, key = stack.pop()
         child = parent.get(key)
@@ -72,13 +70,7 @@ def get_fact(usuario: str, key: str, default: Any = None) -> Any:
     return cur
 
 
-from datetime import datetime
-
 def set_fact(usuario: str, key: str, value: Any, meta: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Seta um fact (chave pontilhada vira 'fatos.<key>').
-    Meta: guarda por chave em 'meta.<key>' e atualiza meta.updated_at.
-    """
     meta = meta or {}
     _state().update_one(
         {"usuario": usuario},
@@ -88,15 +80,11 @@ def set_fact(usuario: str, key: str, value: Any, meta: Optional[Dict[str, Any]] 
             f"meta.{key}": meta,
             "meta.updated_at": datetime.utcnow(),
         }},
-        upsert=True
+        upsert=True,
     )
 
 
 def delete_fact(usuario: str, key: str) -> bool:
-    """
-    Remove uma memória canônica (suporta chave pontilhada).
-    Atualiza o bloco 'fatos' inteiro (mais robusto que depender de $unset).
-    """
     doc = _state().find_one({"usuario": usuario})
     if not doc:
         return False
@@ -111,23 +99,16 @@ def delete_fact(usuario: str, key: str) -> bool:
 
 # ---------- Histórico ----------
 def save_interaction(usuario: str, mensagem_usuario: str, resposta_mary: str, model_tag: str) -> None:
-    """
-    Salva um turno de conversa. Mantém o campo legado 'resposta_mary' (UI depende dele).
-    """
     _hist().insert_one({
         "usuario": usuario,
         "mensagem_usuario": mensagem_usuario,
         "resposta_mary": resposta_mary,
         "model": model_tag,
-        "ts": datetime.utcnow(),  # ordenação estável
+        "ts": datetime.utcnow(),
     })
 
 
 def get_history_docs(usuario: str, limit: int = 400) -> List[Dict[str, Any]]:
-    """
-    Ordena por ts asc; fallback _id asc.
-    Robustez: docs legados sem ts continuam ordenando por _id.
-    """
     cur = _hist().find(
         {"usuario": usuario},
         sort=[("ts", 1), ("_id", 1)],
@@ -141,13 +122,6 @@ def get_history_docs_multi(
     limit: int = 400,
     limit_per_key: int = 400,
 ) -> List[Dict[str, Any]]:
-    """
-    Histórico unificado para várias chaves (ex.: ["Janio::mary", "Janio"]).
-
-    - Busca por key separadamente (evita que uma key "roube" todo o limit).
-    - Faz merge + sort por ts asc (fallback _id asc).
-    - Retorna no máximo `limit` docs finais.
-    """
     keys = [k for k in (users_or_keys or []) if k]
     if not keys:
         return []
@@ -163,7 +137,6 @@ def get_history_docs_multi(
 
     def _sort_key(d: Dict[str, Any]):
         ts = d.get("ts")
-        # ts ideal é datetime; legado pode não ter ts
         if not isinstance(ts, datetime):
             ts = datetime.min
         return (ts, d.get("_id"))
@@ -176,10 +149,7 @@ def get_history_docs_multi(
 
 
 def delete_user_history(usuario: str) -> int:
-    """Apaga TODO o histórico do usuário (history)."""
     r = _hist().delete_many({"usuario": usuario})
-
-    # wrappers podem retornar: int, dict, ou DeleteResult
     if isinstance(r, int):
         return int(r)
     if isinstance(r, dict):
@@ -187,29 +157,17 @@ def delete_user_history(usuario: str) -> int:
     return int(getattr(r, "deleted_count", 0) or 0)
 
 
-
 def delete_last_interaction(usuario: str) -> bool:
-    """
-    Remove o último turno (maior ts; fallback _id).
-    Robusto para docs legados sem 'ts'.
-    """
     last = _hist().find_one({"usuario": usuario}, sort=[("ts", -1), ("_id", -1)])
     if not last:
         last = _hist().find_one({"usuario": usuario}, sort=[("_id", -1)])
-
     if not last:
         return False
 
     r = _hist().delete_one({"_id": last["_id"]})
-
-    # compatível com wrappers que retornam dict ou objeto com deleted_count
     if isinstance(r, dict):
         return int(r.get("deleted_count", 0) or 0) > 0
-
     return int(getattr(r, "deleted_count", 0) or 0) > 0
-
-
-
 
 
 # ---------- Eventos ----------
@@ -218,7 +176,7 @@ def register_event(
     tipo: str,
     descricao: str,
     local: Optional[str],
-    extra: Optional[Dict[str, Any]] = None
+    extra: Optional[Dict[str, Any]] = None,
 ) -> None:
     _events().insert_one({
         "usuario": usuario,
@@ -239,19 +197,14 @@ def list_events(usuario: str, limit: int = 5) -> List[Dict[str, Any]]:
     return list(cur)
 
 
-# ---------- Utilidades ----------
 def last_event(usuario: str, tipo: str) -> Optional[Dict[str, Any]]:
     return _events().find_one(
         {"usuario": usuario, "tipo": tipo},
-        sort=[("ts", -1), ("_id", -1)]
+        sort=[("ts", -1), ("_id", -1)],
     )
 
 
 def _safe_create_index(col_obj, keys):
-    """
-    Tenta criar índice tanto em coleções pymongo puras (create_index)
-    quanto em wrappers (obj._col.create_index).
-    """
     try:
         if hasattr(col_obj, "create_index"):
             col_obj.create_index(keys)
@@ -271,23 +224,13 @@ def _safe_create_index(col_obj, keys):
 
 
 def ensure_indexes() -> None:
-    """
-    Garante índices essenciais.
-    Só roda quando backend for mongo.
-    """
     try:
         from .database import get_backend
         if get_backend() != "mongo":
             return
 
-        # History: busca por usuario, ordenado por data
         _safe_create_index(_hist(), [("usuario", 1), ("ts", 1), ("_id", 1)])
-
-        # State: busca por usuario
         _safe_create_index(_state(), [("usuario", 1)])
-
-        # Events: busca por usuario, mais recentes
         _safe_create_index(_events(), [("usuario", 1), ("ts", -1), ("_id", -1)])
-
     except Exception:
         pass
