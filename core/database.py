@@ -277,14 +277,19 @@ class MongoCollection:
             return rows[0] if rows else None
         return self._col.find_one(filt or {})
 
-    def update_one(self, filt: Dict[str, Any], update: Dict[str, Any], upsert: bool = False) -> None:
+    def update_one(
+        self,
+        filt: Dict[str, Any],
+        update: Dict[str, Any],
+        upsert: bool = False
+    ) -> None:
         self._col.update_one(filt, update, upsert=upsert)
 
-        def delete_one(self, filt: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def delete_one(self, filt: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         r = self._col.delete_one(filt or {})
         return {"deleted_count": int(getattr(r, "deleted_count", 0) or 0)}
 
-def delete_many(self, filt: Dict[str, Any]) -> int:
+    def delete_many(self, filt: Dict[str, Any]) -> int:
         return int(self._col.delete_many(filt or {}).deleted_count)
 
 
