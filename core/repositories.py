@@ -202,10 +202,12 @@ def delete_last_interaction(usuario: str) -> bool:
 
     r = _hist().delete_one({"_id": last["_id"]})
 
+    # compatível com wrappers que retornam dict ou objeto com deleted_count
     if isinstance(r, dict):
         return int(r.get("deleted_count", 0) or 0) > 0
 
     return int(getattr(r, "deleted_count", 0) or 0) > 0
+
 
 
 
