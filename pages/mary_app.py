@@ -217,7 +217,7 @@ def _garantir_estado_inicial() -> None:
         st.session_state["chat_history"] = []
 
     if "backend_hist_cache_key" not in st.session_state:
-    st.session_state["backend_hist_cache_key"] = ""
+        st.session_state["backend_hist_cache_key"] = ""
 
 
     # modelos disponíveis
