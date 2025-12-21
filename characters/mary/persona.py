@@ -50,10 +50,10 @@ ESTILO:
                 "timeline": "universitaria",
                 "content": (
                     "Estou sentada no banco de uma praça perto da faculdade, com a mochila no colo.\n\n"
-                    "Quando eu te vejo chegando, meu estômago dá aquele frio bom e eu ajeito o cabelo, "
+                    "Quando eu te vejo passando, meu estômago dá aquele frio bom e eu ajeito o cabelo, "
                     "tentando parecer tranquila.\n\n"
                     "Eu te encaro por um segundo a mais do que deveria e sorrio, do meu jeito, meio tímida.\n\n"
-                    "Eu me levanto devagar e fico perto de você, sentindo o coração bater mais rápido."
+                    "Eu desvio o olhar, em seguida sentindo o coração bater mais rápido, esperando sua atitude."
                 ),
             },
             {
