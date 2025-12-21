@@ -176,8 +176,16 @@ def get_history_docs_multi(
 
 
 def delete_user_history(usuario: str) -> int:
+    """Apaga TODO o histórico do usuário (history)."""
     r = _hist().delete_many({"usuario": usuario})
-    return int(getattr(r, "deleted_count", 0))
+
+    # wrappers podem retornar: int, dict, ou DeleteResult
+    if isinstance(r, int):
+        return int(r)
+    if isinstance(r, dict):
+        return int(r.get("deleted_count", 0) or 0)
+    return int(getattr(r, "deleted_count", 0) or 0)
+
 
 
 def delete_last_interaction(usuario: str) -> bool:
