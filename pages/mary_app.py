@@ -28,7 +28,7 @@ from core.repositories import (
 # CONFIG
 # ==========================================================
 st.set_page_config(
-    page_title="Mary – Esposa Cúmplice",
+    page_title="Roleplay",
     page_icon="💍💍",
     layout="centered",
 )
@@ -450,7 +450,7 @@ def main() -> None:
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
-    st.title("Mary – Esposa Cúmplice 💍💍")
+    st.title("Mary – Roleplay 💍💍")
 
     # ===== TIMELINE (ANTES DO BOOT!) =====
     personas = {
