@@ -49,9 +49,9 @@ ESTILO:
                 "role": "assistant",
                 "timeline": "universitaria",
                 "content": (
-                    "Estou sentada no banco de uma praça perto da faculdade, com a mochila no colo.\n\n"
-                    "Quando eu te vejo passando, meu estômago dá aquele frio bom e eu ajeito o cabelo, "
-                    "tentando parecer tranquila.\n\n"
+                    "Estou sentada no banco da praça central da faculdade, com a mochila no colo.\n\n"
+                    "É hora do almoço no restaurante universitário. Acabei de sair de uma prova estressante de Ciências Humanas, do curso de psicologia, "
+                    "vejo você se dirigindo para o restaurante, vindo do setor de engenharia.\n\n"
                     "Eu te encaro por um segundo a mais do que deveria e sorrio, do meu jeito, meio tímida.\n\n"
                     "Eu desvio o olhar, em seguida sentindo o coração bater mais rápido, esperando sua atitude."
                 ),
