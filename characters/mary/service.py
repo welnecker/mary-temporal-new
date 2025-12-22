@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 """
-MaryService (v3.2 – Timeline-Aware Persona + Continuidade Espacial + Intro Real no Prompt)
+MaryService (v3.4 – Intro Canônico da Persona + Timeline-Aware + Continuidade Espacial)
+
+Objetivo:
+- O app entende que a primeira interação SEMPRE começa a partir da INTRO da persona,
+  independente do conteúdo (praça, cantina, etc).
+- Se a persona mudar no futuro, o app acompanha automaticamente (hash/id).
+- No restart do app, mesmo com histórico no BD, o modelo recebe de novo o "quadro zero"
+  como CONTEXTO (system), evitando respostas fora de contexto na primeira fala do usuário.
 """
 
 import logging
 import re
+import hashlib
 from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
@@ -19,6 +27,7 @@ from core.repositories import (
     set_fact,
 )
 from characters.registry import _SERVICE_CACHE
+from core.service_router import route_chat_strict
 
 from .persona import get_persona
 
@@ -134,45 +143,103 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     patterns = [
         r"vamos (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
         r"me leva (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
+        r"vamos para\s+([^\n\r,.!?]+)",
+        r"ir para\s+([^\n\r,.!?]+)",
     ]
-    msg = (user_message or "").lower()
+    msg = (user_message or "").lower().strip()
     for p in patterns:
         m = re.search(p, msg)
         if m:
-            # pega o “destino” completo (não só \w+)
-            destino = (m.group(2) or "").strip()
+            destino = (m.group(m.lastindex) or "").strip()
             return True, destino
     return False, ""
 
 
 # ==========================================================
-# INTRO (REAL) NO PROMPT — 1x POR SESSÃO
+# INTRO CANÔNICO DA PERSONA (independente de conteúdo)
 # ==========================================================
-def _maybe_inject_intro(usuario_key: str, timeline: str, messages: List[Dict[str, str]]) -> None:
-    """
-    Injeta a fala inicial da Mary (intro) no prompt 1x por sessão do Streamlit.
+def _intro_fact_prefix(timeline: str) -> str:
+    tl = (timeline or "").strip() or "cumplice"
+    return f"mary.intro.{tl}"  # vira: mary.intro.universitaria.{text|hash|id}
 
-    Por que assim?
-    - Se você reinicia o app, o BD ainda tem histórico, mas o modelo precisa do “primeiro quadro”
-      para manter coerência. Então reinjetamos no restart.
-    - Evita gravar "consumed" no Mongo/SQLite e “perder” a intro para sempre.
+
+def _hash_text(text: str) -> str:
+    t = (text or "").strip().encode("utf-8")
+    return hashlib.sha256(t).hexdigest()
+
+
+def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
     """
-    flag = f"intro_injected::{usuario_key}"
+    Retorna (intro_id, intro_text) baseado na persona atual.
+    intro_id: identificador estável que muda se o texto mudar (hash do texto).
+    intro_text: o primeiro quadro da persona.
+    """
+    _, history_boot = get_persona(timeline)
+
+    intro_text = ""
+    if isinstance(history_boot, list):
+        for msg in history_boot:
+            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
+                if msg.get("timeline") and str(msg.get("timeline")) != str(timeline):
+                    continue
+                intro_text = str(msg["content"]).strip()
+                break
+
+    if not intro_text:
+        # fallback mínimo (mas neutro; não “praça”)
+        intro_text = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
+
+    intro_id = _hash_text(intro_text)  # id muda quando a persona muda
+    return intro_id, intro_text
+
+
+def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
+    """
+    Garante que o BD tenha a intro atual da persona (por timeline).
+    Se a persona mudar, atualiza text/hash/id no facts.
+    Retorna (intro_id, intro_text).
+    """
+    prefix = _intro_fact_prefix(timeline)
+    id_key = f"{prefix}.id"
+    text_key = f"{prefix}.text"
+    hash_key = f"{prefix}.hash"
+
+    current_id, current_text = _extract_intro_from_persona(timeline)
+    current_hash = current_id  # mesmo valor (sha256)
+
+    try:
+        stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
+        stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
+
+        # se não existe OU mudou (hash diferente) OU texto vazio, atualiza
+        if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
+            set_fact(usuario_key, id_key, current_id, {"fonte": "persona_intro_sync"})
+            set_fact(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
+            set_fact(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
+            # cache do service pode estar com facts antigos
+            clear_user_cache(usuario_key)
+
+        return current_id, current_text
+    except Exception:
+        # sem travar o app
+        return current_id, current_text
+
+
+def _inject_intro_as_context_once(usuario_key: str, timeline: str, messages: List[Dict[str, str]]) -> None:
+    """
+    Injeta a intro como CONTEXTO (system) 1x por sessão Streamlit.
+    Independentemente de existir histórico no BD.
+    """
+    flag = f"intro_ctx_injected::{usuario_key}"
     if st.session_state.get(flag):
         return
 
-    intro_key = f"mary.intro.fixed.{timeline}"
-    intro = None
-    try:
-        intro = get_fact(usuario_key, intro_key, default=None)
-    except Exception:
-        intro = None
+    _, intro_text = _sync_intro_fact(usuario_key, timeline)
+    intro_text = (intro_text or "").strip()
+    if intro_text:
+        messages.append({"role": "system", "content": f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}"})
 
-    if intro:
-        intro_text = str(intro).strip()
-        if intro_text:
-            messages.append({"role": "assistant", "content": intro_text})
-            st.session_state[flag] = True
+    st.session_state[flag] = True
 
 
 # ==========================================================
@@ -224,11 +291,6 @@ TIMELINE ATUAL: {timeline}
 PERSONA:
 {persona_text}
 
-CENA:
-Local: {scene_loc}
-Tempo: {scene_time}
-Ação: {scene_action}
-
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
 - Timeline universitária NÃO é casada e NÃO mora junto.
@@ -240,10 +302,11 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # ✅ INTRO 1x por sessão (corrige restart com histórico existente)
-        _maybe_inject_intro(usuario_key, timeline, messages)
+        # ✅ INTRO CANÔNICA DA PERSONA (independente do conteúdo) como CONTEXTO
+        # Entra ANTES do histórico, e 1x por sessão Streamlit.
+        _inject_intro_as_context_once(usuario_key, timeline, messages)
 
-        # 📜 Histórico normal (uma vez só)
+        # 📜 Histórico do backend
         history = cached_get_history(usuario_key)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -294,8 +357,6 @@ REGRAS ABSOLUTAS:
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
-        # mantém o mesmo caminho de roteamento do seu projeto (route_chat_strict já está dentro do router)
-        from core.service_router import route_chat_strict
         return route_chat_strict(
             model,
             {
