@@ -211,11 +211,18 @@ REGRAS ABSOLUTAS:
 
         # 🧠 INTRO FIXA (entra no prompt se não houver histórico)
         history = cached_get_history(usuario_key)
-        if not history:
-            intro_key = f"mary.intro.fixed.{timeline}"
-            intro = get_fact(usuario_key, intro_key)
-            if intro:
-                messages.append({"role": "assistant", "content": intro})
+
+        # 👇 INTRO SEMPRE QUE A CENA AINDA NÃO CONSUMIU
+        _maybe_inject_intro(usuario_key, timeline, messages)
+        
+        # 📜 Histórico normal
+        for d in history[-30:]:
+            u = (d.get("mensagem_usuario") or "").strip()
+            a = (d.get("resposta_mary") or "").strip()
+            if u:
+                messages.append({"role": "user", "content": u})
+            if a:
+                messages.append({"role": "assistant", "content": a})
 
         # 📜 Histórico normal
         for d in history[-30:]:
