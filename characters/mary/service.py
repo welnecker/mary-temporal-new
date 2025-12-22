@@ -6,7 +6,7 @@ MaryService (v3.2 – Timeline-Aware Persona + Continuidade Espacial + Intro Rea
 
 import logging
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
 
@@ -18,7 +18,6 @@ from core.repositories import (
     save_interaction,
     set_fact,
 )
-from core.service_router import route_chat_strict
 from characters.registry import _SERVICE_CACHE
 
 from .persona import get_persona
@@ -93,7 +92,7 @@ def nsfw_enabled(usuario_key: str) -> bool:
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
 
-    facts = cached_get_facts(usuario_key)
+    facts = cached_get_facts(usuario_key) or {}
     v = facts.get("mary.nsfw")
     if isinstance(v, bool):
         return v
@@ -133,15 +132,47 @@ Ação: {acao}
 
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     patterns = [
-        r"vamos (pro|pra|para o|para a) (\w+)",
-        r"me leva (pro|pra|para o|para a) (\w+)",
+        r"vamos (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
+        r"me leva (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
     ]
-    msg = user_message.lower()
+    msg = (user_message or "").lower()
     for p in patterns:
         m = re.search(p, msg)
         if m:
-            return True, m.group(2)
+            # pega o “destino” completo (não só \w+)
+            destino = (m.group(2) or "").strip()
+            return True, destino
     return False, ""
+
+
+# ==========================================================
+# INTRO (REAL) NO PROMPT — 1x POR SESSÃO
+# ==========================================================
+def _maybe_inject_intro(usuario_key: str, timeline: str, messages: List[Dict[str, str]]) -> None:
+    """
+    Injeta a fala inicial da Mary (intro) no prompt 1x por sessão do Streamlit.
+
+    Por que assim?
+    - Se você reinicia o app, o BD ainda tem histórico, mas o modelo precisa do “primeiro quadro”
+      para manter coerência. Então reinjetamos no restart.
+    - Evita gravar "consumed" no Mongo/SQLite e “perder” a intro para sempre.
+    """
+    flag = f"intro_injected::{usuario_key}"
+    if st.session_state.get(flag):
+        return
+
+    intro_key = f"mary.intro.fixed.{timeline}"
+    intro = None
+    try:
+        intro = get_fact(usuario_key, intro_key, default=None)
+    except Exception:
+        intro = None
+
+    if intro:
+        intro_text = str(intro).strip()
+        if intro_text:
+            messages.append({"role": "assistant", "content": intro_text})
+            st.session_state[flag] = True
 
 
 # ==========================================================
@@ -161,10 +192,10 @@ class MaryService(BaseCharacter):
 
         # 🔁 Mudança explícita de local
         mudou, novo_local = _user_requested_location_change(prompt)
-        if mudou:
+        if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             clear_user_cache(usuario_key)
-            return f"_Eu te puxo comigo até o {novo_local}…_"
+            return f"_Eu te puxo comigo até {novo_local}…_"
 
         # 🔒 Fixar timeline canônica
         try:
@@ -209,22 +240,11 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # 🧠 INTRO FIXA (entra no prompt se não houver histórico)
-        history = cached_get_history(usuario_key)
-
-        # 👇 INTRO SEMPRE QUE A CENA AINDA NÃO CONSUMIU
+        # ✅ INTRO 1x por sessão (corrige restart com histórico existente)
         _maybe_inject_intro(usuario_key, timeline, messages)
-        
-        # 📜 Histórico normal
-        for d in history[-30:]:
-            u = (d.get("mensagem_usuario") or "").strip()
-            a = (d.get("resposta_mary") or "").strip()
-            if u:
-                messages.append({"role": "user", "content": u})
-            if a:
-                messages.append({"role": "assistant", "content": a})
 
-        # 📜 Histórico normal
+        # 📜 Histórico normal (uma vez só)
+        history = cached_get_history(usuario_key)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
@@ -245,25 +265,44 @@ REGRAS ABSOLUTAS:
             except Exception:
                 return ""
 
-        for attempt in [
+        attempts = [
             {"model": model, "temperature": 0.7},
             {"model": model, "temperature": 0.4},
             {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.6},
-        ]:
-            data, used_model, _ = route_chat_strict(
-                attempt["model"],
-                {
-                    "model": attempt["model"],
-                    "messages": messages,
-                    "temperature": attempt["temperature"],
-                    "top_p": 0.95,
-                    "max_tokens": 1200,
-                },
-            )
-            texto = _extract_text(data)
-            if texto:
-                save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
-                clear_user_cache(usuario_key)
-                return texto
+        ]
+
+        last_err: Optional[Exception] = None
+        for attempt in attempts:
+            try:
+                data, used_model, _ = self._chat(
+                    attempt["model"],
+                    messages,
+                    temperature=attempt["temperature"],
+                    max_tokens=1200,
+                )
+                texto = _extract_text(data)
+                if texto:
+                    save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
+                    clear_user_cache(usuario_key)
+                    return texto
+            except Exception as e:
+                last_err = e
+
+        if last_err:
+            logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
+
+    def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
+        # mantém o mesmo caminho de roteamento do seu projeto (route_chat_strict já está dentro do router)
+        from core.service_router import route_chat_strict
+        return route_chat_strict(
+            model,
+            {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+                "top_p": 0.95,
+                "max_tokens": max_tokens,
+            },
+        )
