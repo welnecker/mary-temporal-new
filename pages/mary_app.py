@@ -450,7 +450,7 @@ def main() -> None:
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
-    st.title("Mary – Roleplay 💍💍")
+    st.title("Roleplay 💍💍")
 
     # ===== TIMELINE (ANTES DO BOOT!) =====
     personas = {
