@@ -187,7 +187,8 @@ def _get_service() -> MaryService:
 def _invalidate_backend_cache() -> None:
     st.session_state["backend_hist_cache"] = None
     st.session_state["backend_hist_cache_ts"] = 0.0
-    st.session_state["backend_hist_cache_key"] = ""   # <<< ADICIONE
+    st.session_state["backend_hist_cache_key"] = ""
+
 
 def _keys_para_mary() -> list[str]:
     # A key REAL é a do service, e ela inclui timeline (uid::mary::{timeline})
@@ -204,7 +205,7 @@ def _choose_default_model(available: list[str]) -> str:
 
 
 def _garantir_estado_inicial() -> None:
-    # 1) timeline precisa existir ANTES de qualquer coisa que dependa de _current_user_key()
+    # timeline precisa existir ANTES de qualquer coisa que dependa de _current_user_key()
     if "mary_timeline" not in st.session_state:
         st.session_state["mary_timeline"] = "cumplice"
     if "mary_timeline_locked" not in st.session_state:
@@ -218,7 +219,6 @@ def _garantir_estado_inicial() -> None:
 
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
-
 
     # modelos disponíveis
     try:
@@ -259,26 +259,37 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
                 del st.session_state[ck]
 
 
+def _reset_intro_flags_for_keys(keys: list[str]) -> None:
+    """
+    Alinha com service.py:
+    - service injeta a intro no prompt 1x por sessão por usuario_key
+    - então, ao trocar timeline / limpar histórico / recarregar persona / etc,
+      precisamos resetar a flag para que a intro seja reinjetada corretamente.
+    """
+    for k in keys:
+        st.session_state.pop(f"intro_ctx_injected::{k}", None)  # flag atual do service
+        st.session_state.pop(f"intro_injected::{k}", None)      # flag legado (se existir)
+
+
 def _intro_fact_key_for_timeline(timeline: str) -> str:
     tl = (timeline or "").strip() or "cumplice"
     return f"mary.intro.fixed.{tl}"
 
 
 def _pick_intro_from_persona(timeline: str) -> str:
-    persona_text, history_boot = get_persona(timeline)
+    _, history_boot = get_persona(timeline)
 
     opcoes = []
     if isinstance(history_boot, list):
         for msg in history_boot:
             if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
-                # se vier timeline no dict, respeita
                 if msg.get("timeline") and str(msg.get("timeline")) != str(timeline):
                     continue
                 opcoes.append(str(msg["content"]).strip())
 
     if not opcoes:
         return "Oi… eu tô aqui."
-    return opcoes[0]  # determinístico
+    return opcoes[0]
 
 
 def _get_or_fix_intro_for_current_timeline() -> str:
@@ -322,7 +333,6 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
         if cached is not None and (now - ts) < 2.0 and ck == cache_key:
             return cached
 
-
     keys = _keys_para_mary()
 
     try:
@@ -345,7 +355,7 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
 
     st.session_state["backend_hist_cache"] = hist
     st.session_state["backend_hist_cache_ts"] = now
-    st.session_state["backend_hist_cache_key"] = cache_key   # <<< ADICIONE
+    st.session_state["backend_hist_cache_key"] = cache_key
     return hist
 
 
@@ -408,6 +418,7 @@ def _delete_last_turn_active() -> bool:
 
     _invalidate_backend_cache()
     _clear_service_caches_for_keys([usuario_key])
+    _reset_intro_flags_for_keys([usuario_key])
     return ok
 
 
@@ -416,25 +427,21 @@ def _on_timeline_change() -> None:
     if st.session_state.get("mary_timeline_locked"):
         return
 
-    # aplica timeline do select
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
     }
     st.session_state["mary_timeline"] = personas.get(st.session_state.get("persona_label") or "", "cumplice")
 
-    # ajusta NSFW default quando troca timeline (apenas se usuário ainda não mexeu)
-    # aqui: se já existe a chave, não força; mas se quiser forçar sempre, descomente a linha abaixo.
     st.session_state["mary_nsfw_on"] = (st.session_state["mary_timeline"] != "universitaria")
 
-    # reseta visual e caches para boot carregar a key correta
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
 
-    # limpa caches do service para a key NOVA
     keys = _keys_para_mary()
     _clear_service_caches_for_keys(keys)
+    _reset_intro_flags_for_keys(keys)
 
 
 # ==========================================================
@@ -445,14 +452,12 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.4 (FIX REAL: timeline antes do boot + intro por timeline + keys corretas)")
-
+    st.caption("🧩 mary_app.py v3.5 (ALINHADO com service.py: reset flags de intro no prompt)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
     st.title("Roleplay 💍💍")
 
-    # ===== TIMELINE (ANTES DO BOOT!) =====
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
@@ -478,10 +483,8 @@ def main() -> None:
     if st.session_state["mary_timeline_locked"]:
         st.caption("🔒 Persona travada até limpar a conversa (ou apagar histórico).")
 
-    # ===== KEYS SEMPRE DEPOIS DO SELECT =====
     keys = _keys_para_mary()
 
-    # ===== BACKEND =====
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
 
@@ -498,6 +501,7 @@ def main() -> None:
                     n = _apagar_hist_bd_novo_e_legado()
                     _invalidate_backend_cache()
                     _clear_service_caches_for_keys(keys)
+                    _reset_intro_flags_for_keys(keys)
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
                     st.session_state["mary_timeline_locked"] = False
@@ -512,10 +516,10 @@ def main() -> None:
                 else:
                     removed = _apagar_eventos_mary_fact(_current_user_key())
                     _clear_service_caches_for_keys(keys)
+                    _reset_intro_flags_for_keys(keys)
                     st.success(f"✅ Apaguei {removed} facts de eventos mary.evento.*")
                     st.rerun()
 
-    # ===== SIDEBAR =====
     with st.sidebar:
         st.header("Mary – Controles")
 
@@ -535,7 +539,6 @@ def main() -> None:
 
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
-
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         st.markdown("---")
@@ -547,14 +550,12 @@ def main() -> None:
         if st.button("Apagar último turno (backend)"):
             ok = _delete_last_turn_active()
             if ok:
-                # deixa o BOOT recarregar corretamente
                 st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
                 st.success("✅ Último turno apagado (Mary ativa).")
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
-
 
         st.markdown("---")
         st.subheader("Limpar tela")
@@ -576,11 +577,12 @@ def main() -> None:
             st.session_state["chat_history"] = []
             _invalidate_backend_cache()
             _clear_service_caches_for_keys(_keys_para_mary())
+            _reset_intro_flags_for_keys(_keys_para_mary())
             st.session_state["mary_timeline_locked"] = False
             st.success("Persona recarregada. Boot vai colar a intro correta por timeline.")
             st.rerun()
 
-    # ===== BOOT (AGORA timeline já está correta) =====
+    # ===== BOOT =====
     if not st.session_state["chat_history"]:
         backend_hist = _carregar_chat_visual_do_backend(force=False)
 
@@ -588,7 +590,6 @@ def main() -> None:
             st.session_state["chat_history"] = backend_hist
             st.session_state["mary_intro_done"] = True
         else:
-            # se não tem histórico, cola intro da timeline atual
             if not st.session_state.get("mary_intro_done", False):
                 _colar_fala_inicial_na_tela()
 
@@ -607,7 +608,6 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary...")
     if prompt:
-        # trava persona após o primeiro envio
         if not st.session_state["mary_timeline_locked"]:
             st.session_state["mary_timeline_locked"] = True
 
