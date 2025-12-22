@@ -169,6 +169,68 @@ def delete_last_interaction(usuario: str) -> bool:
         return int(r.get("deleted_count", 0) or 0) > 0
     return int(getattr(r, "deleted_count", 0) or 0) > 0
 
+# ==========================================================
+# ---------- Memórias permanentes (compartilhadas) ----------
+# ==========================================================
+def _mem_key() -> str:
+    return "mary.memories"
+
+
+def list_memories(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """
+    Retorna a lista de memórias permanentes (do state_data do 'usuario' informado).
+    """
+    memories = get_fact(usuario, _mem_key(), default=[]) or []
+    if not isinstance(memories, list):
+        return []
+    if limit and len(memories) > limit:
+        return memories[-limit:]
+    return memories
+
+
+def append_memory(usuario: str, entry: Dict[str, Any], max_keep: int = 200) -> Dict[str, Any]:
+    """
+    Adiciona uma memória permanente em 'mary.memories' como uma lista.
+    Mantém no máximo 'max_keep' itens (corta os mais antigos).
+    Retorna o entry final gravado (com id/ts).
+    """
+    entry = dict(entry or {})
+    entry.setdefault("ts", datetime.utcnow())
+    entry.setdefault("id", f"mem_{int(datetime.utcnow().timestamp())}")
+
+    memories = list_memories(usuario, limit=max_keep)  # já retorna list
+    memories.append(entry)
+
+    if max_keep and len(memories) > max_keep:
+        memories = memories[-max_keep:]
+
+    set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory"})
+    return entry
+
+
+def delete_last_memory(usuario: str) -> bool:
+    """
+    Remove a última memória da lista 'mary.memories'.
+    """
+    memories = list_memories(usuario, limit=1000)
+    if not memories:
+        return False
+    memories.pop()
+    set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory_delete_last"})
+    return True
+
+
+def delete_all_memories(usuario: str) -> int:
+    """
+    Apaga todas as memórias permanentes.
+    Retorna quantas existiam.
+    """
+    memories = list_memories(usuario, limit=5000)
+    n = len(memories)
+    set_fact(usuario, _mem_key(), [], {"fonte": "permanent_memory_delete_all"})
+    return n
+
+
 
 # ---------- Eventos ----------
 def register_event(
