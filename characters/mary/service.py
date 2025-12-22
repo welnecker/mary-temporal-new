@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 """
-MaryService (v3.4 – Intro Canônico da Persona + Timeline-Aware + Continuidade Espacial)
+MaryService (v3.5 – Intro Canônico da Persona + Timeline-Aware + Continuidade Espacial + Memórias Permanentes)
 
 Objetivo:
-- O app entende que a primeira interação SEMPRE começa a partir da INTRO da persona,
-  independente do conteúdo (praça, cantina, etc).
-- Se a persona mudar no futuro, o app acompanha automaticamente (hash/id).
-- No restart do app, mesmo com histórico no BD, o modelo recebe de novo o "quadro zero"
-  como CONTEXTO (system), evitando respostas fora de contexto na primeira fala do usuário.
+- A primeira “âncora” SEMPRE vem da INTRO da persona (quadro zero), independente do conteúdo do usuário.
+- Se a persona mudar no futuro, o serviço acompanha automaticamente (hash/id).
+- No restart do app, mesmo com histórico no BD, o modelo recebe novamente o “quadro zero” como CONTEXTO (system),
+  evitando respostas fora de contexto na primeira fala do usuário.
+- Implementa memórias permanentes COMPARTILHADAS entre timelines (universitaria/cumplice):
+  - Salvamento via prompt: "Mary, salve ..."
+  - Botões no sidebar cuidam de listar/apagar (fora daqui)
+  - Ao perguntar "Mary, você lembra ...", as memórias relevantes entram no system para guiar a resposta.
+  - Mary interpreta (não cola literal) e inclui âncoras concretas quando existirem na fonte.
 """
 
 import logging
@@ -25,9 +29,11 @@ from core.repositories import (
     get_history_docs,
     save_interaction,
     set_fact,
+    append_memory,
+    list_memories,
 )
-from characters.registry import _SERVICE_CACHE
 from core.service_router import route_chat_strict
+from characters.registry import _SERVICE_CACHE
 
 from .persona import get_persona
 
@@ -44,6 +50,15 @@ def _current_user_key() -> str:
 
     timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
     return f"{uid}::mary::{timeline}"
+
+
+def _shared_user_key() -> str:
+    """
+    Key de memórias permanentes compartilhadas entre timelines.
+    """
+    uid = st.session_state.get("user_id") or st.session_state.get("usuario") or ""
+    uid = str(uid).strip() or "anon"
+    return f"{uid}::mary::shared"
 
 
 # ==========================================================
@@ -186,10 +201,10 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
                 break
 
     if not intro_text:
-        # fallback mínimo (mas neutro; não “praça”)
+        # fallback mínimo (neutro; não fixa "praça", "suíte", etc.)
         intro_text = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
 
-    intro_id = _hash_text(intro_text)  # id muda quando a persona muda
+    intro_id = _hash_text(intro_text)
     return intro_id, intro_text
 
 
@@ -211,17 +226,14 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
         stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
         stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
 
-        # se não existe OU mudou (hash diferente) OU texto vazio, atualiza
         if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
             set_fact(usuario_key, id_key, current_id, {"fonte": "persona_intro_sync"})
             set_fact(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
             set_fact(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
-            # cache do service pode estar com facts antigos
             clear_user_cache(usuario_key)
 
         return current_id, current_text
     except Exception:
-        # sem travar o app
         return current_id, current_text
 
 
@@ -243,6 +255,92 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, messages: Lis
 
 
 # ==========================================================
+# MEMÓRIAS PERMANENTES (COMPARTILHADAS) — SALVAR / INJETAR
+# ==========================================================
+def _is_save_memory_command(msg: str) -> bool:
+    """
+    Detecta:
+      - "Mary, salve ..."
+      - "Mary salve ..."
+    """
+    s = (msg or "").strip().lower()
+    return bool(re.match(r"^mary\s*,?\s*salve\b", s))
+
+
+def _extract_save_payload(msg: str) -> Dict[str, Any]:
+    raw = (msg or "").strip()
+    m = re.search(r"(\d{1,2})\s*[\/\-]\s*(\d{1,2})\s*[\/\-]\s*(\d{4})", raw)
+    date_str = None
+    if m:
+        dd, mm, yyyy = m.group(1), m.group(2), m.group(3)
+        date_str = f"{dd.zfill(2)}/{mm.zfill(2)}/{yyyy}"
+    return {"requested_text": raw, "date": date_str}
+
+
+def _build_source_excerpt_from_ui(max_items: int = 20) -> str:
+    """
+    Fonte: últimos turnos do chat visível da UI (st.session_state['chat_history']).
+    Isso impede a Mary de "inventar": ela sempre referencia o texto real do app.
+    """
+    hist = st.session_state.get("chat_history") or []
+    if not isinstance(hist, list):
+        return ""
+    tail = hist[-max_items:]
+    lines: List[str] = []
+    for role, content in tail:
+        role_lbl = "USUÁRIO" if role == "user" else "MARY"
+        c = (content or "").strip()
+        if c:
+            lines.append(f"{role_lbl}: {c}")
+    return "\n\n".join(lines).strip()
+
+
+def _select_relevant_memories(memories: List[Dict[str, Any]], user_msg: str, k: int = 3) -> List[Dict[str, Any]]:
+    """
+    Seleção leve por overlap de palavras (sem embeddings).
+    """
+    text = (user_msg or "").lower()
+    tokens = [t for t in re.findall(r"[a-zA-ZÀ-ÿ0-9]{4,}", text) if t not in {"mary", "lembra", "lembrar", "memoria", "memória"}]
+    if not tokens:
+        return memories[-k:] if memories else []
+
+    scored: List[Tuple[int, Dict[str, Any]]] = []
+    for mem in memories or []:
+        blob = " ".join(
+            [
+                str(mem.get("requested_text") or ""),
+                str(mem.get("source_excerpt") or ""),
+                str(mem.get("date") or ""),
+            ]
+        ).lower()
+        score = sum(1 for t in tokens if t in blob)
+        if score > 0:
+            scored.append((score, mem))
+
+    scored.sort(key=lambda x: x[0])
+    return [m for _, m in scored[-k:]]
+
+
+def _format_memories_for_system(memories: List[Dict[str, Any]]) -> str:
+    if not memories:
+        return ""
+    blocks: List[str] = []
+    for mem in memories:
+        date = mem.get("date") or "—"
+        mid = mem.get("id") or "—"
+        req = (mem.get("requested_text") or "").strip()
+        src = (mem.get("source_excerpt") or "").strip()
+
+        blocks.append(
+            f"""[MEMÓRIA #{mid}]
+Data: {date}
+Pedido original do usuário (não inventar): {req}
+Fonte (trecho real do chat do app): {src}"""
+        )
+    return "\n\n".join(blocks).strip()
+
+
+# ==========================================================
 # SERVICE
 # ==========================================================
 class MaryService(BaseCharacter):
@@ -257,6 +355,27 @@ class MaryService(BaseCharacter):
         usuario_key = _current_user_key()
         timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
 
+        # ==========================================================
+        # 🧠 COMANDO: "Mary, salve ..."  (não chama o modelo)
+        # ==========================================================
+        if _is_save_memory_command(prompt):
+            shared_key = _shared_user_key()
+            payload = _extract_save_payload(prompt)
+            source_excerpt = _build_source_excerpt_from_ui(max_items=24)
+
+            entry = {
+                "timeline_at_save": timeline,
+                "requested_text": payload.get("requested_text"),
+                "date": payload.get("date"),
+                "source_excerpt": source_excerpt,
+            }
+
+            saved = append_memory(shared_key, entry, max_keep=200)
+
+            d = saved.get("date") or "—"
+            mid = saved.get("id") or "—"
+            return f"✅ Memória permanente salva (compartilhada entre timelines). id={mid} | data={d}"
+
         # 🔁 Mudança explícita de local
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
@@ -264,7 +383,7 @@ class MaryService(BaseCharacter):
             clear_user_cache(usuario_key)
             return f"_Eu te puxo comigo até {novo_local}…_"
 
-        # 🔒 Fixar timeline canônica
+        # 🔒 Fixar timeline canônica (por segurança)
         try:
             facts_now = cached_get_facts(usuario_key)
             if not facts_now.get("mary.timeline.fixed"):
@@ -293,20 +412,38 @@ PERSONA:
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
-- Timeline universitária NÃO é casada e NÃO mora junto.
-- Timeline cúmplice segue a persona de casamento.
+- Timeline universitária: 18 anos, virgem, não é casada e não mora junto.
+- Timeline cúmplice: segue a persona de casamento.
 - Nunca contradiga a timeline ativa.
+- Ao responder sobre memórias: interprete com coerência e inclua âncoras concretas (local/ordem/contexto) quando existirem na fonte.
+- Nunca invente detalhes fora do que foi dito/registrado.
 
 {nsfw_block}
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # ✅ INTRO CANÔNICA DA PERSONA (independente do conteúdo) como CONTEXTO
-        # Entra ANTES do histórico, e 1x por sessão Streamlit.
+        # ✅ INTRO CANÔNICA DA PERSONA como CONTEXTO (1x por sessão)
         _inject_intro_as_context_once(usuario_key, timeline, messages)
 
-        # 📜 Histórico do backend
+        # ✅ MEMÓRIAS PERMANENTES COMPARTILHADAS (injeta no system quando relevantes)
+        shared_key = _shared_user_key()
+        all_mems = list_memories(shared_key, limit=200) or []
+        relevant = _select_relevant_memories(all_mems, prompt, k=3)
+        mem_block = _format_memories_for_system(relevant)
+        if mem_block:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "[MEMÓRIAS PERMANENTES — COMPARTILHADAS ENTRE TODAS AS MARYs]\n"
+                        "Use isso como fatos canônicos. Não invente.\n\n"
+                        f"{mem_block}"
+                    ),
+                }
+            )
+
+        # 📜 Histórico do backend (separado por usuario_key com timeline)
         history = cached_get_history(usuario_key)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -320,7 +457,7 @@ REGRAS ABSOLUTAS:
         messages.append({"role": "user", "content": prompt})
 
         # =========================
-        # 🔁 Chamada com fallback
+        # 🔁 Chamada com retry/fallback
         # =========================
         def _extract_text(resp: dict) -> str:
             try:
@@ -335,17 +472,20 @@ REGRAS ABSOLUTAS:
         ]
 
         last_err: Optional[Exception] = None
+        last_used_model: Optional[str] = None
+
         for attempt in attempts:
             try:
                 data, used_model, _ = self._chat(
                     attempt["model"],
                     messages,
-                    temperature=attempt["temperature"],
+                    temperature=float(attempt["temperature"]),
                     max_tokens=1200,
                 )
+                last_used_model = used_model or attempt["model"]
                 texto = _extract_text(data)
                 if texto:
-                    save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
+                    save_interaction(usuario_key, prompt, texto, last_used_model)
                     clear_user_cache(usuario_key)
                     return texto
             except Exception as e:
