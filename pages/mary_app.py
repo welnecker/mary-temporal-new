@@ -154,7 +154,7 @@ def check_password() -> bool:
         return True
 
     _apply_dark_ui()
-    st.title("🔐 Mary – Acesso Restrito")
+    st.title("🔐 Acesso Restrito")
     with st.form("form_senha", clear_on_submit=False):
         senha = st.text_input("Digite a senha de acesso:", type="password")
         ok = st.form_submit_button("Entrar")
