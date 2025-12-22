@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-MaryService (v3.1 – Timeline-Aware Persona + Continuidade Espacial)
+MaryService (v3.2 – Timeline-Aware Persona + Continuidade Espacial + Intro Real no Prompt)
 """
 
 import logging
@@ -13,6 +13,7 @@ import streamlit as st
 from core.common.base_service import BaseCharacter
 from core.repositories import (
     get_facts,
+    get_fact,
     get_history_docs,
     save_interaction,
     set_fact,
@@ -92,7 +93,7 @@ def nsfw_enabled(usuario_key: str) -> bool:
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
 
-    facts = cached_get_facts(usuario_key) or {}
+    facts = cached_get_facts(usuario_key)
     v = facts.get("mary.nsfw")
     if isinstance(v, bool):
         return v
@@ -165,16 +166,15 @@ class MaryService(BaseCharacter):
             clear_user_cache(usuario_key)
             return f"_Eu te puxo comigo até o {novo_local}…_"
 
-        # 🔒 Fixar timeline canônica no backend
+        # 🔒 Fixar timeline canônica
         try:
             facts_now = cached_get_facts(usuario_key)
-            tl_fixed = str(facts_now.get("mary.timeline.fixed") or "").strip()
-            if not tl_fixed:
+            if not facts_now.get("mary.timeline.fixed"):
                 set_fact(usuario_key, "mary.timeline.fixed", timeline, {"fonte": "timeline_fixada"})
         except Exception:
             pass
 
-        # 🎭 Persona correta pela timeline
+        # 🎭 Persona
         persona_text, _ = get_persona(timeline)
 
         facts = cached_get_facts(usuario_key)
@@ -209,7 +209,16 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        for d in cached_get_history(usuario_key)[-30:]:
+        # 🧠 INTRO FIXA (entra no prompt se não houver histórico)
+        history = cached_get_history(usuario_key)
+        if not history:
+            intro_key = f"mary.intro.fixed.{timeline}"
+            intro = get_fact(usuario_key, intro_key)
+            if intro:
+                messages.append({"role": "assistant", "content": intro})
+
+        # 📜 Histórico normal
+        for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
@@ -217,10 +226,11 @@ REGRAS ABSOLUTAS:
             if a:
                 messages.append({"role": "assistant", "content": a})
 
+        # 👤 Mensagem atual
         messages.append({"role": "user", "content": prompt})
 
         # =========================
-        # 🔁 Chamada + retry + fallback
+        # 🔁 Chamada com fallback
         # =========================
         def _extract_text(resp: dict) -> str:
             try:
@@ -228,56 +238,25 @@ REGRAS ABSOLUTAS:
             except Exception:
                 return ""
 
-        data, used_model, _ = route_chat_strict(
-            model,
-            {
-                "model": model,
-                "messages": messages,
-                "temperature": 0.7,
-                "top_p": 0.95,
-                "max_tokens": 1200,
-            },
-        )
-
-        texto = _extract_text(data)
-
-        if not texto:
-            data2, used_model2, _ = route_chat_strict(
-                model,
+        for attempt in [
+            {"model": model, "temperature": 0.7},
+            {"model": model, "temperature": 0.4},
+            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.6},
+        ]:
+            data, used_model, _ = route_chat_strict(
+                attempt["model"],
                 {
-                    "model": model,
+                    "model": attempt["model"],
                     "messages": messages,
-                    "temperature": 0.4,
+                    "temperature": attempt["temperature"],
                     "top_p": 0.95,
                     "max_tokens": 1200,
                 },
             )
-            texto = _extract_text(data2)
+            texto = _extract_text(data)
             if texto:
-                data = data2
-                used_model = used_model2
+                save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
+                clear_user_cache(usuario_key)
+                return texto
 
-        if not texto:
-            fallback_model = "deepseek/deepseek-chat-v3-0324"
-            if fallback_model != model:
-                data3, used_model3, _ = route_chat_strict(
-                    fallback_model,
-                    {
-                        "model": fallback_model,
-                        "messages": messages,
-                        "temperature": 0.6,
-                        "top_p": 0.95,
-                        "max_tokens": 1200,
-                    },
-                )
-                texto = _extract_text(data3)
-                if texto:
-                    data = data3
-                    used_model = used_model3
-
-        if not texto:
-            return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
-
-        save_interaction(usuario_key, prompt, texto, used_model or model)
-        clear_user_cache(usuario_key)
-        return texto
+        return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
