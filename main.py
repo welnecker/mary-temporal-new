@@ -19,7 +19,7 @@ def check_password():
 
     # Se ainda não validou a senha, mostra a caixa
     if not st.session_state["senha_ok"]:
-        st.title("🔐 Mary – Acesso Restrito")
+        st.title("🔐 Acesso Restrito")
 
         senha = st.text_input("Digite a senha de acesso:", type="password")
 
