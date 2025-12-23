@@ -5,9 +5,8 @@ import re
 import traceback
 import importlib
 import inspect
-
 import streamlit as st
-
+from core.repositories import list_memories, delete_last_memory, delete_all_memories
 import characters.mary.persona as mary_persona
 from characters.mary.service import MaryService, _current_user_key
 from characters.mary.persona import get_persona
@@ -581,6 +580,37 @@ def main() -> None:
             st.session_state["mary_timeline_locked"] = False
             st.success("Persona recarregada. Boot vai colar a intro correta por timeline.")
             st.rerun()
+
+        st.markdown("---")
+    st.subheader("🧠 Memórias permanentes")
+    
+    shared_key = f"{st.session_state.get('user_id','anon').strip() or 'anon'}::mary::shared"
+    st.caption(f"Key compartilhada: {shared_key}")
+    
+    colM1, colM2 = st.columns(2)
+    
+    with colM1:
+        if st.button("📜 Listar memórias"):
+            mems = list_memories(shared_key, limit=200) or []
+            st.session_state["__mem_list"] = mems
+    
+    with colM2:
+        if st.button("🧽 Apagar última memória"):
+            ok = delete_last_memory(shared_key)
+            st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
+            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+            st.rerun()
+    
+    if st.button("💣 Apagar TODAS as memórias"):
+        n = delete_all_memories(shared_key)
+        st.success(f"✅ Apaguei {n} memórias.")
+        st.session_state["__mem_list"] = []
+        st.rerun()
+    
+    mems_view = st.session_state.get("__mem_list")
+    if mems_view is not None:
+        st.json(mems_view)
+
 
     # ===== BOOT =====
     if not st.session_state["chat_history"]:
