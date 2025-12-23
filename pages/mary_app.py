@@ -519,33 +519,36 @@ def main() -> None:
                     st.success(f"✅ Apaguei {removed} facts de eventos mary.evento.*")
                     st.rerun()
 
+    # ==========================================================
+    # SIDEBAR
+    # ==========================================================
     with st.sidebar:
         st.header("Mary – Controles")
-
+    
         st.text_input("👤 Usuário", value="Janio Donisete", disabled=True)
         st.caption(f"🧩 Timeline: {st.session_state['mary_timeline']}")
         st.caption(f"🔑 usuario_key atual: {_current_user_key()}")
-
+    
         try:
             all_models = list_models() or []
         except Exception:
             all_models = []
         if not all_models:
             all_models = [FALLBACK_MODEL]
-
+    
         if st.session_state.get("model") not in all_models:
             st.session_state["model"] = _choose_default_model(all_models)
-
+    
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
-
+    
         st.markdown("---")
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
-
+    
         st.markdown("---")
         st.subheader("Turnos")
-
+    
         if st.button("Apagar último turno (backend)"):
             ok = _delete_last_turn_active()
             if ok:
@@ -555,20 +558,20 @@ def main() -> None:
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
-
+    
         st.markdown("---")
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)"):
             st.session_state["chat_history"] = []
             st.rerun()
-
+    
         st.markdown("---")
         st.subheader("🎭 Persona")
         st.caption("Arquivo ativo:")
         st.code(inspect.getfile(mary_persona.get_persona))
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
-
+    
         if st.button("♻️ Recarregar persona AGORA"):
             importlib.reload(mary_persona)
             st.session_state.pop("_mary_service", None)
@@ -580,36 +583,35 @@ def main() -> None:
             st.session_state["mary_timeline_locked"] = False
             st.success("Persona recarregada. Boot vai colar a intro correta por timeline.")
             st.rerun()
-
+    
+        # ======================================================
+        # 🧠 MEMÓRIAS PERMANENTES (AGORA NO SIDEBAR)
+        # ======================================================
         st.markdown("---")
-    st.subheader("🧠 Memórias permanentes")
+        st.subheader("🧠 Memórias permanentes")
     
-    shared_key = f"{st.session_state.get('user_id','anon').strip() or 'anon'}::mary::shared"
-    st.caption(f"Key compartilhada: {shared_key}")
+        shared_key = f"{st.session_state.get('user_id','anon').strip() or 'anon'}::mary::shared"
+        st.caption(f"Key compartilhada:")
+        st.code(shared_key)
     
-    colM1, colM2 = st.columns(2)
-    
-    with colM1:
         if st.button("📜 Listar memórias"):
-            mems = list_memories(shared_key, limit=200) or []
-            st.session_state["__mem_list"] = mems
+            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
     
-    with colM2:
         if st.button("🧽 Apagar última memória"):
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             st.rerun()
     
-    if st.button("💣 Apagar TODAS as memórias"):
-        n = delete_all_memories(shared_key)
-        st.success(f"✅ Apaguei {n} memórias.")
-        st.session_state["__mem_list"] = []
-        st.rerun()
+        if st.button("💣 Apagar TODAS as memórias"):
+            n = delete_all_memories(shared_key)
+            st.success(f"✅ Apaguei {n} memórias.")
+            st.session_state["__mem_list"] = []
+            st.rerun()
     
-    mems_view = st.session_state.get("__mem_list")
-    if mems_view is not None:
-        st.json(mems_view)
+        mems_view = st.session_state.get("__mem_list")
+        if mems_view is not None:
+            st.json(mems_view)
 
 
     # ===== BOOT =====
