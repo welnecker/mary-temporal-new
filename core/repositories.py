@@ -173,12 +173,15 @@ def delete_last_interaction(usuario: str) -> bool:
 # ---------- Memórias permanentes (compartilhadas) ----------
 # ==========================================================
 def _mem_key() -> str:
+    # fica dentro de fatos.mary.memories (nested), graças ao set_fact/get_fact
     return "mary.memories"
 
 
 def list_memories(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
     """
-    Retorna a lista de memórias permanentes (do state_data do 'usuario' informado).
+    Retorna a lista de memórias permanentes (guardadas em state_data/fatos).
+    Obs: o `usuario` aqui pode ser "Janio Donisete::mary::shared" (recomendado),
+    então isso fica compartilhado entre timelines.
     """
     memories = get_fact(usuario, _mem_key(), default=[]) or []
     if not isinstance(memories, list):
@@ -188,17 +191,50 @@ def list_memories(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
     return memories
 
 
-def append_memory(usuario: str, entry: Dict[str, Any], max_keep: int = 200) -> Dict[str, Any]:
+def append_memory(
+    usuario: str,
+    text_or_entry: Any,
+    meta: Optional[Dict[str, Any]] = None,
+    max_keep: int = 200,
+) -> Dict[str, Any]:
     """
-    Adiciona uma memória permanente em 'mary.memories' como uma lista.
-    Mantém no máximo 'max_keep' itens (corta os mais antigos).
+    Adiciona uma memória permanente na lista fatos.mary.memories.
+
+    Aceita:
+    - append_memory(usuario, "texto", meta={...})
+    - append_memory(usuario, {"text": "...", "meta": {...}, ...})  # compat
+
     Retorna o entry final gravado (com id/ts).
     """
-    entry = dict(entry or {})
+    meta = meta or {}
+
+    # --- compat: se vier dict, respeita ---
+    if isinstance(text_or_entry, dict):
+        entry = dict(text_or_entry)
+        # se veio meta separado, mescla sem quebrar o que já veio
+        if meta:
+            entry_meta = entry.get("meta")
+            if isinstance(entry_meta, dict):
+                entry["meta"] = {**entry_meta, **meta}
+            else:
+                entry["meta"] = dict(meta)
+    else:
+        entry = {
+            "text": str(text_or_entry or "").strip(),
+            "meta": dict(meta),
+        }
+
+    # validação mínima
+    if not str(entry.get("text") or "").strip():
+        # não grava vazio
+        entry["text"] = ""
+
+    # ids/ts
     entry.setdefault("ts", datetime.utcnow())
     entry.setdefault("id", f"mem_{int(datetime.utcnow().timestamp())}")
 
-    memories = list_memories(usuario, limit=max_keep)  # já retorna list
+    # lista atual
+    memories = list_memories(usuario, limit=max_keep)
     memories.append(entry)
 
     if max_keep and len(memories) > max_keep:
@@ -210,9 +246,9 @@ def append_memory(usuario: str, entry: Dict[str, Any], max_keep: int = 200) -> D
 
 def delete_last_memory(usuario: str) -> bool:
     """
-    Remove a última memória da lista 'mary.memories'.
+    Remove a última memória da lista fatos.mary.memories.
     """
-    memories = list_memories(usuario, limit=1000)
+    memories = list_memories(usuario, limit=5000)
     if not memories:
         return False
     memories.pop()
