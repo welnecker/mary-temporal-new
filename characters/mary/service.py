@@ -310,6 +310,43 @@ def _fallback_capture_recent_history(usuario_key: str, turns: int = 8) -> str:
             chunks.append(f"MARY:\n{a}")
     return "\n\n".join(chunks).strip()
 
+_SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
+
+def _wants_auto_summary(user_text: str) -> bool:
+    """
+    Detecta quando o usuário está pedindo explicitamente um resumo para salvar,
+    em vez de colar o texto completo.
+    """
+    t = (user_text or "")
+    return bool(_SUMMARY_HINT_RE.search(t))
+
+
+def _format_summary_to_save(date_iso: Optional[str], summary: str, source_excerpt: str) -> str:
+    """
+    Texto final salvo no banco de memórias.
+    Guardamos:
+      - resumo factual (interpretado)
+      - e a fonte (recorte do histórico) para auditoria e rastreio
+    """
+    d = date_iso or ""
+    summary = (summary or "").strip()
+    source_excerpt = (source_excerpt or "").strip()
+
+    parts = []
+    if d:
+        parts.append(f"DATA: {d}")
+    parts.append("RESUMO:")
+    parts.append(summary)
+
+    # guardar fonte é opcional, mas é MUITO útil pra debug e pra “não inventar”
+    if source_excerpt:
+        parts.append("")
+        parts.append("[FONTE: recorte do histórico usado para gerar o resumo]")
+        parts.append(source_excerpt)
+
+    return "\n".join(parts).strip()
+
+
 
 def _select_relevant_memories(mems: List[Dict[str, Any]], query: str, k: int = 3) -> List[Dict[str, Any]]:
     q = (query or "").lower()
@@ -439,63 +476,104 @@ class MaryService(BaseCharacter):
             return f"_Eu te puxo comigo até {novo_local}…_"
 
         # 2) Comando: salvar RESUMO automático (usa histórico real + modelo, sem inventar)
-        if _is_save_summary_command(prompt):
-            date_iso = _extract_date_iso(prompt) or ""
-            transcript = _build_last_turns_transcript(usuario_key, n_turns=5)
-        
-            if not transcript:
-                return "⚠️ Ainda não há histórico suficiente para eu resumir."
-        
-            sum_messages = [
-                {"role": "system", "content": _summary_system_prompt(timeline)},
-                {"role": "user", "content": f"TRANSCRIÇÃO (últimos 5 turnos):\n\n{transcript}"},
-            ]
-        
+        if _is_save_memory_command(prompt):
+    raw_body = _strip_save_prefix(prompt)
+    date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
+
+    # Se o usuário pediu "resumo", geramos a partir das últimas 5 interações
+    if _wants_auto_summary(prompt):
+        # recorte real do histórico (fonte)
+        source_excerpt = _fallback_capture_recent_history(usuario_key, turns=10)
+
+        if not source_excerpt.strip():
+            return "⚠️ Não encontrei histórico suficiente para resumir. Converse mais um pouco e peça novamente."
+
+        # prompt de resumo: estritamente baseado na fonte, com fatos concretos
+        summary_system = (
+            "Você é uma assistente que resume fatos para memória permanente.\n"
+            "REGRAS:\n"
+            "- Use SOMENTE as informações presentes em [FONTE].\n"
+            "- Não invente nada. Se algo não estiver claro, omita.\n"
+            "- Traga detalhes concretos: local, sequência de eventos, ações, falas marcantes.\n"
+            "- Escreva em 6 a 10 linhas, em português, estilo direto e factual.\n"
+        )
+
+        summary_user = (
+            f"Crie um resumo factual para memória permanente.\n"
+            f"Data (se houver): {date_iso or '—'}\n\n"
+            f"[FONTE]\n{source_excerpt}"
+        )
+
+        try:
+            data, used_model, _ = self._chat(
+                model,
+                [
+                    {"role": "system", "content": summary_system},
+                    {"role": "user", "content": summary_user},
+                ],
+                temperature=0.2,
+                max_tokens=500,
+            )
+
+            # extrai texto
             try:
-                data, used_model, _ = route_chat_strict(
-                    model,
-                    {
-                        "model": model,
-                        "messages": sum_messages,
-                        "temperature": 0.2,
-                        "top_p": 0.9,
-                        "max_tokens": 500,
-                    },
-                )
                 resumo = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-            except Exception as e:
-                logger.exception("Falha ao gerar resumo automático", exc_info=e)
-                return f"⚠️ Falha ao gerar resumo automático: {type(e).__name__}: {e}"
-        
+            except Exception:
+                resumo = ""
+
             if not resumo:
-                return "⚠️ O modelo retornou vazio ao tentar gerar o resumo. Troque o modelo e tente de novo."
-        
+                return "⚠️ Não consegui gerar o resumo (modelo retornou vazio). Tente novamente."
+
+            # texto final para salvar (inclui fonte pra rastreabilidade)
+            to_save = _format_summary_to_save(date_iso, resumo, source_excerpt)
+
             meta = {
-                "kind": "auto_summary_last_5",
-                "date": date_iso,
+                "kind": "auto_summary",
+                "date": date_iso or "",
                 "timeline_at_save": timeline,
-                "source_usuario_key": usuario_key,
-                "model": used_model or model,
-                "ts_created": datetime.utcnow().isoformat(),
+                "model_used": used_model or model,
             }
-        
-            try:
-                append_memory(shared_key, resumo, meta=meta)
-            except Exception as e:
-                logger.exception("Falha ao salvar resumo automático", exc_info=e)
-                return f"⚠️ Falha ao salvar o resumo como memória: {type(e).__name__}: {e}"
-        
-            # ✅ MOSTRA NA TELA (vira resposta da Mary no chat) + salva no banco
+
+            append_memory(shared_key, to_save, meta=meta)
+
+            # ✅ retorno bonito NA TELA (e já salvou no banco)
             return (
                 "✅ **Resumo salvo na memória permanente** (compartilhado entre as duas Marys)\n\n"
-                f"📌 **Data (se informada):** `{date_iso or '—'}`\n"
-                f"🧠 **Fonte:** últimas 5 interações do histórico\n\n"
+                f"📌 **Data:** `{date_iso or '—'}`\n"
+                "🧠 **Fonte:** últimas interações do histórico\n\n"
                 "---\n\n"
-                "### 📝 Resumo (últimas 5 interações)\n\n"
+                "### 📝 Resumo salvo\n\n"
                 f"> {resumo.replace('\n', '\n> ')}\n\n"
-                "---\n\n"
-                "_(Este resumo já foi gravado no banco de memórias e pode ser recuperado quando você perguntar “Mary, você lembra...”)_"
+                "---"
             )
+
+        except Exception as e:
+            logger.exception("Falha ao gerar/salvar resumo automático", exc_info=e)
+            return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
+
+    # Caso normal: salva o texto fornecido pelo usuário
+    body = raw_body
+    if len(body.strip()) < 40:
+        captured = _fallback_capture_recent_history(usuario_key, turns=10)
+        if captured:
+            body = f"{body}\n\n[FONTE: recorte do histórico]\n{captured}".strip()
+
+    if not body.strip():
+        return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
+
+    meta = {
+        "kind": "user_request",
+        "date": date_iso or "",
+        "timeline_at_save": timeline,
+    }
+
+    try:
+        append_memory(shared_key, body.strip(), meta=meta)
+    except Exception as e:
+        logger.exception("Falha ao salvar memória", exc_info=e)
+        return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
+
+    return "✅ Memória permanente salva (compartilhada entre as duas Marys)."
 
 
         # 3) Comando: salvar memória (texto direto) — NÃO chama modelo
