@@ -23,7 +23,6 @@ COMANDOS (usuário):
 import logging
 import re
 import hashlib
-from datetime import datetime
 from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
@@ -251,11 +250,7 @@ _REMEMBER_RE = re.compile(
 )
 _DATE_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})\b")
 
-# comando de resumo automático
-_SUMMARY_CMD_RE = re.compile(
-    r"^\s*(?:mary\s*,?\s*)?(?:salve|salvar|guarde)\b.*\bresumo\b.*\b(últim|ultim|5|cinco)\b",
-    re.IGNORECASE,
-)
+_SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
 
 
 def _is_save_memory_command(user_text: str) -> bool:
@@ -266,8 +261,8 @@ def _is_memory_question(user_text: str) -> bool:
     return bool(_REMEMBER_RE.search(user_text or ""))
 
 
-def _is_save_summary_command(user_text: str) -> bool:
-    return bool(_SUMMARY_CMD_RE.search(user_text or ""))
+def _wants_auto_summary(user_text: str) -> bool:
+    return bool(_SUMMARY_HINT_RE.search(user_text or ""))
 
 
 def _extract_date_iso(text: str) -> Optional[str]:
@@ -276,12 +271,141 @@ def _extract_date_iso(text: str) -> Optional[str]:
         return None
     d, mo, y = m.group(1), m.group(2), m.group(3)
     try:
-        dd = int(d); mm = int(mo); yy = int(y)
+        dd = int(d)
+        mm = int(mo)
+        yy = int(y)
         if 1 <= dd <= 31 and 1 <= mm <= 12:
             return f"{yy:04d}-{mm:02d}-{dd:02d}"
     except Exception:
         return None
     return None
+
+# ==========================================================
+# ✅ SALVAMENTO DINÂMICO DE RESUMO (de X até Y) — apenas MARY
+# ==========================================================
+_RANGE_RE = re.compile(
+    r"\bde\s+(?P<start>.+?)\s+at[ée]\s+(?P<end>.+?)(?:\s*,?\s*em\s+\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+def _extract_range_request(user_text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Extrai o recorte do pedido do usuário:
+    "Mary, salve o resumo ... de X até Y ... em 24/12/2025"
+    Retorna (X, Y) ou (None, None) se não houver.
+    """
+    t = (user_text or "").strip()
+    m = _RANGE_RE.search(t)
+    if not m:
+        return None, None
+    start = (m.group("start") or "").strip(" \n\r\t\"'.,:;")
+    end = (m.group("end") or "").strip(" \n\r\t\"'.,:;")
+    if len(start) < 3 or len(end) < 3:
+        return None, None
+    return start, end
+
+
+def _normalize(s: str) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+
+def _mary_only_turns(usuario_key: str, limit_turns: int = 80) -> List[str]:
+    """
+    Pega falas da MARY (resposta_mary) do histórico da timeline atual.
+    Retorna lista de strings (cada item = uma resposta da Mary).
+    """
+    docs = get_history_docs(usuario_key, limit=400) or []
+    docs = docs[-limit_turns:] if len(docs) > limit_turns else docs
+
+    out: List[str] = []
+    for d in docs:
+        a = (d.get("resposta_mary") or "").strip()
+        if a:
+            out.append(a)
+    return out
+
+
+def _slice_mary_between_markers(mary_msgs: List[str], start_hint: str, end_hint: str) -> Tuple[List[str], str]:
+    """
+    Recorta a sequência de falas da Mary entre start_hint e end_hint (inclusive),
+    usando busca aproximada (substring normalizada).
+    Retorna (lista_recortada, debug_info).
+    """
+    if not mary_msgs:
+        return [], "no_history"
+
+    sh = _normalize(start_hint)
+    eh = _normalize(end_hint)
+
+    def find_idx(hint: str) -> Optional[int]:
+        if not hint:
+            return None
+        for i, msg in enumerate(mary_msgs):
+            if hint in _normalize(msg):
+                return i
+        return None
+
+    i0 = find_idx(sh)
+    i1 = find_idx(eh)
+
+    if i0 is None and i1 is None:
+        return [], "markers_not_found"
+
+    # Se só achou um lado, faz recorte “tolerante”
+    if i0 is None and i1 is not None:
+        i0 = max(0, i1 - 8)
+        return mary_msgs[i0:i1 + 1], "only_end_found"
+
+    if i0 is not None and i1 is None:
+        i1 = min(len(mary_msgs) - 1, i0 + 8)
+        return mary_msgs[i0:i1 + 1], "only_start_found"
+
+    # Achou ambos
+    if i0 is not None and i1 is not None:
+        if i1 < i0:
+            # usuário descreveu invertido; corrigimos para não quebrar
+            i0, i1 = i1, i0
+            return mary_msgs[i0:i1 + 1], "markers_swapped"
+        return mary_msgs[i0:i1 + 1], "both_found"
+
+    return [], "unexpected"
+
+
+def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, Dict[str, Any]]:
+    """
+    Constrói a 'transcrição' (apenas falas da Mary) para o resumo dinâmico.
+    Retorna (transcript, debug_meta).
+    """
+    start_hint, end_hint = _extract_range_request(prompt)
+
+    mary_msgs = _mary_only_turns(usuario_key, limit_turns=120)
+
+    if start_hint and end_hint:
+        sliced, dbg = _slice_mary_between_markers(mary_msgs, start_hint, end_hint)
+        # fallback se recorte ficou vazio
+        if not sliced:
+            sliced = mary_msgs[-10:]
+            dbg = f"{dbg}__fallback_last10"
+        transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
+        meta = {
+            "mode": "dynamic_range",
+            "debug": dbg,
+            "start_hint": start_hint,
+            "end_hint": end_hint,
+            "mary_msgs_used": len(sliced),
+        }
+        return transcript.strip(), meta
+
+    # Sem “de X até Y”: fallback leve (últimas 10 falas da Mary)
+    sliced = mary_msgs[-10:]
+    transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
+    meta = {
+        "mode": "fallback_last10",
+        "debug": "no_range_in_prompt",
+        "mary_msgs_used": len(sliced),
+    }
+    return transcript.strip(), meta
+
 
 
 def _strip_save_prefix(full_text: str) -> str:
@@ -309,43 +433,6 @@ def _fallback_capture_recent_history(usuario_key: str, turns: int = 8) -> str:
         if a:
             chunks.append(f"MARY:\n{a}")
     return "\n\n".join(chunks).strip()
-
-_SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
-
-def _wants_auto_summary(user_text: str) -> bool:
-    """
-    Detecta quando o usuário está pedindo explicitamente um resumo para salvar,
-    em vez de colar o texto completo.
-    """
-    t = (user_text or "")
-    return bool(_SUMMARY_HINT_RE.search(t))
-
-
-def _format_summary_to_save(date_iso: Optional[str], summary: str, source_excerpt: str) -> str:
-    """
-    Texto final salvo no banco de memórias.
-    Guardamos:
-      - resumo factual (interpretado)
-      - e a fonte (recorte do histórico) para auditoria e rastreio
-    """
-    d = date_iso or ""
-    summary = (summary or "").strip()
-    source_excerpt = (source_excerpt or "").strip()
-
-    parts = []
-    if d:
-        parts.append(f"DATA: {d}")
-    parts.append("RESUMO:")
-    parts.append(summary)
-
-    # guardar fonte é opcional, mas é MUITO útil pra debug e pra “não inventar”
-    if source_excerpt:
-        parts.append("")
-        parts.append("[FONTE: recorte do histórico usado para gerar o resumo]")
-        parts.append(source_excerpt)
-
-    return "\n".join(parts).strip()
-
 
 
 def _select_relevant_memories(mems: List[Dict[str, Any]], query: str, k: int = 3) -> List[Dict[str, Any]]:
@@ -402,15 +489,17 @@ def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[D
 
     mem_block = "\n".join(lines).strip()
 
-    messages.append({
-        "role": "system",
-        "content": (
-            "[MEMÓRIAS PERMANENTES COMPARTILHADAS]\n"
-            "Use estas memórias como fatos canônicos.\n"
-            "Responda interpretando com coerência (não cole literal), citando detalhes concretos.\n\n"
-            f"{mem_block}"
-        )
-    })
+    messages.append(
+        {
+            "role": "system",
+            "content": (
+                "[MEMÓRIAS PERMANENTES COMPARTILHADAS]\n"
+                "Use estas memórias como fatos canônicos.\n"
+                "Responda interpretando com coerência (não cole literal), citando detalhes concretos.\n\n"
+                f"{mem_block}"
+            ),
+        }
+    )
 
 
 # ==========================================================
@@ -429,27 +518,6 @@ def _build_last_turns_transcript(usuario_key: str, n_turns: int = 5) -> str:
         if a:
             lines.append(f"[TURNO {i} — MARY]\n{a}")
     return "\n\n".join(lines).strip()
-
-
-def _summary_system_prompt(timeline: str) -> str:
-    return f"""
-Você é Mary, mas AGORA sua tarefa é apenas gerar um RESUMO FACTUAL.
-
-REGRAS ABSOLUTAS:
-- Não invente nada. Não extrapole. Não crie detalhes fora do texto fornecido.
-- Use somente o conteúdo mostrado em "TRANSCRIÇÃO".
-- Produza um resumo curto e útil, com fatos concretos (local, eventos, intenções).
-- Se algum detalhe não estiver explícito, não adivinhe.
-- Saída em PT-BR.
-
-FORMATO:
-- 4 a 8 linhas
-- Cada linha começa com "• "
-- Incluir: Local/Contexto, Evento-chave, Emoções declaradas, Limites/consentimento quando aplicável
-- Se houver data EXPLÍCITA na transcrição, mencionar. Senão, não inventar.
-
-TIMELINE ATUAL (apenas para evitar mistura): {timeline}
-""".strip()
 
 
 # ==========================================================
@@ -475,131 +543,82 @@ class MaryService(BaseCharacter):
             clear_user_cache(usuario_key)
             return f"_Eu te puxo comigo até {novo_local}…_"
 
-                # 2) Comando: salvar memória (texto direto OU resumo automático)
+        # 2) Comando: salvar memória (texto direto OU resumo automático)
         if _is_save_memory_command(prompt):
             raw_body = _strip_save_prefix(prompt)
             date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
-            # 2a) RESUMO automático (usa histórico real + modelo, sem inventar)
+            # 2a) RESUMO automático: gera e salva SOMENTE o resumo
             if _wants_auto_summary(prompt):
-                source_excerpt = _fallback_capture_recent_history(usuario_key, turns=10)
+    date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
-                if not source_excerpt.strip():
-                    return "⚠️ Não encontrei histórico suficiente para resumir. Converse mais um pouco e peça novamente."
+    transcript, dbg_meta = _build_dynamic_mary_transcript(usuario_key, prompt)
+    if not transcript.strip():
+        return "⚠️ Não encontrei histórico suficiente da Mary para resumir. Converse mais um pouco e peça novamente."
 
-                summary_system = (
-                    "Você é uma assistente que resume fatos para memória permanente.\n"
-                    "REGRAS:\n"
-                    "- Use SOMENTE as informações presentes em [FONTE].\n"
-                    "- Não invente nada. Se algo não estiver claro, omita.\n"
-                    "- Traga detalhes concretos: local, sequência de eventos, ações, falas marcantes.\n"
-                    "- Escreva em 6 a 10 linhas, em português, estilo direto e factual.\n"
-                )
+    summary_system = (
+        "Você é a personagem Mary, mas sua tarefa agora é gerar um RESUMO FACTUAL para memória.\n"
+        "REGRAS ABSOLUTAS:\n"
+        "- Use SOMENTE as informações presentes em [TRANSCRIÇÃO].\n"
+        "- NÃO invente, NÃO complete lacunas, NÃO crie fatos fora do texto.\n"
+        "- Texto corrido, sem bullets, sem listagem.\n"
+        "- Escreva com clareza e sequência temporal.\n"
+        "- Foque nos FATOS e no encadeamento (o que aconteceu e por quê), em 8 a 16 linhas.\n"
+        "- Se houver desejo do usuário por um recorte 'até X', respeite o recorte; não avance além.\n"
+    )
 
-                summary_user = (
-                    "Crie um resumo factual para memória permanente.\n"
-                    f"Data (se houver): {date_iso or '—'}\n\n"
-                    f"[FONTE]\n{source_excerpt}"
-                )
+    summary_user = (
+        "Gere um resumo factual para memória permanente.\n"
+        f"Data (se houver): {date_iso or '—'}\n"
+        "Recorte: definido pelo pedido do usuário (se presente).\n\n"
+        f"[TRANSCRIÇÃO — APENAS FALAS DA MARY]\n{transcript}"
+    )
 
-                try:
-                    data, used_model, _ = self._chat(
-                        model,
-                        [
-                            {"role": "system", "content": summary_system},
-                            {"role": "user", "content": summary_user},
-                        ],
-                        temperature=0.2,
-                        max_tokens=500,
-                    )
+    try:
+        data, used_model, _ = self._chat(
+            model,
+            [
+                {"role": "system", "content": summary_system},
+                {"role": "user", "content": summary_user},
+            ],
+            temperature=0.2,
+            max_tokens=850,
+        )
 
-                    try:
-                        resumo = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-                    except Exception:
-                        resumo = ""
+        resumo = ""
+        try:
+            resumo = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        except Exception:
+            resumo = ""
 
-                    if not resumo:
-                        return "⚠️ Não consegui gerar o resumo (modelo retornou vazio). Tente novamente."
+        if not resumo:
+            return "⚠️ Não consegui gerar o resumo (modelo retornou vazio). Tente novamente."
 
-                    to_save = _format_summary_to_save(date_iso, resumo, source_excerpt)
+        meta = {
+            "kind": "dynamic_summary",
+            "date": date_iso or "",
+            "timeline_at_save": timeline,
+            "model_used": used_model or model,
+            **(dbg_meta or {}),
+        }
 
-                    meta = {
-                        "kind": "auto_summary",
-                        "date": date_iso or "",
-                        "timeline_at_save": timeline,
-                        "model_used": used_model or model,
-                    }
+        # ✅ salva SOMENTE o resumo (sem transcrição imensa)
+        append_memory(shared_key, resumo.strip(), meta=meta)
 
-                    append_memory(shared_key, to_save, meta=meta)
+        # ✅ mostra o mesmo resumo na tela do app
+        return (
+            "✅ **Resumo salvo na memória permanente** (compartilhado entre as duas Marys)\n\n"
+            f"📌 **Data:** `{date_iso or '—'}`\n"
+            f"🧭 **Recorte:** `{(dbg_meta or {}).get('mode','—')}`\n\n"
+            "---\n\n"
+            f"{resumo.strip()}"
+        )
 
-                    return (
-                        "✅ **Resumo salvo na memória permanente** (compartilhado entre as duas Marys)\n\n"
-                        f"📌 **Data:** `{date_iso or '—'}`\n"
-                        "🧠 **Fonte:** últimas interações do histórico\n\n"
-                        "---\n\n"
-                        "### 📝 Resumo salvo\n\n"
-                        f"> {resumo.replace(chr(10), chr(10) + '> ')}\n\n"
-                        "---"
-                    )
+    except Exception as e:
+        logger.exception("Falha ao gerar/salvar resumo dinâmico", exc_info=e)
+        return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
 
-                except Exception as e:
-                    logger.exception("Falha ao gerar/salvar resumo automático", exc_info=e)
-                    return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
-
-            # 2b) Salvamento normal: texto fornecido pelo usuário (ou fallback do histórico)
-            body = raw_body
-            if len(body.strip()) < 40:
-                captured = _fallback_capture_recent_history(usuario_key, turns=10)
-                if captured:
-                    body = f"{body}\n\n[FONTE: recorte do histórico]\n{captured}".strip()
-
-            if not body.strip():
-                return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
-
-            meta = {
-                "kind": "user_request",
-                "date": date_iso or "",
-                "timeline_at_save": timeline,
-            }
-
-            try:
-                append_memory(shared_key, body.strip(), meta=meta)
-            except Exception as e:
-                logger.exception("Falha ao salvar memória", exc_info=e)
-                return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
-
-            return "✅ Memória permanente salva (compartilhada entre as duas Marys)."
-
-
-        # 3) Comando: salvar memória (texto direto) — NÃO chama modelo
-        if _is_save_memory_command(prompt):
-            body = _strip_save_prefix(prompt)
-            date_iso = _extract_date_iso(prompt) or _extract_date_iso(body)
-
-            # se o usuário NÃO colar nada útil, capturar histórico recente como “fonte”
-            if len(body.strip()) < 40:
-                captured = _fallback_capture_recent_history(usuario_key, turns=10)
-                if captured:
-                    body = f"{body}\n\n[FONTE: recorte do histórico]\n{captured}".strip()
-
-            if not body.strip():
-                return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
-
-            meta = {
-                "kind": "user_request",
-                "date": date_iso or "",
-                "timeline_at_save": timeline,
-            }
-
-            try:
-                append_memory(shared_key, body.strip(), meta=meta)
-            except Exception as e:
-                logger.exception("Falha ao salvar memória", exc_info=e)
-                return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
-
-            return "✅ Memória permanente salva (compartilhada entre as duas Marys)."
-
-        # 4) Persona
+        # 3) Persona
         persona_text, _ = get_persona(timeline)
 
         facts = cached_get_facts(usuario_key)
@@ -628,14 +647,14 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # 5) Intro canônica 1x por sessão
+        # 4) Intro canônica 1x por sessão
         _inject_intro_as_context_once(usuario_key, timeline, messages)
 
-        # 6) Se for pergunta de memória, injeta memórias compartilhadas
+        # 5) Se for pergunta de memória, injeta memórias compartilhadas
         if _is_memory_question(prompt):
             _inject_memories_context(shared_key, prompt, messages)
 
-        # 7) Histórico (timeline atual)
+        # 6) Histórico (timeline atual)
         history = cached_get_history(usuario_key)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -647,7 +666,7 @@ REGRAS ABSOLUTAS:
 
         messages.append({"role": "user", "content": prompt})
 
-        # 8) Chat com retry/fallback
+        # 7) Chat com retry/fallback
         def _extract_text(resp: dict) -> str:
             try:
                 return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
