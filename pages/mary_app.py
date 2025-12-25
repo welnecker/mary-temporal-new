@@ -469,21 +469,7 @@ def main() -> None:
     st.caption("🧩 mary_app.py v3.5 (Base44-like UI + input fixo; ALINHADO com service.py: reset flags de intro no prompt)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
-
-    st.markdown(
-    f"""
-    <div class="rp-card">
-      <div class="rp-title">Mary 💍💍</div>
-      <div class="rp-sub">
-        Timeline: <b>{st.session_state.get('mary_timeline','cumplice')}</b> •
-        Modelo: <b>{st.session_state.get('model','')}</b>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
+    
     # ===== Header Base44-like (substitui o st.title) =====
     st.markdown(
         f"""
