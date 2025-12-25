@@ -32,6 +32,7 @@ import hashlib
 from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
+import json
 
 from core.common.base_service import BaseCharacter
 from core.service_router import route_chat_strict
@@ -357,6 +358,227 @@ def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]
         lines.append("")
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
+
+
+# ==========================================================
+# ✅ RELATIONSHIP ENGINE (Degrau 1.5) — progressão dinâmica
+# ==========================================================
+REL_STAGES = ["conhecendo", "ficando", "namoro", "intimidade", "noivado", "pre_casamento", "casados"]
+
+REL_DEFAULT = {
+    "stage": "conhecendo",
+    "trust": 18,
+    "tension": 28,
+    "fear": 45,
+    "guilt": 30,
+    "attachment": 15,
+    "boundaries": "alta",
+    "conflict_theme": "nenhum",
+    "last_stage_change_ts": "",
+    "last_eval_ts": "",
+}
+
+
+def _now_iso() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
+    return max(lo, min(hi, int(n)))
+
+
+def _get_rel_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    # estados separados por timeline, para não misturar temporadas
+    key = f"rel.state::{timeline}"
+    raw = facts.get(key)
+    if isinstance(raw, dict):
+        out = {**REL_DEFAULT, **raw}
+        # garante campos básicos
+        out["stage"] = str(out.get("stage") or REL_DEFAULT["stage"])
+        return out
+    return dict(REL_DEFAULT)
+
+
+def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
+    key = f"rel.state::{timeline}"
+    set_fact(usuario_key, key, rel, {"fonte": "relationship_engine"})
+
+
+def _build_rel_block(rel: Dict[str, Any], timeline: str) -> str:
+    if not isinstance(rel, dict):
+        return ""
+    stage = str(rel.get("stage") or "")
+    return (
+        "[ESTADO DE RELAÇÃO — CANÔNICO]\n"
+        f"- timeline: {timeline}\n"
+        f"- stage: {stage}\n"
+        f"- trust: {rel.get('trust')}\n"
+        f"- tension: {rel.get('tension')}\n"
+        f"- fear: {rel.get('fear')}\n"
+        f"- guilt: {rel.get('guilt')}\n"
+        f"- attachment: {rel.get('attachment')}\n"
+        f"- boundaries: {rel.get('boundaries')}\n"
+        f"- conflict_theme: {rel.get('conflict_theme')}\n"
+    ).strip()
+
+
+def _safe_json_parse(s: str) -> Dict[str, Any]:
+    s = (s or "").strip()
+    if not s:
+        return {}
+    # tenta achar um objeto JSON no texto
+    import re, json
+    m = re.search(r"\{.*\}", s, flags=re.DOTALL)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return {}
+
+
+def _apply_rel_update(rel: Dict[str, Any], upd: Dict[str, Any]) -> Dict[str, Any]:
+    # deltas com limite
+    def d(k: str) -> int:
+        try:
+            return int(upd.get(k, 0))
+        except Exception:
+            return 0
+
+    max_step = 8  # inércia: máximo de variação por turno
+    for key in ["trust", "tension", "fear", "guilt", "attachment"]:
+        delta = d(f"{key}_delta")
+        if delta > max_step:
+            delta = max_step
+        if delta < -max_step:
+            delta = -max_step
+        rel[key] = _clamp(int(rel.get(key, 0)) + delta)
+
+    # temas e limites
+    conflict = str(upd.get("conflict_theme") or rel.get("conflict_theme") or "nenhum")
+    rel["conflict_theme"] = conflict
+
+    boundaries = str(upd.get("boundaries") or rel.get("boundaries") or "media")
+    rel["boundaries"] = boundaries
+
+    rel["last_eval_ts"] = _now_iso()
+    return rel
+
+
+def _readiness(rel: Dict[str, Any]) -> float:
+    trust = float(rel.get("trust", 0))
+    attach = float(rel.get("attachment", 0))
+    tension = float(rel.get("tension", 0))
+    fear = float(rel.get("fear", 0))
+    guilt = float(rel.get("guilt", 0))
+    # peso: amor + confiança + tensão, penaliza medo/culpa
+    return (0.38 * trust) + (0.38 * attach) + (0.18 * tension) - (0.22 * fear) - (0.10 * guilt)
+
+
+def _maybe_change_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str) -> Tuple[Dict[str, Any], bool]:
+    """Retorna (rel, mudou_stage)."""
+    import random
+
+    stage = str(rel.get("stage") or "conhecendo")
+    if stage not in REL_STAGES:
+        stage = "conhecendo"
+
+    idx = REL_STAGES.index(stage)
+    hint = str(upd.get("stage_hint") or "stay").lower().strip()
+    trust_breach = bool(upd.get("trust_breach") is True)
+
+    r = _readiness(rel)
+
+    # Regressão (quebra de confiança + medo alto)
+    if trust_breach and idx > 0 and rel.get("fear", 0) >= 65:
+        if random.random() < 0.55:
+            rel["stage"] = REL_STAGES[idx - 1]
+            rel["last_stage_change_ts"] = _now_iso()
+            return rel, True
+
+    # Promoção gradual
+    promote_chance = 0.0
+    if hint == "promote":
+        promote_chance += 0.15
+    # readiness acima de ~45 começa a permitir avanço
+    promote_chance += max(0.0, min(0.45, (r - 45.0) / 120.0))
+    # trava se culpa muito alta e timeline universitária
+    if timeline == "universitaria" and rel.get("guilt", 0) >= 75:
+        promote_chance *= 0.35
+    # trava se medo alto
+    if rel.get("fear", 0) >= 75:
+        promote_chance *= 0.30
+
+    if idx < len(REL_STAGES) - 1 and random.random() < promote_chance:
+        rel["stage"] = REL_STAGES[idx + 1]
+        rel["last_stage_change_ts"] = _now_iso()
+        return rel, True
+
+    return rel, False
+
+
+def _relationship_assess_with_llm(
+    chat_fn,
+    model: str,
+    timeline: str,
+    rel: Dict[str, Any],
+    user_msg: str,
+    mary_msg: str,
+) -> Dict[str, Any]:
+    """Avalia o turno e retorna deltas/flags em JSON. Não escreve narrativa."""
+    system = (
+        "Você é um avaliador de dinâmica de relacionamento para um roleplay.\n"
+        "Sua saída DEVE ser apenas um JSON válido.\n"
+        "Objetivo: medir sinais emocionais e sugerir deltas pequenos (inteiros).\n"
+        "Regras:\n"
+        "- Não invente fatos fora do que está em USER e MARY.\n"
+        "- Deltas devem estar entre -8 e +8.\n"
+        "- stage_hint deve ser: stay | promote | regress.\n"
+        "- conflict_theme deve ser: nenhum | familia | moral | rotina | ciume | risco.\n"
+        "- boundaries deve ser: alta | media | baixa.\n"
+        "- trust_breach: true apenas se houver quebra clara de confiança.\n"
+    )
+
+    payload = {
+        "timeline": timeline,
+        "rel_state": {
+            "stage": rel.get("stage"),
+            "trust": rel.get("trust"),
+            "tension": rel.get("tension"),
+            "fear": rel.get("fear"),
+            "guilt": rel.get("guilt"),
+            "attachment": rel.get("attachment"),
+            "boundaries": rel.get("boundaries"),
+            "conflict_theme": rel.get("conflict_theme"),
+        },
+        "turn": {"user": user_msg, "mary": mary_msg},
+        "return_schema": {
+            "trust_delta": "int (-8..8)",
+            "tension_delta": "int (-8..8)",
+            "fear_delta": "int (-8..8)",
+            "guilt_delta": "int (-8..8)",
+            "attachment_delta": "int (-8..8)",
+            "stage_hint": "stay|promote|regress",
+            "conflict_theme": "nenhum|familia|moral|rotina|ciume|risco",
+            "boundaries": "alta|media|baixa",
+            "trust_breach": "bool"
+        }
+    }
+
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+    try:
+        data = chat_fn(model, messages, temperature=0.0, max_tokens=220)
+        txt = _extract_text(data) if isinstance(data, dict) else str(data)
+        upd = _safe_json_parse(txt)
+        return upd if isinstance(upd, dict) else {}
+    except Exception:
+        return {}
+
 
 
 def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
@@ -807,6 +1029,8 @@ class MaryService(BaseCharacter):
         persona_text, _ = get_persona(timeline_final)
 
         facts = cached_get_facts(usuario_key)
+        rel_state = _get_rel_state(facts, timeline_final)
+        rel_block = _build_rel_block(rel_state, timeline_final)
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key, nsfw_override=nsfw) else SAFE_SENSUAL_STYLE
@@ -821,11 +1045,12 @@ TIMELINE ATUAL: {timeline_final}
 PERSONA (baseline):
 {persona_text}
 
+{rel_block}
+
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
-- Timeline universitária NÃO é casada e NÃO mora junto.
-- Timeline cúmplice segue a persona de casamento.
-- Nunca contradiga a timeline ativa.
+- Nunca contradiga o ESTADO DE RELAÇÃO (CANÔNICO) e a timeline ativa.
+- A timeline define o tom macro; o estágio da relação (stage) define o quanto existe de vínculo/entrega.
 - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
 {nsfw_block}
@@ -894,6 +1119,30 @@ REGRAS ABSOLUTAS:
                 )
                 texto = _extract_text(data)
                 if texto:
+                    # ----------------------------------------------------------
+                    # ✅ Relationship Engine: avalia turno e atualiza estado canônico
+                    # ----------------------------------------------------------
+                    try:
+                        upd = _relationship_assess_with_llm(
+                            self._chat,
+                            used_model or attempt["model"],
+                            timeline_final,
+                            rel_state,
+                            prompt,
+                            texto,
+                        )
+                        if isinstance(upd, dict) and upd:
+                            rel_state = _apply_rel_update(rel_state, upd)
+                            rel_state, _changed = _maybe_change_stage(rel_state, upd, timeline_final)
+                            _save_rel_state(usuario_key, timeline_final, rel_state)
+
+                            # Promoção automática de temporada: universitária -> cúmplice
+                            if timeline_final == "universitaria" and str(rel_state.get("stage")) == "casados":
+                                st.session_state["mary_timeline"] = "cumplice"
+                                clear_user_cache(usuario_key)
+                    except Exception:
+                        pass
+
                     save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
                     clear_user_cache(usuario_key)
                     return texto
