@@ -39,6 +39,7 @@ from core.repositories import (
     append_memory,
     list_memories,
 )
+from core.nsfw import nsfw_enabled as nsfw_enabled_unified
 
 from characters.registry import _SERVICE_CACHE
 from .persona import get_persona
@@ -126,29 +127,33 @@ def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any
 
 
 def clear_user_cache(usuario_key: str) -> None:
+    """
+    Limpa cache do Streamlit para um usuario_key específico.
+    Invalida cache de facts e history.
+    """
     for k in (f"facts::{usuario_key}", f"history::{usuario_key}"):
         if k in st.session_state:
             del st.session_state[k]
 
 
+def clear_shared_memory_cache(user_id: str) -> None:
+    """
+    Limpa cache relacionado a memórias compartilhadas.
+    Útil após operações que afetam memórias compartilhadas entre timelines.
+    """
+    shared_key = _shared_key(user_id)
+    clear_user_cache(shared_key)
+
+
 # ==========================================================
-# NSFW ENABLE (respeita override)
+# NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
-def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None) -> bool:
-    if isinstance(nsfw_override, bool):
-        return nsfw_override
-
-    # sidebar deve setar exatamente essa chave:
-    # st.session_state["mary_nsfw_on"] = True/False
-    if "mary_nsfw_on" in st.session_state:
-        return bool(st.session_state["mary_nsfw_on"])
-
-    facts = cached_get_facts(usuario_key) or {}
-    v = facts.get("mary.nsfw")
-    if isinstance(v, bool):
-        return v
-
-    return True
+def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
+    """
+    Wrapper para a função unificada de NSFW do core.
+    Mantém compatibilidade com código existente.
+    """
+    return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
 
 # ==========================================================
@@ -850,7 +855,7 @@ class MaryService(BaseCharacter):
 
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
-        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key, nsfw_override=nsfw) else SAFE_SENSUAL_STYLE
+        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final) else SAFE_SENSUAL_STYLE
 
         system = f"""
 {spatial_context}
@@ -975,9 +980,16 @@ REGRAS ABSOLUTAS:
                         timeline_final = "cumplice"
                         usuario_key = _user_key(user_id, "cumplice")
 
-                        # 4) limpa cache do antigo e do novo (evita “volta” no reload)
+                        # 4) limpa cache do antigo e do novo (evita "volta" no reload)
                         clear_user_cache(old_key)
                         clear_user_cache(usuario_key)
+                        
+                        # 5) limpa cache de memórias compartilhadas e flags de intro
+                        shared_key_new = _shared_key(user_id)
+                        clear_user_cache(shared_key_new)
+                        # Limpa flags de intro para evitar contexto duplicado
+                        st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
+                        st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
 
                 except Exception:
                     # engine falhou: segue sem derrubar o chat
