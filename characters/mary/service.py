@@ -98,7 +98,7 @@ def _shared_memory_key() -> str:
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
 Estilo: romance adulto, tensão, intimidade e sugestão.
-Evite detalhes gráficos.
+detalhes gráficos moderados.
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
