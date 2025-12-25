@@ -487,52 +487,56 @@ def main() -> None:
     # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA)
     # ==========================================================
     with st.expander("🧠 Relationship Engine — Painel de diagnóstico (turno a turno)", expanded=False):
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.checkbox("Ativar painel (debug)", key="mary_debug_rel_panel")
-            st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
+    col1, col2 = st.columns([1, 1])
 
-        with col2:
-            if st.button("Limpar diagnóstico (só visual)"):
-                st.session_state["mary_rel_meta_last"] = None
-                st.success("Diagnóstico limpo.")
+    with col1:
+        enabled = bool(st.session_state.get("mary_debug_rel_panel", False))
+        st.caption(
+            "Ative em **Sidebar → Debug → Mostrar painel Relationship**  •  "
+            f"Status: **{'ON' if enabled else 'OFF'}**"
+        )
+        st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
 
-        last = st.session_state.get("mary_rel_meta_last")
+    with col2:
+        if st.button("Limpar diagnóstico (só visual)", key="btn_clear_rel_diag_main"):
+            st.session_state["mary_rel_meta_last"] = None
+            st.success("Diagnóstico limpo.")
 
-        if not st.session_state.get("mary_debug_rel_panel", False):
-            st.info("Painel desativado. Marque **Ativar painel (debug)** para visualizar a cada turno.")
+    last = st.session_state.get("mary_rel_meta_last")
+
+    if not enabled:
+        st.info("Painel desativado. Ative no sidebar para ver o diagnóstico a cada turno.")
+    else:
+        if not last:
+            st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
         else:
-            if not last:
-                st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
-            else:
-                # cards pequenos
-                cA, cB, cC, cD = st.columns(4)
-                with cA:
-                    st.metric("Timeline", str(last.get("timeline") or "—"))
-                with cB:
-                    st.metric("Stage", str(last.get("stage") or "—"))
-                with cC:
-                    st.metric("Mature turns", str(last.get("mature_turns") or 0))
-                with cD:
-                    hp = last.get("hazard_p")
-                    st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
+            cA, cB, cC, cD = st.columns(4)
+            with cA:
+                st.metric("Timeline", str(last.get("timeline") or "—"))
+            with cB:
+                st.metric("Stage", str(last.get("stage") or "—"))
+            with cC:
+                st.metric("Mature turns", str(last.get("mature_turns") or 0))
+            with cD:
+                hp = last.get("hazard_p")
+                st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
 
-                st.markdown("---")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.metric("Virginity", str(last.get("virginity") or "—"))
-                with c2:
-                    st.metric("Consummated", "true" if last.get("consummated") else "false")
-                with c3:
-                    st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.metric("Virginity", str(last.get("virginity") or "—"))
+            with c2:
+                st.metric("Consummated", "true" if last.get("consummated") else "false")
+            with c3:
+                st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
 
-                reason = (last.get("virginity_reason") or "").strip()
-                if reason:
-                    st.caption("Motivo (virginity_reason):")
-                    st.code(reason)
+            reason = (last.get("virginity_reason") or "").strip()
+            if reason:
+                st.caption("Motivo (virginity_reason):")
+                st.code(reason)
 
-                st.caption("Raw dump:")
-                st.json(last)
+            st.caption("Raw dump:")
+            st.json(last)
 
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
