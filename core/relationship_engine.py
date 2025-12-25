@@ -15,6 +15,15 @@ Como funciona (Degrau 1):
 3) Aplicamos deltas com clamp + inércia
 4) Opcionalmente promovemos/regredimos "stage" com chance (não determinístico)
 5) Se timeline=universitaria e stage/condições atingirem maturidade -> sugerimos timeline "cumplice"
+
+NOVO (virgindade dinâmica):
+- Virgindade é um campo do relationship_state (virginity: "virgem"|"nao_virgem").
+- O engine só muda de "virgem" para "nao_virgem" quando:
+  (a) o avaliador sinaliza consummated=true (consumação clara em cena)
+  (b) o stage já atingiu "intimidade" (ou acima)
+  (c) confiança+apego suficientes e medo/culpa controlados
+  (d) boundaries não está "alta"
+- Persistência e prevalência são responsabilidade do service.py (facts).
 """
 
 from dataclasses import dataclass
@@ -79,6 +88,11 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
             "last_stage_change_ts": "",
             "_promote_streak": 0,
             "_regress_streak": 0,
+
+            # ✅ Virgindade dinâmica (baseline)
+            "virginity": "virgem",          # virgem|nao_virgem
+            "intimacy_level": 0,            # 0..3
+            "consummated": False,           # True quando houver consumação clara
         }
 
     # cúmplice: já casados; ainda pode oscilar em confiança/tensão/medo por eventos
@@ -95,6 +109,11 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
         "last_stage_change_ts": "",
         "_promote_streak": 0,
         "_regress_streak": 0,
+
+        # ✅ Em cúmplice, normalmente já não é virgem
+        "virginity": "nao_virgem",
+        "intimacy_level": 3,
+        "consummated": True,
     }
 
 
@@ -111,6 +130,9 @@ def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
         f"- attachment: {rel.get('attachment')}\n"
         f"- boundaries: {rel.get('boundaries')}\n"
         f"- conflict_theme: {rel.get('conflict_theme')}\n"
+        f"- intimacy_level: {rel.get('intimacy_level')}\n"
+        f"- virginity: {rel.get('virginity')}\n"
+        f"- consummated: {rel.get('consummated')}\n"
     ).strip()
 
 
@@ -161,9 +183,20 @@ def _apply_deltas(rel: Dict[str, Any], upd: Dict[str, Any], cfg: EngineConfig) -
     if isinstance(upd.get("boundaries"), str) and upd.get("boundaries"):
         rel["boundaries"] = str(upd["boundaries"]).strip()
 
+    # intimacy_level (0..3)
+    try:
+        il = int(upd.get("intimacy_level", rel.get("intimacy_level", 0)))
+    except Exception:
+        il = int(rel.get("intimacy_level", 0) or 0)
+    rel["intimacy_level"] = _clamp(il, 0, 3)
+
     rel["last_eval_ts"] = _now_iso()
     rel.setdefault("_promote_streak", 0)
     rel.setdefault("_regress_streak", 0)
+
+    # mantém defaults de virgindade caso não existam
+    rel.setdefault("virginity", "virgem" if rel.get("stage") != "casados" else "nao_virgem")
+    rel.setdefault("consummated", False)
     return rel
 
 
@@ -227,6 +260,53 @@ def _maybe_shift_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, 
     return rel, False
 
 
+def _maybe_flip_virginity(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    """
+    Virgindade dinâmica:
+    - Só muda em universitária.
+    - Só muda se ainda está "virgem".
+    - Só muda se avaliador sinaliza consumação clara (consummated=true).
+    - E se condições emocionais + stage permitem.
+    """
+    if (timeline or "") != "universitaria":
+        return rel
+
+    virginity = str(rel.get("virginity") or "virgem").strip().lower()
+    if virginity != "virgem":
+        return rel
+
+    consummated_flag = bool(upd.get("consummated") is True)
+    if not consummated_flag:
+        return rel
+
+    stage = str(rel.get("stage") or "conhecendo")
+    if stage not in REL_STAGES:
+        stage = "conhecendo"
+    if REL_STAGES.index(stage) < REL_STAGES.index("intimidade"):
+        return rel
+
+    trust = int(rel.get("trust", 0))
+    attach = int(rel.get("attachment", 0))
+    fear = int(rel.get("fear", 0))
+    guilt = int(rel.get("guilt", 0))
+    boundaries = str(rel.get("boundaries") or "alta").strip().lower()
+
+    # condições mínimas (ajuste fino depois)
+    if trust < 65 or attach < 70:
+        return rel
+    if fear > 35 or guilt > 45:
+        return rel
+    if boundaries == "alta":
+        return rel
+
+    # ✅ muda canonicamente
+    rel["virginity"] = "nao_virgem"
+    rel["consummated"] = True
+    rel["intimacy_level"] = max(int(rel.get("intimacy_level", 0) or 0), 3)
+
+    return rel
+
+
 def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, mary_msg: str) -> Tuple[str, str]:
     system = (
         "Você é um avaliador de dinâmica de relacionamento para um roleplay.\n"
@@ -239,6 +319,8 @@ def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, m
         "- conflict_theme deve ser: nenhum | familia | moral | rotina | ciume | risco.\n"
         "- boundaries deve ser: alta | media | baixa.\n"
         "- trust_breach: true apenas se houver quebra clara de confiança.\n"
+        "- intimacy_level: 0..3 (0 nenhum, 1 leve, 2 médio, 3 alto)\n"
+        "- consummated: true apenas se houver consumação clara em cena.\n"
     )
 
     payload = {
@@ -252,6 +334,9 @@ def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, m
             "attachment": rel.get("attachment"),
             "boundaries": rel.get("boundaries"),
             "conflict_theme": rel.get("conflict_theme"),
+            "intimacy_level": rel.get("intimacy_level"),
+            "virginity": rel.get("virginity"),
+            "consummated": rel.get("consummated"),
         },
         "turn": {"user": user_msg, "mary": mary_msg},
         "return_schema": {
@@ -264,6 +349,8 @@ def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, m
             "conflict_theme": "nenhum|familia|moral|rotina|ciume|risco",
             "boundaries": "alta|media|baixa",
             "trust_breach": "bool",
+            "intimacy_level": "int 0..3",
+            "consummated": "bool",
         },
     }
 
@@ -305,6 +392,10 @@ def evolve_relationship(
         assessment = {}
 
     rel = _apply_deltas(rel, assessment, cfg)
+
+    # ✅ virgindade dinâmica (antes da mudança de stage)
+    rel = _maybe_flip_virginity(rel, assessment, timeline)
+
     rel, changed = _maybe_shift_stage(rel, assessment, timeline, cfg)
 
     meta: Dict[str, Any] = {"stage_changed": bool(changed)}
