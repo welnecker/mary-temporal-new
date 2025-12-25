@@ -3,8 +3,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from threading import RLock
 
 from .database import get_col
+
+# Lock para operações thread-safe de memória
+_MEMORY_LOCK = RLock()
 
 # coleções
 _state = lambda: get_col("state_data")
@@ -82,6 +86,8 @@ def set_fact(usuario: str, key: str, value: Any, meta: Optional[Dict[str, Any]] 
         }},
         upsert=True,
     )
+    # Invalida cache do Streamlit se disponível
+    _invalidate_cache_for_user(usuario)
 
 
 def delete_fact(usuario: str, key: str) -> bool:
@@ -106,6 +112,8 @@ def save_interaction(usuario: str, mensagem_usuario: str, resposta_mary: str, mo
         "model": model_tag,
         "ts": datetime.utcnow(),
     })
+    # Invalida cache do histórico
+    _invalidate_cache_for_user(usuario)
 
 
 def get_history_docs(usuario: str, limit: int = 400) -> List[Dict[str, Any]]:
@@ -199,6 +207,7 @@ def append_memory(
 ) -> Dict[str, Any]:
     """
     Adiciona uma memória permanente na lista fatos.mary.memories.
+    Thread-safe: usa lock para evitar race conditions.
 
     Aceita:
     - append_memory(usuario, "texto", meta={...})
@@ -206,42 +215,45 @@ def append_memory(
 
     Retorna o entry final gravado (com id/ts).
     """
-    meta = meta or {}
+    with _MEMORY_LOCK:
+        meta = meta or {}
 
-    # --- compat: se vier dict, respeita ---
-    if isinstance(text_or_entry, dict):
-        entry = dict(text_or_entry)
-        # se veio meta separado, mescla sem quebrar o que já veio
-        if meta:
-            entry_meta = entry.get("meta")
-            if isinstance(entry_meta, dict):
-                entry["meta"] = {**entry_meta, **meta}
-            else:
-                entry["meta"] = dict(meta)
-    else:
-        entry = {
-            "text": str(text_or_entry or "").strip(),
-            "meta": dict(meta),
-        }
+        # --- compat: se vier dict, respeita ---
+        if isinstance(text_or_entry, dict):
+            entry = dict(text_or_entry)
+            # se veio meta separado, mescla sem quebrar o que já veio
+            if meta:
+                entry_meta = entry.get("meta")
+                if isinstance(entry_meta, dict):
+                    entry["meta"] = {**entry_meta, **meta}
+                else:
+                    entry["meta"] = dict(meta)
+        else:
+            entry = {
+                "text": str(text_or_entry or "").strip(),
+                "meta": dict(meta),
+            }
 
-    # validação mínima
-    if not str(entry.get("text") or "").strip():
-        # não grava vazio
-        entry["text"] = ""
+        # validação mínima
+        if not str(entry.get("text") or "").strip():
+            # não grava vazio
+            entry["text"] = ""
 
-    # ids/ts
-    entry.setdefault("ts", datetime.utcnow())
-    entry.setdefault("id", f"mem_{int(datetime.utcnow().timestamp())}")
+        # ids/ts
+        entry.setdefault("ts", datetime.utcnow())
+        entry.setdefault("id", f"mem_{int(datetime.utcnow().timestamp())}")
 
-    # lista atual
-    memories = list_memories(usuario, limit=max_keep)
-    memories.append(entry)
+        # lista atual (read-modify-write atômico)
+        memories = list_memories(usuario, limit=max_keep)
+        memories.append(entry)
 
-    if max_keep and len(memories) > max_keep:
-        memories = memories[-max_keep:]
+        if max_keep and len(memories) > max_keep:
+            memories = memories[-max_keep:]
 
-    set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory"})
-    return entry
+        set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory"})
+        # Nota: set_fact já invalida cache, mas invalidamos também memórias compartilhadas
+        _invalidate_cache_for_user(usuario)
+        return entry
 
 
 def delete_last_memory(usuario: str) -> bool:
@@ -331,4 +343,21 @@ def ensure_indexes() -> None:
         _safe_create_index(_state(), [("usuario", 1)])
         _safe_create_index(_events(), [("usuario", 1), ("ts", -1), ("_id", -1)])
     except Exception:
+        pass
+
+
+# ---------- Cache invalidation (Streamlit) ----------
+def _invalidate_cache_for_user(usuario: str) -> None:
+    """
+    Invalida cache do Streamlit para um usuário específico.
+    Seguro: não quebra se streamlit não estiver disponível.
+    """
+    try:
+        import streamlit as st
+        # Invalida cache de facts e history
+        for cache_key in (f"facts::{usuario}", f"history::{usuario}"):
+            if cache_key in st.session_state:
+                del st.session_state[cache_key]
+    except (ImportError, AttributeError, RuntimeError):
+        # Streamlit não disponível ou fora de contexto - ok, ignora
         pass
