@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 """
-MaryService (v3.7 – Timeline-Aware + Intro Canônico + Continuidade Espacial + Memórias Permanentes Compartilhadas + Resumo Automático)
+MaryService (v3.9 – Timeline-Aware + Intro Canônico Condicional + Continuidade Espacial
+            + Memórias Permanentes Compartilhadas (CANON) + Salvamento Dinâmico (X→Y) + Resumo sem bullets
+            + Overrides explícitos (nsfw/timeline/prompt) + cache/limit seguro)
 
 - Timeline separa histórico (uid::mary::{timeline})
 - Memórias permanentes são compartilhadas (uid::mary::shared) e NÃO dependem de timeline
@@ -11,13 +13,17 @@ COMANDOS (usuário):
    "Mary, salve na memória permanente ... Data 23/12/2025 ..."
    => grava exatamente o texto fornecido (ou, se vazio, grava recorte do histórico recente)
 
-2) Salvar resumo automático (sem o usuário descrever tudo):
-   "Mary, salve o resumo ... de X até Y ... em 24/12/2025"
-   => Mary gera resumo factual SOMENTE a partir das falas da Mary no histórico real, e salva na memória compartilhada
+2) Salvar resumo dinâmico (X até Y) — sem listagem, texto corrido:
+   "Mary, salve o resumo dos fatos de X até Y... em 24/12/2025."
+   => Mary gera resumo factual SOMENTE a partir das FALAS DA MARY (recorte do histórico real) e salva SOMENTE o resumo
 
 3) Pergunta de memória:
    "Mary, você lembra do primeiro beijo?"
    => injeta memórias relevantes no system para a Mary responder com coerência (sem colar literal)
+
+CANON (continuidade forte entre capítulos):
+- Memórias com meta.kind="canon" prevalecem sobre a persona
+- Se existir ao menos 1 memória canon, o "INTRO" da persona NÃO é reinjetado
 """
 
 import logging
@@ -35,7 +41,7 @@ from core.repositories import (
     get_history_docs,
     save_interaction,
     set_fact,
-    # memórias
+    # memórias (compartilhadas)
     append_memory,
     list_memories,
 )
@@ -48,27 +54,44 @@ _SERVICE_CACHE.clear()
 
 
 # ==========================================================
-# 🔑 USER KEYS
+# 🔑 USER / KEYS (agora suportam override por parâmetro)
 # ==========================================================
-def _current_user_id() -> str:
+def _normalize_user_id(user: Optional[str]) -> str:
+    u = (user or "").strip()
+    return u or "anon"
+
+
+def _current_user_id_fallback() -> str:
     uid = st.session_state.get("user_id") or st.session_state.get("usuario") or ""
-    uid = str(uid).strip() or "anon"
-    return uid
+    return _normalize_user_id(str(uid))
+
+
+def _normalize_timeline(timeline: Optional[str]) -> str:
+    tl = (timeline or "").strip() or "cumplice"
+    return tl
+
+
+def _user_key(user_id: str, timeline: str) -> str:
+    return f"{user_id}::mary::{timeline}"
+
+
+def _shared_key(user_id: str) -> str:
+    return f"{user_id}::mary::shared"
 
 
 def _current_user_key() -> str:
-    uid = _current_user_id()
-    timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
-    return f"{uid}::mary::{timeline}"
+    uid = _current_user_id_fallback()
+    timeline = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
+    return _user_key(uid, timeline)
 
 
 def _shared_memory_key() -> str:
-    uid = _current_user_id()
-    return f"{uid}::mary::shared"
+    uid = _current_user_id_fallback()
+    return _shared_key(uid)
 
 
 # ==========================================================
-# NSFW TOGGLE (mantido)
+# NSFW TOGGLE
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
@@ -83,7 +106,7 @@ ESTILO: SEXUALMENTE EXPLÍCITO, GRÁFICO, DIRETO E SEM CENSURA.
 
 
 # ==========================================================
-# CACHE
+# CACHE (com limit seguro)
 # ==========================================================
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     ck = f"facts::{usuario_key}"
@@ -97,12 +120,15 @@ def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     return f
 
 
-def cached_get_history(usuario_key: str) -> List[Dict[str, Any]]:
+def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
+    """
+    Cache com limit para evitar puxar histórico infinito do backend.
+    """
     hk = f"history::{usuario_key}"
     if hk in st.session_state:
         return st.session_state[hk]
     try:
-        docs = get_history_docs(usuario_key) or []
+        docs = get_history_docs(usuario_key, limit=limit) or []
     except Exception:
         docs = []
     st.session_state[hk] = docs
@@ -116,11 +142,17 @@ def clear_user_cache(usuario_key: str) -> None:
 
 
 # ==========================================================
-# NSFW ENABLE
+# NSFW ENABLE (agora respeita override)
 # ==========================================================
-def nsfw_enabled(usuario_key: str) -> bool:
+def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None) -> bool:
+    if isinstance(nsfw_override, bool):
+        return nsfw_override
+
+    # compat: se app usa session_state
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
+
+    # fallback em fact
     facts = cached_get_facts(usuario_key) or {}
     v = facts.get("mary.nsfw")
     if isinstance(v, bool):
@@ -176,7 +208,7 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 
 # ==========================================================
-# INTRO CANÔNICO (contexto 1x por sessão)
+# INTRO CANÔNICO (contexto 1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
 def _hash_text(text: str) -> str:
     t = (text or "").strip().encode("utf-8")
@@ -226,10 +258,119 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
         return current_id, current_text
 
 
-def _inject_intro_as_context_once(usuario_key: str, timeline: str, messages: List[Dict[str, str]]) -> None:
+# ==========================================================
+# ✅ CANON: memórias que prevalecem sobre a persona
+# ==========================================================
+def _get_all_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
+    try:
+        return list_memories(shared_key, limit=limit) or []
+    except Exception:
+        return []
+
+
+def _has_canon_memories(shared_key: str) -> bool:
+    mems = _get_all_memories(shared_key, limit=80)
+    for m in mems:
+        meta = m.get("meta") or {}
+        if str(meta.get("kind") or "").strip().lower() == "canon":
+            return True
+    return False
+
+
+def _extract_canon_overrides(mems: List[Dict[str, Any]]) -> List[Tuple[str, Any, str]]:
+    out: List[Tuple[str, Any, str]] = []
+    for m in mems or []:
+        meta = m.get("meta") or {}
+        if str(meta.get("kind") or "").strip().lower() != "canon":
+            continue
+        key = str(meta.get("key") or "").strip()
+        if not key:
+            continue
+        value = meta.get("value")
+        date_iso = str(meta.get("date") or "").strip()
+        out.append((key, value, date_iso))
+    return out
+
+
+def _build_overrides_block(overrides: List[Tuple[str, Any, str]]) -> str:
+    if not overrides:
+        return ""
+    lines = ["[FATOS CANÔNICOS — OVERRIDES (prevalecem sobre a persona)]"]
+    for key, value, date_iso in overrides:
+        if isinstance(value, bool):
+            v = "true" if value else "false"
+        elif value is None:
+            v = "null"
+        else:
+            v = str(value)
+        if date_iso:
+            lines.append(f"- {key} = {v} (desde {date_iso})")
+        else:
+            lines.append(f"- {key} = {v}")
+    return "\n".join(lines).strip()
+
+
+def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]], max_items: int = 80) -> None:
+    """
+    Injeta memórias CANON (e overrides) no system prompt.
+    Controle max_items para evitar explodir tokens.
+    """
+    mems = _get_all_memories(shared_key, limit=300)
+    if not mems:
+        return
+
+    canon = []
+    for m in mems:
+        meta = m.get("meta") or {}
+        if str(meta.get("kind") or "").strip().lower() == "canon":
+            canon.append(m)
+
+    if not canon:
+        return
+
+    # se quiser economizar tokens, pega só as últimas N
+    selected = canon[-max_items:] if len(canon) > max_items else canon
+
+    overrides = _extract_canon_overrides(selected)
+    overrides_block = _build_overrides_block(overrides)
+
+    lines: List[str] = []
+    lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS]")
+    lines.append("Estas memórias são fatos do universo e DEVEM ser seguidas.")
+    lines.append("Se a persona contradizer, as memórias vencem.")
+    lines.append("")
+    if overrides_block:
+        lines.append(overrides_block)
+        lines.append("")
+
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        title = meta.get("title") or meta.get("key") or ""
+        header = f"- CANON {i}"
+        if d:
+            header += f" (data: {d})"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+        lines.append(str(m.get("text") or "").strip())
+        lines.append("")
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+
+
+def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
+    """
+    Se já existe CANON, NÃO injeta o encontro inicial da persona.
+    """
     flag = f"intro_ctx_injected::{usuario_key}"
     if st.session_state.get(flag):
         return
+
+    if _has_canon_memories(shared_key):
+        st.session_state[flag] = True
+        return
+
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
     if intro_text:
@@ -238,18 +379,17 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, messages: Lis
 
 
 # ==========================================================
-# MEMÓRIAS PERMANENTES (compartilhadas)
+# MEMÓRIAS PERMANENTES — comandos e parsing
 # ==========================================================
-_SAVE_RE = re.compile(
-    r"^\s*(?:mary\s*,?\s*)?(?:salve|salvar|guarde)\b",
-    re.IGNORECASE,
-)
-_REMEMBER_RE = re.compile(
-    r"^\s*(?:mary\s*,?\s*)?(?:você\s+)?(?:lembra|recorda)\b",
-    re.IGNORECASE,
-)
+_SAVE_RE = re.compile(r"^\s*(?:mary\s*,?\s*)?(?:salve|salvar|guarde)\b", re.IGNORECASE)
+_REMEMBER_RE = re.compile(r"^\s*(?:mary\s*,?\s*)?(?:você\s+)?(?:lembra|recorda)\b", re.IGNORECASE)
 _DATE_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})\b")
 _SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
+
+_RANGE_RE = re.compile(
+    r"\bde\s+(?P<start>.+?)\s+at[ée]\s+(?P<end>.+?)(?:\s*,?\s*em\s+\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})?\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _is_save_memory_command(user_text: str) -> bool:
@@ -280,21 +420,37 @@ def _extract_date_iso(text: str) -> Optional[str]:
     return None
 
 
+def _strip_save_prefix(full_text: str) -> str:
+    t = (full_text or "").strip()
+    m = _SAVE_RE.search(t)
+    if not m:
+        return t
+    rest = t[m.end():].strip()
+    rest = re.sub(r"^\s*(na|no|em)\s+mem[oó]ria\s+permanente\b\s*:?\s*", "", rest, flags=re.IGNORECASE)
+    rest = re.sub(r"^\s*(como|que)\s+", "", rest, flags=re.IGNORECASE)
+    return rest.strip() or t
+
+
+def _fallback_capture_recent_history(usuario_key: str, turns: int = 8) -> str:
+    docs = cached_get_history(usuario_key, limit=400)
+    if not docs:
+        return ""
+    slice_docs = docs[-turns:]
+    chunks: List[str] = []
+    for d in slice_docs:
+        u = (d.get("mensagem_usuario") or "").strip()
+        a = (d.get("resposta_mary") or "").strip()
+        if u:
+            chunks.append(f"USUÁRIO:\n{u}")
+        if a:
+            chunks.append(f"MARY:\n{a}")
+    return "\n\n".join(chunks).strip()
+
+
 # ==========================================================
 # ✅ SALVAMENTO DINÂMICO DE RESUMO (de X até Y) — apenas MARY
 # ==========================================================
-_RANGE_RE = re.compile(
-    r"\bde\s+(?P<start>.+?)\s+at[ée]\s+(?P<end>.+?)(?:\s*,?\s*em\s+\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})?\s*$",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
 def _extract_range_request(user_text: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Extrai o recorte do pedido do usuário:
-    "Mary, salve o resumo ... de X até Y ... em 24/12/2025"
-    Retorna (X, Y) ou (None, None) se não houver.
-    """
     t = (user_text or "").strip()
     m = _RANGE_RE.search(t)
     if not m:
@@ -310,11 +466,7 @@ def _normalize(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 
-def _mary_only_turns(usuario_key: str, limit_turns: int = 80) -> List[str]:
-    """
-    Pega falas da MARY (resposta_mary) do histórico da timeline atual.
-    Retorna lista de strings (cada item = uma resposta da Mary).
-    """
+def _mary_only_turns(usuario_key: str, limit_turns: int = 120) -> List[str]:
     docs = get_history_docs(usuario_key, limit=400) or []
     docs = docs[-limit_turns:] if len(docs) > limit_turns else docs
 
@@ -326,16 +478,7 @@ def _mary_only_turns(usuario_key: str, limit_turns: int = 80) -> List[str]:
     return out
 
 
-def _slice_mary_between_markers(
-    mary_msgs: List[str],
-    start_hint: str,
-    end_hint: str,
-) -> Tuple[List[str], str]:
-    """
-    Recorta a sequência de falas da Mary entre start_hint e end_hint (inclusive),
-    usando busca aproximada (substring normalizada).
-    Retorna (lista_recortada, debug_info).
-    """
+def _slice_mary_between_markers(mary_msgs: List[str], start_hint: str, end_hint: str) -> Tuple[List[str], str]:
     if not mary_msgs:
         return [], "no_history"
 
@@ -358,35 +501,30 @@ def _slice_mary_between_markers(
 
     if i0 is None and i1 is not None:
         i0 = max(0, i1 - 8)
-        return mary_msgs[i0 : i1 + 1], "only_end_found"
+        return mary_msgs[i0:i1 + 1], "only_end_found"
 
     if i0 is not None and i1 is None:
         i1 = min(len(mary_msgs) - 1, i0 + 8)
-        return mary_msgs[i0 : i1 + 1], "only_start_found"
+        return mary_msgs[i0:i1 + 1], "only_start_found"
 
     if i0 is not None and i1 is not None:
         if i1 < i0:
             i0, i1 = i1, i0
-            return mary_msgs[i0 : i1 + 1], "markers_swapped"
-        return mary_msgs[i0 : i1 + 1], "both_found"
+            return mary_msgs[i0:i1 + 1], "markers_swapped"
+        return mary_msgs[i0:i1 + 1], "both_found"
 
     return [], "unexpected"
 
 
 def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, Dict[str, Any]]:
-    """
-    Constrói a 'transcrição' (apenas falas da Mary) para o resumo dinâmico.
-    Retorna (transcript, debug_meta).
-    """
     start_hint, end_hint = _extract_range_request(prompt)
-    mary_msgs = _mary_only_turns(usuario_key, limit_turns=120)
+    mary_msgs = _mary_only_turns(usuario_key, limit_turns=160)
 
     if start_hint and end_hint:
         sliced, dbg = _slice_mary_between_markers(mary_msgs, start_hint, end_hint)
         if not sliced:
             sliced = mary_msgs[-10:]
             dbg = f"{dbg}__fallback_last10"
-
         transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
         meta = {
             "mode": "dynamic_range",
@@ -407,33 +545,9 @@ def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, 
     return transcript.strip(), meta
 
 
-def _strip_save_prefix(full_text: str) -> str:
-    t = (full_text or "").strip()
-    m = _SAVE_RE.search(t)
-    if not m:
-        return t
-    rest = t[m.end() :].strip()
-    rest = re.sub(r"^\s*(na|no|em)\s+mem[oó]ria\s+permanente\b\s*:?\s*", "", rest, flags=re.IGNORECASE)
-    rest = re.sub(r"^\s*(como|que)\s+", "", rest, flags=re.IGNORECASE)
-    return rest.strip() or t
-
-
-def _fallback_capture_recent_history(usuario_key: str, turns: int = 8) -> str:
-    docs = cached_get_history(usuario_key)
-    if not docs:
-        return ""
-    slice_docs = docs[-turns:]
-    chunks: List[str] = []
-    for d in slice_docs:
-        u = (d.get("mensagem_usuario") or "").strip()
-        a = (d.get("resposta_mary") or "").strip()
-        if u:
-            chunks.append(f"USUÁRIO:\n{u}")
-        if a:
-            chunks.append(f"MARY:\n{a}")
-    return "\n\n".join(chunks).strip()
-
-
+# ==========================================================
+# Injeção de memórias relevantes (Q&A)
+# ==========================================================
 def _select_relevant_memories(mems: List[Dict[str, Any]], query: str, k: int = 3) -> List[Dict[str, Any]]:
     q = (query or "").lower()
     words = [w for w in re.findall(r"[a-zA-ZÀ-ÿ0-9]+", q) if len(w) >= 4]
@@ -492,13 +606,53 @@ def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[D
         {
             "role": "system",
             "content": (
-                "[MEMÓRIAS PERMANENTES COMPARTILHADAS]\n"
-                "Use estas memórias como fatos canônicos.\n"
-                "Responda interpretando com coerência (não cole literal), citando detalhes concretos.\n\n"
+                "[MEMÓRIAS PERMANENTES (selecionadas)]\n"
+                "Use como fatos canônicos quando aplicável.\n"
+                "Responda interpretando com coerência (não cole literal).\n\n"
                 f"{mem_block}"
             ),
         }
     )
+
+
+def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]], max_items: int = 8) -> None:
+    """
+    Continuidade suave: injeta algumas memórias compartilhadas NÃO-CANON (últimas N).
+    Não substitui canon; não explode tokens.
+    """
+    try:
+        mems = list_memories(shared_key, limit=120) or []
+    except Exception:
+        mems = []
+
+    if not mems:
+        return
+
+    soft = []
+    for m in mems:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip().lower()
+        if kind == "canon":
+            continue
+        soft.append(m)
+
+    if not soft:
+        return
+
+    selected = soft[-max_items:] if len(soft) > max_items else soft
+
+    lines = ["[MEMÓRIAS COMPARTILHADAS (contexto suave)]", "Use para manter coerência, sem citar literalmente.", ""]
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        header = f"- MEM {i}"
+        if d:
+            header += f" (data: {d})"
+        lines.append(header)
+        lines.append(str(m.get("text") or "").strip())
+        lines.append("")
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
 # ==========================================================
@@ -508,35 +662,59 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
 
-    def reply(self, user: str, model: str) -> str:
-        prompt = (st.session_state.get("chat_input") or "").strip()
+    def reply(
+        self,
+        user: str,
+        model: str,
+        *,
+        prompt: Optional[str] = None,
+        timeline: Optional[str] = None,
+        nsfw: Optional[bool] = None,
+    ) -> str:
+        """
+        Compatível com o app atual:
+        - Se prompt=None, lê st.session_state["chat_input"]
+        - Se timeline=None, lê st.session_state["mary_timeline"]
+        - Se nsfw=None, lê st.session_state["mary_nsfw_on"] e depois facts
+        """
+        # prompt
+        if prompt is None:
+            prompt = (st.session_state.get("chat_input") or "").strip()
+        else:
+            prompt = (prompt or "").strip()
+
         if not prompt:
             return ""
 
-        usuario_key = _current_user_key()
-        shared_key = _shared_memory_key()
-        timeline = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
+        user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
+        timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
+            str(st.session_state.get("mary_timeline") or "cumplice")
+        )
 
+        usuario_key = _user_key(user_id, timeline_final)
+        shared_key = _shared_key(user_id)
+
+        # ----------------------------------------------------------
         # 1) Mudança explícita de local
+        # ----------------------------------------------------------
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             clear_user_cache(usuario_key)
             return f"_Eu te puxo comigo até {novo_local}…_"
 
-        # 2) Comando: salvar memória (texto direto OU resumo automático)
+        # ----------------------------------------------------------
+        # 2) Comando: salvar memória (texto direto OU resumo dinâmico)
+        # ----------------------------------------------------------
         if _is_save_memory_command(prompt):
             raw_body = _strip_save_prefix(prompt)
             date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
-            # 2a) ✅ RESUMO dinâmico: gera e salva SOMENTE o resumo
+            # 2a) Se o usuário pediu "resumo": gera resumo dinâmico (X→Y) e salva SOMENTE o resumo
             if _wants_auto_summary(prompt):
                 transcript, dbg_meta = _build_dynamic_mary_transcript(usuario_key, prompt)
                 if not transcript.strip():
-                    return (
-                        "⚠️ Não encontrei histórico suficiente da Mary para resumir. "
-                        "Converse mais um pouco e peça novamente."
-                    )
+                    return "⚠️ Não encontrei histórico suficiente da Mary para resumir. Converse mais um pouco e peça novamente."
 
                 summary_system = (
                     "Você é a personagem Mary, mas sua tarefa agora é gerar um RESUMO FACTUAL para memória.\n"
@@ -545,14 +723,16 @@ class MaryService(BaseCharacter):
                     "- NÃO invente, NÃO complete lacunas, NÃO crie fatos fora do texto.\n"
                     "- Texto corrido, sem bullets, sem listagem.\n"
                     "- Escreva com clareza e sequência temporal.\n"
-                    "- Foque nos FATOS e no encadeamento (o que aconteceu e por quê), em 8 a 16 linhas.\n"
-                    "- Se houver desejo do usuário por um recorte 'até X', respeite o recorte; não avance além.\n"
+                    "- Foque nos fatos (o que aconteceu e por quê), sem floreios.\n"
+                    "- 8 a 16 linhas.\n"
+                    "- Se o pedido do usuário delimitar recorte, não avance além.\n"
+                    "- Idioma: PT-BR.\n"
                 )
 
                 summary_user = (
                     "Gere um resumo factual para memória permanente.\n"
                     f"Data (se houver): {date_iso or '—'}\n"
-                    "Recorte: definido pelo pedido do usuário (se presente).\n\n"
+                    "Recorte: conforme pedido do usuário (se presente).\n\n"
                     f"[TRANSCRIÇÃO — APENAS FALAS DA MARY]\n{transcript}"
                 )
 
@@ -568,9 +748,7 @@ class MaryService(BaseCharacter):
                     )
 
                     try:
-                        resumo = (
-                            data.get("choices", [{}])[0].get("message", {}).get("content") or ""
-                        ).strip()
+                        resumo = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
                     except Exception:
                         resumo = ""
 
@@ -580,15 +758,13 @@ class MaryService(BaseCharacter):
                     meta = {
                         "kind": "dynamic_summary",
                         "date": date_iso or "",
-                        "timeline_at_save": timeline,
+                        "timeline_at_save": timeline_final,
                         "model_used": used_model or model,
                         **(dbg_meta or {}),
                     }
 
-                    # ✅ salva SOMENTE o resumo (sem transcrição imensa)
                     append_memory(shared_key, resumo.strip(), meta=meta)
 
-                    # ✅ mostra o mesmo resumo na tela do app
                     return (
                         "✅ **Resumo salvo na memória permanente** (compartilhado entre as duas Marys)\n\n"
                         f"📌 **Data:** `{date_iso or '—'}`\n"
@@ -601,41 +777,48 @@ class MaryService(BaseCharacter):
                     logger.exception("Falha ao gerar/salvar resumo dinâmico", exc_info=e)
                     return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
 
-            # 2b) Salvamento normal: texto fornecido pelo usuário
-            body = raw_body.strip()
-            if not body:
-                return "⚠️ Para salvar texto direto, cole o texto após o comando (ex: 'Mary, salve ...') e informe a data."
+            # 2b) Salvamento direto (texto do usuário; se curto, anexa recorte do histórico)
+            body = raw_body
+            if len(body.strip()) < 40:
+                captured = _fallback_capture_recent_history(usuario_key, turns=10)
+                if captured:
+                    body = f"{body}\n\n[FONTE: recorte do histórico]\n{captured}".strip()
+
+            if not body.strip():
+                return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
 
             meta = {
                 "kind": "user_request",
                 "date": date_iso or "",
-                "timeline_at_save": timeline,
+                "timeline_at_save": timeline_final,
             }
 
             try:
-                append_memory(shared_key, body, meta=meta)
+                append_memory(shared_key, body.strip(), meta=meta)
             except Exception as e:
-                logger.exception("Falha ao salvar memória (texto direto)", exc_info=e)
+                logger.exception("Falha ao salvar memória", exc_info=e)
                 return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
 
             return "✅ Memória permanente salva (compartilhada entre as duas Marys)."
 
-        # 3) Persona
-        persona_text, _ = get_persona(timeline)
+        # ----------------------------------------------------------
+        # 3) Persona + sistema
+        # ----------------------------------------------------------
+        persona_text, _ = get_persona(timeline_final)
 
         facts = cached_get_facts(usuario_key)
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
-        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key) else SAFE_SENSUAL_STYLE
+        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_enabled(usuario_key, nsfw_override=nsfw) else SAFE_SENSUAL_STYLE
 
         system = f"""
 {spatial_context}
 
 VOCÊ É A PERSONAGEM MARY.
 
-TIMELINE ATUAL: {timeline}
+TIMELINE ATUAL: {timeline_final}
 
-PERSONA:
+PERSONA (baseline):
 {persona_text}
 
 REGRAS ABSOLUTAS:
@@ -643,21 +826,38 @@ REGRAS ABSOLUTAS:
 - Timeline universitária NÃO é casada e NÃO mora junto.
 - Timeline cúmplice segue a persona de casamento.
 - Nunca contradiga a timeline ativa.
+- Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
 {nsfw_block}
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # 4) Intro canônica 1x por sessão
-        _inject_intro_as_context_once(usuario_key, timeline, messages)
+        # ----------------------------------------------------------
+        # 4) Intro canônica 1x por sessão (só se NÃO houver CANON)
+        # ----------------------------------------------------------
+        _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # 5) Se for pergunta de memória, injeta memórias compartilhadas
+        # ----------------------------------------------------------
+        # 5) ✅ CANON sempre injetado (continuidade entre capítulos)
+        # ----------------------------------------------------------
+        _inject_canon_memories_always(shared_key, messages, max_items=80)
+
+        # ----------------------------------------------------------
+        # 5.1) Continuidade suave (memórias não-canon, poucas)
+        # ----------------------------------------------------------
+        _inject_shared_soft_context(shared_key, messages, max_items=8)
+
+        # ----------------------------------------------------------
+        # 6) Se for pergunta de memória, injeta memórias relevantes adicionais
+        # ----------------------------------------------------------
         if _is_memory_question(prompt):
             _inject_memories_context(shared_key, prompt, messages)
 
-        # 6) Histórico (timeline atual)
-        history = cached_get_history(usuario_key)
+        # ----------------------------------------------------------
+        # 7) Histórico (timeline atual)
+        # ----------------------------------------------------------
+        history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
@@ -668,7 +868,9 @@ REGRAS ABSOLUTAS:
 
         messages.append({"role": "user", "content": prompt})
 
-        # 7) Chat com retry/fallback
+        # ----------------------------------------------------------
+        # 8) Chat com retry/fallback
+        # ----------------------------------------------------------
         def _extract_text(resp: dict) -> str:
             try:
                 return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
