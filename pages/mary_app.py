@@ -5,7 +5,9 @@ import re
 import traceback
 import importlib
 import inspect
+
 import streamlit as st
+
 from core.repositories import list_memories, delete_last_memory, delete_all_memories
 import characters.mary.persona as mary_persona
 from characters.mary.service import MaryService, _current_user_key
@@ -40,12 +42,13 @@ FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
 # ==========================================================
-# UI / CSS
+# UI / CSS (Base44-like + dark + chat_input fixo)
 # ==========================================================
 def _apply_dark_ui() -> None:
     st.markdown(
         """
         <style>
+        /* ===== Base dark ===== */
         html, body, #root, .stApp { background: #0b0b0b !important; }
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"],
@@ -57,8 +60,15 @@ def _apply_dark_ui() -> None:
         [data-testid="stToolbar"] { background: #0b0b0b !important; }
 
         footer { visibility: hidden !important; height: 0 !important; }
-        .block-container { padding-top: 0rem !important; padding-bottom: 0rem !important; }
 
+        /* IMPORTANT: espaço pra chat_input fixo */
+        .block-container {
+            max-width: 980px !important;
+            padding-top: 1.0rem !important;
+            padding-bottom: 8.0rem !important; /* reserva pro input fixo */
+        }
+
+        /* ===== Sidebar ===== */
         section[data-testid="stSidebar"] {
             background: #141414 !important;
             border-right: 1px solid #222 !important;
@@ -69,19 +79,22 @@ def _apply_dark_ui() -> None:
         section[data-testid="stSidebar"] span,
         section[data-testid="stSidebar"] div { color: #f2f2f2 !important; }
 
+        /* ===== Tipografia ===== */
         [data-testid="stMarkdownContainer"],
         [data-testid="stCaptionContainer"],
         .stApp p, .stApp span, .stApp label { color: #f2f2f2; }
 
+        /* ===== Inputs / selects ===== */
         input, textarea {
             background: #101010 !important;
             color: #f2f2f2 !important;
             border: 1px solid #2a2a2a !important;
+            border-radius: 14px !important;
         }
-
         div[data-baseweb="select"] > div {
             background: #101010 !important;
             border: 1px solid #2a2a2a !important;
+            border-radius: 14px !important;
         }
         div[data-baseweb="select"] span,
         div[data-baseweb="select"] div { color: #f2f2f2 !important; }
@@ -90,8 +103,25 @@ def _apply_dark_ui() -> None:
             background: #141414 !important;
             color: #f2f2f2 !important;
             border: 1px solid #2a2a2a !important;
+            border-radius: 12px !important;
         }
         button:hover { border-color: #3a3a3a !important; }
+
+        /* ===== Card header (Base44-like) ===== */
+        .rp-card {
+            background: rgba(18,18,18,0.92);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.55);
+            padding: 16px;
+            margin: 0 0 12px 0;
+            backdrop-filter: blur(6px);
+        }
+        .rp-title { font-size: 22px; font-weight: 800; margin: 0; }
+        .rp-sub { color: rgba(255,255,255,0.65); font-size: 13px; margin: 6px 0 0 0; }
+
+        /* ===== Chat bubbles ===== */
+        div[data-testid="stChatMessage"] { padding: 0.20rem 0 !important; }
 
         div[data-testid="stChatMessage"] > div{
             background: rgba(15,15,15,0.92) !important;
@@ -101,11 +131,40 @@ def _apply_dark_ui() -> None:
             box-shadow: 0 10px 26px rgba(0,0,0,0.55) !important;
             backdrop-filter: blur(6px);
         }
+
+        /* Diferencia usuário */
+        div[data-testid="stChatMessage"][aria-label="user"] > div{
+            background: rgba(20,20,20,0.92) !important;
+            border: 1px solid rgba(255,255,255,0.10) !important;
+        }
+
         div[data-testid="stChatMessage"] p{
             margin: 0 0 0.95rem 0 !important;
             line-height: 1.55 !important;
             font-size: 1.02rem !important;
             color: #f2f2f2 !important;
+        }
+
+        /* ===== Chat input fixo no rodapé ===== */
+        .stChatInput {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 999;
+            background: rgba(11,11,11,0.85);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 10px 0;
+        }
+        .stChatInput > div {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+        .stChatInput textarea {
+            min-height: 96px !important;
+            max-height: 240px !important;
         }
         </style>
         """,
@@ -451,11 +510,23 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.5 (ALINHADO com service.py: reset flags de intro no prompt)")
+    st.caption("🧩 mary_app.py v3.5 (Base44-like UI + input fixo; ALINHADO com service.py: reset flags de intro no prompt)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
-    st.title("Roleplay 💍💍")
+    # ===== Header Base44-like (substitui o st.title) =====
+    st.markdown(
+        f"""
+        <div class="rp-card">
+          <div class="rp-title">Mary 💍💍</div>
+          <div class="rp-sub">
+            Timeline: <b>{st.session_state.get('mary_timeline','cumplice')}</b> •
+            Modelo: <b>{st.session_state.get('model','')}</b>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
@@ -524,31 +595,31 @@ def main() -> None:
     # ==========================================================
     with st.sidebar:
         st.header("Mary – Controles")
-    
+
         st.text_input("👤 Usuário", value="Janio Donisete", disabled=True)
         st.caption(f"🧩 Timeline: {st.session_state['mary_timeline']}")
         st.caption(f"🔑 usuario_key atual: {_current_user_key()}")
-    
+
         try:
             all_models = list_models() or []
         except Exception:
             all_models = []
         if not all_models:
             all_models = [FALLBACK_MODEL]
-    
+
         if st.session_state.get("model") not in all_models:
             st.session_state["model"] = _choose_default_model(all_models)
-    
+
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
-    
+
         st.markdown("---")
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
-    
+
         st.markdown("---")
         st.subheader("Turnos")
-    
+
         if st.button("Apagar último turno (backend)"):
             ok = _delete_last_turn_active()
             if ok:
@@ -558,20 +629,20 @@ def main() -> None:
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
-    
+
         st.markdown("---")
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)"):
             st.session_state["chat_history"] = []
             st.rerun()
-    
+
         st.markdown("---")
         st.subheader("🎭 Persona")
         st.caption("Arquivo ativo:")
         st.code(inspect.getfile(mary_persona.get_persona))
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
-    
+
         if st.button("♻️ Recarregar persona AGORA"):
             importlib.reload(mary_persona)
             st.session_state.pop("_mary_service", None)
@@ -583,36 +654,35 @@ def main() -> None:
             st.session_state["mary_timeline_locked"] = False
             st.success("Persona recarregada. Boot vai colar a intro correta por timeline.")
             st.rerun()
-    
+
         # ======================================================
         # 🧠 MEMÓRIAS PERMANENTES (AGORA NO SIDEBAR)
         # ======================================================
         st.markdown("---")
         st.subheader("🧠 Memórias permanentes")
-    
+
         shared_key = f"{st.session_state.get('user_id','anon').strip() or 'anon'}::mary::shared"
-        st.caption(f"Key compartilhada:")
+        st.caption("Key compartilhada:")
         st.code(shared_key)
-    
+
         if st.button("📜 Listar memórias"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-    
+
         if st.button("🧽 Apagar última memória"):
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             st.rerun()
-    
+
         if st.button("💣 Apagar TODAS as memórias"):
             n = delete_all_memories(shared_key)
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
             st.rerun()
-    
+
         mems_view = st.session_state.get("__mem_list")
         if mems_view is not None:
             st.json(mems_view)
-
 
     # ===== BOOT =====
     if not st.session_state["chat_history"]:
@@ -638,7 +708,7 @@ def main() -> None:
                 st.markdown(content)
 
     # ===== INPUT =====
-    prompt = st.chat_input("Fala algo pra Mary...")
+    prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
     if prompt:
         if not st.session_state["mary_timeline_locked"]:
             st.session_state["mary_timeline_locked"] = True
