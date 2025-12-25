@@ -38,6 +38,10 @@ def get_canon(
                     "notes": "Início de vínculo: desejo e curiosidade existem, mas há cautela e conflito interno.",
                     "_promote_streak": 0,
                     "_regress_streak": 0,
+                                    # ✅ NOVO: virgindade dinâmica
+                    "virginity": "virgem",          # virgem | nao_virgem
+                    "intimacy_level": 0,            # 0..3 (beijo/toque/sexo)
+                    "consummated": False,           # virou True quando houver consumação
                 },
             }
 
@@ -50,6 +54,10 @@ def get_canon(
             "estado_relacao": "casados",
             "vida_em_comum": True,
             "historico_intimo_consumado": True,
+            "virginity": "nao_virgem",
+            "intimacy_level": 3,
+            "consummated": True,
+
 
             "relationship_state": {
                 "stage": "casados",
