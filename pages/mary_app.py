@@ -246,7 +246,7 @@ def _garantir_estado_inicial() -> None:
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
 
-    # ✅ Painel Relationship Debug (toggle)
+    # ✅ Relationship Debug (estado canônico)
     if "mary_debug_rel_panel" not in st.session_state:
         st.session_state["mary_debug_rel_panel"] = False
     if "mary_rel_meta_last" not in st.session_state:
@@ -282,6 +282,10 @@ def _garantir_estado_inicial() -> None:
         st.session_state["last_submit_ts"] = 0.0
     if "last_submit_text" not in st.session_state:
         st.session_state["last_submit_text"] = ""
+
+    # view de memórias
+    if "__mem_list" not in st.session_state:
+        st.session_state["__mem_list"] = None
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
@@ -439,7 +443,7 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.10 (Base44-like UI + input fixo; + Painel Relationship Debug)")
+    st.caption("🧩 mary_app.py v3.11 (keys seguras + Relationship panel read-only + input fixo)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -484,70 +488,75 @@ def main() -> None:
     keys = _keys_para_mary()
 
     # ==========================================================
-    # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA)
+    # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA) — READ-ONLY
+    # (o toggle fica só no sidebar, para não duplicar key)
     # ==========================================================
     with st.expander("🧠 Relationship Engine — Painel de diagnóstico (turno a turno)", expanded=False):
-    col1, col2 = st.columns([1, 1])
+        col1, col2 = st.columns([1, 1])
 
-    with col1:
-        enabled = bool(st.session_state.get("mary_debug_rel_panel", False))
-        st.caption(
-            "Ative em **Sidebar → Debug → Mostrar painel Relationship**  •  "
-            f"Status: **{'ON' if enabled else 'OFF'}**"
-        )
-        st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
+        with col1:
+            enabled = bool(st.session_state.get("mary_debug_rel_panel", False))
+            st.caption(
+                "Ative em **Sidebar → Debug → Mostrar painel Relationship**  •  "
+                f"Status: **{'ON' if enabled else 'OFF'}**"
+            )
+            st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
 
-    with col2:
-        if st.button("Limpar diagnóstico (só visual)", key="btn_clear_rel_diag_main"):
-            st.session_state["mary_rel_meta_last"] = None
-            st.success("Diagnóstico limpo.")
+        with col2:
+            if st.button("Limpar diagnóstico (só visual)", key="btn_clear_rel_diag_main"):
+                st.session_state["mary_rel_meta_last"] = None
+                st.success("Diagnóstico limpo.")
 
-    last = st.session_state.get("mary_rel_meta_last")
+        last = st.session_state.get("mary_rel_meta_last")
 
-    if not enabled:
-        st.info("Painel desativado. Ative no sidebar para ver o diagnóstico a cada turno.")
-    else:
-        if not last:
-            st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
+        if not enabled:
+            st.info("Painel desativado. Ative no sidebar para ver o diagnóstico a cada turno.")
         else:
-            cA, cB, cC, cD = st.columns(4)
-            with cA:
-                st.metric("Timeline", str(last.get("timeline") or "—"))
-            with cB:
-                st.metric("Stage", str(last.get("stage") or "—"))
-            with cC:
-                st.metric("Mature turns", str(last.get("mature_turns") or 0))
-            with cD:
-                hp = last.get("hazard_p")
-                st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
+            if not last:
+                st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
+            else:
+                cA, cB, cC, cD = st.columns(4)
+                with cA:
+                    st.metric("Timeline", str(last.get("timeline") or "—"))
+                with cB:
+                    st.metric("Stage", str(last.get("stage") or "—"))
+                with cC:
+                    st.metric("Mature turns", str(last.get("mature_turns") or 0))
+                with cD:
+                    hp = last.get("hazard_p")
+                    st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
 
-            st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Virginity", str(last.get("virginity") or "—"))
-            with c2:
-                st.metric("Consummated", "true" if last.get("consummated") else "false")
-            with c3:
-                st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
+                st.markdown("---")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Virginity", str(last.get("virginity") or "—"))
+                with c2:
+                    st.metric("Consummated", "true" if last.get("consummated") else "false")
+                with c3:
+                    st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
 
-            reason = (last.get("virginity_reason") or "").strip()
-            if reason:
-                st.caption("Motivo (virginity_reason):")
-                st.code(reason)
+                reason = (last.get("virginity_reason") or "").strip()
+                if reason:
+                    st.caption("Motivo (virginity_reason):")
+                    st.code(reason)
 
-            st.caption("Raw dump:")
-            st.json(last)
+                st.caption("Raw dump:")
+                st.json(last)
 
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
 
-        if st.button("🔎 Diagnóstico agora"):
+        if st.button("🔎 Diagnóstico agora", key="btn_diag_now"):
             st.json(_diagnostico_hist(keys))
 
         colA, colB = st.columns(2)
         with colA:
-            confirmar = st.checkbox("Confirmo apagar TODO histórico do BD (history)", value=False)
-            if st.button("🔥 APAGAR HISTÓRICO DO BD (AGORA)", type="primary"):
+            confirmar = st.checkbox(
+                "Confirmo apagar TODO histórico do BD (history)",
+                value=False,
+                key="chk_confirm_delete_history",
+            )
+            if st.button("🔥 APAGAR HISTÓRICO DO BD (AGORA)", type="primary", key="btn_delete_history_now"):
                 if not confirmar:
                     st.error("Marque a confirmação.")
                 else:
@@ -563,8 +572,12 @@ def main() -> None:
                     st.rerun()
 
         with colB:
-            confirmar2 = st.checkbox("Confirmo apagar facts mary.evento.* também", value=False)
-            if st.button("💣 APAGAR EVENTOS mary.evento.* (facts)"):
+            confirmar2 = st.checkbox(
+                "Confirmo apagar facts mary.evento.* também",
+                value=False,
+                key="chk_confirm_delete_events",
+            )
+            if st.button("💣 APAGAR EVENTOS mary.evento.* (facts)", key="btn_delete_events"):
                 if not confirmar2:
                     st.error("Marque a confirmação.")
                 else:
@@ -580,7 +593,12 @@ def main() -> None:
     with st.sidebar:
         st.header("Mary – Controles")
 
-        st.text_input("👤 Usuário", value=st.session_state.get("user_id", "Janio Donisete"), disabled=True)
+        st.text_input(
+            "👤 Usuário",
+            value=st.session_state.get("user_id", "Janio Donisete"),
+            disabled=True,
+            key="inp_user_disabled",
+        )
         st.caption(f"🧩 Timeline: {st.session_state['mary_timeline']}")
         st.caption(f"🔑 usuario_key atual: {_usuario_key_atual()}")
 
@@ -603,8 +621,16 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("🔍 Debug")
-        st.checkbox("Mostrar painel Relationship", key="mary_debug_rel_panel")
-        if st.button("Ver último diagnóstico (popup)"):
+
+        # ✅ AQUI está o único widget que controla o estado canônico.
+        #    Usamos uma key diferente do estado para evitar colisão.
+        st.session_state["mary_debug_rel_panel"] = st.checkbox(
+            "Mostrar painel Relationship",
+            value=bool(st.session_state.get("mary_debug_rel_panel", False)),
+            key="mary_debug_rel_panel__ui",
+        )
+
+        if st.button("Ver último diagnóstico (popup)", key="btn_show_rel_diag_popup"):
             last = st.session_state.get("mary_rel_meta_last")
             if last:
                 st.json(last)
@@ -614,7 +640,7 @@ def main() -> None:
         st.markdown("---")
         st.subheader("Turnos")
 
-        if st.button("Apagar último turno (backend)"):
+        if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
             ok = _delete_last_turn_active()
             if ok:
                 st.session_state["chat_history"] = []
@@ -626,7 +652,7 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("Limpar tela")
-        if st.button("Limpar tela (visual)"):
+        if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
             st.session_state["chat_history"] = []
             st.rerun()
 
@@ -637,7 +663,7 @@ def main() -> None:
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
 
-        if st.button("♻️ Recarregar persona AGORA"):
+        if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             importlib.reload(mary_persona)
             st.session_state.pop("_mary_service", None)
             st.session_state["mary_intro_done"] = False
@@ -660,16 +686,16 @@ def main() -> None:
         st.caption("Key compartilhada:")
         st.code(shared_key)
 
-        if st.button("📜 Listar memórias"):
+        if st.button("📜 Listar memórias", key="btn_list_mems"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
 
-        if st.button("🧽 Apagar última memória"):
+        if st.button("🧽 Apagar última memória", key="btn_delete_last_mem"):
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             st.rerun()
 
-        if st.button("💣 Apagar TODAS as memórias"):
+        if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
             n = delete_all_memories(shared_key)
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
