@@ -48,96 +48,45 @@ def _apply_dark_ui() -> None:
     st.markdown(
         """
         <style>
-        /* ===== Base dark ===== */
         html, body, #root, .stApp { background: #0b0b0b !important; }
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"],
-        [data-testid="stMainBlockContainer"],
-        section.main { background: #0b0b0b !important; }
-
-        header[data-testid="stHeader"],
-        [data-testid="stDecoration"],
-        [data-testid="stToolbar"] { background: #0b0b0b !important; }
+        [data-testid="stMainBlockContainer"] { background: #0b0b0b !important; }
 
         footer { visibility: hidden !important; height: 0 !important; }
 
-        /* IMPORTANT: espaço pra chat_input fixo */
+        /* espaço no fim para não esconder mensagens atrás do input fixo */
         .block-container {
             max-width: 980px !important;
-            padding-top: 1.0rem !important;
-            padding-bottom: 8.0rem !important; /* reserva pro input fixo */
+            padding-top: 1rem !important;
+            padding-bottom: 9rem !important;
         }
 
-        /* ===== Sidebar ===== */
-        section[data-testid="stSidebar"] {
-            background: #141414 !important;
-            border-right: 1px solid #222 !important;
-        }
-        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
-        section[data-testid="stSidebar"] label,
-        section[data-testid="stSidebar"] p,
-        section[data-testid="stSidebar"] span,
-        section[data-testid="stSidebar"] div { color: #f2f2f2 !important; }
-
-        /* ===== Tipografia ===== */
-        [data-testid="stMarkdownContainer"],
-        [data-testid="stCaptionContainer"],
-        .stApp p, .stApp span, .stApp label { color: #f2f2f2; }
-
-        /* ===== Inputs / selects ===== */
-        input, textarea {
-            background: #101010 !important;
-            color: #f2f2f2 !important;
-            border: 1px solid #2a2a2a !important;
-            border-radius: 14px !important;
-        }
-        div[data-baseweb="select"] > div {
-            background: #101010 !important;
-            border: 1px solid #2a2a2a !important;
-            border-radius: 14px !important;
-        }
-        div[data-baseweb="select"] span,
-        div[data-baseweb="select"] div { color: #f2f2f2 !important; }
-
-        button {
-            background: #141414 !important;
-            color: #f2f2f2 !important;
-            border: 1px solid #2a2a2a !important;
-            border-radius: 12px !important;
-        }
-        button:hover { border-color: #3a3a3a !important; }
-
-        /* ===== Card header (Base44-like) ===== */
+        /* Card header */
         .rp-card {
             background: rgba(18,18,18,0.92);
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.10);
             border-radius: 16px;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.55);
             padding: 16px;
             margin: 0 0 12px 0;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.55);
             backdrop-filter: blur(6px);
         }
-        .rp-title { font-size: 22px; font-weight: 800; margin: 0; }
-        .rp-sub { color: rgba(255,255,255,0.65); font-size: 13px; margin: 6px 0 0 0; }
+        .rp-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
+        .rp-sub { font-size: 13px; margin-top: 6px; color: rgba(255,255,255,0.65); }
 
-        /* ===== Chat bubbles ===== */
-        div[data-testid="stChatMessage"] { padding: 0.20rem 0 !important; }
-
+        /* Chat bubbles (mais robusto) */
         div[data-testid="stChatMessage"] > div{
             background: rgba(15,15,15,0.92) !important;
             border: 1px solid rgba(255,255,255,0.08) !important;
             border-radius: 16px !important;
             padding: 14px 14px 10px 14px !important;
             box-shadow: 0 10px 26px rgba(0,0,0,0.55) !important;
-            backdrop-filter: blur(6px);
         }
-
-        /* Diferencia usuário */
         div[data-testid="stChatMessage"][aria-label="user"] > div{
-            background: rgba(20,20,20,0.92) !important;
-            border: 1px solid rgba(255,255,255,0.10) !important;
+            background: rgba(24,24,24,0.95) !important;
+            border: 1px solid rgba(255,255,255,0.12) !important;
         }
-
         div[data-testid="stChatMessage"] p{
             margin: 0 0 0.95rem 0 !important;
             line-height: 1.55 !important;
@@ -145,31 +94,38 @@ def _apply_dark_ui() -> None:
             color: #f2f2f2 !important;
         }
 
-        /* ===== Chat input fixo no rodapé ===== */
-        .stChatInput {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            z-index: 999;
-            background: rgba(11,11,11,0.85);
-            backdrop-filter: blur(8px);
-            border-top: 1px solid rgba(255,255,255,0.08);
-            padding: 10px 0;
+        /* INPUT FIXO: tenta pelos 2 jeitos */
+        .stChatInput, div[data-testid="stChatInput"] {
+            position: fixed !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            z-index: 9999 !important;
+            background: rgba(11,11,11,0.88) !important;
+            backdrop-filter: blur(10px) !important;
+            border-top: 1px solid rgba(255,255,255,0.10) !important;
+            padding: 10px 0 !important;
         }
-        .stChatInput > div {
-            max-width: 980px;
-            margin: 0 auto;
-            padding: 0 1rem;
+
+        .stChatInput > div, div[data-testid="stChatInput"] > div {
+            max-width: 980px !important;
+            margin: 0 auto !important;
+            padding: 0 1rem !important;
         }
-        .stChatInput textarea {
+
+        .stChatInput textarea, div[data-testid="stChatInput"] textarea {
             min-height: 96px !important;
             max-height: 240px !important;
+            border-radius: 14px !important;
+            background: #101010 !important;
+            color: #f2f2f2 !important;
+            border: 1px solid rgba(255,255,255,0.14) !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
 
 
 def _format_paragraphs(text: str) -> str:
@@ -513,6 +469,20 @@ def main() -> None:
     st.caption("🧩 mary_app.py v3.5 (Base44-like UI + input fixo; ALINHADO com service.py: reset flags de intro no prompt)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
+
+    st.markdown(
+    f"""
+    <div class="rp-card">
+      <div class="rp-title">Mary 💍💍</div>
+      <div class="rp-sub">
+        Timeline: <b>{st.session_state.get('mary_timeline','cumplice')}</b> •
+        Modelo: <b>{st.session_state.get('model','')}</b>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
 
     # ===== Header Base44-like (substitui o st.title) =====
     st.markdown(
