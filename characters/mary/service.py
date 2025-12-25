@@ -1,29 +1,25 @@
 from __future__ import annotations
 
 """
-MaryService (v3.9 – Timeline-Aware + Intro Canônico Condicional + Continuidade Espacial
-            + Memórias Permanentes Compartilhadas (CANON) + Salvamento Dinâmico (X→Y) + Resumo sem bullets
-            + Overrides explícitos (nsfw/timeline/prompt) + cache/limit seguro)
+MaryService (v3.10 – Timeline-Aware + Canon + RelationshipEngine v2 (virginidade dinâmica + anti-loop)
+            + Continuidade Espacial + Memórias Permanentes Compartilhadas (CANON) + Salvamento Dinâmico)
 
-- Timeline separa histórico (uid::mary::{timeline})
-- Memórias permanentes são compartilhadas (uid::mary::shared) e NÃO dependem de timeline
+PONTOS-CHAVE (o que foi ajustado aqui):
+1) Integração correta com o relationship_engine.py novo:
+   - rel_state agora inclui: virginity, consummated, intimacy_level, mature_turns
+   - evolve_relationship retorna meta com: hazard_p, mature_turns, virginity_changed, virginity_reason
 
-COMANDOS (usuário):
-1) Salvar texto direto (sem inventar):
-   "Mary, salve na memória permanente ... Data 23/12/2025 ..."
-   => grava exatamente o texto fornecido (ou, se vazio, grava recorte do histórico recente)
+2) Persistência robusta:
+   - _load_rel_state garante que todos os campos necessários existam SEM resetar
+   - _save_rel_state salva no fact rel.state::{timeline}
 
-2) Salvar resumo dinâmico (X até Y) — sem listagem, texto corrido:
-   "Mary, salve o resumo dos fatos de X até Y... em 24/12/2025."
-   => Mary gera resumo factual SOMENTE a partir das FALAS DA MARY (recorte do histórico real) e salva SOMENTE o resumo
+3) Promoção universitária -> cúmplice:
+   - quando meta sugerir "cumplice", o service:
+     a) muda st.session_state["mary_timeline"]
+     b) garante que exista rel_state inicial para "cumplice" (sem depender do usuário)
+     c) limpa cache do usuário atual (universitária), e também prepara o próximo
 
-3) Pergunta de memória:
-   "Mary, você lembra do primeiro beijo?"
-   => injeta memórias relevantes no system para a Mary responder com coerência (sem colar literal)
-
-CANON (continuidade forte entre capítulos):
-- Memórias com meta.kind="canon" prevalecem sobre a persona
-- Se existir ao menos 1 memória canon, o "INTRO" da persona NÃO é reinjetado
+4) Corrigida a parte “duplicada/indentada” do engine dentro do loop de tentativas.
 """
 
 import logging
@@ -32,7 +28,6 @@ import hashlib
 from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
-import json
 
 from core.common.base_service import BaseCharacter
 from core.service_router import route_chat_strict
@@ -62,7 +57,7 @@ _SERVICE_CACHE.clear()
 
 
 # ==========================================================
-# 🔑 USER / KEYS (agora suportam override por parâmetro)
+# 🔑 USER / KEYS
 # ==========================================================
 def _normalize_user_id(user: Optional[str]) -> str:
     u = (user or "").strip()
@@ -75,8 +70,7 @@ def _current_user_id_fallback() -> str:
 
 
 def _normalize_timeline(timeline: Optional[str]) -> str:
-    tl = (timeline or "").strip() or "cumplice"
-    return tl
+    return (timeline or "").strip() or "cumplice"
 
 
 def _user_key(user_id: str, timeline: str) -> str:
@@ -114,7 +108,7 @@ ESTILO: SEXUALMENTE EXPLÍCITO, GRÁFICO, DIRETO E SEM CENSURA.
 
 
 # ==========================================================
-# CACHE (com limit seguro)
+# CACHE (limit seguro)
 # ==========================================================
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     ck = f"facts::{usuario_key}"
@@ -129,9 +123,6 @@ def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
 
 
 def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
-    """
-    Cache com limit para evitar puxar histórico infinito do backend.
-    """
     hk = f"history::{usuario_key}"
     if hk in st.session_state:
         return st.session_state[hk]
@@ -150,17 +141,15 @@ def clear_user_cache(usuario_key: str) -> None:
 
 
 # ==========================================================
-# NSFW ENABLE (agora respeita override)
+# NSFW ENABLE (respeita override)
 # ==========================================================
 def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None) -> bool:
     if isinstance(nsfw_override, bool):
         return nsfw_override
 
-    # compat: se app usa session_state
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
 
-    # fallback em fact
     facts = cached_get_facts(usuario_key) or {}
     v = facts.get("mary.nsfw")
     if isinstance(v, bool):
@@ -216,7 +205,7 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 
 # ==========================================================
-# INTRO CANÔNICO (contexto 1x por sessão) — CONDICIONAL AO CANON
+# INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
 def _hash_text(text: str) -> str:
     t = (text or "").strip().encode("utf-8")
@@ -319,10 +308,6 @@ def _build_overrides_block(overrides: List[Tuple[str, Any, str]]) -> str:
 
 
 def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]], max_items: int = 80) -> None:
-    """
-    Injeta memórias CANON (e overrides) no system prompt.
-    Controle max_items para evitar explodir tokens.
-    """
     mems = _get_all_memories(shared_key, limit=300)
     if not mems:
         return
@@ -336,9 +321,7 @@ def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]
     if not canon:
         return
 
-    # se quiser economizar tokens, pega só as últimas N
     selected = canon[-max_items:] if len(canon) > max_items else canon
-
     overrides = _extract_canon_overrides(selected)
     overrides_block = _build_overrides_block(overrides)
 
@@ -367,11 +350,7 @@ def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
-
 def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
-    """
-    Se já existe CANON, NÃO injeta o encontro inicial da persona.
-    """
     flag = f"intro_ctx_injected::{usuario_key}"
     if st.session_state.get(flag):
         return
@@ -625,10 +604,6 @@ def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[D
 
 
 def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]], max_items: int = 8) -> None:
-    """
-    Continuidade suave: injeta algumas memórias compartilhadas NÃO-CANON (últimas N).
-    Não substitui canon; não explode tokens.
-    """
     try:
         mems = list_memories(shared_key, limit=120) or []
     except Exception:
@@ -664,7 +639,6 @@ def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]],
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
-
 # ==========================================================
 # RELATIONSHIP STATE (facts > canon default > fallback)
 # ==========================================================
@@ -673,18 +647,25 @@ def _rel_fact_key(timeline: str) -> str:
     return f"rel.state::{tl}"
 
 
-def _load_rel_state(facts: Dict[str, Any], timeline: str, canon_default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Carrega estado de relação.
+def _load_rel_state(
+    facts: Dict[str, Any],
+    timeline: str,
+    canon_default: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Carrega estado de relação.
 
     Prioridade:
     1) facts['rel.state::{timeline}'] (persistido)
     2) canon_default (canon.py -> relationship_state)
     3) default_relationship_state(timeline) (fallback seguro)
+
+    Importante: garante campos do engine novo (anti-loop / virgindade dinâmica).
     """
     base = default_relationship_state(timeline)
 
+    # aplica defaults do canon por cima do fallback (sem apagar internos)
     if isinstance(canon_default, dict):
-        # aplica defaults do canon por cima do fallback (sem apagar internos)
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
                 base[k] = v
@@ -700,6 +681,12 @@ def _load_rel_state(facts: Dict[str, Any], timeline: str, canon_default: Optiona
     base.setdefault("_promote_streak", 0)
     base.setdefault("_regress_streak", 0)
 
+    # novos campos (engine v2)
+    base.setdefault("mature_turns", 0)
+    base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
+    base.setdefault("consummated", False if timeline == "universitaria" else True)
+    base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
+
     if not base.get("stage"):
         base["stage"] = "conhecendo" if (timeline or "") == "universitaria" else "casados"
 
@@ -709,6 +696,31 @@ def _load_rel_state(facts: Dict[str, Any], timeline: str, canon_default: Optiona
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     key = _rel_fact_key(timeline)
     set_fact(usuario_key, key, rel, {"fonte": "relationship_engine"})
+
+
+def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
+    """
+    Quando o engine sugerir migrar para outra timeline, garantimos que exista um rel_state inicial
+    persistido para a timeline destino, para não “parecer reset/confusão” no primeiro turno.
+    """
+    tl = _normalize_timeline(timeline)
+    uk = _user_key(user_id, tl)
+    facts = cached_get_facts(uk)
+    key = _rel_fact_key(tl)
+
+    if isinstance((facts or {}).get(key), dict):
+        return
+
+    canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
+    canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+    rel = _load_rel_state(facts or {}, tl, canon_rel_default)
+
+    try:
+        _save_rel_state(uk, tl, rel)
+        clear_user_cache(uk)
+    except Exception:
+        pass
+
 
 # ==========================================================
 # SERVICE
@@ -726,12 +738,6 @@ class MaryService(BaseCharacter):
         timeline: Optional[str] = None,
         nsfw: Optional[bool] = None,
     ) -> str:
-        """
-        Compatível com o app atual:
-        - Se prompt=None, lê st.session_state["chat_input"]
-        - Se timeline=None, lê st.session_state["mary_timeline"]
-        - Se nsfw=None, lê st.session_state["mary_nsfw_on"] e depois facts
-        """
         # prompt
         if prompt is None:
             prompt = (st.session_state.get("chat_input") or "").strip()
@@ -765,7 +771,6 @@ class MaryService(BaseCharacter):
             raw_body = _strip_save_prefix(prompt)
             date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
-            # 2a) Se o usuário pediu "resumo": gera resumo dinâmico (X→Y) e salva SOMENTE o resumo
             if _wants_auto_summary(prompt):
                 transcript, dbg_meta = _build_dynamic_mary_transcript(usuario_key, prompt)
                 if not transcript.strip():
@@ -802,11 +807,7 @@ class MaryService(BaseCharacter):
                         max_tokens=850,
                     )
 
-                    try:
-                        resumo = (data.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-                    except Exception:
-                        resumo = ""
-
+                    resumo = self._extract_text(data)
                     if not resumo:
                         return "⚠️ Não consegui gerar o resumo (modelo retornou vazio). Tente novamente."
 
@@ -832,7 +833,7 @@ class MaryService(BaseCharacter):
                     logger.exception("Falha ao gerar/salvar resumo dinâmico", exc_info=e)
                     return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
 
-            # 2b) Salvamento direto (texto do usuário; se curto, anexa recorte do histórico)
+            # salvamento direto
             body = raw_body
             if len(body.strip()) < 40:
                 captured = _fallback_capture_recent_history(usuario_key, turns=10)
@@ -860,18 +861,12 @@ class MaryService(BaseCharacter):
         # 3) Persona + sistema
         # ----------------------------------------------------------
         persona_text, _ = get_persona(timeline_final)
-
         facts = cached_get_facts(usuario_key)
 
-        # CANON (verdade atual) é sensível à timeline e sempre vence a persona
-        canon = get_canon("mary", timeline=timeline_final, user_key=user_id)
+        canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
 
-        # Relationship state: facts > canon default > fallback seguro
-        canon_rel_default = None
-        if isinstance(canon, dict) and isinstance(canon.get("relationship_state"), dict):
-            canon_rel_default = canon.get("relationship_state")
-
+        canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
         rel_block = rel_state_to_prompt_block(rel_state)
 
@@ -906,23 +901,19 @@ REGRAS ABSOLUTAS:
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
         # ----------------------------------------------------------
-        # 4) Intro canônica 1x por sessão (só se NÃO houver CANON)
+        # 4) Intro 1x por sessão (só se NÃO houver CANON)
         # ----------------------------------------------------------
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
         # ----------------------------------------------------------
-        # 5) ✅ CANON sempre injetado (continuidade entre capítulos)
+        # 5) ✅ CANON sempre injetado (continuidade forte)
         # ----------------------------------------------------------
         _inject_canon_memories_always(shared_key, messages, max_items=80)
 
-        # ----------------------------------------------------------
-        # 5.1) Continuidade suave (memórias não-canon, poucas)
-        # ----------------------------------------------------------
+        # 5.1) Continuidade suave (não-canon)
         _inject_shared_soft_context(shared_key, messages, max_items=8)
 
-        # ----------------------------------------------------------
-        # 6) Se for pergunta de memória, injeta memórias relevantes adicionais
-        # ----------------------------------------------------------
+        # 6) Pergunta de memória: injeta relevantes
         if _is_memory_question(prompt):
             _inject_memories_context(shared_key, prompt, messages)
 
@@ -943,12 +934,6 @@ REGRAS ABSOLUTAS:
         # ----------------------------------------------------------
         # 8) Chat com retry/fallback
         # ----------------------------------------------------------
-        def _extract_text(resp: dict) -> str:
-            try:
-                return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-            except Exception:
-                return ""
-
         attempts = [
             {"model": model, "temperature": 0.7},
             {"model": model, "temperature": 0.4},
@@ -956,6 +941,7 @@ REGRAS ABSOLUTAS:
         ]
 
         last_err: Optional[Exception] = None
+
         for attempt in attempts:
             try:
                 data, used_model, _ = self._chat(
@@ -964,53 +950,71 @@ REGRAS ABSOLUTAS:
                     temperature=attempt["temperature"],
                     max_tokens=1200,
                 )
-                texto = _extract_text(data)
-                if texto:
-                    # ----------------------------------------------------------
-                                        # ----------------------------------------------------------
-                    # ✅ Relationship Engine (core.relationship_engine):
-                    # - avalia o turno (JSON) e atualiza estado canônico persistido
-                    # - pode sugerir promoção de timeline (universitaria -> cumplice)
-                    # ----------------------------------------------------------
-                    try:
-                        assessor_model = used_model or attempt["model"]
+                texto = self._extract_text(data)
+                if not texto:
+                    continue
 
-                        def _assessor(system_prompt: str, user_prompt: str) -> str:
-                            data2, used2, _ = self._chat(
-                                assessor_model,
-                                [
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_prompt},
-                                ],
-                                temperature=0.0,
-                                max_tokens=220,
-                            )
-                            return _extract_text(data2)
+                # ----------------------------------------------------------
+                # ✅ Relationship Engine (pós-resposta):
+                # - avalia o turno e atualiza estado canônico persistido
+                # - pode sugerir migração universitária -> cúmplice
+                # ----------------------------------------------------------
+                try:
+                    assessor_model = used_model or attempt["model"]
 
-                        new_rel, _assessment, meta = evolve_relationship(
-                            rel_state,
-                            prompt,
-                            texto,
-                            timeline_final,
-                            _assessor,
-                            cfg=EngineConfig(),
+                    def _assessor(system_prompt: str, user_prompt: str) -> str:
+                        data2, _, _ = self._chat(
+                            assessor_model,
+                            [
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_prompt},
+                            ],
+                            temperature=0.0,
+                            max_tokens=260,
                         )
+                        return self._extract_text(data2)
 
-                        rel_state = new_rel
-                        _save_rel_state(usuario_key, timeline_final, rel_state)
+                    new_rel, _assessment, meta = evolve_relationship(
+                        rel_state,
+                        prompt,
+                        texto,
+                        timeline_final,
+                        _assessor,
+                        cfg=EngineConfig(),
+                    )
 
-                        # Promoção automática de temporada: universitária -> cúmplice
-                        if timeline_final == "universitaria" and (meta or {}).get("suggested_timeline") == "cumplice":
-                            st.session_state["mary_timeline"] = "cumplice"
-                            clear_user_cache(usuario_key)
+                    rel_state = new_rel
+                    _save_rel_state(usuario_key, timeline_final, rel_state)
 
-                    except Exception:
-                        # Se o engine falhar, não derruba o chat.
-                        pass
+                    # Promoção automática de timeline: universitária -> cúmplice
+                    if timeline_final == "universitaria" and (meta or {}).get("suggested_timeline") == "cumplice":
+                        # 1) troca timeline no app
+                        st.session_state["mary_timeline"] = "cumplice"
+                        # 2) garante rel_state inicial da timeline destino
+                        _ensure_rel_state_for_timeline(user_id, "cumplice")
+                        # 3) limpa cache do usuário atual (universitária)
+                        clear_user_cache(usuario_key)
 
-                    save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
-                    clear_user_cache(usuario_key)
-                    return texto
+                    # (Opcional) debug rápido no session_state — útil pra você verificar “loop”
+                    st.session_state["mary_rel_meta_last"] = {
+                        "timeline": timeline_final,
+                        "stage": rel_state.get("stage"),
+                        "virginity": rel_state.get("virginity"),
+                        "consummated": rel_state.get("consummated"),
+                        "mature_turns": rel_state.get("mature_turns"),
+                        "hazard_p": (meta or {}).get("hazard_p"),
+                        "virginity_changed": (meta or {}).get("virginity_changed"),
+                        "virginity_reason": (meta or {}).get("virginity_reason"),
+                    }
+
+                except Exception:
+                    # Se o engine falhar, não derruba o chat.
+                    pass
+
+                save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
+                clear_user_cache(usuario_key)
+                return texto
+
             except Exception as e:
                 last_err = e
 
@@ -1018,6 +1022,16 @@ REGRAS ABSOLUTAS:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
+
+    # -------------------------
+    # helpers
+    # -------------------------
+    @staticmethod
+    def _extract_text(resp: dict) -> str:
+        try:
+            return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+        except Exception:
+            return ""
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
         return route_chat_strict(
