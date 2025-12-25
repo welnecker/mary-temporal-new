@@ -1,25 +1,17 @@
 from __future__ import annotations
 
 """
-MaryService (v3.10 – Timeline-Aware + Canon + RelationshipEngine v2 (virginidade dinâmica + anti-loop)
+MaryService (v3.11 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial + Memórias Permanentes Compartilhadas (CANON) + Salvamento Dinâmico)
 
-PONTOS-CHAVE (o que foi ajustado aqui):
-1) Integração correta com o relationship_engine.py novo:
-   - rel_state agora inclui: virginity, consummated, intimacy_level, mature_turns
-   - evolve_relationship retorna meta com: hazard_p, mature_turns, virginity_changed, virginity_reason
-
-2) Persistência robusta:
-   - _load_rel_state garante que todos os campos necessários existam SEM resetar
-   - _save_rel_state salva no fact rel.state::{timeline}
-
-3) Promoção universitária -> cúmplice:
-   - quando meta sugerir "cumplice", o service:
-     a) muda st.session_state["mary_timeline"]
-     b) garante que exista rel_state inicial para "cumplice" (sem depender do usuário)
-     c) limpa cache do usuário atual (universitária), e também prepara o próximo
-
-4) Corrigida a parte “duplicada/indentada” do engine dentro do loop de tentativas.
+CORREÇÕES IMPORTANTES AQUI (de verdade, pra parar de quebrar):
+1) Padronização de nomes: usuario_key (não mistura usuario_key/usuario_key).
+2) _load_rel_state agora garante campos do RelationshipEngine v2 (anti-loop + libido/controle + permissões).
+3) Bloco de promoção universitária -> cúmplice corrigido:
+   - atualiza timeline_final e usuario_key antes de salvar interação (histórico vai pro lugar certo).
+   - limpa cache do usuario_key antigo e do novo (evita “voltar” no próximo reload).
+4) Debug sempre seguro: meta/promotion sempre definidos (nada de variável não inicializada).
+5) Indentação inteira do bloco “retry/fallback” corrigida.
 """
 
 import logging
@@ -44,7 +36,6 @@ from core.repositories import (
     get_history_docs,
     save_interaction,
     set_fact,
-    # memórias (compartilhadas)
     append_memory,
     list_memories,
 )
@@ -83,8 +74,8 @@ def _shared_key(user_id: str) -> str:
 
 def _current_user_key() -> str:
     uid = _current_user_id_fallback()
-    timeline = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
-    return _user_key(uid, timeline)
+    tl = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
+    return _user_key(uid, tl)
 
 
 def _shared_memory_key() -> str:
@@ -98,12 +89,12 @@ def _shared_memory_key() -> str:
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
 Estilo: romance adulto, tensão, intimidade e sugestão.
-detalhes gráficos moderados.
+Evite detalhes gráficos.
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
 [NSFW_ON]
-ESTILO: SEXUALMENTE EXPLÍCITO, GRÁFICO, DIRETO E SEM CENSURA.
+ESTILO: ADULTO, DIRETO E SEM RODEIOS.
 """.strip()
 
 
@@ -147,6 +138,8 @@ def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None) -> bool
     if isinstance(nsfw_override, bool):
         return nsfw_override
 
+    # sidebar deve setar exatamente essa chave:
+    # st.session_state["mary_nsfw_on"] = True/False
     if "mary_nsfw_on" in st.session_state:
         return bool(st.session_state["mary_nsfw_on"])
 
@@ -154,6 +147,7 @@ def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None) -> bool
     v = facts.get("mary.nsfw")
     if isinstance(v, bool):
         return v
+
     return True
 
 
@@ -300,10 +294,7 @@ def _build_overrides_block(overrides: List[Tuple[str, Any, str]]) -> str:
             v = "null"
         else:
             v = str(value)
-        if date_iso:
-            lines.append(f"- {key} = {v} (desde {date_iso})")
-        else:
-            lines.append(f"- {key} = {v}")
+        lines.append(f"- {key} = {v}" + (f" (desde {date_iso})" if date_iso else ""))
     return "\n".join(lines).strip()
 
 
@@ -489,17 +480,17 @@ def _slice_mary_between_markers(mary_msgs: List[str], start_hint: str, end_hint:
 
     if i0 is None and i1 is not None:
         i0 = max(0, i1 - 8)
-        return mary_msgs[i0:i1 + 1], "only_end_found"
+        return mary_msgs[i0 : i1 + 1], "only_end_found"
 
     if i0 is not None and i1 is None:
         i1 = min(len(mary_msgs) - 1, i0 + 8)
-        return mary_msgs[i0:i1 + 1], "only_start_found"
+        return mary_msgs[i0 : i1 + 1], "only_start_found"
 
     if i0 is not None and i1 is not None:
         if i1 < i0:
             i0, i1 = i1, i0
-            return mary_msgs[i0:i1 + 1], "markers_swapped"
-        return mary_msgs[i0:i1 + 1], "both_found"
+            return mary_msgs[i0 : i1 + 1], "markers_swapped"
+        return mary_msgs[i0 : i1 + 1], "both_found"
 
     return [], "unexpected"
 
@@ -525,11 +516,7 @@ def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, 
 
     sliced = mary_msgs[-10:]
     transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
-    meta = {
-        "mode": "fallback_last10",
-        "debug": "no_range_in_prompt",
-        "mary_msgs_used": len(sliced),
-    }
+    meta = {"mode": "fallback_last10", "debug": "no_range_in_prompt", "mary_msgs_used": len(sliced)}
     return transcript.strip(), meta
 
 
@@ -588,8 +575,6 @@ def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[D
         lines.append(str(m.get("text") or "").strip())
         lines.append("")
 
-    mem_block = "\n".join(lines).strip()
-
     messages.append(
         {
             "role": "system",
@@ -597,7 +582,7 @@ def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[D
                 "[MEMÓRIAS PERMANENTES (selecionadas)]\n"
                 "Use como fatos canônicos quando aplicável.\n"
                 "Responda interpretando com coerência (não cole literal).\n\n"
-                f"{mem_block}"
+                + "\n".join(lines).strip()
             ),
         }
     )
@@ -653,18 +638,11 @@ def _load_rel_state(
     canon_default: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Carrega estado de relação.
-
-    Prioridade:
-    1) facts['rel.state::{timeline}'] (persistido)
-    2) canon_default (canon.py -> relationship_state)
-    3) default_relationship_state(timeline) (fallback seguro)
-
-    Importante: garante campos do engine novo (anti-loop / virgindade dinâmica).
+    Garante campos do RelationshipEngine v2 sem resetar nada existente.
     """
     base = default_relationship_state(timeline)
 
-    # aplica defaults do canon por cima do fallback (sem apagar internos)
+    # canon default por cima
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
@@ -672,37 +650,47 @@ def _load_rel_state(
 
     key = _rel_fact_key(timeline)
     raw = (facts or {}).get(key)
-
     if isinstance(raw, dict):
         for k, v in raw.items():
             base[k] = v
 
-    # garante internos usados pelo engine
+    # internos anti-loop
     base.setdefault("_promote_streak", 0)
     base.setdefault("_regress_streak", 0)
+    base.setdefault("_loop_streak", 0)
+    base.setdefault("_last_pattern", "")
+    base.setdefault("_last_updated_ts", 0)
 
-    # novos campos (engine v2)
+    # v2 principais
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
     base.setdefault("consummated", False if timeline == "universitaria" else True)
     base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
 
+    # libido/controle (evita “imune ao desejo” e evita “tarado 100%”)
+    base.setdefault("desire", 25 if timeline == "universitaria" else 45)
+    base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
+    base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
+
+    # permissões (o engine v2 usa isso pra modular avanço)
+    base.setdefault("allows_touch", True)
+    base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
+    base.setdefault("allows_sleep_together", False if timeline == "universitaria" else True)
+    base.setdefault("allows_masturbation", True)
+    base.setdefault("allows_mutual_relief", False if timeline == "universitaria" else True)
+    base.setdefault("allows_penetration", False if timeline == "universitaria" else True)
+
     if not base.get("stage"):
-        base["stage"] = "conhecendo" if (timeline or "") == "universitaria" else "casados"
+        base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
     return base
 
 
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
-    key = _rel_fact_key(timeline)
-    set_fact(usuario_key, key, rel, {"fonte": "relationship_engine"})
+    set_fact(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
 
 
 def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
-    """
-    Quando o engine sugerir migrar para outra timeline, garantimos que exista um rel_state inicial
-    persistido para a timeline destino, para não “parecer reset/confusão” no primeiro turno.
-    """
     tl = _normalize_timeline(timeline)
     uk = _user_key(user_id, tl)
     facts = cached_get_facts(uk)
@@ -781,28 +769,22 @@ class MaryService(BaseCharacter):
                     "REGRAS ABSOLUTAS:\n"
                     "- Use SOMENTE as informações presentes em [TRANSCRIÇÃO].\n"
                     "- NÃO invente, NÃO complete lacunas, NÃO crie fatos fora do texto.\n"
-                    "- Texto corrido, sem bullets, sem listagem.\n"
-                    "- Escreva com clareza e sequência temporal.\n"
-                    "- Foque nos fatos (o que aconteceu e por quê), sem floreios.\n"
+                    "- Texto corrido, sem bullets.\n"
+                    "- Clareza e sequência temporal.\n"
                     "- 8 a 16 linhas.\n"
-                    "- Se o pedido do usuário delimitar recorte, não avance além.\n"
                     "- Idioma: PT-BR.\n"
                 )
 
                 summary_user = (
                     "Gere um resumo factual para memória permanente.\n"
-                    f"Data (se houver): {date_iso or '—'}\n"
-                    "Recorte: conforme pedido do usuário (se presente).\n\n"
+                    f"Data (se houver): {date_iso or '—'}\n\n"
                     f"[TRANSCRIÇÃO — APENAS FALAS DA MARY]\n{transcript}"
                 )
 
                 try:
                     data, used_model, _ = self._chat(
                         model,
-                        [
-                            {"role": "system", "content": summary_system},
-                            {"role": "user", "content": summary_user},
-                        ],
+                        [{"role": "system", "content": summary_system}, {"role": "user", "content": summary_user}],
                         temperature=0.2,
                         max_tokens=850,
                     )
@@ -843,11 +825,7 @@ class MaryService(BaseCharacter):
             if not body.strip():
                 return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
 
-            meta = {
-                "kind": "user_request",
-                "date": date_iso or "",
-                "timeline_at_save": timeline_final,
-            }
+            meta = {"kind": "user_request", "date": date_iso or "", "timeline_at_save": timeline_final}
 
             try:
                 append_memory(shared_key, body.strip(), meta=meta)
@@ -892,7 +870,6 @@ PERSONA (baseline):
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
 - Nunca contradiga o ESTADO DE RELAÇÃO (CANÔNICO) e a timeline ativa.
-- A timeline define o tom macro; o estágio da relação (stage) define o quanto existe de vínculo/entrega.
 - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
 {nsfw_block}
@@ -900,14 +877,10 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # ----------------------------------------------------------
         # 4) Intro 1x por sessão (só se NÃO houver CANON)
-        # ----------------------------------------------------------
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # ----------------------------------------------------------
-        # 5) ✅ CANON sempre injetado (continuidade forte)
-        # ----------------------------------------------------------
+        # 5) CANON sempre injetado (continuidade forte)
         _inject_canon_memories_always(shared_key, messages, max_items=80)
 
         # 5.1) Continuidade suave (não-canon)
@@ -917,9 +890,7 @@ REGRAS ABSOLUTAS:
         if _is_memory_question(prompt):
             _inject_memories_context(shared_key, prompt, messages)
 
-        # ----------------------------------------------------------
         # 7) Histórico (timeline atual)
-        # ----------------------------------------------------------
         history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -931,7 +902,7 @@ REGRAS ABSOLUTAS:
 
         messages.append({"role": "user", "content": prompt})
 
-              # ----------------------------------------------------------
+        # ----------------------------------------------------------
         # 8) Chat com retry/fallback
         # ----------------------------------------------------------
         attempts = [
@@ -950,15 +921,17 @@ REGRAS ABSOLUTAS:
                     temperature=attempt["temperature"],
                     max_tokens=1200,
                 )
+
                 texto = self._extract_text(data)
                 if not texto:
                     continue
 
                 # ----------------------------------------------------------
-                # ✅ Relationship Engine (pós-resposta):
-                # - avalia o turno e atualiza estado canônico persistido
-                # - pode sugerir migração universitária -> cúmplice
+                # Relationship Engine (pós-resposta)
                 # ----------------------------------------------------------
+                promoted = False
+                meta: Dict[str, Any] = {}
+
                 try:
                     assessor_model = used_model or attempt["model"]
 
@@ -987,12 +960,10 @@ REGRAS ABSOLUTAS:
                     _save_rel_state(usuario_key, timeline_final, rel_state)
 
                     # Promoção automática de timeline: universitária -> cúmplice
-                    promoted = False
-                    if (
-                        timeline_final == "universitaria"
-                        and (meta or {}).get("suggested_timeline") == "cumplice"
-                    ):
+                    if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                         promoted = True
+
+                        old_key = usuario_key
 
                         # 1) troca timeline no app (UI)
                         st.session_state["mary_timeline"] = "cumplice"
@@ -1000,30 +971,39 @@ REGRAS ABSOLUTAS:
                         # 2) garante rel_state inicial da timeline destino (persistido)
                         _ensure_rel_state_for_timeline(user_id, "cumplice")
 
-                        # 3) limpa cache da timeline atual (universitária)
-                        clear_user_cache(usuario_key)
-
-                        # 4) IMPORTANTÍSSIMO:
-                        #    daqui em diante, o usuario_key correto para salvar é o da timeline destino
+                        # 3) muda o contexto efetivo do service (histórico/facts corretos)
+                        timeline_final = "cumplice"
                         usuario_key = _user_key(user_id, "cumplice")
 
-                    # (Opcional) debug rápido no session_state — útil pra você verificar “loop”
-                    debug_tl = "cumplice" if promoted else timeline_final
-                    st.session_state["mary_rel_meta_last"] = {
-                        "timeline": debug_tl,
-                        "stage": rel_state.get("stage"),
-                        "virginity": rel_state.get("virginity"),
-                        "consummated": rel_state.get("consummated"),
-                        "mature_turns": rel_state.get("mature_turns"),
-                        "hazard_p": (meta or {}).get("hazard_p"),
-                        "virginity_changed": (meta or {}).get("virginity_changed"),
-                        "virginity_reason": (meta or {}).get("virginity_reason"),
-                    }
+                        # 4) limpa cache do antigo e do novo (evita “volta” no reload)
+                        clear_user_cache(old_key)
+                        clear_user_cache(usuario_key)
 
                 except Exception:
-                    # Se o engine falhar, não derruba o chat.
-                    pass
+                    # engine falhou: segue sem derrubar o chat
+                    promoted = False
+                    meta = meta or {}
 
+                # Debug rápido
+                debug_tl = "cumplice" if promoted else timeline_final
+                st.session_state["mary_rel_meta_last"] = {
+                    "timeline": debug_tl,
+                    "stage": rel_state.get("stage"),
+                    "intimacy_level": rel_state.get("intimacy_level"),
+                    "virginity": rel_state.get("virginity"),
+                    "consummated": rel_state.get("consummated"),
+                    "mature_turns": rel_state.get("mature_turns"),
+                    "desire": rel_state.get("desire"),
+                    "arousal": rel_state.get("arousal"),
+                    "self_control": rel_state.get("self_control"),
+                    "hazard_p": meta.get("hazard_p"),
+                    "forced_variation": meta.get("forced_variation"),
+                    "pattern": meta.get("pattern"),
+                    "virginity_changed": meta.get("virginity_changed"),
+                    "virginity_reason": meta.get("virginity_reason"),
+                }
+
+                # Salva interação no histórico CERTO
                 save_interaction(usuario_key, prompt, texto, used_model or attempt["model"])
                 clear_user_cache(usuario_key)
                 return texto
