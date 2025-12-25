@@ -1,36 +1,34 @@
-# core/relationship_engine.py
 from __future__ import annotations
 
+"""
+core.relationship_engine
+
+Objetivo:
+- Evoluir o "relationship_state" de forma dinâmica (com inércia e ruído leve),
+  sem exigir passos manuais/predeterminados.
+- Produzir um bloco curto para ser injetado no system prompt (canônico).
+- Separar a lógica do service.py (que só chama evolve_relationship e persiste).
+
+Como funciona (Degrau 1):
+1) O service mantém um dict "rel_state" persistido em facts: rel.state::{timeline}
+2) A cada turno, chamamos um "avaliador" LLM (saída JSON) para sugerir deltas pequenos
+3) Aplicamos deltas com clamp + inércia
+4) Opcionalmente promovemos/regredimos "stage" com chance (não determinístico)
+5) Se timeline=universitaria e stage/condições atingirem maturidade -> sugerimos timeline "cumplice"
+"""
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, Optional, Tuple
 import json
 import random
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Callable
+import re
 
 
-# ==========================
-# Types / Config
-# ==========================
-
-RelState = Dict[str, Any]
-Assessment = Dict[str, Any]
+LLMAssessor = Callable[[str, str], str]
 
 
-@dataclass(frozen=True)
-class EngineConfig:
-    # Limites por turno (evita “pulo” emocional)
-    max_delta: int = 8
-    # Ruído controlado para evitar previsibilidade (pequeno!)
-    noise: int = 1
-    # Inércia: quanto do delta realmente entra (0..1)
-    inertia: float = 0.85
-    # Quantos turnos “estáveis” para promover estágio
-    promote_streak_needed: int = 3
-    # Quantos turnos “ruins” para regredir estágio
-    regress_streak_needed: int = 2
-
-
-# Ordem de evolução (microfases)
-STAGE_ORDER = [
+REL_STAGES = [
     "conhecendo",
     "ficando",
     "namoro",
@@ -40,377 +38,289 @@ STAGE_ORDER = [
     "casados",
 ]
 
-# Se quiser permitir regressão até certo ponto, mantenha esta lista.
-# (Ex.: não voltar de “noivado” para “conhecendo” facilmente)
-MIN_STAGE_INDEX_UNIVERSITARIA = 0
+
+@dataclass(frozen=True)
+class EngineConfig:
+    # máximo de variação por turno, por métrica
+    max_step: int = 8
+    # limites do score
+    lo: int = 0
+    hi: int = 100
+    # prob base de mudança de estágio
+    base_promote: float = 0.05
+    base_regress: float = 0.04
+    # ruído para evitar previsibilidade (aplicado na prob)
+    noise: float = 0.06
 
 
-# ==========================
-# Defaults
-# ==========================
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-def default_relationship_state(timeline: str) -> RelState:
-    """
-    Estado inicial (default) caso ainda não exista fact persistido.
-    Idealmente você usa o do canon.py, mas isso aqui é fallback seguro.
-    """
-    timeline = (timeline or "").strip() or "cumplice"
 
-    if timeline == "universitaria":
+def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
+    return max(lo, min(hi, int(n)))
+
+
+def default_relationship_state(timeline: str) -> Dict[str, Any]:
+    tl = (timeline or "").strip() or "cumplice"
+
+    if tl == "universitaria":
+        # início: vulnerável + tensão + medo social/moral
         return {
             "stage": "conhecendo",
-            "trust": 20,
-            "tension": 35,
+            "trust": 18,
+            "tension": 28,
             "fear": 45,
             "guilt": 30,
             "attachment": 15,
-            "boundaries": "alta",
-            "last_signal": "primeiro_contato",
-            "notes": "Início de vínculo. Desejo existe, mas há cautela.",
-            # Contadores internos (não precisam ir para prompt)
+            "boundaries": "alta",           # alta|media|baixa
+            "conflict_theme": "nenhum",     # nenhum|familia|moral|rotina|ciume|risco
+            "last_eval_ts": "",
+            "last_stage_change_ts": "",
             "_promote_streak": 0,
             "_regress_streak": 0,
         }
 
-    # cúmplice
+    # cúmplice: já casados; ainda pode oscilar em confiança/tensão/medo por eventos
     return {
         "stage": "casados",
-        "trust": 75,
-        "tension": 70,
-        "fear": 20,
-        "guilt": 10,
-        "attachment": 85,
+        "trust": 72,
+        "tension": 55,
+        "fear": 12,
+        "guilt": 8,
+        "attachment": 78,
         "boundaries": "baixa",
-        "last_signal": "rotina_intima",
-        "notes": "Vínculo consolidado e íntimo.",
+        "conflict_theme": "rotina",
+        "last_eval_ts": "",
+        "last_stage_change_ts": "",
         "_promote_streak": 0,
         "_regress_streak": 0,
     }
 
 
-# ==========================
-# Prompt helpers
-# ==========================
-
-def rel_state_to_prompt_block(rel: RelState) -> str:
-    """
-    Bloco curto e 'model-friendly' para injetar no prompt.
-    Não inclua chaves internas (_promote_streak etc).
-    """
-    keys = ["stage", "trust", "tension", "fear", "guilt", "attachment", "boundaries", "last_signal", "notes"]
-    lines = ["[ESTADO DE RELAÇÃO — CANÔNICO]"]
-    for k in keys:
-        if k in rel:
-            lines.append(f"- {k}: {rel[k]}")
-    return "\n".join(lines)
-
-
-# ==========================
-# Assessment (LLM JSON)
-# ==========================
-
-ASSESSMENT_SYSTEM = """Você é um avaliador psicológico/narrativo.
-Sua tarefa NÃO é escrever história. Você apenas avalia sinais do turno e retorna JSON.
-Siga estritamente o schema e responda SOMENTE com JSON válido.
-"""
-
-ASSESSMENT_INSTRUCTIONS = """Analise:
-(1) a mensagem do usuário
-(2) a resposta da personagem
-
-Retorne deltas pequenos (-8..+8) para:
-trust, tension, fear, guilt, attachment
-
-Também retorne:
-- signal: uma palavra curta descrevendo o evento (ex: "flirt", "confession", "kiss", "touch", "retreat", "argument", "reassure", "care", "jealousy", "family", "moral")
-- intimacy_level: 0..3 (0 nenhum, 1 leve, 2 médio, 3 alto)
-- stage_hint: "promote" | "regress" | "stay"
-- confidence: 0..1
-
-Schema:
-{
-  "deltas": {"trust": int, "tension": int, "fear": int, "guilt": int, "attachment": int},
-  "signal": str,
-  "intimacy_level": int,
-  "stage_hint": str,
-  "confidence": float
-}
-"""
-
-def build_assessment_prompt(user_msg: str, mary_reply: str) -> str:
-    return f"""{ASSESSMENT_INSTRUCTIONS}
-
-USUÁRIO:
-{user_msg}
-
-PERSONAGEM:
-{mary_reply}
-"""
+def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
+    if not isinstance(rel, dict):
+        return ""
+    return (
+        "[ESTADO DE RELAÇÃO — CANÔNICO]\n"
+        f"- stage: {rel.get('stage')}\n"
+        f"- trust: {rel.get('trust')}\n"
+        f"- tension: {rel.get('tension')}\n"
+        f"- fear: {rel.get('fear')}\n"
+        f"- guilt: {rel.get('guilt')}\n"
+        f"- attachment: {rel.get('attachment')}\n"
+        f"- boundaries: {rel.get('boundaries')}\n"
+        f"- conflict_theme: {rel.get('conflict_theme')}\n"
+    ).strip()
 
 
-def parse_assessment_json(text: str) -> Assessment:
-    """
-    Extrai JSON robustamente (caso venha com lixo ao redor).
-    """
-    text = (text or "").strip()
-    # tenta carregar direto
+def _safe_json_parse(s: str) -> Dict[str, Any]:
+    s = (s or "").strip()
+    if not s:
+        return {}
+    # tenta achar um objeto JSON no meio do texto
+    m = re.search(r"\{.*\}", s, flags=re.DOTALL)
+    if not m:
+        return {}
     try:
-        obj = json.loads(text)
-        return obj if isinstance(obj, dict) else {}
+        return json.loads(m.group(0))
     except Exception:
-        pass
+        return {}
 
-    # tenta achar o primeiro {...} grande
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
+
+def _readiness(rel: Dict[str, Any]) -> float:
+    """Score de prontidão para avançar (não determinístico)."""
+    trust = float(rel.get("trust", 0))
+    attach = float(rel.get("attachment", 0))
+    tension = float(rel.get("tension", 0))
+    fear = float(rel.get("fear", 0))
+    guilt = float(rel.get("guilt", 0))
+
+    # Amor + confiança + tensão; penaliza medo/culpa.
+    return (0.38 * trust) + (0.38 * attach) + (0.18 * tension) - (0.22 * fear) - (0.10 * guilt)
+
+
+def _apply_deltas(rel: Dict[str, Any], upd: Dict[str, Any], cfg: EngineConfig) -> Dict[str, Any]:
+    def _d(k: str) -> int:
         try:
-            obj = json.loads(text[start : end + 1])
-            return obj if isinstance(obj, dict) else {}
+            return int(upd.get(k, 0))
         except Exception:
-            return {}
+            return 0
 
-    return {}
+    for key in ["trust", "tension", "fear", "guilt", "attachment"]:
+        delta = _d(f"{key}_delta")
+        if delta > cfg.max_step:
+            delta = cfg.max_step
+        if delta < -cfg.max_step:
+            delta = -cfg.max_step
+        rel[key] = _clamp(int(rel.get(key, 0)) + delta, cfg.lo, cfg.hi)
 
+    if isinstance(upd.get("conflict_theme"), str) and upd.get("conflict_theme"):
+        rel["conflict_theme"] = str(upd["conflict_theme"]).strip()
 
-# ==========================
-# Update mechanics
-# ==========================
+    if isinstance(upd.get("boundaries"), str) and upd.get("boundaries"):
+        rel["boundaries"] = str(upd["boundaries"]).strip()
 
-def _clip_int(x: int, lo: int = 0, hi: int = 100) -> int:
-    return max(lo, min(hi, int(x)))
-
-
-def _clip_delta(d: int, max_abs: int) -> int:
-    d = int(d)
-    if d > max_abs:
-        return max_abs
-    if d < -max_abs:
-        return -max_abs
-    return d
-
-
-def _apply_delta(cur: int, delta: int, cfg: EngineConfig) -> int:
-    """
-    Aplica delta com inércia e ruído mínimo para evitar previsibilidade.
-    """
-    delta = _clip_delta(delta, cfg.max_delta)
-    # inércia (suaviza)
-    effective = int(round(delta * cfg.inertia))
-    # ruído leve controlado
-    if cfg.noise > 0:
-        effective += random.randint(-cfg.noise, cfg.noise)
-    return _clip_int(cur + effective)
-
-
-def update_relationship_state(
-    rel: RelState,
-    assessment: Assessment,
-    cfg: EngineConfig,
-    timeline: str,
-) -> Tuple[RelState, Dict[str, Any]]:
-    """
-    Atualiza rel_state a partir do assessment e decide promoção/regressão.
-    Retorna (novo_rel_state, meta) onde meta pode sugerir troca de timeline.
-    """
-    rel = dict(rel or {})
-    timeline = (timeline or "").strip() or "cumplice"
-
-    deltas = (assessment.get("deltas") or {}) if isinstance(assessment, dict) else {}
-    signal = (assessment.get("signal") or "none") if isinstance(assessment, dict) else "none"
-    intimacy_level = int(assessment.get("intimacy_level") or 0) if isinstance(assessment, dict) else 0
-    stage_hint = (assessment.get("stage_hint") or "stay") if isinstance(assessment, dict) else "stay"
-    conf = float(assessment.get("confidence") or 0.0) if isinstance(assessment, dict) else 0.0
-
-    # Se confiança do avaliador for muito baixa, reduza impacto
-    scale = 1.0
-    if conf < 0.35:
-        scale = 0.5
-
-    for k in ["trust", "tension", "fear", "guilt", "attachment"]:
-        cur = int(rel.get(k) or 0)
-        d = int(deltas.get(k) or 0)
-        d = int(round(d * scale))
-        rel[k] = _apply_delta(cur, d, cfg)
-
-    rel["last_signal"] = signal
-
-    # boundaries pode ajustar conforme medo/culpa vs trust/tension
-    rel["boundaries"] = _infer_boundaries(rel, timeline)
-
-    # Atualiza notas curtas (opcional, ajuda o modelo)
-    rel["notes"] = _infer_notes(rel, timeline)
-
-    # Promoção/regressão de estágio (com streak)
+    rel["last_eval_ts"] = _now_iso()
     rel.setdefault("_promote_streak", 0)
     rel.setdefault("_regress_streak", 0)
+    return rel
 
-    promote_ok = _promotion_condition(rel, timeline, intimacy_level)
-    regress_ok = _regression_condition(rel, timeline)
 
-    if stage_hint == "promote" and promote_ok:
-        rel["_promote_streak"] += 1
-        rel["_regress_streak"] = 0
-    elif stage_hint == "regress" and regress_ok:
-        rel["_regress_streak"] += 1
+def _maybe_shift_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, cfg: EngineConfig) -> Tuple[Dict[str, Any], bool]:
+    stage = str(rel.get("stage") or "conhecendo")
+    if stage not in REL_STAGES:
+        stage = "conhecendo" if (timeline or "") == "universitaria" else "casados"
+
+    idx = REL_STAGES.index(stage)
+
+    stage_hint = str(upd.get("stage_hint") or "stay").strip().lower()
+    trust_breach = bool(upd.get("trust_breach") is True)
+
+    readiness = _readiness(rel)
+
+    # --- regressão (quebra de confiança + medo alto) ---
+    regress_chance = cfg.base_regress
+    if trust_breach:
+        regress_chance += 0.18
+    if rel.get("fear", 0) >= 70:
+        regress_chance += 0.10
+    if stage_hint == "regress":
+        regress_chance += 0.12
+
+    regress_chance += random.uniform(-cfg.noise, cfg.noise)
+    regress_chance = max(0.0, min(0.65, regress_chance))
+
+    if idx > 0 and random.random() < regress_chance:
+        rel["stage"] = REL_STAGES[idx - 1]
+        rel["last_stage_change_ts"] = _now_iso()
+        rel["_regress_streak"] = int(rel.get("_regress_streak", 0)) + 1
         rel["_promote_streak"] = 0
-    else:
-        # sem tendência clara: decaimento leve dos streaks
-        rel["_promote_streak"] = max(0, int(rel["_promote_streak"]) - 1)
-        rel["_regress_streak"] = max(0, int(rel["_regress_streak"]) - 1)
+        return rel, True
 
-    stage_before = rel.get("stage") or ("conhecendo" if timeline == "universitaria" else "casados")
-    stage_after = stage_before
+    # --- promoção (prontidão + sinal do avaliador) ---
+    promote_chance = cfg.base_promote
+    if stage_hint == "promote":
+        promote_chance += 0.14
 
-    if rel["_promote_streak"] >= cfg.promote_streak_needed:
-        stage_after = _bump_stage(stage_before, +1)
-        rel["_promote_streak"] = 0
+    # readiness acima de ~45 começa a permitir avanço
+    promote_chance += max(0.0, min(0.45, (readiness - 45.0) / 120.0))
 
-    if rel["_regress_streak"] >= cfg.regress_streak_needed:
-        stage_after = _bump_stage(stage_after, -1)
+    # trava se culpa alta em universitária
+    if (timeline or "") == "universitaria" and rel.get("guilt", 0) >= 75:
+        promote_chance *= 0.35
+
+    # trava se medo alto
+    if rel.get("fear", 0) >= 75:
+        promote_chance *= 0.30
+
+    promote_chance += random.uniform(-cfg.noise, cfg.noise)
+    promote_chance = max(0.0, min(0.65, promote_chance))
+
+    if idx < len(REL_STAGES) - 1 and random.random() < promote_chance:
+        rel["stage"] = REL_STAGES[idx + 1]
+        rel["last_stage_change_ts"] = _now_iso()
+        rel["_promote_streak"] = int(rel.get("_promote_streak", 0)) + 1
         rel["_regress_streak"] = 0
+        return rel, True
 
-    # trava regressão abaixo do mínimo na universitária
-    if timeline == "universitaria":
-        stage_after = _floor_stage(stage_after, MIN_STAGE_INDEX_UNIVERSITARIA)
+    return rel, False
 
-    rel["stage"] = stage_after
 
-    meta: Dict[str, Any] = {
-        "stage_before": stage_before,
-        "stage_after": stage_after,
-        "suggested_timeline": None,
+def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, mary_msg: str) -> Tuple[str, str]:
+    system = (
+        "Você é um avaliador de dinâmica de relacionamento para um roleplay.\n"
+        "Sua saída DEVE ser apenas um JSON válido.\n"
+        "Objetivo: medir sinais emocionais e sugerir deltas pequenos (inteiros).\n"
+        "Regras:\n"
+        "- Não invente fatos fora do que está em USER e MARY.\n"
+        "- Deltas devem estar entre -8 e +8.\n"
+        "- stage_hint deve ser: stay | promote | regress.\n"
+        "- conflict_theme deve ser: nenhum | familia | moral | rotina | ciume | risco.\n"
+        "- boundaries deve ser: alta | media | baixa.\n"
+        "- trust_breach: true apenas se houver quebra clara de confiança.\n"
+    )
+
+    payload = {
+        "timeline": timeline,
+        "rel_state": {
+            "stage": rel.get("stage"),
+            "trust": rel.get("trust"),
+            "tension": rel.get("tension"),
+            "fear": rel.get("fear"),
+            "guilt": rel.get("guilt"),
+            "attachment": rel.get("attachment"),
+            "boundaries": rel.get("boundaries"),
+            "conflict_theme": rel.get("conflict_theme"),
+        },
+        "turn": {"user": user_msg, "mary": mary_msg},
+        "return_schema": {
+            "trust_delta": "int (-8..8)",
+            "tension_delta": "int (-8..8)",
+            "fear_delta": "int (-8..8)",
+            "guilt_delta": "int (-8..8)",
+            "attachment_delta": "int (-8..8)",
+            "stage_hint": "stay|promote|regress",
+            "conflict_theme": "nenhum|familia|moral|rotina|ciume|risco",
+            "boundaries": "alta|media|baixa",
+            "trust_breach": "bool",
+        },
     }
 
-    # Sugestão de troca de timeline:
-    # Se universitária chegou em "casados", sugere timeline cúmplice
-    if timeline == "universitaria" and stage_after == "casados":
-        meta["suggested_timeline"] = "cumplice"
+    user = json.dumps(payload, ensure_ascii=False)
+    return system, user
 
-    return rel, meta
-
-
-def _infer_boundaries(rel: RelState, timeline: str) -> str:
-    """
-    Boundaries = “freios” atuais.
-    Quanto maior fear/guilt, maior boundary.
-    Quanto maior trust/attachment, menor boundary.
-    """
-    fear = int(rel.get("fear") or 0)
-    guilt = int(rel.get("guilt") or 0)
-    trust = int(rel.get("trust") or 0)
-    attach = int(rel.get("attachment") or 0)
-
-    pressure = fear * 0.6 + guilt * 0.4
-    safety = trust * 0.55 + attach * 0.45
-    score = pressure - safety  # >0: mais freio
-
-    if score >= 20:
-        return "alta"
-    if score >= -10:
-        return "media"
-    return "baixa"
-
-
-def _infer_notes(rel: RelState, timeline: str) -> str:
-    """
-    Uma frase curta que ajuda a personagem a “sentir” coerente.
-    """
-    t = int(rel.get("tension") or 0)
-    tr = int(rel.get("trust") or 0)
-    f = int(rel.get("fear") or 0)
-    g = int(rel.get("guilt") or 0)
-    a = int(rel.get("attachment") or 0)
-
-    if f > 65 or g > 65:
-        return "Conflito interno alto: desejo existe, mas há medo/culpa puxando para trás."
-    if t > 70 and tr < 45:
-        return "Atração forte, mas confiança ainda instável; provoca e recua."
-    if tr > 70 and a > 70 and f < 35 and g < 35:
-        return "Entrega emocional sólida; carinho e intimidade fluem com naturalidade."
-    if a > 70 and (f > 45 or g > 45):
-        return "Amor forte, porém pressionado por receio moral/familiar; busca equilíbrio."
-    return "Vínculo em evolução; sentimentos oscilam conforme o momento."
-
-
-def _promotion_condition(rel: RelState, timeline: str, intimacy_level: int) -> bool:
-    """
-    Condição mínima para permitir promoção.
-    """
-    trust = int(rel.get("trust") or 0)
-    attachment = int(rel.get("attachment") or 0)
-    fear = int(rel.get("fear") or 0)
-    guilt = int(rel.get("guilt") or 0)
-
-    # Não promove se medo+culpa muito altos
-    if fear > 70 or guilt > 70:
-        return False
-
-    # Para universitária: exige construção (trust+attachment) e algum sinal de intimidade
-    if timeline == "universitaria":
-        return (trust + attachment) >= 110 and intimacy_level >= 1
-
-    # Para cúmplice: promoção é menos relevante, mas pode fortalecer (quase sempre ok)
-    return (trust + attachment) >= 120
-
-
-def _regression_condition(rel: RelState, timeline: str) -> bool:
-    """
-    Condição para permitir regressão (briga, quebra de confiança, culpa/medo dominando).
-    """
-    trust = int(rel.get("trust") or 0)
-    fear = int(rel.get("fear") or 0)
-    guilt = int(rel.get("guilt") or 0)
-
-    # regressa se confiança baixa e pressão alta
-    return trust < 35 and (fear + guilt) > 110
-
-
-def _bump_stage(stage: str, step: int) -> str:
-    stage = (stage or "").strip() or "conhecendo"
-    try:
-        idx = STAGE_ORDER.index(stage)
-    except ValueError:
-        idx = 0
-    idx2 = max(0, min(len(STAGE_ORDER) - 1, idx + step))
-    return STAGE_ORDER[idx2]
-
-
-def _floor_stage(stage: str, min_index: int) -> str:
-    try:
-        idx = STAGE_ORDER.index(stage)
-    except ValueError:
-        idx = 0
-    idx = max(min_index, idx)
-    return STAGE_ORDER[idx]
-
-
-# ==========================
-# High-level helper
-# ==========================
 
 def evolve_relationship(
-    rel: Optional[RelState],
+    rel_state: Dict[str, Any],
     user_msg: str,
-    mary_reply: str,
+    mary_msg: str,
     timeline: str,
-    llm_assessor: Callable[[str, str], str],
-    cfg: Optional[EngineConfig] = None,
-) -> Tuple[RelState, Assessment, Dict[str, Any]]:
+    llm_assessor: LLMAssessor,
+    cfg: EngineConfig = EngineConfig(),
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """
-    Função principal para uso no service.py.
+    Atualiza rel_state com base no turno (user_msg + mary_msg).
+    Retorna (new_rel_state, assessment_json, meta).
 
-    - llm_assessor(system_prompt, user_prompt) -> raw_text
-      (O service.py fornece a função que chama seu provider/modelo.)
+    meta pode conter:
+    - stage_changed: bool
+    - suggested_timeline: "cumplice" | None
     """
-    cfg = cfg or EngineConfig()
-    rel = rel or default_relationship_state(timeline)
+    rel = dict(rel_state or {})
+    # garante base
+    base = default_relationship_state(timeline)
+    for k, v in base.items():
+        rel.setdefault(k, v)
 
-    system_prompt = ASSESSMENT_SYSTEM
-    user_prompt = build_assessment_prompt(user_msg, mary_reply)
+    sys_p, user_p = _build_assessor_prompts(timeline, rel, user_msg, mary_msg)
+    raw = ""
+    try:
+        raw = llm_assessor(sys_p, user_p) or ""
+    except Exception:
+        raw = ""
 
-    raw = llm_assessor(system_prompt, user_prompt)
-    assessment = parse_assessment_json(raw)
+    assessment = _safe_json_parse(raw) if raw else {}
+    if not isinstance(assessment, dict):
+        assessment = {}
 
-    new_rel, meta = update_relationship_state(rel, assessment, cfg, timeline)
-    return new_rel, assessment, meta
+    rel = _apply_deltas(rel, assessment, cfg)
+    rel, changed = _maybe_shift_stage(rel, assessment, timeline, cfg)
+
+    meta: Dict[str, Any] = {"stage_changed": bool(changed)}
+
+    # sugestão de migração universitária -> cúmplice (não automática aqui; o service decide)
+    if (timeline or "") == "universitaria":
+        # condição de maturidade: confiança + apego altos, medo/culpa controlados
+        if (
+            str(rel.get("stage")) in ("pre_casamento", "casados")
+            and int(rel.get("trust", 0)) >= 68
+            and int(rel.get("attachment", 0)) >= 70
+            and int(rel.get("fear", 0)) <= 28
+            and int(rel.get("guilt", 0)) <= 35
+        ):
+            meta["suggested_timeline"] = "cumplice"
+        else:
+            meta["suggested_timeline"] = None
+
+    return rel, assessment, meta
