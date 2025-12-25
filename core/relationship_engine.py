@@ -16,19 +16,23 @@ Como funciona (Degrau 1):
 4) Opcionalmente promovemos/regredimos "stage" com chance (não determinístico)
 5) Se timeline=universitaria e stage/condições atingirem maturidade -> sugerimos timeline "cumplice"
 
-NOVO (virgindade dinâmica):
+Virgindade dinâmica (sem travar):
 - Virgindade é um campo do relationship_state (virginity: "virgem"|"nao_virgem").
-- O engine só muda de "virgem" para "nao_virgem" quando:
-  (a) o avaliador sinaliza consummated=true (consumação clara em cena)
-  (b) o stage já atingiu "intimidade" (ou acima)
-  (c) confiança+apego suficientes e medo/culpa controlados
-  (d) boundaries não está "alta"
-- Persistência e prevalência são responsabilidade do service.py (facts).
+- Existem dois caminhos para virar "nao_virgem":
+  A) Sinal explícito do avaliador: consummated=true (mudança clara em cena)
+  B) "Hazard" crescente após maturidade sustentada:
+     se o estado estiver MADURO por N turnos seguidos, a probabilidade de transição cresce
+     (não é manual, não é garantido de imediato, mas não trava indefinidamente).
+
+Por que isso resolve loop:
+- Antes, você dependia de "consummated=true" + gates rígidos no mesmo turno.
+- Agora, quando o relacionamento entra em estado maduro e permanece, a chance cresce
+  (p_base + mature_turns*p_step) até um teto (p_cap).
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Tuple
 import json
 import random
 import re
@@ -61,6 +65,16 @@ class EngineConfig:
     # ruído para evitar previsibilidade (aplicado na prob)
     noise: float = 0.06
 
+    # ========= Hazard de transição (virgindade) =========
+    # prob inicial quando entrou em "maturidade"
+    virginity_p_base: float = 0.03
+    # incremento por turno maduro consecutivo
+    virginity_p_step: float = 0.02
+    # teto da prob
+    virginity_p_cap: float = 0.35
+    # a partir de quantos turnos maduros o hazard começa a valer
+    virginity_mature_min_turns: int = 2
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -68,6 +82,13 @@ def _now_iso() -> str:
 
 def _clamp(n: int, lo: int = 0, hi: int = 100) -> int:
     return max(lo, min(hi, int(n)))
+
+
+def _stage_idx(stage: str) -> int:
+    s = (stage or "").strip()
+    if s not in REL_STAGES:
+        return 0
+    return REL_STAGES.index(s)
 
 
 def default_relationship_state(timeline: str) -> Dict[str, Any]:
@@ -89,10 +110,13 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
             "_promote_streak": 0,
             "_regress_streak": 0,
 
-            # ✅ Virgindade dinâmica (baseline)
+            # Virgindade dinâmica (baseline)
             "virginity": "virgem",          # virgem|nao_virgem
             "intimacy_level": 0,            # 0..3
-            "consummated": False,           # True quando houver consumação clara
+            "consummated": False,           # True quando houver mudança clara em cena
+
+            # Contador de maturidade sustentada (anti-loop)
+            "mature_turns": 0,
         }
 
     # cúmplice: já casados; ainda pode oscilar em confiança/tensão/medo por eventos
@@ -110,10 +134,10 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
         "_promote_streak": 0,
         "_regress_streak": 0,
 
-        # ✅ Em cúmplice, normalmente já não é virgem
         "virginity": "nao_virgem",
         "intimacy_level": 3,
         "consummated": True,
+        "mature_turns": 0,
     }
 
 
@@ -133,6 +157,7 @@ def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
         f"- intimacy_level: {rel.get('intimacy_level')}\n"
         f"- virginity: {rel.get('virginity')}\n"
         f"- consummated: {rel.get('consummated')}\n"
+        f"- mature_turns: {rel.get('mature_turns')}\n"
     ).strip()
 
 
@@ -140,7 +165,6 @@ def _safe_json_parse(s: str) -> Dict[str, Any]:
     s = (s or "").strip()
     if not s:
         return {}
-    # tenta achar um objeto JSON no meio do texto
     m = re.search(r"\{.*\}", s, flags=re.DOTALL)
     if not m:
         return {}
@@ -151,14 +175,11 @@ def _safe_json_parse(s: str) -> Dict[str, Any]:
 
 
 def _readiness(rel: Dict[str, Any]) -> float:
-    """Score de prontidão para avançar (não determinístico)."""
     trust = float(rel.get("trust", 0))
     attach = float(rel.get("attachment", 0))
     tension = float(rel.get("tension", 0))
     fear = float(rel.get("fear", 0))
     guilt = float(rel.get("guilt", 0))
-
-    # Amor + confiança + tensão; penaliza medo/culpa.
     return (0.38 * trust) + (0.38 * attach) + (0.18 * tension) - (0.22 * fear) - (0.10 * guilt)
 
 
@@ -194,9 +215,9 @@ def _apply_deltas(rel: Dict[str, Any], upd: Dict[str, Any], cfg: EngineConfig) -
     rel.setdefault("_promote_streak", 0)
     rel.setdefault("_regress_streak", 0)
 
-    # mantém defaults de virgindade caso não existam
     rel.setdefault("virginity", "virgem" if rel.get("stage") != "casados" else "nao_virgem")
     rel.setdefault("consummated", False)
+    rel.setdefault("mature_turns", 0)
     return rel
 
 
@@ -212,7 +233,7 @@ def _maybe_shift_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, 
 
     readiness = _readiness(rel)
 
-    # --- regressão (quebra de confiança + medo alto) ---
+    # regressão
     regress_chance = cfg.base_regress
     if trust_breach:
         regress_chance += 0.18
@@ -231,19 +252,15 @@ def _maybe_shift_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, 
         rel["_promote_streak"] = 0
         return rel, True
 
-    # --- promoção (prontidão + sinal do avaliador) ---
+    # promoção
     promote_chance = cfg.base_promote
     if stage_hint == "promote":
         promote_chance += 0.14
 
-    # readiness acima de ~45 começa a permitir avanço
     promote_chance += max(0.0, min(0.45, (readiness - 45.0) / 120.0))
 
-    # trava se culpa alta em universitária
     if (timeline or "") == "universitaria" and rel.get("guilt", 0) >= 75:
         promote_chance *= 0.35
-
-    # trava se medo alto
     if rel.get("fear", 0) >= 75:
         promote_chance *= 0.30
 
@@ -260,30 +277,17 @@ def _maybe_shift_stage(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, 
     return rel, False
 
 
-def _maybe_flip_virginity(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+def _is_mature_for_virginity(rel: Dict[str, Any], timeline: str) -> bool:
     """
-    Virgindade dinâmica:
-    - Só muda em universitária.
-    - Só muda se ainda está "virgem".
-    - Só muda se avaliador sinaliza consumação clara (consummated=true).
-    - E se condições emocionais + stage permitem.
+    Define o que é "maturidade sustentada" (anti-loop) para permitir hazard crescente.
+    A ideia aqui é ser REALISTA, mas não exigir "perfeição" emocional.
     """
     if (timeline or "") != "universitaria":
-        return rel
+        return False
 
-    virginity = str(rel.get("virginity") or "virgem").strip().lower()
-    if virginity != "virgem":
-        return rel
-
-    consummated_flag = bool(upd.get("consummated") is True)
-    if not consummated_flag:
-        return rel
-
-    stage = str(rel.get("stage") or "conhecendo")
-    if stage not in REL_STAGES:
-        stage = "conhecendo"
-    if REL_STAGES.index(stage) < REL_STAGES.index("intimidade"):
-        return rel
+    # precisa ter chegado em "intimidade" (ou acima)
+    if _stage_idx(str(rel.get("stage") or "conhecendo")) < _stage_idx("intimidade"):
+        return False
 
     trust = int(rel.get("trust", 0))
     attach = int(rel.get("attachment", 0))
@@ -291,20 +295,77 @@ def _maybe_flip_virginity(rel: Dict[str, Any], upd: Dict[str, Any], timeline: st
     guilt = int(rel.get("guilt", 0))
     boundaries = str(rel.get("boundaries") or "alta").strip().lower()
 
-    # condições mínimas (ajuste fino depois)
-    if trust < 65 or attach < 70:
-        return rel
-    if fear > 35 or guilt > 45:
-        return rel
     if boundaries == "alta":
+        return False
+
+    # thresholds relaxados (para não travar em universitária)
+    if trust < 62:
+        return False
+    if attach < 65:
+        return False
+    if fear > 45:
+        return False
+    if guilt > 55:
+        return False
+
+    return True
+
+
+def _update_mature_turns(rel: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    if (timeline or "") != "universitaria":
+        rel["mature_turns"] = 0
         return rel
 
-    # ✅ muda canonicamente
-    rel["virginity"] = "nao_virgem"
-    rel["consummated"] = True
-    rel["intimacy_level"] = max(int(rel.get("intimacy_level", 0) or 0), 3)
-
+    if _is_mature_for_virginity(rel, timeline):
+        rel["mature_turns"] = int(rel.get("mature_turns", 0) or 0) + 1
+    else:
+        rel["mature_turns"] = 0
     return rel
+
+
+def _hazard_prob(rel: Dict[str, Any], cfg: EngineConfig) -> float:
+    mt = int(rel.get("mature_turns", 0) or 0)
+    if mt < cfg.virginity_mature_min_turns:
+        return 0.0
+    p = cfg.virginity_p_base + (mt * cfg.virginity_p_step)
+    return max(0.0, min(cfg.virginity_p_cap, p))
+
+
+def _maybe_flip_virginity(rel: Dict[str, Any], upd: Dict[str, Any], timeline: str, cfg: EngineConfig) -> Tuple[Dict[str, Any], bool, str]:
+    """
+    Retorna (rel, changed, reason)
+    reason: "assessor" | "hazard" | ""
+    """
+    if (timeline or "") != "universitaria":
+        return rel, False, ""
+
+    virginity = str(rel.get("virginity") or "virgem").strip().lower()
+    if virginity != "virgem":
+        return rel, False, ""
+
+    # Primeiro: sinal explícito do avaliador (mais forte)
+    if bool(upd.get("consummated") is True):
+        # mesmo assim, exige maturidade mínima para coerência (sem perfeccionismo)
+        if _is_mature_for_virginity(rel, timeline):
+            rel["virginity"] = "nao_virgem"
+            rel["consummated"] = True
+            rel["intimacy_level"] = max(int(rel.get("intimacy_level", 0) or 0), 3)
+            return rel, True, "assessor"
+        # se assessor sinalizou, mas ainda não está maduro, não muda (evita salto)
+        return rel, False, ""
+
+    # Segundo: hazard crescente quando maduro por muitos turnos
+    if not _is_mature_for_virginity(rel, timeline):
+        return rel, False, ""
+
+    p = _hazard_prob(rel, cfg)
+    if p > 0.0 and random.random() < p:
+        rel["virginity"] = "nao_virgem"
+        rel["consummated"] = True
+        rel["intimacy_level"] = max(int(rel.get("intimacy_level", 0) or 0), 3)
+        return rel, True, "hazard"
+
+    return rel, False, ""
 
 
 def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, mary_msg: str) -> Tuple[str, str]:
@@ -320,7 +381,7 @@ def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, m
         "- boundaries deve ser: alta | media | baixa.\n"
         "- trust_breach: true apenas se houver quebra clara de confiança.\n"
         "- intimacy_level: 0..3 (0 nenhum, 1 leve, 2 médio, 3 alto)\n"
-        "- consummated: true apenas se houver consumação clara em cena.\n"
+        "- consummated: true apenas se houver mudança clara em cena.\n"
     )
 
     payload = {
@@ -337,6 +398,7 @@ def _build_assessor_prompts(timeline: str, rel: Dict[str, Any], user_msg: str, m
             "intimacy_level": rel.get("intimacy_level"),
             "virginity": rel.get("virginity"),
             "consummated": rel.get("consummated"),
+            "mature_turns": rel.get("mature_turns"),
         },
         "turn": {"user": user_msg, "mary": mary_msg},
         "return_schema": {
@@ -373,14 +435,20 @@ def evolve_relationship(
     meta pode conter:
     - stage_changed: bool
     - suggested_timeline: "cumplice" | None
+    - virginity_changed: bool
+    - virginity_reason: "assessor" | "hazard" | ""
+    - mature_turns: int
+    - hazard_p: float
     """
     rel = dict(rel_state or {})
+
     # garante base
     base = default_relationship_state(timeline)
     for k, v in base.items():
         rel.setdefault(k, v)
 
     sys_p, user_p = _build_assessor_prompts(timeline, rel, user_msg, mary_msg)
+
     raw = ""
     try:
         raw = llm_assessor(sys_p, user_p) or ""
@@ -391,18 +459,29 @@ def evolve_relationship(
     if not isinstance(assessment, dict):
         assessment = {}
 
+    # aplica deltas do avaliador
     rel = _apply_deltas(rel, assessment, cfg)
 
-    # ✅ virgindade dinâmica (antes da mudança de stage)
-    rel = _maybe_flip_virginity(rel, assessment, timeline)
+    # atualiza maturidade antes de decidir a transição
+    rel = _update_mature_turns(rel, timeline)
+    hazard_p = _hazard_prob(rel, cfg)
 
-    rel, changed = _maybe_shift_stage(rel, assessment, timeline, cfg)
+    # virgindade dinâmica (assessor OU hazard)
+    rel, virg_changed, virg_reason = _maybe_flip_virginity(rel, assessment, timeline, cfg)
 
-    meta: Dict[str, Any] = {"stage_changed": bool(changed)}
+    # mudança de stage
+    rel, stage_changed = _maybe_shift_stage(rel, assessment, timeline, cfg)
+
+    meta: Dict[str, Any] = {
+        "stage_changed": bool(stage_changed),
+        "virginity_changed": bool(virg_changed),
+        "virginity_reason": virg_reason,
+        "mature_turns": int(rel.get("mature_turns", 0) or 0),
+        "hazard_p": float(hazard_p),
+    }
 
     # sugestão de migração universitária -> cúmplice (não automática aqui; o service decide)
     if (timeline or "") == "universitaria":
-        # condição de maturidade: confiança + apego altos, medo/culpa controlados
         if (
             str(rel.get("stage")) in ("pre_casamento", "casados")
             and int(rel.get("trust", 0)) >= 68
