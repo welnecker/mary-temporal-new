@@ -246,6 +246,12 @@ def _garantir_estado_inicial() -> None:
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
 
+    # ✅ Painel Relationship Debug (toggle)
+    if "mary_debug_rel_panel" not in st.session_state:
+        st.session_state["mary_debug_rel_panel"] = False
+    if "mary_rel_meta_last" not in st.session_state:
+        st.session_state["mary_rel_meta_last"] = None
+
     # modelos disponíveis
     try:
         modelos = list_models() or []
@@ -279,7 +285,6 @@ def _garantir_estado_inicial() -> None:
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
-    # caches usados no service: facts::{usuario_key} e history::{usuario_key}
     for k in keys:
         for ck in (f"facts::{k}", f"history::{k}"):
             if ck in st.session_state:
@@ -287,15 +292,9 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
 
 
 def _reset_intro_flags_for_keys(keys: list[str]) -> None:
-    """
-    Alinha com service.py:
-    - service injeta a intro no prompt 1x por sessão por usuario_key
-    - então, ao trocar timeline / limpar histórico / recarregar persona / etc,
-      resetar a flag para reinjetar corretamente.
-    """
     for k in keys:
-        st.session_state.pop(f"intro_ctx_injected::{k}", None)  # flag atual do service
-        st.session_state.pop(f"intro_injected::{k}", None)      # legado (se existir)
+        st.session_state.pop(f"intro_ctx_injected::{k}", None)
+        st.session_state.pop(f"intro_injected::{k}", None)
 
 
 def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str]]:
@@ -398,7 +397,6 @@ def _delete_last_turn_active() -> bool:
 
 
 def _on_timeline_change() -> None:
-    # só permite trocar antes de conversar
     if st.session_state.get("mary_timeline_locked"):
         return
 
@@ -408,7 +406,6 @@ def _on_timeline_change() -> None:
     }
     st.session_state["mary_timeline"] = personas.get(st.session_state.get("persona_label") or "", "cumplice")
 
-    # nsfw default por timeline
     st.session_state["mary_nsfw_on"] = (st.session_state["mary_timeline"] != "universitaria")
 
     st.session_state["chat_history"] = []
@@ -421,11 +418,6 @@ def _on_timeline_change() -> None:
 
 
 def _boot_visual_if_empty() -> None:
-    """
-    Boot visual:
-    - se existir histórico no backend, renderiza
-    - se não existir, deixa vazio (service injeta intro no 1º reply)
-    """
     if st.session_state["chat_history"]:
         return
 
@@ -435,7 +427,6 @@ def _boot_visual_if_empty() -> None:
         st.session_state["mary_intro_done"] = True
         return
 
-    # sem histórico: não gravar "intro fake" em fact; só placeholder visual opcional
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
 
@@ -448,11 +439,11 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.9 (Base44-like UI + input fixo; 100% alinhado ao service: prompt/timeline/nsfw por parâmetro)")
+    st.caption("🧩 mary_app.py v3.10 (Base44-like UI + input fixo; + Painel Relationship Debug)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
-    # ===== Header Base44-like =====
+    # ===== Header =====
     st.markdown(
         f"""
         <div class="rp-card">
@@ -485,13 +476,63 @@ def main() -> None:
         on_change=_on_timeline_change,
     )
 
-    # garante que mary_timeline reflita o label mesmo sem on_change (primeiro load)
     st.session_state["mary_timeline"] = personas.get(st.session_state["persona_label"], "cumplice")
 
     if st.session_state["mary_timeline_locked"]:
         st.caption("🔒 Persona travada até limpar a conversa (ou apagar histórico).")
 
     keys = _keys_para_mary()
+
+    # ==========================================================
+    # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA)
+    # ==========================================================
+    with st.expander("🧠 Relationship Engine — Painel de diagnóstico (turno a turno)", expanded=False):
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.checkbox("Ativar painel (debug)", key="mary_debug_rel_panel")
+            st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
+
+        with col2:
+            if st.button("Limpar diagnóstico (só visual)"):
+                st.session_state["mary_rel_meta_last"] = None
+                st.success("Diagnóstico limpo.")
+
+        last = st.session_state.get("mary_rel_meta_last")
+
+        if not st.session_state.get("mary_debug_rel_panel", False):
+            st.info("Painel desativado. Marque **Ativar painel (debug)** para visualizar a cada turno.")
+        else:
+            if not last:
+                st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
+            else:
+                # cards pequenos
+                cA, cB, cC, cD = st.columns(4)
+                with cA:
+                    st.metric("Timeline", str(last.get("timeline") or "—"))
+                with cB:
+                    st.metric("Stage", str(last.get("stage") or "—"))
+                with cC:
+                    st.metric("Mature turns", str(last.get("mature_turns") or 0))
+                with cD:
+                    hp = last.get("hazard_p")
+                    st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
+
+                st.markdown("---")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Virginity", str(last.get("virginity") or "—"))
+                with c2:
+                    st.metric("Consummated", "true" if last.get("consummated") else "false")
+                with c3:
+                    st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
+
+                reason = (last.get("virginity_reason") or "").strip()
+                if reason:
+                    st.caption("Motivo (virginity_reason):")
+                    st.code(reason)
+
+                st.caption("Raw dump:")
+                st.json(last)
 
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
@@ -513,6 +554,7 @@ def main() -> None:
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
                     st.session_state["mary_timeline_locked"] = False
+                    st.session_state["mary_rel_meta_last"] = None
                     st.success(f"✅ Apaguei do BD (history): {n} registros.")
                     st.rerun()
 
@@ -556,6 +598,16 @@ def main() -> None:
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
 
         st.markdown("---")
+        st.subheader("🔍 Debug")
+        st.checkbox("Mostrar painel Relationship", key="mary_debug_rel_panel")
+        if st.button("Ver último diagnóstico (popup)"):
+            last = st.session_state.get("mary_rel_meta_last")
+            if last:
+                st.json(last)
+            else:
+                st.info("Ainda não existe mary_rel_meta_last.")
+
+        st.markdown("---")
         st.subheader("Turnos")
 
         if st.button("Apagar último turno (backend)"):
@@ -590,6 +642,7 @@ def main() -> None:
             _clear_service_caches_for_keys(_keys_para_mary())
             _reset_intro_flags_for_keys(_keys_para_mary())
             st.session_state["mary_timeline_locked"] = False
+            st.session_state["mary_rel_meta_last"] = None
             st.success("Persona recarregada. Service vai reinjetar contexto corretamente.")
             st.rerun()
 
