@@ -1,33 +1,59 @@
 # core/canon.py
 from __future__ import annotations
+from typing import Dict, Any, Optional
 
-from typing import Dict, Any
 
-
-def get_canon(character: str, user_key: str | None = None) -> Dict[str, Any]:
+def get_canon(
+    character: str,
+    timeline: Optional[str] = None,
+    user_key: str | None = None,
+) -> Dict[str, Any]:
     """
     Retorna fatos CANÔNICOS (verdade atual) que o LLM nunca pode contradizer.
-    Neste Degrau 1 vamos começar simples e estável.
-    Depois (Degrau 2/3) isso pode vir de DB/Sheets.
+    O cânone é sensível à TIMELINE ativa.
     """
     character = (character or "").lower()
+    timeline = (timeline or "").strip() or "cumplice"
 
-    # Cânone base por personagem
+    # ======================================================
+    # CÂNONE DA MARY
+    # ======================================================
     if character == "mary":
+
+        # ----------------------------
+        # Timeline: Universitária
+        # ----------------------------
+        if timeline == "universitaria":
+            return {
+                "regras_mundo": [
+                    "Se houver conflito entre persona e fatos, fatos vencem.",
+                    "Não presuma vínculos ou intimidade não vividos em cena.",
+                    "Se faltar informação, conduza com cuidado em vez de inventar.",
+                ],
+                "estado_relacao": "vinculo_inicial",
+                "vida_em_comum": False,
+                "historico_intimo_consumado": False,
+            }
+
+        # ----------------------------
+        # Timeline: Cúmplice (padrão)
+        # ----------------------------
         return {
-            # Coloque aqui apenas fatos que você quer que sejam sempre respeitados
-            # (o que "é verdade AGORA", não a persona de origem).
             "regras_mundo": [
                 "Se houver conflito entre persona e fatos, fatos vencem.",
-                "Se faltar informação, pergunte em vez de inventar.",
+                "A intimidade existente faz parte da realidade atual.",
+                "Se faltar informação, conduza a cena com naturalidade.",
             ],
-            # Exemplo de fatos que você pode ligar/desligar
-            # (ajuste para o seu caso real quando quiser)
             "estado_relacao": "casados",
-            # "virgindade": False,
-            # "gravidez": {"ativa": True, "semanas": 8, "confirmado_em": "2025-11-26"},
+            "vida_em_comum": True,
+            "historico_intimo_consumado": True,
+            # Exemplos futuros:
+            # "gravidez": {"ativa": True, "semanas": 8},
         }
 
+    # ======================================================
+    # Fallback genérico
+    # ======================================================
     return {
         "regras_mundo": [
             "Se houver conflito entre persona e fatos, fatos vencem.",
