@@ -931,7 +931,7 @@ REGRAS ABSOLUTAS:
 
         messages.append({"role": "user", "content": prompt})
 
-        # ----------------------------------------------------------
+              # ----------------------------------------------------------
         # 8) Chat com retry/fallback
         # ----------------------------------------------------------
         attempts = [
@@ -987,17 +987,30 @@ REGRAS ABSOLUTAS:
                     _save_rel_state(usuario_key, timeline_final, rel_state)
 
                     # Promoção automática de timeline: universitária -> cúmplice
-                    if timeline_final == "universitaria" and (meta or {}).get("suggested_timeline") == "cumplice":
-                        # 1) troca timeline no app
+                    promoted = False
+                    if (
+                        timeline_final == "universitaria"
+                        and (meta or {}).get("suggested_timeline") == "cumplice"
+                    ):
+                        promoted = True
+
+                        # 1) troca timeline no app (UI)
                         st.session_state["mary_timeline"] = "cumplice"
-                        # 2) garante rel_state inicial da timeline destino
+
+                        # 2) garante rel_state inicial da timeline destino (persistido)
                         _ensure_rel_state_for_timeline(user_id, "cumplice")
-                        # 3) limpa cache do usuário atual (universitária)
+
+                        # 3) limpa cache da timeline atual (universitária)
                         clear_user_cache(usuario_key)
 
+                        # 4) IMPORTANTÍSSIMO:
+                        #    daqui em diante, o usuario_key correto para salvar é o da timeline destino
+                        usuario_key = _user_key(user_id, "cumplice")
+
                     # (Opcional) debug rápido no session_state — útil pra você verificar “loop”
+                    debug_tl = "cumplice" if promoted else timeline_final
                     st.session_state["mary_rel_meta_last"] = {
-                        "timeline": timeline_final,
+                        "timeline": debug_tl,
                         "stage": rel_state.get("stage"),
                         "virginity": rel_state.get("virginity"),
                         "consummated": rel_state.get("consummated"),
