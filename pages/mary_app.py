@@ -5,6 +5,7 @@ import re
 import traceback
 import importlib
 import inspect
+from typing import List, Tuple
 
 import streamlit as st
 
@@ -20,6 +21,7 @@ from core.repositories import (
     get_history_docs,
     get_history_docs_multi,
     get_facts,
+    set_fact,  # ✅ para persistir NSFW
     delete_fact,
     delete_last_interaction,
     delete_user_history,
@@ -195,6 +197,12 @@ def _usuario_key_atual() -> str:
     return f"{uid}::mary::{timeline}"
 
 
+def _usuario_key_for_timeline(timeline: str) -> str:
+    uid = (st.session_state.get("user_id") or "anon").strip() or "anon"
+    tl = str(timeline or "cumplice").strip() or "cumplice"
+    return f"{uid}::mary::{tl}"
+
+
 def _shared_key_atual() -> str:
     uid = (st.session_state.get("user_id") or "anon").strip() or "anon"
     return f"{uid}::mary::shared"
@@ -268,6 +276,10 @@ def _garantir_estado_inicial() -> None:
     if "mary_nsfw_on" not in st.session_state:
         st.session_state["mary_nsfw_on"] = (st.session_state.get("mary_timeline") != "universitaria")
 
+    # para detectar mudança e persistir sem loop
+    if "mary_nsfw_last_saved" not in st.session_state:
+        st.session_state["mary_nsfw_last_saved"] = None
+
     if "mary_intro_done" not in st.session_state:
         st.session_state["mary_intro_done"] = False
     if "visual_limit" not in st.session_state:
@@ -299,6 +311,35 @@ def _reset_intro_flags_for_keys(keys: list[str]) -> None:
     for k in keys:
         st.session_state.pop(f"intro_ctx_injected::{k}", None)
         st.session_state.pop(f"intro_injected::{k}", None)
+
+
+def _clear_mary_caches_all_related() -> None:
+    """
+    Limpa caches do usuario_key atual E do shared_key,
+    porque o service injeta canon/shared e usa st.session_state['facts::...'].
+    """
+    uk = _usuario_key_atual()
+    sk = _shared_key_atual()
+    _clear_service_caches_for_keys([uk, sk])
+    _reset_intro_flags_for_keys([uk, sk])
+
+
+def _persist_nsfw_for_current_timeline_if_needed() -> None:
+    """
+    Persiste mary_nsfw_on no facts do usuario_key atual.
+    Faz isso somente quando detecta mudança, para não escrever no BD toda hora.
+    """
+    uk = _usuario_key_atual()
+    current = bool(st.session_state.get("mary_nsfw_on", False))
+    last = st.session_state.get("mary_nsfw_last_saved", None)
+
+    if last is None or bool(last) != current:
+        try:
+            set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
+        except Exception:
+            pass
+        st.session_state["mary_nsfw_last_saved"] = current
+        _clear_service_caches_for_keys([uk])
 
 
 def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str]]:
@@ -395,9 +436,29 @@ def _delete_last_turn_active() -> bool:
         ok = False
 
     _invalidate_backend_cache()
-    _clear_service_caches_for_keys([usuario_key])
-    _reset_intro_flags_for_keys([usuario_key])
+    _clear_mary_caches_all_related()
     return ok
+
+
+def _reset_chapter_current_timeline() -> int:
+    """
+    Reset de capítulo: apaga history da timeline atual,
+    mantém memórias permanentes (shared) e mantém facts úteis (incl. canon/rel se quiser).
+    """
+    uk = _usuario_key_atual()
+    n = 0
+    try:
+        n = int(delete_user_history(uk) or 0)
+    except Exception:
+        pass
+
+    st.session_state["chat_history"] = []
+    st.session_state["mary_intro_done"] = False
+    _invalidate_backend_cache()
+    _clear_mary_caches_all_related()
+    # mantém timeline_locked? aqui eu libero, pra começar novo capítulo com liberdade
+    st.session_state["mary_timeline_locked"] = False
+    return n
 
 
 def _on_timeline_change() -> None:
@@ -410,15 +471,16 @@ def _on_timeline_change() -> None:
     }
     st.session_state["mary_timeline"] = personas.get(st.session_state.get("persona_label") or "", "cumplice")
 
+    # default NSFW por timeline
     st.session_state["mary_nsfw_on"] = (st.session_state["mary_timeline"] != "universitaria")
+    # persiste no facts da timeline recém escolhida
+    _persist_nsfw_for_current_timeline_if_needed()
 
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
 
-    keys = _keys_para_mary()
-    _clear_service_caches_for_keys(keys)
-    _reset_intro_flags_for_keys(keys)
+    _clear_mary_caches_all_related()
 
 
 def _boot_visual_if_empty() -> None:
@@ -443,7 +505,7 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.11 (keys seguras + Relationship panel read-only + input fixo)")
+    st.caption("🧩 mary_app.py v3.11 (keys seguras + NSFW persistente + shared cache ok + resets)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -483,13 +545,12 @@ def main() -> None:
     st.session_state["mary_timeline"] = personas.get(st.session_state["persona_label"], "cumplice")
 
     if st.session_state["mary_timeline_locked"]:
-        st.caption("🔒 Persona travada até limpar a conversa (ou apagar histórico).")
+        st.caption("🔒 Persona travada até limpar a conversa (ou resetar capítulo / apagar histórico).")
 
     keys = _keys_para_mary()
 
     # ==========================================================
     # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA) — READ-ONLY
-    # (o toggle fica só no sidebar, para não duplicar key)
     # ==========================================================
     with st.expander("🧠 Relationship Engine — Painel de diagnóstico (turno a turno)", expanded=False):
         col1, col2 = st.columns([1, 1])
@@ -543,48 +604,63 @@ def main() -> None:
                 st.caption("Raw dump:")
                 st.json(last)
 
+    # ==========================================================
+    # BACKEND RESET / DIAGNÓSTICO
+    # ==========================================================
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
 
         if st.button("🔎 Diagnóstico agora", key="btn_diag_now"):
             st.json(_diagnostico_hist(keys))
 
-        colA, colB = st.columns(2)
-        with colA:
-            confirmar = st.checkbox(
-                "Confirmo apagar TODO histórico do BD (history)",
+        st.markdown("### Reset de capítulo / reset total")
+
+        colX, colY = st.columns(2)
+        with colX:
+            if st.button("🧼 Reset capítulo (apagar history da timeline ativa)", key="btn_reset_chapter"):
+                n = _reset_chapter_current_timeline()
+                st.success(f"✅ Capítulo resetado. Apaguei {n} registros de history da timeline ativa.")
+                st.rerun()
+
+        with colY:
+            confirm_total = st.checkbox(
+                "Confirmo RESET TOTAL (history + opcional eventos + opcional memórias shared)",
                 value=False,
-                key="chk_confirm_delete_history",
+                key="chk_confirm_total_reset",
             )
-            if st.button("🔥 APAGAR HISTÓRICO DO BD (AGORA)", type="primary", key="btn_delete_history_now"):
-                if not confirmar:
-                    st.error("Marque a confirmação.")
+            delete_events = st.checkbox("Também apagar facts mary.evento.*", value=False, key="chk_total_del_events")
+            delete_shared = st.checkbox("Também apagar TODAS memórias permanentes (shared)", value=False, key="chk_total_del_shared")
+
+            if st.button("🔥 RESET TOTAL AGORA", type="primary", key="btn_total_reset_now"):
+                if not confirm_total:
+                    st.error("Marque a confirmação do RESET TOTAL.")
                 else:
-                    n = _apagar_hist_bd_novo_e_legado()
-                    _invalidate_backend_cache()
-                    _clear_service_caches_for_keys(keys)
-                    _reset_intro_flags_for_keys(keys)
+                    # 1) apaga history da timeline ativa
+                    n_hist = _apagar_hist_bd_novo_e_legado()
+
+                    # 2) opcional: apaga eventos facts
+                    n_evt = 0
+                    if delete_events:
+                        n_evt = _apagar_eventos_mary_fact(_usuario_key_atual())
+
+                    # 3) opcional: apaga memórias shared
+                    n_mems = 0
+                    if delete_shared:
+                        try:
+                            n_mems = int(delete_all_memories(_shared_key_atual()) or 0)
+                        except Exception:
+                            n_mems = 0
+                        st.session_state["__mem_list"] = []
+
+                    # 4) limpa UI + caches
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
                     st.session_state["mary_timeline_locked"] = False
                     st.session_state["mary_rel_meta_last"] = None
-                    st.success(f"✅ Apaguei do BD (history): {n} registros.")
-                    st.rerun()
+                    _invalidate_backend_cache()
+                    _clear_mary_caches_all_related()
 
-        with colB:
-            confirmar2 = st.checkbox(
-                "Confirmo apagar facts mary.evento.* também",
-                value=False,
-                key="chk_confirm_delete_events",
-            )
-            if st.button("💣 APAGAR EVENTOS mary.evento.* (facts)", key="btn_delete_events"):
-                if not confirmar2:
-                    st.error("Marque a confirmação.")
-                else:
-                    removed = _apagar_eventos_mary_fact(_usuario_key_atual())
-                    _clear_service_caches_for_keys(keys)
-                    _reset_intro_flags_for_keys(keys)
-                    st.success(f"✅ Apaguei {removed} facts de eventos mary.evento.*")
+                    st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
 
     # ==========================================================
@@ -617,13 +693,16 @@ def main() -> None:
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         st.markdown("---")
+        # ✅ NSFW: agora persiste no facts quando muda
+        nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
+        nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
+        if nsfw_after != nsfw_before:
+            _persist_nsfw_for_current_timeline_if_needed()
 
         st.markdown("---")
         st.subheader("🔍 Debug")
 
-        # ✅ AQUI está o único widget que controla o estado canônico.
-        #    Usamos uma key diferente do estado para evitar colisão.
         st.session_state["mary_debug_rel_panel"] = st.checkbox(
             "Mostrar painel Relationship",
             value=bool(st.session_state.get("mary_debug_rel_panel", False)),
@@ -669,8 +748,7 @@ def main() -> None:
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
             _invalidate_backend_cache()
-            _clear_service_caches_for_keys(_keys_para_mary())
-            _reset_intro_flags_for_keys(_keys_para_mary())
+            _clear_mary_caches_all_related()
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
             st.success("Persona recarregada. Service vai reinjetar contexto corretamente.")
@@ -693,12 +771,14 @@ def main() -> None:
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+            _clear_mary_caches_all_related()
             st.rerun()
 
         if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
             n = delete_all_memories(shared_key)
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
+            _clear_mary_caches_all_related()
             st.rerun()
 
         mems_view = st.session_state.get("__mem_list")
