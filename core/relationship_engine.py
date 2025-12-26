@@ -221,8 +221,9 @@ def _detect_pattern(user_prompt: str, mary_reply: str) -> str:
     mary_tease = 1 if _RE_MARY_TEASE.search(a) else 0
     mary_care = 1 if _RE_MARY_CARE.search(a) else 0
 
-    if user_push and mary_block and not mary_tease:
+    if user_push and mary_block and not mary_tease and not mary_care:
         return "user_push__mary_block"
+
     if user_push and mary_tease and mary_block:
         return "tease_with_boundary"
     if mary_care and not mary_block:
@@ -280,20 +281,39 @@ def _assess_turn(
     if assessor is None:
         return heur
 
-    system = (
+        system = (
         "Você é um avaliador de turnos de um roleplay romântico adulto.\n"
-        "Devolva APENAS um JSON válido com as chaves:\n"
+        "Seu objetivo é AJUDAR a progressão natural sem forçar atos além das permissões.\n"
+        "\n"
+        "RETORNE APENAS um JSON válido (sem markdown, sem texto extra) com as chaves:\n"
         "{good:int(0-10), bad:int(0-10), tease:int(0-10), boundary:int(0-10), care:int(0-10), "
         "conflict:int(0-10), explicit:int(0-10), suggest_relief:int(0-10), "
         "suggested_timeline:str(''|'cumplice'), virginity_change_signal:str(''|'changed'), virginity_reason:str, pattern:str}\n"
-        "Sem texto extra. Sem markdown."
+        "\n"
+        "RUBRICA (muito importante):\n"
+        "1) 'boundary' só é ALTO quando há BLOQUEIO DURO/recusa clara e repetida do avanço físico.\n"
+        "   - Não marque boundary alto por frases suaves como 'devagar', 'calma', 'espera' se houver afeto e continuidade.\n"
+        "2) 'tease' e 'good' devem subir quando há avanço físico coerente com o clima (beijos, carícias, aproximação, tensão, provocação) "
+        "   MESMO que ainda haja limites.\n"
+        "3) 'suggest_relief' mede se, quando há tensão alta, a resposta oferece UMA ALTERNATIVA REALISTA e consentida "
+        "   (ex.: beijar mais, acariciar, ficar no colo, banho juntos, mãos por cima da roupa, dormir abraçados, aliviar sem ultrapassar limites).\n"
+        "4) 'bad' sobe quando há stonewalling/negação repetitiva SEM alternativa (loop de 'não pode' / 'agora não' / 'sem isso') "
+        "   ou quebra emocional.\n"
+        "5) 'conflict' é só briga/hostilidade/desconexão, não confunda com tensão erótica.\n"
+        "6) 'explicit' é apenas sinal de vocabulário direto; NÃO deve aumentar 'bad' por si só.\n"
+        "7) Se TIMELINE=universitaria e houver evolução afetiva + tensão + alternativas consistentes, pode sugerir 'cumplice'.\n"
     )
+
     user = (
         f"TIMELINE={timeline}\n"
+        "Avalie com foco em:\n"
+        "- Progressão sensual/afetiva com coerência\n"
+        "- Evitar loop (negação repetitiva sem alternativa)\n"
+        "- Presença de alternativas de alívio parcial quando a tensão está alta\n"
+        "- Respeito aos limites canônicos (não penalize limites, penalize ausência de alternativas)\n"
+        "\n"
         f"USER_PROMPT:\n{user_prompt}\n\n"
-        f"MARY_REPLY:\n{mary_reply}\n\n"
-        "Avalie com foco em: equilíbrio sensual, coerência emocional, risco de loop (negação repetitiva), "
-        "e presença de opções de alívio parcial quando houver tensão."
+        f"MARY_REPLY:\n{mary_reply}\n"
     )
     try:
         raw = (assessor(system, user) or "").strip()
