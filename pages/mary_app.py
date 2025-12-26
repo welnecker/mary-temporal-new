@@ -819,22 +819,17 @@ def main() -> None:
 
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             importlib.reload(mary_persona)
-            st.session_state.pop("_mary_service", None)
+            import characters.mary.service as mary_service
+            importlib.reload(mary_service)
         
+            st.session_state.pop("_mary_service", None)
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
-        
-            # limpa cache do backend visual
             _invalidate_backend_cache()
-            st.session_state["backend_hist_cache_key"] = ""
-        
-            # limpa caches do service e flags de intro invisível
             _clear_mary_caches_all_related()
-        
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
-        
-            st.success("Persona recarregada. Intro será reinjetada no chat visual.")
+            st.success("Persona + Service recarregados. Contexto reinjetado.")
             st.rerun()
 
         # ======================================================
