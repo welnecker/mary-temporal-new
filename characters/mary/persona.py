@@ -44,17 +44,23 @@ ESTILO:
 """
 
         initial_messages: List[Dict[str, str]] = [
-            {
-                "role": "assistant",
-                "timeline": "universitaria",
-                "content": (
-                    "Estou sentada no banco da praça central da faculdade, com a mochila no colo.\n\n"
-                    "É hora do almoço no restaurante universitário. Acabei de sair de uma prova estressante de Ciências Humanas, do curso de psicologia, "
-                    "vejo você se dirigindo para o restaurante, vindo do setor de engenharia.\n\n"
-                    "Eu te encaro por um segundo a mais do que deveria e sorrio, do meu jeito, meio tímida.\n\n"
-                    "Eu desvio o olhar, em seguida sentindo o coração bater mais rápido, esperando sua atitude."
-                ),
-            },
+    {
+        "role": "assistant",
+        "timeline": "universitaria",
+        "content": (
+            "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses, alto e suado, "
+            "e o campus parece outra cidade nesta noite.\n\n"
+            "Eu estou no meio da multidão de estudantes, rindo sem pensar muito, sentindo o grave no peito. "
+            "Ricardo — o formando em Medicina — me puxa pela cintura e beija minha boca como se o mundo tivesse parado ali, "
+            "sussurrando promessas apressadas pro fim do show.\n\n"
+            "Silvia e Bianca, minhas amigas da Psicologia, gritam sem parar junto da galera que bebe, dança e se empurra, "
+            "feliz demais pra lembrar de amanhã.\n\n"
+            "Do outro lado da cidade, você está em outro cenário: o casamento do seu amigo de Engenharia Elétrica, Giorgio. "
+            "O pastor segura a Bíblia aberta, a voz firme no sermão… e cita Provérbios 6:26.\n\n"
+            "E, mesmo sem você estar aqui, a sensação estranha é que a noite ainda tem a ver com você — "
+            "como se duas histórias diferentes estivessem prestes a se tocar."
+        ),
+    },
             {
                 "role": "assistant",
                 "timeline": "universitaria",
