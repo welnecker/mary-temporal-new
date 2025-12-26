@@ -1,29 +1,29 @@
 from __future__ import annotations
 
 """
-MaryService (v3.12 – Timeline-Aware + Canon + RelationshipEngine v2
-            + Continuidade Espacial + Memórias Permanentes Compartilhadas (CANON)
-            + Salvamento Dinâmico + Cache consistente + NSFW unificado)
+MaryService (v3.13 – Timeline-Aware + Canon + RelationshipEngine v2
+            + Continuidade Espacial REAL (Scene Lock)
+            + Memórias Permanentes Compartilhadas (CANON)
+            + Cache consistente + NSFW unificado)
 
-CORREÇÕES “DE VERDADE” (pra parar de quebrar):
-1) Cache consistente:
-   - Adicionado cache de memórias compartilhadas (mem::shared_key::limit)
-   - Toda escrita (set_fact / append_memory / save_interaction) invalida cache corretamente
+CORREÇÕES QUE RESOLVEM O CAOS:
+1) Scene Lock (a correção que faltava):
+   - Bloqueia mudanças de lugar/tempo/evento
+   - Impede que “após o casamento...” teleporte a Mary
+   - Só muda cena via comandos explícitos do usuário
 
-2) Promoção universitária -> cúmplice:
-   - Atualiza timeline_final e usuario_key ANTES de salvar histórico
-   - Limpa cache antigo e novo
-   - Limpa cache de memórias compartilhadas (de verdade)
-   - Reseta flags de intro (de verdade)
+2) Cache consistente:
+   - Cache de memórias compartilhadas (mem::shared_key::limit)
+   - Toda escrita invalida cache corretamente
 
-3) NSFW unificado:
-   - Usa core.nsfw.nsfw_enabled (single source of truth)
-   - Wrapper local mantém compatibilidade
-   - timeline é passada para permitir default seguro por timeline no core
+3) Intro:
+   - Intro da persona só entra se NÃO houver memórias CANON
+   - E só entra 1x por sessão/usuario_key
 
-4) Leitura de memórias: agora passa por cache, evitando inconsistência no mesmo turno.
+4) NSFW unificado:
+   - core.nsfw.nsfw_enabled é a fonte de verdade
 
-Observação importante:
+Observação:
 - Este arquivo assume que `core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None)` existe.
 """
 
@@ -103,17 +103,10 @@ def _shared_memory_key() -> str:
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
-Estilo: romance adulto, tensão, intimidade e sugestão.
-Evite detalhes gráficos.
-""".strip()
-
-SAFE_SENSUAL_STYLE = """
-[NSFW_OFF]
 - Mantenha romance, intimidade emocional e tensão.
 - Evite descrição gráfica de atos sexuais.
 - Não quebre o tom nem a continuidade.
 """.strip()
-
 
 NSFW_TOGGLE_STYLE = """
 [NSFW_ON — AUTORIZAÇÃO TOTAL]
@@ -123,7 +116,6 @@ NSFW_TOGGLE_STYLE = """
 - Não use eufemismos artificiais para evitar sexo.
 - Respeite apenas: consentimento, coerência emocional e continuidade da cena.
 """.strip()
-
 
 
 # ==========================================================
@@ -166,16 +158,10 @@ def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, An
 
 
 def clear_user_cache(usuario_key: str) -> None:
-    """
-    Limpa cache do Streamlit para um usuario_key específico.
-    Invalida cache de facts e history.
-    """
-    # facts
     fk = f"facts::{usuario_key}"
     if fk in st.session_state:
         del st.session_state[fk]
 
-    # history (varios limits)
     prefix = f"history::{usuario_key}::"
     for k in list(st.session_state.keys()):
         if isinstance(k, str) and k.startswith(prefix):
@@ -204,7 +190,6 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
 def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, *, user_id: Optional[str] = None) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
-    # opcional: limpar caches de facts/history do usuario atual ajuda a coerência no mesmo request
     if user_id:
         tl = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
         clear_user_cache(_user_key(user_id, tl))
@@ -219,21 +204,26 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
 def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
-    """
-    Wrapper para a função unificada de NSFW do core.
-    Mantém compatibilidade com código existente.
-    """
     return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
 
 # ==========================================================
-# CONTINUIDADE ESPACIAL
+# CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
     local = str(facts.get("cena.local") or facts.get("local_cena_atual") or "—")
     tempo = str(facts.get("cena.tempo") or "agora")
     acao = str(facts.get("cena.acao") or "em andamento")
     return local, tempo, acao
+
+
+def _scene_is_locked(facts: Dict[str, Any]) -> bool:
+    # default: travado (evita o modelo “inventar” transições)
+    return bool(facts.get("cena.locked", True))
+
+
+def _lock_scene(usuario_key: str) -> None:
+    set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_lock"})
 
 
 def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -> None:
@@ -259,6 +249,8 @@ Ação: {acao}
 
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     patterns = [
+        r"\bcorta\s+para\s+([^\n\r]+)$",
+        r"\bhoras\s+depois\s*(?:,\s*)?([^\n\r]*)$",
         r"vamos (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
         r"me leva (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
         r"vamos para\s+([^\n\r,.!?]+)",
@@ -271,6 +263,51 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
             destino = (m.group(m.lastindex) or "").strip()
             return True, destino
     return False, ""
+
+
+def _detect_scene_violation(user_text: str) -> bool:
+    """
+    Detecta tentativa de inserir transições de tempo/lugar/evento sem comando explícito.
+    Isso bloqueia teleport e “cenas paralelas” inventadas.
+    """
+    txt = (user_text or "").lower()
+
+    # Se o usuário explicitamente pediu mudança (corta para / horas depois / vamos para), não é violação
+    if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
+        return False
+    if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
+        return False
+
+    patterns = [
+        r"\bap[oó]s\s+isso\b",
+        r"\bdepois\s+disso\b",
+        r"\bmais\s+tarde\b",
+        r"\bhoras\s+depois\b",  # (se cair aqui, é porque não bateu no allow acima)
+        r"\bno\s+outro\s+dia\b",
+        r"\bno\s+dia\s+seguinte\b",
+        r"\benquanto\s+isso\b",
+        r"\bdo\s+outro\s+lado\s+da\s+cidade\b",
+        r"\bna\s+igreja\b",
+        r"\bno\s+casamento\b",
+        r"\bna\s+festa\b",
+        r"\bno\s+cerimonial\b",
+        r"\bo\s+pastor\b",
+        r"\bos\s+convidados\b",
+        r"\bcorta\s+pra\b",
+        r"\bcena\s+seguinte\b",
+    ]
+    return any(re.search(p, txt) for p in patterns)
+
+
+def _scene_violation_message() -> str:
+    return (
+        "_A cena não muda sozinha._\n\n"
+        "Se você quer mudar **lugar**, **tempo** ou **evento**, use um comando explícito:\n"
+        "- `corta para: (novo local)`\n"
+        "- `horas depois: (o que mudou)`\n"
+        "- `vamos para (lugar)`\n\n"
+        "Se não, eu continuo **EXATAMENTE** de onde a gente estava."
+    )
 
 
 # ==========================================================
@@ -302,7 +339,6 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
 
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     prefix = f"mary.intro.{(timeline or '').strip() or 'cumplice'}"
-    id_key = f"{prefix}.id"
     text_key = f"{prefix}.text"
     hash_key = f"{prefix}.hash"
 
@@ -314,7 +350,6 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
         stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
 
         if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
-            set_fact_safe(usuario_key, id_key, current_id, {"fonte": "persona_intro_sync"})
             set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
             set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
             clear_user_cache(usuario_key)
@@ -418,6 +453,7 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: s
     if st.session_state.get(flag):
         return
 
+    # Se existe CANON, intro vira ruído — não injeta
     if _has_canon_memories(shared_key):
         st.session_state[flag] = True
         return
@@ -429,6 +465,38 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: s
     st.session_state[flag] = True
 
 
+def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]], max_items: int = 8) -> None:
+    mems = cached_list_memories(shared_key, limit=120)
+    if not mems:
+        return
+
+    soft = []
+    for m in mems:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip().lower()
+        if kind == "canon":
+            continue
+        soft.append(m)
+
+    if not soft:
+        return
+
+    selected = soft[-max_items:] if len(soft) > max_items else soft
+
+    lines = ["[MEMÓRIAS COMPARTILHADAS (contexto suave)]", "Use para manter coerência, sem citar literalmente.", ""]
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        header = f"- MEM {i}"
+        if d:
+            header += f" (data: {d})"
+        lines.append(header)
+        lines.append(str(m.get("text") or "").strip())
+        lines.append("")
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+
+
 # ==========================================================
 # MEMÓRIAS PERMANENTES — comandos e parsing
 # ==========================================================
@@ -438,7 +506,7 @@ _DATE_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})\b")
 _SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
 
 _RANGE_RE = re.compile(
-    r"\bde\s+(?P<start>.+?)\s+at[ée]\s+(?P<end>.+?)(?:\s*,?\s*em\s+\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})?\s*$",
+    r"\bde\s+(?P<start>.+?)\s+at[ée]\s+(?P<end>.+?)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -593,102 +661,6 @@ def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, 
 
 
 # ==========================================================
-# Injeção de memórias relevantes (Q&A)
-# ==========================================================
-def _select_relevant_memories(mems: List[Dict[str, Any]], query: str, k: int = 3) -> List[Dict[str, Any]]:
-    q = (query or "").lower()
-    words = [w for w in re.findall(r"[a-zA-ZÀ-ÿ0-9]+", q) if len(w) >= 4]
-    date_iso = _extract_date_iso(query)
-
-    scored = []
-    for m in mems or []:
-        txt = str(m.get("text") or "")
-        low = txt.lower()
-        score = 0
-        for w in words[:10]:
-            if w in low:
-                score += 2
-        meta = m.get("meta") or {}
-        if date_iso and str(meta.get("date") or "") == date_iso:
-            score += 5
-        scored.append((score, m))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    picked = [m for s, m in scored if s > 0][:k]
-    if not picked:
-        return (mems or [])[:k]
-    return picked
-
-
-def _inject_memories_context(shared_key: str, user_prompt: str, messages: List[Dict[str, str]]) -> None:
-    mems = cached_list_memories(shared_key, limit=200)
-    if not mems:
-        return
-
-    picked = _select_relevant_memories(mems, user_prompt, k=3)
-    if not picked:
-        return
-
-    lines: List[str] = []
-    for i, m in enumerate(picked, 1):
-        meta = m.get("meta") or {}
-        d = meta.get("date") or meta.get("ts") or ""
-        title = meta.get("title") or ""
-        header = f"- MEMÓRIA {i}"
-        if d:
-            header += f" (data: {d})"
-        if title:
-            header += f" — {title}"
-        lines.append(header)
-        lines.append(str(m.get("text") or "").strip())
-        lines.append("")
-
-    messages.append(
-        {
-            "role": "system",
-            "content": (
-                "[MEMÓRIAS PERMANENTES (selecionadas)]\n"
-                "Use como fatos canônicos quando aplicável.\n"
-                "Responda interpretando com coerência (não cole literal).\n\n"
-                + "\n".join(lines).strip()
-            ),
-        }
-    )
-
-
-def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]], max_items: int = 8) -> None:
-    mems = cached_list_memories(shared_key, limit=120)
-    if not mems:
-        return
-
-    soft = []
-    for m in mems:
-        meta = m.get("meta") or {}
-        kind = str(meta.get("kind") or "").strip().lower()
-        if kind == "canon":
-            continue
-        soft.append(m)
-
-    if not soft:
-        return
-
-    selected = soft[-max_items:] if len(soft) > max_items else soft
-
-    lines = ["[MEMÓRIAS COMPARTILHADAS (contexto suave)]", "Use para manter coerência, sem citar literalmente.", ""]
-    for i, m in enumerate(selected, 1):
-        meta = m.get("meta") or {}
-        d = meta.get("date") or meta.get("ts") or ""
-        header = f"- MEM {i}"
-        if d:
-            header += f" (data: {d})"
-        lines.append(header)
-        lines.append(str(m.get("text") or "").strip())
-        lines.append("")
-
-    messages.append({"role": "system", "content": "\n".join(lines).strip()})
-
-
-# ==========================================================
 # RELATIONSHIP STATE (facts > canon default > fallback)
 # ==========================================================
 def _rel_fact_key(timeline: str) -> str:
@@ -701,12 +673,8 @@ def _load_rel_state(
     timeline: str,
     canon_default: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Garante campos do RelationshipEngine v2 sem resetar nada existente.
-    """
     base = default_relationship_state(timeline)
 
-    # canon default por cima
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
@@ -718,25 +686,21 @@ def _load_rel_state(
         for k, v in raw.items():
             base[k] = v
 
-    # internos anti-loop
     base.setdefault("_promote_streak", 0)
     base.setdefault("_regress_streak", 0)
     base.setdefault("_loop_streak", 0)
     base.setdefault("_last_pattern", "")
     base.setdefault("_last_updated_ts", 0)
 
-    # v2 principais
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
     base.setdefault("consummated", False if timeline == "universitaria" else True)
     base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
 
-    # libido/controle
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
     base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
 
-    # permissões
     base.setdefault("allows_touch", True)
     base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
     base.setdefault("allows_sleep_together", False if timeline == "universitaria" else True)
@@ -808,13 +772,27 @@ class MaryService(BaseCharacter):
         shared_key = _shared_key(user_id)
 
         # ----------------------------------------------------------
-        # 1) Mudança explícita de local
+        # 0) Garantir scene lock/facts mínimos (evita “inventar” cena)
+        # ----------------------------------------------------------
+        facts0 = cached_get_facts(usuario_key)
+        if "cena.locked" not in facts0:
+            _lock_scene(usuario_key)
+
+        # ----------------------------------------------------------
+        # 1) Mudança explícita de local/tempo (permitida)
         # ----------------------------------------------------------
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-            # _persist_scene_basics já limpa cache via set_fact_safe
-            return f"_Eu te puxo comigo até {novo_local}…_"
+            _lock_scene(usuario_key)
+            return f"_Eu te puxo comigo até **{novo_local}**…_"
+
+        # ----------------------------------------------------------
+        # 1.1) Tentativa de quebrar cena sem comando explícito (BLOQUEIA)
+        # ----------------------------------------------------------
+        facts_pre = cached_get_facts(usuario_key)
+        if _scene_is_locked(facts_pre) and _detect_scene_violation(prompt):
+            return _scene_violation_message()
 
         # ----------------------------------------------------------
         # 2) Comando: salvar memória (texto direto OU resumo dinâmico)
@@ -868,7 +846,7 @@ class MaryService(BaseCharacter):
                     append_memory_safe(shared_key, resumo.strip(), meta=meta, user_id=user_id)
 
                     return (
-                        "✅ **Resumo salvo na memória permanente** (compartilhado entre as duas Marys)\n\n"
+                        "✅ **Resumo salvo na memória permanente** (compartilhado)\n\n"
                         f"📌 **Data:** `{date_iso or '—'}`\n"
                         f"🧭 **Recorte:** `{(dbg_meta or {}).get('mode','—')}`\n\n"
                         "---\n\n"
@@ -897,7 +875,7 @@ class MaryService(BaseCharacter):
                 logger.exception("Falha ao salvar memória", exc_info=e)
                 return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
 
-            return "✅ Memória permanente salva (compartilhada entre as duas Marys)."
+            return "✅ Memória permanente salva (compartilhada)."
 
         # ----------------------------------------------------------
         # 3) Persona + sistema
@@ -918,6 +896,16 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
 
+        # Scene Lock rule in system prompt (INQUEBRÁVEL)
+        scene_lock_rule = """
+REGRA DE CONTINUIDADE (INQUEBRÁVEL):
+- A cena atual está BLOQUEADA.
+- NÃO introduza novos eventos, cerimônias, festas, locais ou tempos.
+- NÃO avance no tempo.
+- NÃO troque de ambiente.
+- Só mude a cena se o USUÁRIO ordenar explicitamente (ex.: "corta para", "horas depois", "vamos para").
+""".strip()
+
         system = f"""
 {spatial_context}
 
@@ -932,6 +920,8 @@ PERSONA (baseline):
 {persona_text}
 
 {rel_block}
+
+{scene_lock_rule}
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
@@ -951,10 +941,6 @@ REGRAS ABSOLUTAS:
 
         # 5.1) Continuidade suave (não-canon)
         _inject_shared_soft_context(shared_key, messages, max_items=8)
-
-        # 6) Pergunta de memória: injeta relevantes
-        if _is_memory_question(prompt):
-            _inject_memories_context(shared_key, prompt, messages)
 
         # 7) Histórico (timeline atual)
         history = cached_get_history(usuario_key, limit=400)
@@ -1026,54 +1012,54 @@ REGRAS ABSOLUTAS:
                     _save_rel_state(usuario_key, timeline_final, rel_state)
 
                     if meta.get("must_offer_relief"):
-                        messages.insert(1, {
-                           "role": "system",
-                           "content": "[ANTI-LOOP] Evite negar de novo. Ofereça uma alternativa de alívio parcial coerente com permissões e com a cena."
-                        })
-    
+                        messages.insert(
+                            1,
+                            {
+                                "role": "system",
+                                "content": "[ANTI-LOOP] Evite negar de novo. Ofereça uma alternativa de alívio parcial coerente com permissões e com a cena.",
+                            },
+                        )
+
                     # Promoção automática de timeline: universitária -> cúmplice
                     if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                         promoted = True
                         old_key = usuario_key
                         old_tl = timeline_final
 
-                        # 1) troca timeline no app (UI)
                         st.session_state["mary_timeline"] = "cumplice"
 
-                        # 2) garante rel_state inicial da timeline destino (persistido)
                         _ensure_rel_state_for_timeline(user_id, "cumplice")
 
-                        # 3) muda o contexto efetivo do service (histórico/facts corretos)
                         timeline_final = "cumplice"
                         usuario_key = _user_key(user_id, "cumplice")
 
-                        # 4) limpa cache do antigo e do novo (evita “voltar” no reload)
                         clear_user_cache(old_key)
                         clear_user_cache(usuario_key)
 
-                        # 5) limpa cache de memórias compartilhadas (de verdade) + flags de intro
                         clear_shared_memory_cache(user_id)
                         st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
                         st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
 
-                        # também limpa caches de history (prefixos) caso existam por limites diferentes
-                        # (já coberto por clear_user_cache, mas deixo seguro)
                         for k in list(st.session_state.keys()):
-                            if isinstance(k, str) and (k.startswith(f"history::{old_key}::") or k.startswith(f"history::{usuario_key}::")):
+                            if isinstance(k, str) and (
+                                k.startswith(f"history::{old_key}::") or k.startswith(f"history::{usuario_key}::")
+                            ):
                                 st.session_state.pop(k, None)
 
-                        # (opcional) marcação de promoção
                         st.session_state["mary_last_promotion"] = {
                             "ts": int(time.time()),
                             "from_timeline": old_tl,
                             "to_timeline": "cumplice",
                         }
 
+                        # mantém cena travada no contexto novo também
+                        _lock_scene(usuario_key)
+
                 except Exception:
                     promoted = False
                     meta = meta or {}
 
-                # Debug rápido (sempre seguro)
+                # Debug rápido
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1092,8 +1078,12 @@ REGRAS ABSOLUTAS:
                     "virginity_reason": meta.get("virginity_reason"),
                 }
 
-                # Salva interação no histórico CERTO (já com timeline possivelmente promovida)
+                # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
+
+                # mantém cena travada sempre (anti-teleport por resposta do modelo)
+                _lock_scene(usuario_key)
+
                 return texto
 
             except Exception as e:
