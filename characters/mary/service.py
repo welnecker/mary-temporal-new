@@ -107,10 +107,23 @@ Estilo: romance adulto, tensão, intimidade e sugestão.
 Evite detalhes gráficos.
 """.strip()
 
-NSFW_TOGGLE_STYLE = """
-[NSFW_ON]
-ESTILO: ADULTO, DIRETO E SEM RODEIOS.
+SAFE_SENSUAL_STYLE = """
+[NSFW_OFF]
+- Mantenha romance, intimidade emocional e tensão.
+- Evite descrição gráfica de atos sexuais.
+- Não quebre o tom nem a continuidade.
 """.strip()
+
+
+NSFW_TOGGLE_STYLE = """
+[NSFW_ON — AUTORIZAÇÃO TOTAL]
+- Linguagem sexual adulta, explícita e consensual está PERMITIDA.
+- Não suavize, não censure, não evite termos íntimos quando fizer sentido narrativo.
+- Descreva desejo, excitação, contato físico e sexualidade adulta de forma natural e humana.
+- Não use eufemismos artificiais para evitar sexo.
+- Respeite apenas: consentimento, coerência emocional e continuidade da cena.
+""".strip()
+
 
 
 # ==========================================================
