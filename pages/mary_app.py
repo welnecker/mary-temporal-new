@@ -482,19 +482,85 @@ def _on_timeline_change() -> None:
 
     _clear_mary_caches_all_related()
 
+def _get_intro_persona_text(timeline: str) -> str:
+    """
+    Busca a primeira mensagem 'assistant' da persona para a timeline.
+    Retorna fallback se não achar.
+    """
+    try:
+        # mary_persona.get_persona(timeline) deve retornar (persona_text, history_boot)
+        _, boot = mary_persona.get_persona(timeline)
+    except Exception:
+        boot = None
 
-def _boot_visual_if_empty() -> None:
-    if st.session_state["chat_history"]:
+    intro = ""
+    if isinstance(boot, list):
+        for m in boot:
+            if not isinstance(m, dict):
+                continue
+            if m.get("role") != "assistant":
+                continue
+            if str(m.get("timeline") or "").strip() != str(timeline or "").strip():
+                continue
+            c = (m.get("content") or "").strip()
+            if c:
+                intro = c
+                break
+
+    if not intro:
+        intro = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
+
+    return intro.strip()
+
+
+def _inject_intro_visual_if_needed() -> None:
+    """
+    Injeta a mensagem inicial da persona diretamente no chat visual (st.session_state['chat_history'])
+    SOMENTE se:
+      - backend não tem histórico
+      - chat_history está vazio
+      - mary_intro_done é False
+    """
+    if st.session_state.get("mary_intro_done", False):
         return
 
+    if st.session_state.get("chat_history"):
+        # se já tem algo, não injeta
+        st.session_state["mary_intro_done"] = True
+        return
+
+    # confirma backend vazio (para não duplicar intro em cima de histórico real)
     backend_hist = _carregar_chat_visual_do_backend(force=False)
     if backend_hist:
         st.session_state["chat_history"] = backend_hist
         st.session_state["mary_intro_done"] = True
         return
 
+    tl = str(st.session_state.get("mary_timeline") or "cumplice")
+    intro = _get_intro_persona_text(tl)
+
+    st.session_state["chat_history"] = [("assistant", intro)]
+    st.session_state["mary_intro_done"] = True
+
+
+
+def _boot_visual_if_empty() -> None:
+    # Se já tem chat visual, ok
+    if st.session_state.get("chat_history"):
+        st.session_state["mary_intro_done"] = True
+        return
+
+    # 1) tenta backend
+    backend_hist = _carregar_chat_visual_do_backend(force=False)
+    if backend_hist:
+        st.session_state["chat_history"] = backend_hist
+        st.session_state["mary_intro_done"] = True
+        return
+
+    # 2) se backend vazio, injeta intro visual
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
+    _inject_intro_visual_if_needed()
 
 
 # ==========================================================
@@ -745,13 +811,21 @@ def main() -> None:
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             importlib.reload(mary_persona)
             st.session_state.pop("_mary_service", None)
+        
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
+        
+            # limpa cache do backend visual
             _invalidate_backend_cache()
+            st.session_state["backend_hist_cache_key"] = ""
+        
+            # limpa caches do service e flags de intro invisível
             _clear_mary_caches_all_related()
+        
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
-            st.success("Persona recarregada. Service vai reinjetar contexto corretamente.")
+        
+            st.success("Persona recarregada. Intro será reinjetada no chat visual.")
             st.rerun()
 
         # ======================================================
