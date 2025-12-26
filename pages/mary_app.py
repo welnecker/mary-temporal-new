@@ -808,6 +808,15 @@ def main() -> None:
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
 
+        if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
+            uk = _usuario_key_atual()
+            st.write("usuario_key:", uk)
+            try:
+                st.json(get_facts(uk) or {})
+            except Exception as e:
+                st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+
+
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             importlib.reload(mary_persona)
             st.session_state.pop("_mary_service", None)
