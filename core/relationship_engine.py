@@ -1,26 +1,18 @@
-# core/relationship_engine.py
 from __future__ import annotations
 
 """
-RelationshipEngine v2 (Mary) — desejo equilibrado + anti-loop + progressão por maturação
+RelationshipEngine v2.2 (Mary) — desejo equilibrado + anti-loop + progressão por maturação (robusto)
 
-Objetivo:
-- Parar o "deadlock": aproxima → nega → frustra → briga → reset.
-- Separar "virginity" (estado físico) de "desire/arousal" (estado emocional/corporal).
-- Permitir progressão realista: conhecer → aproximar → sentir → tocar → carícias → desejo → alívio parcial → entrega.
-- Funcionar SEM Streamlit (engine puro). O service decide como persistir.
-
-Integração esperada (service.py):
-- rel_state = _load_rel_state(...)
-- new_rel, assessment, meta = evolve_relationship(rel_state, user_prompt, mary_reply, timeline, assessor_fn, cfg)
-- persistir new_rel
-- opcional: usar meta["suggested_timeline"] para promover universitária → cúmplice
-
-Importante:
-- Este engine NÃO gera texto narrativo. Ele só atualiza estado e fornece blocos de prompt.
+Melhorias principais vs v2.0:
+- RNG estável por turno (evita “loucura” ou “reset” de aleatoriedade a cada chamada).
+- Loop detector mais responsivo (streak não zera pra 0; começa em 1 no novo padrão).
+- Ordem de decisões: regressão primeiro (se necessário), senão progressão.
+- Heurísticas menos sensíveis a "não"/"calma" (reduz falso "bloqueio").
+- Meta "must_offer_relief" quando detecta loop/deadlock (service injeta direção narrativa).
+- Permissões consideram mature_turns como gatilho de evolução (especialmente em universitária).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple, List
 import re
 import json
@@ -37,27 +29,28 @@ AssessorFn = Callable[[str, str], str]
 @dataclass
 class EngineConfig:
     # ---------- progressão ----------
-    promote_threshold: int = 12          # a cada quantos turnos maduros começa a "tentar" promover estágio
-    promote_chance: float = 0.12         # chance base de promover quando bate threshold
-    regress_threshold: int = 4           # sequência de turnos ruins que pode regredir
-    regress_chance: float = 0.18         # chance de regredir após threshold de regressão
+    promote_threshold: int = 10          # um pouco mais rápido
+    promote_chance: float = 0.14
+    regress_threshold: int = 4
+    regress_chance: float = 0.16
 
     # ---------- desejo/arousal ----------
-    desire_gain_good: int = 8
-    arousal_gain_good: int = 9
+    desire_gain_good: int = 7
+    arousal_gain_good: int = 8
     desire_gain_tease: int = 10
     arousal_gain_tease: int = 12
 
     desire_loss_bad: int = 12
     arousal_loss_bad: int = 14
 
-    # autocontrole: quando alto, reduz a probabilidade de "passar do limite"
+    # autocontrole
     control_gain: int = 3
     control_loss: int = 6
 
     # ---------- anti-loop ----------
-    max_loop_streak: int = 3             # quantas repetições do mesmo padrão antes de forçar variação
-    forced_variation_boost: int = 18     # boost de "alívio parcial" quando detecta loop
+    max_loop_streak: int = 3
+    forced_variation_boost: int = 18
+    forced_variation_relief_flag: bool = True  # meta: must_offer_relief
 
     # ---------- limites ----------
     desire_max: int = 100
@@ -66,7 +59,7 @@ class EngineConfig:
     control_max: int = 100
 
     # ---------- aleatoriedade ----------
-    rng_seed: Optional[int] = None       # se setado, determinístico
+    rng_seed: Optional[int] = None  # se setado, determinístico
 
 
 # ==========================================================
@@ -76,30 +69,25 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
     tl = (timeline or "").strip() or "cumplice"
 
     if tl == "universitaria":
-        # universitária: desejo existe, mas limites físicos mais rígidos
         return {
             "stage": "conhecendo",
             "mature_turns": 0,
 
-            # sexualidade equilibrada
             "desire": 18,
             "arousal": 10,
             "self_control": 72,
 
-            # físico (não implica “frieza”)
             "virginity": "virgem",
             "consummated": False,
             "intimacy_level": 0,
 
-            # permissões (podem evoluir)
             "allows_touch": True,
             "allows_extended_touch": False,
             "allows_sleep_together": False,
-            "allows_masturbation": True,          # alívio individual pode existir cedo (adulto)
+            "allows_masturbation": True,
             "allows_mutual_relief": False,
             "allows_penetration": False,
 
-            # anti-loop / memória local do engine
             "_promote_streak": 0,
             "_regress_streak": 0,
             "_loop_streak": 0,
@@ -107,7 +95,6 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
             "_last_updated_ts": int(time.time()),
         }
 
-    # cúmplice: casal já estabelecido, mais permissões por padrão
     return {
         "stage": "casados",
         "mature_turns": 0,
@@ -139,7 +126,6 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
 # PROMPT BLOCK
 # ==========================================================
 def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
-    """Bloco compacto para orientar a persona sem travar a narrativa."""
     stage = str(rel.get("stage") or "—")
     desire = int(rel.get("desire") or 0)
     arousal = int(rel.get("arousal") or 0)
@@ -157,15 +143,18 @@ def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
         "penetracao": bool(rel.get("allows_penetration")),
     }
 
-    # Regras de ouro: desejo ≠ penetração
     rules = [
         "- Desejo e excitação podem existir em QUALQUER estágio.",
         "- Limites físicos devem ser respeitados; avance em passos coerentes.",
-        "- Se houver tensão alta, permita ALÍVIO PARCIAL (carícias, pausa, banho, dormir colados, masturbação consentida).",
-        "- Evite padrão repetitivo de negar tudo; varie com afeto e sensualidade realista.",
+        "- Se tensão estiver alta, ofereça ALÍVIO PARCIAL coerente com permissões.",
+        "- Evite negar tudo repetidamente; varie com afeto, provocação e alternativas realistas.",
     ]
 
-    lines = []
+    # Direção adicional quando tensão está alta
+    if desire >= 70 or arousal >= 65:
+        rules.append("- Tensão alta: seja mais física e direta (sem quebrar os limites canônicos).")
+
+    lines: List[str] = []
     lines.append("[RELATIONSHIP STATE — CANÔNICO]")
     lines.append(f"Stage: {stage} | MatureTurns: {maturity}")
     lines.append(f"Virginity: {virginity} | Consummated: {'true' if consummated else 'false'}")
@@ -175,25 +164,37 @@ def rel_state_to_prompt_block(rel: Dict[str, Any]) -> str:
         lines.append(f"- {k}: {'sim' if v else 'não'}")
     lines.append("Regras:")
     lines.extend(rules)
-
     return "\n".join(lines).strip()
 
 
 # ==========================================================
 # INTERNAL HELPERS
 # ==========================================================
-_WORD = re.compile(r"[a-zA-ZÀ-ÿ0-9]+")
-
 def _clamp(x: int, lo: int, hi: int) -> int:
     return lo if x < lo else hi if x > hi else x
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
-def _rand(cfg: EngineConfig) -> random.Random:
-    if cfg.rng_seed is None:
-        return random.Random()
-    return random.Random(cfg.rng_seed)
+def _stable_seed(rel: Dict[str, Any], cfg: EngineConfig) -> int:
+    """
+    Seed estável por turno:
+    - Se cfg.rng_seed existe: determinístico total.
+    - Senão: mistura _last_updated_ts + mature_turns + desire/arousal.
+    """
+    if cfg.rng_seed is not None:
+        return int(cfg.rng_seed)
+
+    ts = int(rel.get("_last_updated_ts") or 0)
+    m = int(rel.get("mature_turns") or 0)
+    d = int(rel.get("desire") or 0)
+    a = int(rel.get("arousal") or 0)
+    # hash simples e estável
+    return (ts * 1315423911 + m * 2654435761 + d * 97531 + a * 433) & 0x7FFFFFFF
+
+def _rand(rel: Dict[str, Any], cfg: EngineConfig) -> random.Random:
+    return random.Random(_stable_seed(rel, cfg))
+
 
 def _keyword_score(text: str, keywords: List[str]) -> int:
     t = _norm(text)
@@ -203,38 +204,30 @@ def _keyword_score(text: str, keywords: List[str]) -> int:
             score += 1
     return score
 
+
+# Padrões mais específicos (reduz falso positivo)
+_RE_USER_PUSH = re.compile(r"\b(quero\s+você|vem\s+c[áa]|vamos\s+pro|vamos\s+pra|deita|cama|me\s+toca|me\s+beija)\b", re.I)
+_RE_MARY_HARD_BLOCK = re.compile(r"\b(agora\s+n[aã]o|para\s+com\s+isso|n[aã]o\s+posso|sem\s+isso|n[aã]o\s+é\s+hora)\b", re.I)
+_RE_MARY_TEASE = re.compile(r"\b(ro[cç]o|mordo|provoco|car[ií]cia|beijo|encosto|sussurro)\b", re.I)
+_RE_MARY_CARE = re.compile(r"\b(eu\s+te\s+amo|fica\s+comigo|t[oô]\s+aqui|me\s+desculpa|perd[aã]o|abra[cç]o)\b", re.I)
+
+
 def _detect_pattern(user_prompt: str, mary_reply: str) -> str:
-    u = _norm(user_prompt)
-    a = _norm(mary_reply)
+    u = user_prompt or ""
+    a = mary_reply or ""
 
-    # padrões simplificados
-    desire_user = _keyword_score(u, [
-        "deita", "vem", "quero", "calor", "me toca", "beija", "me abraça",
-        "quero você", "vamos", "comigo", "cama", "sofá", "tirar", "ficar",
-    ])
+    user_push = 1 if _RE_USER_PUSH.search(u) else 0
+    mary_block = 1 if _RE_MARY_HARD_BLOCK.search(a) else 0
+    mary_tease = 1 if _RE_MARY_TEASE.search(a) else 0
+    mary_care = 1 if _RE_MARY_CARE.search(a) else 0
 
-    deny_mary = _keyword_score(a, [
-        "calma", "não", "agora não", "pare", "para", "sem", "hospital",
-        "não posso", "não é hora", "se comporta", "amanhã", "depois",
-    ])
-
-    tease_mary = _keyword_score(a, [
-        "sussurro", "mordo", "provoco", "roço", "encosto", "beijo", "carícia",
-        "coloco a mão", "aproximo", "no seu ouvido", "meu cheiro", "meu corpo",
-    ])
-
-    comfort_mary = _keyword_score(a, [
-        "abraço", "perdão", "desculpa", "calma amor", "eu te amo",
-        "fica comigo", "tô aqui", "carinho", "ternura",
-    ])
-
-    if desire_user >= 2 and deny_mary >= 2 and tease_mary == 0:
+    if user_push and mary_block and not mary_tease:
         return "user_push__mary_block"
-    if desire_user >= 2 and tease_mary >= 2 and deny_mary >= 1:
+    if user_push and mary_tease and mary_block:
         return "tease_with_boundary"
-    if comfort_mary >= 2 and deny_mary == 0:
+    if mary_care and not mary_block:
         return "comfort_progress"
-    if desire_user == 0 and comfort_mary >= 1:
+    if not user_push and mary_care:
         return "neutral_bond"
     return "mixed"
 
@@ -245,10 +238,6 @@ def _assess_turn(
     mary_reply: str,
     timeline: str,
 ) -> Dict[str, Any]:
-    """
-    Se houver assessor (LLM), pedimos um JSON.
-    Caso falhe, caímos no heurístico.
-    """
     heur = {
         "good": 0,
         "bad": 0,
@@ -267,26 +256,23 @@ def _assess_turn(
     u = _norm(user_prompt)
     a = _norm(mary_reply)
 
-    # heurísticas base
-    heur["care"] = _keyword_score(a, ["amor", "eu te amo", "carinho", "abraço", "fica", "calma", "tô aqui"])
-    heur["tease"] = _keyword_score(a, ["roço", "beijo", "mordo", "sussurro", "aproximo", "toque", "carícia"])
-    heur["boundary"] = _keyword_score(a, ["não", "agora não", "sem", "hospital", "devagar", "cuidado", "limite"])
-    heur["conflict"] = _keyword_score(u + " " + a, ["vai embora", "pra sempre", "mecânica", "odeio", "cansado", "não tolero"])
+    # “boundary” mais restrito: não conta “não” genérico
+    heur["care"] = 3 * (1 if _RE_MARY_CARE.search(mary_reply or "") else 0) + _keyword_score(a, ["carinho", "ternura"])
+    heur["tease"] = 3 * (1 if _RE_MARY_TEASE.search(mary_reply or "") else 0) + _keyword_score(a, ["provoca", "roça", "beija"])
+    heur["boundary"] = 4 * (1 if _RE_MARY_HARD_BLOCK.search(mary_reply or "") else 0) + _keyword_score(a, ["devagar", "cuidado", "limite"])
+    heur["conflict"] = _keyword_score(u + " " + a, ["vai embora", "odeio", "cansado", "frio", "mecânica", "sempre assim"])
 
-    heur["explicit"] = _keyword_score(u + " " + a, ["pau", "buceta", "gozo", "chupa", "fode", "meter", "glande"])
-    heur["suggest_relief"] = _keyword_score(u + " " + a, ["alívio", "mastur", "me alivio", "banho", "dorme comigo", "deita comigo"])
+    # explicit/suggest_relief ficam só como sinal (não “travam” engine)
+    heur["explicit"] = _keyword_score(u + " " + a, ["pau", "buceta", "gozo", "chupa", "fode", "meter"])
+    heur["suggest_relief"] = _keyword_score(u + " " + a, ["alívio", "banho", "deita comigo", "dorme comigo", "me alivio", "masturb"])
 
-    # good/bad
-    heur["good"] = _clamp(heur["care"] + heur["tease"] - heur["conflict"], 0, 10)
-    heur["bad"] = _clamp(heur["conflict"] + (2 if heur["boundary"] >= 3 and heur["tease"] == 0 else 0), 0, 10)
+    heur["good"] = _clamp((heur["care"] // 2) + (heur["tease"] // 2) - heur["conflict"], 0, 10)
+    heur["bad"] = _clamp(heur["conflict"] + (2 if heur["boundary"] >= 4 and heur["tease"] == 0 else 0), 0, 10)
 
-    # timeline suggestion (apenas 1 direção: universitária -> cúmplice)
     if (timeline or "") == "universitaria":
-        # quando há maturidade + vínculo + sexualidade equilibrada
         if heur["care"] >= 2 and heur["good"] >= 3 and heur["bad"] <= 1 and heur["tease"] >= 1:
             heur["suggested_timeline"] = "cumplice"
 
-    # virginity signal (apenas sinal; decisão final é do service/canon)
     if "primeira vez" in a or "não sou mais virgem" in a or "perdi" in a:
         heur["virginity_change_signal"] = "changed"
         heur["virginity_reason"] = "Sinal textual na fala da Mary."
@@ -310,23 +296,18 @@ def _assess_turn(
         "e presença de opções de alívio parcial quando houver tensão."
     )
     try:
-        raw = assessor(system, user) or ""
-        raw = raw.strip()
+        raw = (assessor(system, user) or "").strip()
         obj = json.loads(raw)
-        # merge com heur como fallback
+
         out = dict(heur)
         for k in out.keys():
             if k in obj:
                 out[k] = obj[k]
-        # normalizações básicas
-        out["good"] = int(out.get("good") or 0)
-        out["bad"] = int(out.get("bad") or 0)
-        out["tease"] = int(out.get("tease") or 0)
-        out["boundary"] = int(out.get("boundary") or 0)
-        out["care"] = int(out.get("care") or 0)
-        out["conflict"] = int(out.get("conflict") or 0)
-        out["explicit"] = int(out.get("explicit") or 0)
-        out["suggest_relief"] = int(out.get("suggest_relief") or 0)
+
+        # normalizações
+        for k in ("good", "bad", "tease", "boundary", "care", "conflict", "explicit", "suggest_relief"):
+            out[k] = int(out.get(k) or 0)
+
         out["suggested_timeline"] = str(out.get("suggested_timeline") or "").strip()
         out["virginity_change_signal"] = str(out.get("virginity_change_signal") or "").strip()
         out["virginity_reason"] = str(out.get("virginity_reason") or "").strip()
@@ -337,79 +318,70 @@ def _assess_turn(
 
 
 def _apply_permissions(rel: Dict[str, Any], timeline: str) -> None:
-    """Deriva permissões a partir de stage + desejo/arousal + timeline."""
     tl = (timeline or "").strip() or "cumplice"
     stage = str(rel.get("stage") or "conhecendo")
 
     desire = int(rel.get("desire") or 0)
     arousal = int(rel.get("arousal") or 0)
+    mature = int(rel.get("mature_turns") or 0)
+    control = int(rel.get("self_control") or 0)
 
     # Baseline por timeline
     if tl == "universitaria":
         rel["allows_touch"] = True
-        rel["allows_masturbation"] = True  # válvula de alívio existe cedo
+        rel["allows_masturbation"] = True
         rel["allows_penetration"] = False
     else:
         rel["allows_touch"] = True
         rel["allows_masturbation"] = True
         rel["allows_penetration"] = True
 
-    # Stage gates (não impedem desejo, só limites)
-    if stage in ("conhecendo",):
+    # Stage gates (limites físicos, não afetam desejo)
+    if stage == "conhecendo":
         rel["allows_extended_touch"] = (desire >= 30 or arousal >= 25)
-        rel["allows_sleep_together"] = (desire >= 35)
-        rel["allows_mutual_relief"] = (desire >= 45 and arousal >= 40 and rel.get("self_control", 50) >= 35)
+        rel["allows_sleep_together"] = (mature >= 4 and desire >= 32)
+        # mutual relief: exige maturação OU tensão alta com controle baixo/moderado
+        rel["allows_mutual_relief"] = (
+            (mature >= 6 and desire >= 40 and arousal >= 35) or
+            (desire >= 55 and arousal >= 50 and control <= 55)
+        )
     elif stage in ("aproximando", "conectados"):
         rel["allows_extended_touch"] = True
         rel["allows_sleep_together"] = True
-        rel["allows_mutual_relief"] = (desire >= 40 and arousal >= 35)
+        rel["allows_mutual_relief"] = (mature >= 5 or (desire >= 42 and arousal >= 38))
     else:
-        # casados/estável
         rel["allows_extended_touch"] = True
         rel["allows_sleep_together"] = True
         rel["allows_mutual_relief"] = True
 
-    # Penetração: só se timeline permitir e estado permitir
-    if tl != "universitaria":
-        rel["allows_penetration"] = True
-    else:
-        rel["allows_penetration"] = False
-
-    # Consummated/virginity são físicos/canônicos — não forçamos aqui
-    # (o service/canon pode atualizar quando apropriado)
+    # Penetração: só se timeline permitir
+    rel["allows_penetration"] = (tl != "universitaria")
 
 
 def _maybe_progress_stage(rel: Dict[str, Any], cfg: EngineConfig, rnd: random.Random) -> Tuple[bool, str]:
-    """Progressão por maturação (evita sentir ‘travado’ a cada turno)."""
     stage = str(rel.get("stage") or "conhecendo")
     mature = int(rel.get("mature_turns") or 0)
-    promote_streak = int(rel.get("_promote_streak") or 0)
+    streak = int(rel.get("_promote_streak") or 0)
 
-    # mapa simples de estágios
     order = ["conhecendo", "aproximando", "conectados", "estável", "casados"]
     if stage not in order:
         stage = order[0]
-
     idx = order.index(stage)
     if idx >= len(order) - 1:
         rel["_promote_streak"] = 0
         return False, stage
 
-    # só tenta promover quando maturidade suficiente
     if mature < cfg.promote_threshold:
         return False, stage
 
-    # promove com chance + streak (evita ficar “para sempre”)
-    chance = cfg.promote_chance + (0.03 * promote_streak)
-    roll = rnd.random()
-    if roll < chance:
+    chance = cfg.promote_chance + (0.03 * streak)
+    if rnd.random() < chance:
         new_stage = order[idx + 1]
         rel["stage"] = new_stage
         rel["_promote_streak"] = 0
         return True, new_stage
 
-    # não promove, acumula streak
-    rel["_promote_streak"] = promote_streak + 1
+    rel["_promote_streak"] = streak + 1
     return False, stage
 
 
@@ -434,27 +406,27 @@ def _maybe_regress_stage(rel: Dict[str, Any], cfg: EngineConfig, rnd: random.Ran
         rel["_regress_streak"] = 0
         return True, new_stage
 
+    # se não regrediu, mantém streak (não zera)
     return False, stage
 
 
 def _update_loop_detector(rel: Dict[str, Any], pattern: str, cfg: EngineConfig) -> bool:
-    """Detecta repetição do mesmo padrão e sinaliza quando deve forçar variação."""
     last = str(rel.get("_last_pattern") or "")
     loop = int(rel.get("_loop_streak") or 0)
 
     if pattern and pattern == last:
         loop += 1
     else:
-        loop = 0
+        # novo padrão inicia em 1 (não 0) pra resposta mais rápida
+        loop = 1 if pattern else 0
 
     rel["_last_pattern"] = pattern
     rel["_loop_streak"] = loop
-
     return loop >= cfg.max_loop_streak
 
 
 # ==========================================================
-# PUBLIC: evolve_relationship
+# PUBLIC
 # ==========================================================
 def evolve_relationship(
     rel_state: Dict[str, Any],
@@ -465,24 +437,16 @@ def evolve_relationship(
     *,
     cfg: EngineConfig = EngineConfig(),
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    """
-    Atualiza rel_state com base no turno.
-
-    Retorna:
-    - new_rel_state
-    - assessment (detalhes do avaliador/heurístico)
-    - meta (hazard_p, mature_turns, suggested_timeline, virginity_changed, virginity_reason, etc.)
-    """
     rel = dict(rel_state or {})
     tl = (timeline or "").strip() or "cumplice"
-    rnd = _rand(cfg)
 
     # garantir campos
     base = default_relationship_state(tl)
     for k, v in base.items():
         rel.setdefault(k, v)
 
-    # avaliação
+    rnd = _rand(rel, cfg)
+
     assessment = _assess_turn(assessor, user_prompt, mary_reply, tl)
 
     good = int(assessment.get("good") or 0)
@@ -491,28 +455,24 @@ def evolve_relationship(
     boundary = int(assessment.get("boundary") or 0)
     care = int(assessment.get("care") or 0)
     conflict = int(assessment.get("conflict") or 0)
-    explicit = int(assessment.get("explicit") or 0)
-    suggest_relief = int(assessment.get("suggest_relief") or 0)
     pattern = str(assessment.get("pattern") or "")
 
-    # hazard_p: risco de loop/conflito (0..1)
-    hazard_raw = (0.10 * conflict) + (0.07 * bad) + (0.06 * boundary) + (0.03 * (1 if pattern == "user_push__mary_block" else 0))
+    # hazard_p (0..1)
+    hazard_raw = (0.10 * conflict) + (0.07 * bad) + (0.06 * (1 if boundary >= 4 else 0)) + (0.04 * (1 if pattern == "user_push__mary_block" else 0))
     hazard_p = max(0.0, min(1.0, hazard_raw))
 
-    # mature_turns: só cresce quando há vínculo/coerência
+    # mature_turns cresce em turnos bons/coerentes
     mature_turns = int(rel.get("mature_turns") or 0)
     if good >= 3 and bad <= 2:
         mature_turns += 1
         rel["mature_turns"] = mature_turns
         rel["_regress_streak"] = 0
     else:
-        # sequência ruim
         rel["_regress_streak"] = int(rel.get("_regress_streak") or 0) + 1
 
     # loop detector
     force_variation = _update_loop_detector(rel, pattern, cfg)
 
-    # desejo/arousal/control
     desire = int(rel.get("desire") or 0)
     arousal = int(rel.get("arousal") or 0)
     control = int(rel.get("self_control") or 0)
@@ -522,7 +482,6 @@ def evolve_relationship(
         arousal -= cfg.arousal_loss_bad
         control += cfg.control_gain
     else:
-        # turno bom
         if tease >= 2:
             desire += cfg.desire_gain_tease
             arousal += cfg.arousal_gain_tease
@@ -530,35 +489,33 @@ def evolve_relationship(
             desire += cfg.desire_gain_good
             arousal += cfg.arousal_gain_good
 
-        # cuidado tende a reduzir controle rígido (fica mais permissiva)
         if care >= 2:
             control -= 2
 
-        # boundary sem afeto pode aumentar controle (medo)
-        if boundary >= 3 and care == 0:
+        if boundary >= 4 and care == 0 and tease == 0:
             control += 3
 
-    # se detectou loop (negação repetitiva), forçar “válvula de alívio parcial”
-    # sem mudar limites físicos: aumenta abertura para toque / alívio, e reduz hazard
+    must_offer_relief = False
     if force_variation:
         desire += cfg.forced_variation_boost
         arousal += int(cfg.forced_variation_boost * 0.7)
         control -= 4
         hazard_p = max(0.0, hazard_p - 0.18)
+        must_offer_relief = bool(cfg.forced_variation_relief_flag)
 
-    # clamp
     rel["desire"] = _clamp(desire, 0, cfg.desire_max)
     rel["arousal"] = _clamp(arousal, 0, cfg.arousal_max)
     rel["self_control"] = _clamp(control, cfg.control_min, cfg.control_max)
 
-    # atualizar permissões derivadas
     _apply_permissions(rel, tl)
 
-    # progressão/regressão por blocos
-    progressed, new_stage = _maybe_progress_stage(rel, cfg, rnd)
-    regressed, reg_stage = _maybe_regress_stage(rel, cfg, rnd)
+    # Decisão de estágio: regressão primeiro, senão progressão
+    regressed, _ = _maybe_regress_stage(rel, cfg, rnd)
+    progressed = False
+    if not regressed:
+        progressed, _ = _maybe_progress_stage(rel, cfg, rnd)
 
-    # intimidade_level (0..5) derivada do stage, suavizada por desejo
+    # intimacy_level (0..5)
     stage = str(rel.get("stage") or "conhecendo")
     stage_to_lvl = {
         "conhecendo": 0,
@@ -568,38 +525,34 @@ def evolve_relationship(
         "casados": 4,
     }
     lvl = stage_to_lvl.get(stage, 0)
-    # desejo/arousal empurra um pouco pra cima sem quebrar stage
     if rel["desire"] >= 70 and rel["arousal"] >= 60:
         lvl = min(5, lvl + 1)
     rel["intimacy_level"] = lvl
 
-    # virginity change: engine só sinaliza; não impõe
     virginity_changed = False
     virginity_reason = ""
     if str(assessment.get("virginity_change_signal") or "").strip() == "changed":
         virginity_changed = True
         virginity_reason = str(assessment.get("virginity_reason") or "Sinal do assessor/heurístico.")
 
-    # suggested timeline
     suggested_timeline = str(assessment.get("suggested_timeline") or "").strip()
     if tl != "universitaria":
-        suggested_timeline = ""  # só sugerimos uma direção (universitária -> cúmplice)
+        suggested_timeline = ""
 
-    # meta
     meta = {
         "hazard_p": float(hazard_p),
         "mature_turns": int(rel.get("mature_turns") or 0),
         "pattern": pattern,
         "forced_variation": bool(force_variation),
+        "must_offer_relief": bool(must_offer_relief),
         "stage_progressed": bool(progressed),
         "stage_regressed": bool(regressed),
         "suggested_timeline": suggested_timeline,
         "virginity_changed": bool(virginity_changed),
         "virginity_reason": virginity_reason,
-        "engine_v": "2.0",
+        "engine_v": "2.2",
         "_ts": int(time.time()),
     }
 
     rel["_last_updated_ts"] = meta["_ts"]
-
     return rel, assessment, meta
