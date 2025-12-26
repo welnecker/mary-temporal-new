@@ -791,8 +791,8 @@ class MaryService(BaseCharacter):
         # 1.1) Tentativa de quebrar cena sem comando explícito (BLOQUEIA)
         # ----------------------------------------------------------
         facts_pre = cached_get_facts(usuario_key)
-        if _scene_is_locked(facts_pre) and _detect_scene_violation(prompt):
-            return _scene_violation_message()
+        scene_locked = _scene_is_locked(facts_pre)
+        scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
 
         # ----------------------------------------------------------
         # 2) Comando: salvar memória (texto direto OU resumo dinâmico)
@@ -896,15 +896,26 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
 
-        # Scene Lock rule in system prompt (INQUEBRÁVEL)
+        # Scene Lock rule (SEM sermão; permite cenas paralelas sem mover a Mary)
         scene_lock_rule = """
-REGRA DE CONTINUIDADE (INQUEBRÁVEL):
-- A cena atual está BLOQUEADA.
-- NÃO introduza novos eventos, cerimônias, festas, locais ou tempos.
-- NÃO avance no tempo.
-- NÃO troque de ambiente.
-- Só mude a cena se o USUÁRIO ordenar explicitamente (ex.: "corta para", "horas depois", "vamos para").
+REGRA DE CONTINUIDADE (IMPORTANTE):
+- A Mary NÃO deve mudar de local, tempo ou evento sozinha.
+- Se o usuário narrar acontecimentos em outro lugar/tempo (ex.: casamento, igreja, cerimonial),
+  trate isso como CENA PARALELA: Mary permanece onde está, mas pode reagir emocionalmente,
+  pensar, comparar, sentir tensão, imaginar ou responder à distância (mensagens/lembranças).
+- NÃO explique regras ao usuário. NÃO diga "a cena não muda sozinha".
+- Só altere a cena da Mary se o USUÁRIO ordenar explicitamente (ex.: "corta para:", "horas depois:", "vamos para ...").
 """.strip()
+
+        parallel_scene_rule = (
+            """
+[CONTEXTO — CENA PARALELA DO USUÁRIO]
+O usuário descreveu eventos paralelos (outro lugar/tempo). NÃO mova a Mary para lá.
+A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de tensão narrativa.
+""".strip()
+            if scene_parallel
+            else ""
+        )
 
         system = f"""
 {spatial_context}
@@ -922,6 +933,7 @@ PERSONA (baseline):
 {rel_block}
 
 {scene_lock_rule}
+{parallel_scene_rule}
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
@@ -932,6 +944,7 @@ REGRAS ABSOLUTAS:
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+
 
         # 4) Intro 1x por sessão (só se NÃO houver CANON)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
