@@ -1012,6 +1012,12 @@ REGRAS ABSOLUTAS:
                     rel_state = new_rel
                     _save_rel_state(usuario_key, timeline_final, rel_state)
 
+                    if meta.get("must_offer_relief"):
+                        messages.insert(1, {
+                           "role": "system",
+                           "content": "[ANTI-LOOP] Evite negar de novo. Ofereça uma alternativa de alívio parcial coerente com permissões e com a cena."
+                        })
+    
                     # Promoção automática de timeline: universitária -> cúmplice
                     if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                         promoted = True
