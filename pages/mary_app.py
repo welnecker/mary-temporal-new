@@ -221,12 +221,68 @@ def _keys_para_mary() -> list[str]:
 # ==========================================================
 # HELPERS
 # ==========================================================
+def _service_key_for_userkey(userkey: str) -> str:
+    return f"_mary_service::{userkey}"
+
+
+def _instantiate_mary_service(*, userkey: str, timeline: str) -> MaryService:
+    """
+    Cria MaryService de forma compatível com diferentes assinaturas.
+    - Se MaryService aceitar (usuario_key, timeline), usamos.
+    - Se aceitar só (usuario_key) ou só (timeline), usamos o que existir.
+    - Caso não aceite nada, instancia vazio.
+    """
+    try:
+        sig = inspect.signature(MaryService.__init__)
+        params = set(sig.parameters.keys())  # inclui "self"
+    except Exception:
+        params = set()
+
+    kwargs: dict[str, Any] = {}
+    if "usuario_key" in params:
+        kwargs["usuario_key"] = userkey
+    if "user_key" in params:
+        kwargs["user_key"] = userkey
+    if "timeline" in params:
+        kwargs["timeline"] = timeline
+
+    try:
+        return MaryService(**kwargs) if kwargs else MaryService()
+    except TypeError:
+        # fallback agressivo
+        try:
+            return MaryService()
+        except Exception:
+            # última tentativa: tentar com userkey apenas
+            try:
+                return MaryService(userkey)  # type: ignore
+            except Exception:
+                return MaryService()  # type: ignore
+
+
 def _get_service() -> MaryService:
-    svc = st.session_state.get("_mary_service")
+    """
+    ✅ FIX DO VAZAMENTO:
+    Service é isolado por usuario_key (que inclui timeline).
+    Trocar timeline => outro service.
+    """
+    uk = _usuario_key_atual()
+    tl = _timeline()
+
+    sk = _service_key_for_userkey(uk)
+    svc = st.session_state.get(sk)
+
     if svc is None:
-        svc = MaryService()
-        st.session_state["_mary_service"] = svc
+        svc = _instantiate_mary_service(userkey=uk, timeline=tl)
+        st.session_state[sk] = svc
+
     return svc
+
+
+def _kill_all_mary_services() -> None:
+    for k in list(st.session_state.keys()):
+        if isinstance(k, str) and k.startswith("_mary_service::"):
+            st.session_state.pop(k, None)
 
 
 def _invalidate_backend_cache() -> None:
@@ -376,18 +432,14 @@ def _sort_backend_docs(docs: list[dict]) -> list[dict]:
             if isinstance(v, (int, float)):
                 return float(v)
             if isinstance(v, str):
-                # tenta ISO simples
                 try:
-                    # YYYY-MM-DD HH:MM:SS ou ISO
                     vv = v.replace("T", " ").replace("Z", "").strip()
-                    # epoch em string?
                     if vv.isdigit():
                         return float(vv)
                 except Exception:
                     pass
         return 0.0
 
-    # enumerate para estabilidade se ts empatar
     indexed = list(enumerate(docs))
     indexed.sort(key=lambda it: (_ts(it[1]), it[0]))
     return [d for _, d in indexed]
@@ -517,6 +569,7 @@ def _on_timeline_change() -> None:
     ✅ Anti-vazamento + anti-NameError:
     - Limpa caches do backend + service + visual.
     - Persiste NSFW inline (sem depender de helper externo no callback).
+    - MATA services isolados por usuario_key (para garantir troca limpa).
     """
     if st.session_state.get("mary_timeline_locked"):
         return
@@ -543,9 +596,10 @@ def _on_timeline_change() -> None:
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
     _clear_mary_caches_all_related(also_clear_other_timeline=True)
-
-    # (opcional) também limpa cache de outro timeline explicitamente
     _clear_service_caches_for_keys([_usuario_key_for_timeline(old_tl), _usuario_key_for_timeline(new_tl)])
+
+    # 🔥 ponto crítico: matar instâncias de service para não reaproveitar estado
+    _kill_all_mary_services()
 
 
 def _get_intro_persona_text(timeline: str) -> str:
@@ -604,19 +658,16 @@ def _inject_intro_visual_if_needed() -> None:
 
 
 def _boot_visual_if_empty() -> None:
-    # se já tem chat visual, ok
     if st.session_state.get("chat_history"):
         st.session_state["mary_intro_done"] = True
         return
 
-    # tenta backend
     backend_hist = _carregar_chat_visual_do_backend(force=False)
     if backend_hist:
         st.session_state["chat_history"] = backend_hist
         st.session_state["mary_intro_done"] = True
         return
 
-    # backend vazio => intro visual
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
     _inject_intro_visual_if_needed()
@@ -628,9 +679,11 @@ def _boot_visual_if_empty() -> None:
 def main() -> None:
     _apply_dark_ui()
     _garantir_estado_inicial()
+
+    # ✅ IMPORTANTÍSSIMO: service é por usuario_key
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.12 (anti-vazamento timeline + ordenação + callback seguro)")
+    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -780,6 +833,7 @@ def main() -> None:
                     st.session_state["mary_rel_meta_last"] = None
                     _invalidate_backend_cache()
                     _clear_mary_caches_all_related()
+                    _kill_all_mary_services()
 
                     st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
@@ -876,7 +930,7 @@ def main() -> None:
             import characters.mary.service as mary_service
             importlib.reload(mary_service)
 
-            st.session_state.pop("_mary_service", None)
+            _kill_all_mary_services()
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
             _invalidate_backend_cache()
