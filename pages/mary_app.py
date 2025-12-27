@@ -338,10 +338,16 @@ def _garantir_estado_inicial() -> None:
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
     for k in keys:
-        for ck in (f"facts::{k}", f"history::{k}"):
-            if ck in st.session_state:
-                del st.session_state[ck]
+        # facts
+        fk = f"facts::{k}"
+        if fk in st.session_state:
+            del st.session_state[fk]
 
+        # history (apaga todos os limits)
+        prefix = f"history::{k}::"
+        for sk in list(st.session_state.keys()):
+            if isinstance(sk, str) and sk.startswith(prefix):
+                st.session_state.pop(sk, None)
 
 def _reset_intro_flags_for_keys(keys: list[str]) -> None:
     for k in keys:
@@ -358,24 +364,6 @@ def _clear_mary_caches_all_related() -> None:
     sk = _shared_key_atual()
     _clear_service_caches_for_keys([uk, sk])
     _reset_intro_flags_for_keys([uk, sk])
-
-
-def _persist_nsfw_for_current_timeline_if_needed() -> None:
-    """
-    Persiste mary_nsfw_on no facts do usuario_key atual.
-    Faz isso somente quando detecta mudança, para não escrever no BD toda hora.
-    """
-    uk = _usuario_key_atual()
-    current = bool(st.session_state.get("mary_nsfw_on", False))
-    last = st.session_state.get("mary_nsfw_last_saved", None)
-
-    if last is None or bool(last) != current:
-        try:
-            set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
-        except Exception:
-            pass
-        st.session_state["mary_nsfw_last_saved"] = current
-        _clear_service_caches_for_keys([uk])
 
 
 def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str]]:
@@ -399,6 +387,55 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
         st.code(traceback.format_exc())
         st.stop()
 
+    # -----------------------------
+    # ✅ ORDENAR SEMPRE (anti-bagunça)
+    # -----------------------------
+    def _ts_of(d: dict) -> float:
+        if not isinstance(d, dict):
+            return 0.0
+
+        # tenta chaves comuns
+        for k in ("ts", "timestamp", "created_at", "createdAt", "date", "datetime", "time"):
+            v = d.get(k)
+            if isinstance(v, (int, float)):
+                return float(v)
+
+            # string ISO / datetime-like -> tenta converter de forma simples
+            if isinstance(v, str) and v.strip():
+                s = v.strip()
+                # tenta epoch em string
+                if s.isdigit():
+                    try:
+                        return float(int(s))
+                    except Exception:
+                        pass
+                # tenta ISO básico: YYYY-MM-DD...
+                try:
+                    # converte "2025-12-26 22:10:00" ou "2025-12-26T22:10:00"
+                    s2 = s.replace("T", " ").replace("Z", "")
+                    parts = s2.split(".")[0]  # remove micros
+                    # yyyy-mm-dd hh:mm:ss
+                    if len(parts) >= 10:
+                        from datetime import datetime
+                        fmt = "%Y-%m-%d %H:%M:%S" if len(parts) >= 19 else "%Y-%m-%d"
+                        dt = datetime.strptime(parts[:19] if fmt.endswith("%S") else parts[:10], fmt)
+                        return dt.timestamp()
+                except Exception:
+                    pass
+
+        # fallback: Mongo costuma ter _id ordenável
+        _id = d.get("_id")
+        if _id is not None:
+            try:
+                return float(hash(str(_id)))
+            except Exception:
+                pass
+
+        return 0.0
+
+    # sort estável: ts primeiro, depois índice original
+    docs = sorted(list(docs), key=lambda item: (_ts_of(item),))
+
     hist: list[tuple[str, str]] = []
     for d in docs:
         u = (d.get("mensagem_usuario") or "").strip()
@@ -412,6 +449,7 @@ def _carregar_chat_visual_do_backend(force: bool = False) -> list[tuple[str, str
     st.session_state["backend_hist_cache_ts"] = now
     st.session_state["backend_hist_cache_key"] = cache_key
     return hist
+
 
 
 def _apagar_hist_bd_novo_e_legado() -> int:
