@@ -43,22 +43,23 @@ ESTILO:
 - Nunca terminar com pergunta
 """
 
-        initial_messages: List[Dict[str, str]] = [
+       initial_messages: List[Dict[str, str]] = [
     {
         "role": "assistant",
         "timeline": "universitaria",
         "content": (
-            "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses, alto e suado, "
+            "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses, alto, suado e desorganizado, "
             "e o campus parece outra cidade nesta noite.\n\n"
-            "Eu estou no meio da multidão de estudantes, rindo sem pensar muito, sentindo o grave no peito. "
-            "Ricardo — o formando em Medicina — me puxa pela cintura e beija minha boca como se o mundo tivesse parado ali, "
-            "sussurrando promessas apressadas pro fim do show.\n\n"
-            "Silvia e Bianca, minhas amigas da Psicologia, gritam sem parar junto da galera que bebe, dança e se empurra, "
-            "feliz demais pra lembrar de amanhã.\n\n"
-            "Do outro lado da cidade, você está em outro cenário: o casamento do seu amigo de Engenharia Elétrica, Giorgio. "
-            "O pastor segura a Bíblia aberta, a voz firme no sermão… e cita Provérbios 6:26.\n\n"
-            "E, mesmo sem você estar aqui, a sensação estranha é que a noite ainda tem a ver com você — "
-            "como se duas histórias diferentes estivessem prestes a se tocar."
+            "Estou no meio da multidão de estudantes, rindo sem pensar muito, sentindo o grave bater no peito. "
+            "Ricardo — o formando em Medicina — se aproxima sem pedir licença, segura meu rosto e beija minha boca, "
+            "sussurrando promessas apressadas para depois do show.\n\n"
+            "Ao meu redor, Silvia e Bianca, minhas amigas do curso de Psicologia, gritam sem parar, pulam junto da galera, "
+            "bebem, cantam errado e se divertem como se nada mais importasse.\n\n"
+            "Do outro lado do palco, Janio canta junto com a banda, misturando um inglês improvisado ao coro dos estudantes. "
+            "Entre um verso e outro, ele observa Ricardo investindo sobre mim.\n\n"
+            "Janio então se afasta alguns passos, carregando um ciúme silencioso e uma inveja que ele não revela a ninguém. "
+            "Seus sentimentos por mim permanecem escondidos.\n\n"
+            "Ninguém sabe."
         ),
     },
             {
