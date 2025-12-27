@@ -338,16 +338,15 @@ def _garantir_estado_inicial() -> None:
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
     for k in keys:
-        # facts
         fk = f"facts::{k}"
         if fk in st.session_state:
             del st.session_state[fk]
 
-        # history (apaga todos os limits)
         prefix = f"history::{k}::"
         for sk in list(st.session_state.keys()):
             if isinstance(sk, str) and sk.startswith(prefix):
                 st.session_state.pop(sk, None)
+
 
 def _reset_intro_flags_for_keys(keys: list[str]) -> None:
     for k in keys:
@@ -544,16 +543,36 @@ def _on_timeline_change() -> None:
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
     }
+
+    # define timeline nova
     st.session_state["mary_timeline"] = personas.get(st.session_state.get("persona_label") or "", "cumplice")
 
     # default NSFW por timeline
     st.session_state["mary_nsfw_on"] = (st.session_state["mary_timeline"] != "universitaria")
-    # persiste no facts da timeline recém escolhida
-    _persist_nsfw_for_current_timeline_if_needed()
 
-    # limpa apenas o buffer visual da nova timeline (evita misturar)
-    _clear_chat_history_for(_usuario_key_atual())
+    # ✅ Persistência NSFW (inline: não depende de helper no callback)
+    uk = _usuario_key_atual()
+    current = bool(st.session_state.get("mary_nsfw_on", False))
+    last = st.session_state.get("mary_nsfw_last_saved", None)
 
+    if last is None or bool(last) != current:
+        try:
+            set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
+        except Exception:
+            pass
+        st.session_state["mary_nsfw_last_saved"] = current
+
+        # limpa caches do service (facts + history por prefixo)
+        fk = f"facts::{uk}"
+        if fk in st.session_state:
+            del st.session_state[fk]
+        prefix = f"history::{uk}::"
+        for k in list(st.session_state.keys()):
+            if isinstance(k, str) and k.startswith(prefix):
+                st.session_state.pop(k, None)
+
+    # limpa visual e caches do app
+    st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
     _clear_mary_caches_all_related()
