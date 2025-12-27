@@ -5,7 +5,8 @@ import re
 import traceback
 import importlib
 import inspect
-from typing import List, Tuple
+
+from typing import List, Tuple, Optional
 
 import streamlit as st
 
@@ -41,7 +42,6 @@ DEFAULT_VISUAL_LIMIT = 80
 
 DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
 FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
-
 
 # ==========================================================
 # UI / CSS (Base44-like + dark + chat_input fixo)
@@ -203,13 +203,49 @@ def _usuario_key_for_timeline(timeline: str) -> str:
     return f"{uid}::mary::{tl}"
 
 
+def _all_usuario_keys_for_user() -> list[str]:
+    # útil para limpar UI/cache globalmente (ambas timelines)
+    return [
+        _usuario_key_for_timeline("cumplice"),
+        _usuario_key_for_timeline("universitaria"),
+    ]
+
+
 def _shared_key_atual() -> str:
     uid = (st.session_state.get("user_id") or "anon").strip() or "anon"
     return f"{uid}::mary::shared"
 
 
 def _keys_para_mary() -> list[str]:
+    # ⚠️ SEMPRE apenas a timeline ativa (evita vazamento backend)
     return [_usuario_key_atual()]
+
+
+# ==========================================================
+# CHAT VISUAL POR TIMELINE (evita vazamento)
+# ==========================================================
+def _ui_chat_key(usuario_key: str) -> str:
+    return f"ui.chat_history::{usuario_key}"
+
+
+def _get_chat_history_for(usuario_key: str) -> list[tuple[str, str]]:
+    k = _ui_chat_key(usuario_key)
+    if k not in st.session_state:
+        st.session_state[k] = []
+    return st.session_state[k]
+
+
+def _set_chat_history_for(usuario_key: str, value: list[tuple[str, str]]) -> None:
+    st.session_state[_ui_chat_key(usuario_key)] = value
+
+
+def _clear_chat_history_for(usuario_key: str) -> None:
+    st.session_state[_ui_chat_key(usuario_key)] = []
+
+
+def _clear_chat_history_all_timelines() -> None:
+    for uk in _all_usuario_keys_for_user():
+        _clear_chat_history_for(uk)
 
 
 # ==========================================================
@@ -247,9 +283,6 @@ def _garantir_estado_inicial() -> None:
 
     if "user_id" not in st.session_state or not st.session_state["user_id"]:
         st.session_state["user_id"] = "Janio Donisete"
-
-    if "chat_history" not in st.session_state:
-        st.session_state["chat_history"] = []
 
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
@@ -298,6 +331,9 @@ def _garantir_estado_inicial() -> None:
     # view de memórias
     if "__mem_list" not in st.session_state:
         st.session_state["__mem_list"] = None
+
+    # garante buffer visual da timeline atual
+    _get_chat_history_for(_usuario_key_atual())
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
@@ -452,10 +488,11 @@ def _reset_chapter_current_timeline() -> int:
     except Exception:
         pass
 
-    st.session_state["chat_history"] = []
+    _clear_chat_history_for(uk)
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
     _clear_mary_caches_all_related()
+
     # mantém timeline_locked? aqui eu libero, pra começar novo capítulo com liberdade
     st.session_state["mary_timeline_locked"] = False
     return n
@@ -476,11 +513,13 @@ def _on_timeline_change() -> None:
     # persiste no facts da timeline recém escolhida
     _persist_nsfw_for_current_timeline_if_needed()
 
-    st.session_state["chat_history"] = []
+    # limpa apenas o buffer visual da nova timeline (evita misturar)
+    _clear_chat_history_for(_usuario_key_atual())
+
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
-
     _clear_mary_caches_all_related()
+
 
 def _get_intro_persona_text(timeline: str) -> str:
     """
@@ -488,7 +527,6 @@ def _get_intro_persona_text(timeline: str) -> str:
     Retorna fallback se não achar.
     """
     try:
-        # mary_persona.get_persona(timeline) deve retornar (persona_text, history_boot)
         _, boot = mary_persona.get_persona(timeline)
     except Exception:
         boot = None
@@ -515,50 +553,51 @@ def _get_intro_persona_text(timeline: str) -> str:
 
 def _inject_intro_visual_if_needed() -> None:
     """
-    Injeta a mensagem inicial da persona diretamente no chat visual (st.session_state['chat_history'])
+    Injeta a mensagem inicial da persona diretamente no chat visual (buffer por timeline)
     SOMENTE se:
       - backend não tem histórico
-      - chat_history está vazio
+      - buffer visual está vazio
       - mary_intro_done é False
     """
     if st.session_state.get("mary_intro_done", False):
         return
 
-    if st.session_state.get("chat_history"):
-        # se já tem algo, não injeta
+    uk = _usuario_key_atual()
+    if _get_chat_history_for(uk):
         st.session_state["mary_intro_done"] = True
         return
 
     # confirma backend vazio (para não duplicar intro em cima de histórico real)
     backend_hist = _carregar_chat_visual_do_backend(force=False)
     if backend_hist:
-        st.session_state["chat_history"] = backend_hist
+        _set_chat_history_for(uk, backend_hist)
         st.session_state["mary_intro_done"] = True
         return
 
     tl = str(st.session_state.get("mary_timeline") or "cumplice")
     intro = _get_intro_persona_text(tl)
 
-    st.session_state["chat_history"] = [("assistant", intro)]
+    _set_chat_history_for(uk, [("assistant", intro)])
     st.session_state["mary_intro_done"] = True
 
 
-
 def _boot_visual_if_empty() -> None:
+    uk = _usuario_key_atual()
+
     # Se já tem chat visual, ok
-    if st.session_state.get("chat_history"):
+    if _get_chat_history_for(uk):
         st.session_state["mary_intro_done"] = True
         return
 
     # 1) tenta backend
     backend_hist = _carregar_chat_visual_do_backend(force=False)
     if backend_hist:
-        st.session_state["chat_history"] = backend_hist
+        _set_chat_history_for(uk, backend_hist)
         st.session_state["mary_intro_done"] = True
         return
 
     # 2) se backend vazio, injeta intro visual
-    st.session_state["chat_history"] = []
+    _clear_chat_history_for(uk)
     st.session_state["mary_intro_done"] = False
     _inject_intro_visual_if_needed()
 
@@ -571,7 +610,7 @@ def main() -> None:
     _garantir_estado_inicial()
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.11 (keys seguras + NSFW persistente + shared cache ok + resets)")
+    st.caption("🧩 mary_app.py v3.12 (chat visual por timeline + anti-vazamento + promoção automática segura)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -701,10 +740,10 @@ def main() -> None:
                 if not confirm_total:
                     st.error("Marque a confirmação do RESET TOTAL.")
                 else:
-                    # 1) apaga history da timeline ativa
+                    # 1) apaga history da timeline ativa (backend)
                     n_hist = _apagar_hist_bd_novo_e_legado()
 
-                    # 2) opcional: apaga eventos facts
+                    # 2) opcional: apaga eventos facts (timeline ativa)
                     n_evt = 0
                     if delete_events:
                         n_evt = _apagar_eventos_mary_fact(_usuario_key_atual())
@@ -718,8 +757,8 @@ def main() -> None:
                             n_mems = 0
                         st.session_state["__mem_list"] = []
 
-                    # 4) limpa UI + caches
-                    st.session_state["chat_history"] = []
+                    # 4) limpa UI + caches (ambas timelines)
+                    _clear_chat_history_all_timelines()
                     st.session_state["mary_intro_done"] = False
                     st.session_state["mary_timeline_locked"] = False
                     st.session_state["mary_rel_meta_last"] = None
@@ -788,7 +827,7 @@ def main() -> None:
         if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
             ok = _delete_last_turn_active()
             if ok:
-                st.session_state["chat_history"] = []
+                _clear_chat_history_for(_usuario_key_atual())
                 st.session_state["mary_intro_done"] = False
                 st.success("✅ Último turno apagado (timeline ativa).")
             else:
@@ -798,7 +837,7 @@ def main() -> None:
         st.markdown("---")
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
-            st.session_state["chat_history"] = []
+            _clear_chat_history_for(_usuario_key_atual())
             st.rerun()
 
         st.markdown("---")
@@ -816,15 +855,15 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
 
-
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             importlib.reload(mary_persona)
             import characters.mary.service as mary_service
             importlib.reload(mary_service)
-        
+
             st.session_state.pop("_mary_service", None)
             st.session_state["mary_intro_done"] = False
-            st.session_state["chat_history"] = []
+
+            _clear_chat_history_all_timelines()
             _invalidate_backend_cache()
             _clear_mary_caches_all_related()
             st.session_state["mary_timeline_locked"] = False
@@ -867,7 +906,9 @@ def main() -> None:
     _boot_visual_if_empty()
 
     # ===== RENDER =====
-    hist = st.session_state.get("chat_history", [])
+    uk = _usuario_key_atual()
+    hist = _get_chat_history_for(uk)
+
     visual_limit = int(st.session_state.get("visual_limit", DEFAULT_VISUAL_LIMIT))
     visible = hist[-visual_limit:] if len(hist) > visual_limit else hist
 
@@ -897,8 +938,12 @@ def main() -> None:
         st.session_state["last_submit_ts"] = now
         st.session_state["last_submit_text"] = prompt
 
-        # render user
-        st.session_state["chat_history"].append(("user", prompt))
+        # buffer visual da timeline atual
+        uk_before = _usuario_key_atual()
+        hist_before = _get_chat_history_for(uk_before)
+
+        # render user (sempre na timeline atual)
+        hist_before.append(("user", prompt))
         with st.chat_message("user"):
             st.markdown(prompt)
 
@@ -920,10 +965,23 @@ def main() -> None:
             st.warning("⚠️ O modelo retornou vazio.")
             st.stop()
 
+        # ⚠️ Se o service promoveu a timeline (universitária -> cúmplice), muda usuario_key AGORA
+        uk_after = _usuario_key_atual()
+        if uk_after != uk_before:
+            # não mistura buffers: recarrega o chat da timeline nova do backend
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related()
+
+            hist_new = _carregar_chat_visual_do_backend(force=True)
+            _set_chat_history_for(uk_after, hist_new)
+
+            st.rerun()
+
+        # caso normal: mesma timeline, só append e segue
         with st.chat_message("assistant"):
             st.markdown(_format_paragraphs(resposta))
 
-        st.session_state["chat_history"].append(("assistant", resposta))
+        hist_before.append(("assistant", resposta))
         _invalidate_backend_cache()
 
         # ✅ garante atualização visual imediata
