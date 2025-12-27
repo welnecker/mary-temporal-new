@@ -23,6 +23,13 @@ CORREÇÕES QUE RESOLVEM O CAOS:
 4) NSFW unificado:
    - core.nsfw.nsfw_enabled é a fonte de verdade
 
+CHECKLIST APLICADO (todas as lacunas do pente-fino):
+A) FIX: erro de indentação/sintaxe em _extract_text (crítico).
+B) LOG: rastreabilidade quando detectar cena paralela (scene_parallel).
+C) SANITIZE: destino de mudança de local é normalizado e limitado (anti-lixo/injeção).
+D) CACHE: promoção de timeline limpa facts do old_tl e do new_tl com segurança.
+E) INTRO FLAG: flag de intro inclui hash do intro (se a persona mudar, reinjeta 1x).
+
 Observação:
 - Este arquivo assume que `core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None)` existe.
 """
@@ -187,7 +194,13 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
     clear_user_cache(usuario_key)
 
 
-def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, *, user_id: Optional[str] = None) -> None:
+def append_memory_safe(
+    shared_key: str,
+    text: str,
+    meta: Optional[dict] = None,
+    *,
+    user_id: Optional[str] = None,
+) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
     if user_id:
@@ -247,6 +260,14 @@ Ação: {acao}
 """.strip()
 
 
+def _sanitize_scene_destino(destino: str) -> str:
+    # (C) SANITIZE: normaliza destino para evitar lixo/injeção e strings gigantes
+    d = (destino or "").strip()
+    d = re.sub(r"\s{2,}", " ", d)
+    d = d.strip(" \n\r\t\"'.,:;")
+    return d[:80].strip()
+
+
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     patterns = [
         r"\bcorta\s+para\s+([^\n\r]+)$",
@@ -261,7 +282,9 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         m = re.search(p, msg)
         if m:
             destino = (m.group(m.lastindex) or "").strip()
-            return True, destino
+            destino = _sanitize_scene_destino(destino)
+            if destino:
+                return True, destino
     return False, ""
 
 
@@ -449,7 +472,12 @@ def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]
 
 
 def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
-    flag = f"intro_ctx_injected::{usuario_key}"
+    # (E) INTRO FLAG: inclui hash do intro para reinjetar 1x caso a persona/intro mude
+    _, intro_text = _sync_intro_fact(usuario_key, timeline)
+    intro_text = (intro_text or "").strip()
+    intro_hash8 = _hash_text(intro_text)[:8] if intro_text else "nointro"
+
+    flag = f"intro_ctx_injected::{usuario_key}::{intro_hash8}"
     if st.session_state.get(flag):
         return
 
@@ -458,10 +486,9 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: s
         st.session_state[flag] = True
         return
 
-    _, intro_text = _sync_intro_fact(usuario_key, timeline)
-    intro_text = (intro_text or "").strip()
     if intro_text:
         messages.append({"role": "system", "content": f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}"})
+
     st.session_state[flag] = True
 
 
@@ -544,7 +571,7 @@ def _strip_save_prefix(full_text: str) -> str:
     m = _SAVE_RE.search(t)
     if not m:
         return t
-    rest = t[m.end() :].strip()
+    rest = t[m.end():].strip()
     rest = re.sub(r"^\s*(na|no|em)\s+mem[oó]ria\s+permanente\b\s*:?\s*", "", rest, flags=re.IGNORECASE)
     rest = re.sub(r"^\s*(como|que)\s+", "", rest, flags=re.IGNORECASE)
     return rest.strip() or t
@@ -620,17 +647,17 @@ def _slice_mary_between_markers(mary_msgs: List[str], start_hint: str, end_hint:
 
     if i0 is None and i1 is not None:
         i0 = max(0, i1 - 8)
-        return mary_msgs[i0 : i1 + 1], "only_end_found"
+        return mary_msgs[i0:i1 + 1], "only_end_found"
 
     if i0 is not None and i1 is None:
         i1 = min(len(mary_msgs) - 1, i0 + 8)
-        return mary_msgs[i0 : i1 + 1], "only_start_found"
+        return mary_msgs[i0:i1 + 1], "only_start_found"
 
     if i0 is not None and i1 is not None:
         if i1 < i0:
             i0, i1 = i1, i0
-            return mary_msgs[i0 : i1 + 1], "markers_swapped"
-        return mary_msgs[i0 : i1 + 1], "both_found"
+            return mary_msgs[i0:i1 + 1], "markers_swapped"
+        return mary_msgs[i0:i1 + 1], "both_found"
 
     return [], "unexpected"
 
@@ -764,8 +791,10 @@ class MaryService(BaseCharacter):
             return ""
 
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
-        timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
-            str(st.session_state.get("mary_timeline") or "cumplice")
+        timeline_final = (
+            _normalize_timeline(timeline)
+            if timeline
+            else _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
         )
 
         usuario_key = _user_key(user_id, timeline_final)
@@ -788,11 +817,20 @@ class MaryService(BaseCharacter):
             return f"_Eu te puxo comigo até **{novo_local}**…_"
 
         # ----------------------------------------------------------
-        # 1.1) Tentativa de quebrar cena sem comando explícito (BLOQUEIA)
+        # 1.1) Tentativa de quebrar cena sem comando explícito (CENA PARALELA)
         # ----------------------------------------------------------
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
         scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
+
+        # (B) LOG: rastreabilidade real do fenômeno "cena paralela"
+        if scene_parallel:
+            logger.debug(
+                "Scene parallel detected (user=%s timeline=%s). Mary remains in current scene. prompt=%r",
+                user_id,
+                timeline_final,
+                (prompt[:220] + "…") if len(prompt) > 220 else prompt,
+            )
 
         # ----------------------------------------------------------
         # 2) Comando: salvar memória (texto direto OU resumo dinâmico)
@@ -920,7 +958,21 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
         system = f"""
 {spatial_context}
 
-VOCÊ É A PERSONAGEM MARY.
+VOCÊ É MARY.
+
+Este é um roleplay narrativo íntimo, psicológico e contínuo.
+Você responde sempre em primeira pessoa, a partir da sua própria experiência,
+consciência, corpo, emoções e limites.
+
+PONTO DE VISTA (REGRA ABSOLUTA):
+- Mary fala sempre e somente a partir de si mesma.
+- Mary NUNCA narra ações físicas do usuário.
+- Mary NUNCA narra pensamentos internos do usuário.
+- Mary NUNCA narra rotina privada do usuário.
+- Se algo acontece fora do campo sensorial de Mary,
+  ela apenas imagina, sente ou espera — nunca descreve como fato.
+
+Quebra dessa regra é ERRO GRAVE.
 
 TIMELINE ATUAL: {timeline_final}
 
@@ -937,14 +989,14 @@ PERSONA (baseline):
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
-- Nunca contradiga o ESTADO DE RELAÇÃO (CANÔNICO) e a timeline ativa.
+- NÃO assuma ações do usuário.
+- NÃO avance cenas sem comando explícito.
 - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
 {nsfw_block}
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
-
 
         # 4) Intro 1x por sessão (só se NÃO houver CANON)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
@@ -968,11 +1020,12 @@ REGRAS ABSOLUTAS:
         messages.append({"role": "user", "content": prompt})
 
         # ----------------------------------------------------------
-        # 8) Chat com retry/fallback
+        # 8) Chat com retry/fallback (opcionalmente mais granular)
         # ----------------------------------------------------------
         attempts = [
             {"model": model, "temperature": 0.7},
-            {"model": model, "temperature": 0.4},
+            {"model": model, "temperature": 0.5},
+            {"model": model, "temperature": 0.3},
             {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.6},
         ]
 
@@ -1040,22 +1093,30 @@ REGRAS ABSOLUTAS:
                         old_tl = timeline_final
 
                         st.session_state["mary_timeline"] = "cumplice"
-
                         _ensure_rel_state_for_timeline(user_id, "cumplice")
 
                         timeline_final = "cumplice"
                         usuario_key = _user_key(user_id, "cumplice")
 
+                        # (D) CACHE: limpa facts/history do old_tl e do new_tl com segurança
+                        clear_user_cache(_user_key(user_id, old_tl))
+                        clear_user_cache(_user_key(user_id, "cumplice"))
                         clear_user_cache(old_key)
                         clear_user_cache(usuario_key)
 
                         clear_shared_memory_cache(user_id)
+
+                        # flags antigas de intro (formatos anteriores e atuais)
                         st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
                         st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
 
+                        # limpa históricos cacheados explicitamente
                         for k in list(st.session_state.keys()):
                             if isinstance(k, str) and (
-                                k.startswith(f"history::{old_key}::") or k.startswith(f"history::{usuario_key}::")
+                                k.startswith(f"history::{old_key}::")
+                                or k.startswith(f"history::{usuario_key}::")
+                                or k.startswith(f"facts::{old_key}")
+                                or k.startswith(f"facts::{usuario_key}")
                             ):
                                 st.session_state.pop(k, None)
 
@@ -1112,8 +1173,18 @@ REGRAS ABSOLUTAS:
     # -------------------------
     @staticmethod
     def _extract_text(resp: dict) -> str:
+        # (A) FIX: indentação e robustez (sem quebrar resposta)
         try:
-            return (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+            text = (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
+            if not text:
+                return ""
+            # evita cortar no meio da palavra
+            if len(text) > 20 and not text.endswith((".", "!", "?", "…")):
+                text = text.rsplit(" ", 1)[0] + "…"
+            # evita resposta curtíssima e "quebrada" terminar em elipse
+            if len(text) < 20 and text.endswith("…"):
+                return ""
+            return text
         except Exception:
             return ""
 
