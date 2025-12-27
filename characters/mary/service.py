@@ -5,13 +5,12 @@ MaryService (v3.14 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Cache consistente + NSFW unificado
-            + Ritmo controlado (1 beat) + Final em SUSPENSÃO (sem pergunta obrigatória)
-            + Tail-focus (responde ao trecho final quando o usuário narra “capítulos”)
+            + Resposta SEM truncamento + Pacing anti-"corrida")
 
-CHECKLIST (aplicado aqui):
-1) Scene Lock (REAL):
+CORREÇÕES QUE RESOLVEM O CAOS:
+1) Scene Lock (a correção que faltava):
    - Bloqueia mudanças de lugar/tempo/evento
-   - Impede teleporte (“após o casamento…”) e cenas inventadas
+   - Impede que “após o casamento...” teleporte a Mary
    - Só muda cena via comandos explícitos do usuário
 
 2) Cache consistente:
@@ -25,11 +24,16 @@ CHECKLIST (aplicado aqui):
 4) NSFW unificado:
    - core.nsfw.nsfw_enabled é a fonte de verdade
 
-5) Ritmo / continuidade:
-   - 1 beat por resposta (não “resolve o dia”)
-   - Proíbe fechamento (“créditos rolam”, “saímos…”, “na próxima sessão…”)
-   - Final em SUSPENSÃO (cliffhanger), sem pergunta obrigatória
-   - Tail-focus: se o usuário narrar muito, responder ao trecho final
+5) Fim do “corte/alucinação”:
+   - Remove truncamento artificial do texto retornado.
+   - _extract_text robusto para múltiplos formatos de provider.
+
+6) Pacing anti-resposta “que resolve tudo”:
+   - Instrução de “passo curto” sem pergunta obrigatória.
+   - Mary decide e age, mas não encerra o arco numa só resposta.
+
+Observação:
+- Este arquivo assume que `core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None)` existe.
 """
 
 import logging
@@ -277,13 +281,9 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 
 def _detect_scene_violation(user_text: str) -> bool:
-    """
-    Detecta tentativa de inserir transições de tempo/lugar/evento sem comando explícito.
-    Isso bloqueia teleport e “cenas paralelas” inventadas.
-    """
     txt = (user_text or "").lower()
 
-    # Se o usuário explicitamente pediu mudança (corta para / horas depois / vamos para), não é violação
+    # Se o usuário explicitamente pediu mudança, não é violação
     if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
         return False
     if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
@@ -293,7 +293,6 @@ def _detect_scene_violation(user_text: str) -> bool:
         r"\bap[oó]s\s+isso\b",
         r"\bdepois\s+disso\b",
         r"\bmais\s+tarde\b",
-        r"\bhoras\s+depois\b",
         r"\bno\s+outro\s+dia\b",
         r"\bno\s+dia\s+seguinte\b",
         r"\benquanto\s+isso\b",
@@ -308,130 +307,6 @@ def _detect_scene_violation(user_text: str) -> bool:
         r"\bcena\s+seguinte\b",
     ]
     return any(re.search(p, txt) for p in patterns)
-
-
-# ==========================================================
-# RITMO / AUTONOMIA (sem pergunta obrigatória)
-# ==========================================================
-PACING_GOVERNOR = """
-[RITMO — REGRA ABSOLUTA]
-- Cada resposta da Mary cobre APENAS 1 beat (um momento curto) e NO MÁXIMO 1 micro-ação.
-- É PROIBIDO concluir encontro/dia/noite, PROIBIDO “pular” horas, PROIBIDO resumir o resto.
-- Se o usuário narrar muitas cenas de uma vez, responda SOMENTE ao TRECHO FINAL (últimos 2–4 parágrafos).
-- Mary é AUTÔNOMA: ela pode decidir, agir, conduzir e propor o próximo movimento.
-- Final obrigatório: termine com SUSPENSÃO (gancho), não com conclusão.
-  Exemplos: interrupção (notificação, ruído, alguém passando), um gesto iniciando, uma frase cortada,
-  uma sensação subindo, uma consequência imediata prestes a acontecer.
-- NÃO termine com pergunta obrigatória. Só pergunte se for natural e raro.
-- Não use frases de “fechamento” tipo: “na próxima sessão”, “depois a gente…”, “promessa pro futuro”.
-""".strip()
-
-AUTONOMIA_COM_LIMITES = """
-[AUTONOMIA COM LIMITE]
-- Mary pode liderar e decidir o próximo micro-passo.
-- Mas ela deve parar ANTES do “ponto de não retorno” do beat (antes de concluir o clima).
-- Termine no instante em que a tensão sobe e algo está prestes a acontecer.
-""".strip()
-
-ANTI_ESCAPE = """
-[ANTI-FUGA]
-Evite fechar a tensão com frases como:
-- “o melhor ainda tá por vir”
-- “na próxima sessão”
-- “depois a gente…”
-- “promessa”
-Se a tensão subir, permaneça nela por mais um beat em vez de encerrar.
-""".strip()
-
-
-def _tail_focus(user_text: str, max_chars: int = 2400) -> str:
-    """
-    Se o usuário narrar “capítulos” enormes, a Mary responde ao TRECHO FINAL,
-    evitando o modelo tentar “resolver tudo”.
-    """
-    t = (user_text or "").strip()
-    if len(t) <= max_chars:
-        return t
-
-    parts = [p.strip() for p in re.split(r"\n\s*\n", t) if p.strip()]
-    tail = "\n\n".join(parts[-5:])
-    if len(tail) < 800:
-        tail = t[-max_chars:]
-    return tail.strip()
-
-
-def _truncate_if_timeskip(texto: str) -> str:
-    """
-    Rede de segurança: se o modelo tentar fazer time-skip / fechar arco inteiro,
-    corta no primeiro marcador e deixa em suspensão.
-    """
-    if not texto:
-        return texto
-
-    markers = [
-        r"\bcr[eé]ditos?\s+rolam\b",
-        r"\bquando\s+sa[ií]mos\b",
-        r"\bsa[ií]mos\b\s*,?\s+",
-        r"\bno\s+fim\s+do\s+dia\b",
-        r"\bmais\s+tarde\b",
-        r"\bhoras\s+depois\b",
-        r"\bno\s+dia\s+seguinte\b",
-        r"\bna\s+pr[oó]xima\s+sess[aã]o\b",
-        r"\bpromessa\b",
-        r"\bo\s+melhor\s+do\s+dia\s+ainda\b",
-    ]
-    lower = texto.lower()
-    cut_idx = None
-
-    for pat in markers:
-        m = re.search(pat, lower, flags=re.IGNORECASE)
-        if m:
-            idx = m.start()
-            # só corta se o texto já está grande, para não amputar respostas curtas
-            if idx > 220:
-                cut_idx = idx
-                break
-
-    if cut_idx is None:
-        return texto
-
-    cut = texto[:cut_idx].rstrip()
-    if len(cut) < 120:
-        return texto  # evita cortar demais
-    if not cut.endswith(("…", "—", ".", "!", "?")):
-        cut += "…"
-    else:
-        # força sensação de suspensão
-        if cut.endswith("."):
-            cut = cut[:-1].rstrip() + "…"
-    return cut
-
-
-def _ensure_suspense_ending(texto: str) -> str:
-    """
-    Final em suspensão (cliffhanger) sem impor pergunta.
-    """
-    if not texto:
-        return texto
-
-    t = texto.rstrip()
-
-    # Já termina em suspensão? deixa.
-    if t.endswith(("…", "—")):
-        return t
-
-    # Não mexe se o modelo usou exclamação/interrogação (às vezes é natural).
-    if t.endswith(("!", "?")):
-        return t
-
-    # Se final está “fechado”, abre um pouco.
-    if t.endswith(".") and len(t) > 120:
-        t = t.rsplit(".", 1)[0].rstrip()
-        if len(t) > 80:
-            return t + "…"
-
-    # Caso geral
-    return t + "…"
 
 
 # ==========================================================
@@ -637,10 +512,6 @@ _RANGE_RE = re.compile(
 
 def _is_save_memory_command(user_text: str) -> bool:
     return bool(_SAVE_RE.search(user_text or ""))
-
-
-def _is_memory_question(user_text: str) -> bool:
-    return bool(_REMEMBER_RE.search(user_text or ""))
 
 
 def _wants_auto_summary(user_text: str) -> bool:
@@ -896,7 +767,7 @@ class MaryService(BaseCharacter):
         shared_key = _shared_key(user_id)
 
         # ----------------------------------------------------------
-        # 0) Garantir scene lock/facts mínimos (evita “inventar” cena)
+        # 0) Garantir scene lock/facts mínimos
         # ----------------------------------------------------------
         facts0 = cached_get_facts(usuario_key)
         if "cena.locked" not in facts0:
@@ -912,7 +783,7 @@ class MaryService(BaseCharacter):
             return f"_Eu te puxo comigo até **{novo_local}**…_"
 
         # ----------------------------------------------------------
-        # 1.1) Cena paralela (usuário narra outro lugar/tempo sem comando)
+        # 1.1) Cena paralela (não teleporta Mary)
         # ----------------------------------------------------------
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
@@ -1002,7 +873,7 @@ class MaryService(BaseCharacter):
             return "✅ Memória permanente salva (compartilhada)."
 
         # ----------------------------------------------------------
-        # 3) Persona + sistema
+        # 3) Persona + sistema (com pacing anti-"resolve tudo")
         # ----------------------------------------------------------
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
@@ -1020,15 +891,13 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
 
-        # Scene Lock rule (SEM sermão; permite cenas paralelas sem mover a Mary)
         scene_lock_rule = """
 REGRA DE CONTINUIDADE (IMPORTANTE):
 - A Mary NÃO deve mudar de local, tempo ou evento sozinha.
-- Se o usuário narrar acontecimentos em outro lugar/tempo (ex.: casamento, igreja, cerimonial),
-  trate isso como CENA PARALELA: Mary permanece onde está, mas pode reagir emocionalmente,
-  pensar, comparar, sentir tensão, imaginar ou responder à distância (mensagens/lembranças).
-- NÃO explique regras ao usuário. NÃO diga "a cena não muda sozinha".
-- Só altere a cena da Mary se o USUÁRIO ordenar explicitamente (ex.: "corta para:", "horas depois:", "vamos para ...").
+- Se o usuário narrar acontecimentos em outro lugar/tempo, trate como CENA PARALELA:
+  Mary permanece onde está e reage emocionalmente (sem afirmar como fato).
+- NÃO explique regras ao usuário.
+- Só altere a cena se o usuário ordenar explicitamente ("corta para:", "horas depois:", "vamos para ...").
 """.strip()
 
         parallel_scene_rule = (
@@ -1040,6 +909,16 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
             if scene_parallel
             else ""
         )
+
+        # 🔥 Pacing: Mary autônoma, sem pergunta obrigatória, e sem encerrar arco numa tacada
+        pacing_rule = """
+[PACING — IMPORTANTE]
+- NÃO conclua "o dia inteiro", "toda a história" ou "resolva tudo" em uma única resposta.
+- Responda em passos curtos: avance 1 micro-ação + 1 micro-decisão da Mary no máximo.
+- Mary pode decidir e conduzir, mas deixe a cena "aberta" naturalmente (sem pergunta obrigatória).
+- Proibido terminar com: "E você?", "O que você faz?", "Quer ir?", "Você decide?".
+- Finalize com um gancho interno da Mary (sensação, gesto, intenção imediata), SEM exigir resposta.
+""".strip()
 
         system = f"""
 {spatial_context}
@@ -1058,8 +937,6 @@ PONTO DE VISTA (REGRA ABSOLUTA):
 - Se algo acontece fora do campo sensorial de Mary,
   ela apenas imagina, sente ou espera — nunca descreve como fato.
 
-Quebra dessa regra é ERRO GRAVE.
-
 TIMELINE ATUAL: {timeline_final}
 
 [CANON — VERDADE ATUAL]
@@ -1073,9 +950,7 @@ PERSONA (baseline):
 {scene_lock_rule}
 {parallel_scene_rule}
 
-{PACING_GOVERNOR}
-{AUTONOMIA_COM_LIMITES}
-{ANTI_ESCAPE}
+{pacing_rule}
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
@@ -1091,10 +966,10 @@ REGRAS ABSOLUTAS:
         # 4) Intro 1x por sessão (só se NÃO houver CANON)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # 5) CANON sempre injetado (continuidade forte)
+        # 5) CANON sempre injetado
         _inject_canon_memories_always(shared_key, messages, max_items=80)
 
-        # 5.1) Continuidade suave (não-canon)
+        # 5.1) Continuidade suave
         _inject_shared_soft_context(shared_key, messages, max_items=8)
 
         # 7) Histórico (timeline atual)
@@ -1107,18 +982,16 @@ REGRAS ABSOLUTAS:
             if a:
                 messages.append({"role": "assistant", "content": a})
 
-        # Tail-focus para prompts longos (evita “resolver tudo”)
-        focused_prompt = _tail_focus(prompt, max_chars=2400)
-        messages.append({"role": "user", "content": focused_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         # ----------------------------------------------------------
         # 8) Chat com retry/fallback
-        #   (max_tokens reduzido para impedir “capítulo inteiro”)
+        #    (max_tokens alto, sem truncar; pacing é pelo system)
         # ----------------------------------------------------------
         attempts = [
-            {"model": model, "temperature": 0.7},
-            {"model": model, "temperature": 0.4},
-            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.6},
+            {"model": model, "temperature": 0.75},
+            {"model": model, "temperature": 0.55},
+            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65},
         ]
 
         last_err: Optional[Exception] = None
@@ -1129,20 +1002,14 @@ REGRAS ABSOLUTAS:
                     attempt["model"],
                     messages,
                     temperature=attempt["temperature"],
-                    max_tokens=650,
+                    max_tokens=1400,
                 )
 
                 texto = self._extract_text(data)
                 if not texto:
                     continue
 
-                # Rede de segurança de ritmo/continuidade
-                texto = _truncate_if_timeskip(texto)
-                texto = _ensure_suspense_ending(texto)
-
-                # ----------------------------------------------------------
                 # Relationship Engine (pós-resposta)
-                # ----------------------------------------------------------
                 promoted = False
                 meta: Dict[str, Any] = {}
 
@@ -1157,7 +1024,7 @@ REGRAS ABSOLUTAS:
                                 {"role": "user", "content": user_prompt},
                             ],
                             temperature=0.0,
-                            max_tokens=260,
+                            max_tokens=280,
                         )
                         return self._extract_text(data2)
 
@@ -1180,7 +1047,6 @@ REGRAS ABSOLUTAS:
                         old_tl = timeline_final
 
                         st.session_state["mary_timeline"] = "cumplice"
-
                         _ensure_rel_state_for_timeline(user_id, "cumplice")
 
                         timeline_final = "cumplice"
@@ -1205,7 +1071,6 @@ REGRAS ABSOLUTAS:
                             "to_timeline": "cumplice",
                         }
 
-                        # mantém cena travada no contexto novo também
                         _lock_scene(usuario_key)
 
                 except Exception:
@@ -1234,7 +1099,7 @@ REGRAS ABSOLUTAS:
                 # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
 
-                # mantém cena travada sempre (anti-teleport por resposta do modelo)
+                # mantém cena travada sempre
                 _lock_scene(usuario_key)
 
                 return texto
@@ -1251,15 +1116,51 @@ REGRAS ABSOLUTAS:
     # helpers
     # -------------------------
     @staticmethod
-    def _extract_text(resp: dict) -> str:
+    def _extract_text(resp: Any) -> str:
+        """
+        Extrator robusto: não trunca.
+        Suporta múltiplos formatos:
+        - OpenAI-like: {"choices":[{"message":{"content":"..."}}]}
+        - Provider alternativo: {"output_text": "..."} / {"text": "..."} / {"content":"..."}
+        - Já-string
+        """
         try:
-            text = (resp.get("choices", [{}])[0].get("message", {}).get("content") or "").strip()
-            if not text:
+            if resp is None:
                 return ""
-            # evita cortar no meio da palavra
-            if len(text) > 20 and not text.endswith((".", "!", "?", "…", "—")):
-                text = text.rsplit(" ", 1)[0] + "…"
-            return text
+            if isinstance(resp, str):
+                return resp.strip()
+
+            if isinstance(resp, dict):
+                # OpenAI-like
+                choices = resp.get("choices")
+                if isinstance(choices, list) and choices:
+                    c0 = choices[0] or {}
+                    msg = c0.get("message") or {}
+                    if isinstance(msg, dict):
+                        content = msg.get("content")
+                        if isinstance(content, str) and content.strip():
+                            return content.strip()
+                    # alguns providers retornam "text" em choice
+                    txt = c0.get("text")
+                    if isinstance(txt, str) and txt.strip():
+                        return txt.strip()
+
+                # alternativos comuns
+                for k in ("output_text", "text", "content", "result"):
+                    v = resp.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                # às vezes vem lista em "messages"
+                msgs = resp.get("messages")
+                if isinstance(msgs, list) and msgs:
+                    last = msgs[-1] or {}
+                    if isinstance(last, dict):
+                        v = last.get("content")
+                        if isinstance(v, str) and v.strip():
+                            return v.strip()
+
+            return ""
         except Exception:
             return ""
 
