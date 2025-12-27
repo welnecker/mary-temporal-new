@@ -1,39 +1,49 @@
 from __future__ import annotations
-
 """
-MaryService (v3.14 – Timeline-Aware + Canon + RelationshipEngine v2
+MaryService (v3.15 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Cache consistente + NSFW unificado
-            + Resposta SEM truncamento + Pacing anti-"corrida")
+            + Resposta SEM truncamento + Pacing anti-"corrida"
+            + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
 
-CORREÇÕES QUE RESOLVEM O CAOS:
-1) Scene Lock (a correção que faltava):
-   - Bloqueia mudanças de lugar/tempo/evento
-   - Impede que “após o casamento...” teleporte a Mary
-   - Só muda cena via comandos explícitos do usuário
+CORREÇÕES / MELHORIAS INCLUÍDAS NESTA VERSÃO:
+1) ✅ Scene Lock REAL:
+   - Bloqueia mudanças de lugar/tempo/evento por iniciativa do modelo.
+   - Só muda cena via comandos explícitos do usuário.
 
-2) Cache consistente:
-   - Cache de memórias compartilhadas (mem::shared_key::limit)
-   - Toda escrita invalida cache corretamente
+2) ✅ Cache consistente:
+   - Cache de facts/history e memórias compartilhadas.
+   - Toda escrita invalida cache corretamente.
 
-3) Intro:
-   - Intro da persona só entra se NÃO houver memórias CANON
-   - E só entra 1x por sessão/usuario_key
+3) ✅ Intro:
+   - Intro da persona só entra se NÃO houver memórias CANON.
+   - E só entra 1x por sessão/usuario_key.
 
-4) NSFW unificado:
-   - core.nsfw.nsfw_enabled é a fonte de verdade
+4) ✅ NSFW unificado:
+   - core.nsfw.nsfw_enabled é a fonte de verdade.
 
-5) Fim do “corte/alucinação”:
+5) ✅ Fim do “corte/alucinação”:
    - Remove truncamento artificial do texto retornado.
    - _extract_text robusto para múltiplos formatos de provider.
 
-6) Pacing anti-resposta “que resolve tudo”:
-   - Instrução de “passo curto” sem pergunta obrigatória.
-   - Mary decide e age, mas não encerra o arco numa só resposta.
+6) ✅ Pacing anti-resposta “que resolve tudo”:
+   - Mary decide e age, mas avança só micro-passos.
+   - Proíbe pergunta obrigatória de encerramento.
+
+7) ✅ CONTROLE DE PROGRESSÃO ÍNTIMA (FASES):
+   - Fases 0..5 com travas:
+     - Mary avança NO MÁXIMO 1 fase por turno.
+     - Fase 4 (clímax) só avança se o usuário der sinal explícito.
+     - Fase 5 (aftercare) só após fase 4.
+   - Heurística + meta do engine (se existir) para decidir avanço.
+   - Corrige NameError/escopo (self._get_intimacy_phase, self._advance_intimacy_phase).
+   - Corrige indentação/fluxo (return no lugar certo).
 
 Observação:
-- Este arquivo assume que `core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None)` existe.
+- Este arquivo assume:
+  - core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None) existe.
+  - core.service_router.route_chat_strict retorna tuple: (data, used_model, meta_provider)
 """
 
 import logging
@@ -69,6 +79,20 @@ from .persona import get_persona
 
 logger = logging.getLogger(__name__)
 _SERVICE_CACHE.clear()
+
+
+# ==========================================================
+# CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
+# ==========================================================
+INTIMACY_PHASES = {
+    0: "tensao",      # flerte, provocação, antecipação
+    1: "contato",     # beijos, toque leve
+    2: "excitacao",   # toque íntimo, roupas, boca
+    3: "pre_climax",  # controle, quase, negação
+    4: "climax",      # orgasmo (NUNCA automático)
+    5: "aftercare",   # pós-ato (somente após fase 4)
+}
+MAX_INTIMACY_PHASE = 5
 
 
 # ==========================================================
@@ -500,7 +524,6 @@ def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]],
 # MEMÓRIAS PERMANENTES — comandos e parsing
 # ==========================================================
 _SAVE_RE = re.compile(r"^\s*(?:mary\s*,?\s*)?(?:salve|salvar|guarde)\b", re.IGNORECASE)
-_REMEMBER_RE = re.compile(r"^\s*(?:mary\s*,?\s*)?(?:você\s+)?(?:lembra|recorda)\b", re.IGNORECASE)
 _DATE_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})\b")
 _SUMMARY_HINT_RE = re.compile(r"\b(resumo|resuma|resumir|resumindo)\b", re.IGNORECASE)
 
@@ -539,7 +562,7 @@ def _strip_save_prefix(full_text: str) -> str:
     m = _SAVE_RE.search(t)
     if not m:
         return t
-    rest = t[m.end() :].strip()
+    rest = t[m.end():].strip()
     rest = re.sub(r"^\s*(na|no|em)\s+mem[oó]ria\s+permanente\b\s*:?\s*", "", rest, flags=re.IGNORECASE)
     rest = re.sub(r"^\s*(como|que)\s+", "", rest, flags=re.IGNORECASE)
     return rest.strip() or t
@@ -615,17 +638,17 @@ def _slice_mary_between_markers(mary_msgs: List[str], start_hint: str, end_hint:
 
     if i0 is None and i1 is not None:
         i0 = max(0, i1 - 8)
-        return mary_msgs[i0 : i1 + 1], "only_end_found"
+        return mary_msgs[i0:i1 + 1], "only_end_found"
 
     if i0 is not None and i1 is None:
         i1 = min(len(mary_msgs) - 1, i0 + 8)
-        return mary_msgs[i0 : i1 + 1], "only_start_found"
+        return mary_msgs[i0:i1 + 1], "only_start_found"
 
     if i0 is not None and i1 is not None:
         if i1 < i0:
             i0, i1 = i1, i0
-            return mary_msgs[i0 : i1 + 1], "markers_swapped"
-        return mary_msgs[i0 : i1 + 1], "both_found"
+            return mary_msgs[i0:i1 + 1], "markers_swapped"
+        return mary_msgs[i0:i1 + 1], "both_found"
 
     return [], "unexpected"
 
@@ -639,7 +662,7 @@ def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, 
         if not sliced:
             sliced = mary_msgs[-10:]
             dbg = f"{dbg}__fallback_last10"
-        transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
+        transcript = "\n\n".join([f"[MARY #{i + 1}]\n{m}" for i, m in enumerate(sliced)])
         meta = {
             "mode": "dynamic_range",
             "debug": dbg,
@@ -650,7 +673,7 @@ def _build_dynamic_mary_transcript(usuario_key: str, prompt: str) -> Tuple[str, 
         return transcript.strip(), meta
 
     sliced = mary_msgs[-10:]
-    transcript = "\n\n".join([f"[MARY #{i+1}]\n{m}" for i, m in enumerate(sliced)])
+    transcript = "\n\n".join([f"[MARY #{i + 1}]\n{m}" for i, m in enumerate(sliced)])
     meta = {"mode": "fallback_last10", "debug": "no_range_in_prompt", "mary_msgs_used": len(sliced)}
     return transcript.strip(), meta
 
@@ -734,6 +757,78 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 
 
 # ==========================================================
+# INTIMACY: sinais e travas (controle fino)
+# ==========================================================
+_RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando|gozar pra mim)\b", re.IGNORECASE)
+_RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|dormimos|banho|água|calma|respira|carinho)\b", re.IGNORECASE)
+
+# sinais de escalada (bem conservadores; evitam salto indevido)
+_RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|mão na cintura|aproximo)\b", re.IGNORECASE)
+_RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
+_RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|brinca com|faz eu implorar)\b", re.IGNORECASE)
+
+# sinais de negação/controle (mantém fase 3 sem "resolver tudo")
+_RE_DENIAL = re.compile(r"\b(não agora|para|segura|ainda não|quase|devagar|me obedece|fica|controle)\b", re.IGNORECASE)
+
+
+def _user_explicitly_allows_climax(user_text: str) -> bool:
+    return bool(_RE_CLIMAX_SIGNAL.search(user_text or ""))
+
+
+def _user_signals_aftercare(user_text: str) -> bool:
+    return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
+
+
+def _should_advance_phase(
+    current_phase: int,
+    user_text: str,
+    mary_text: str,
+    *,
+    engine_meta: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Decide avanço de fase com segurança:
+    - Se engine_meta trouxer sinal explícito, usa.
+    - Caso contrário, usa heurística conservadora.
+    """
+    meta = engine_meta or {}
+
+    # Se o engine já decidiu algo (se você adicionar essa chave lá no futuro)
+    if isinstance(meta.get("intimacy_progressed"), bool):
+        return bool(meta["intimacy_progressed"])
+
+    ut = (user_text or "")
+    mt = (mary_text or "")
+
+    if current_phase == 0:
+        return bool(_RE_ESCALATE_0_TO_1.search(ut) or _RE_ESCALATE_0_TO_1.search(mt))
+
+    if current_phase == 1:
+        return bool(_RE_ESCALATE_1_TO_2.search(ut) or _RE_ESCALATE_1_TO_2.search(mt))
+
+    if current_phase == 2:
+        # fase 3 é sobre controle/quase/negação
+        return bool(_RE_ESCALATE_2_TO_3.search(ut) or _RE_ESCALATE_2_TO_3.search(mt))
+
+    if current_phase == 3:
+        # fase 4 (clímax) NUNCA sem comando explícito do usuário
+        return _user_explicitly_allows_climax(ut)
+
+    if current_phase == 4:
+        # fase 5 (aftercare) só após clímax e com sinais de pós
+        return _user_signals_aftercare(ut)
+
+    return False
+
+
+def _cap_next_phase(current_phase: int, desired_next: int) -> int:
+    # Garantia: no máximo +1
+    if desired_next > current_phase + 1:
+        return current_phase + 1
+    return desired_next
+
+
+# ==========================================================
 # SERVICE
 # ==========================================================
 class MaryService(BaseCharacter):
@@ -772,6 +867,13 @@ class MaryService(BaseCharacter):
         facts0 = cached_get_facts(usuario_key)
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
+
+        # ----------------------------------------------------------
+        # 0.1) INTIMACY PHASE — inicialização segura
+        # ----------------------------------------------------------
+        if "intimacy.phase" not in facts0:
+            set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
+            facts0["intimacy.phase"] = 0
 
         # ----------------------------------------------------------
         # 1) Mudança explícita de local/tempo (permitida)
@@ -878,6 +980,11 @@ class MaryService(BaseCharacter):
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
 
+        # garantir facts atualizados para intimacy
+        if "intimacy.phase" not in facts:
+            set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init_late"})
+            facts["intimacy.phase"] = 0
+
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
 
@@ -920,6 +1027,25 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
 - Finalize com um gancho interno da Mary (sensação, gesto, intenção imediata), SEM exigir resposta.
 """.strip()
 
+        intimacy_phase = self._get_intimacy_phase(facts)
+
+        intimacy_control_block = f"""
+[CONTROLE DE PROGRESSÃO ÍNTIMA — REGRA ABSOLUTA]
+
+FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+
+REGRAS:
+- A intimidade ocorre em FASES.
+- Mary pode avançar **NO MÁXIMO UMA FASE por resposta**.
+- É PROIBIDO:
+  - concluir ato sexual completo em uma única resposta
+  - descrever orgasmo + penetração + encerramento no mesmo turno
+- Mary pode desejar, provocar, controlar, interromper e negar.
+- Clímax (fase 4) **NUNCA acontece sem condução explícita do usuário** (sinal de "goza/orgasmo").
+- Aftercare (fase 5) só após fase 4.
+- Mary é ativa, autônoma e dominante no ritmo, mas respeita o ciclo.
+""".strip()
+
         system = f"""
 {spatial_context}
 
@@ -958,6 +1084,8 @@ REGRAS ABSOLUTAS:
 - NÃO avance cenas sem comando explícito.
 - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
+{intimacy_control_block}
+
 {nsfw_block}
 """.strip()
 
@@ -986,7 +1114,6 @@ REGRAS ABSOLUTAS:
 
         # ----------------------------------------------------------
         # 8) Chat com retry/fallback
-        #    (max_tokens alto, sem truncar; pacing é pelo system)
         # ----------------------------------------------------------
         attempts = [
             {"model": model, "temperature": 0.75},
@@ -998,7 +1125,7 @@ REGRAS ABSOLUTAS:
 
         for attempt in attempts:
             try:
-                data, used_model, _ = self._chat(
+                data, used_model, _provider_meta = self._chat(
                     attempt["model"],
                     messages,
                     temperature=attempt["temperature"],
@@ -1099,8 +1226,36 @@ REGRAS ABSOLUTAS:
                 # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
 
-                # mantém cena travada sempre
+                # Mantém cena travada sempre
                 _lock_scene(usuario_key)
+
+                # ----------------------------------------------------------
+                # Avança fase íntima (NO MÁXIMO 1 por turno) + TRAVAS
+                # ----------------------------------------------------------
+                try:
+                    current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
+                    # Decide se avança
+                    if _should_advance_phase(
+                        current_phase,
+                        prompt,
+                        texto,
+                        engine_meta=meta,
+                    ):
+                        desired_next = _cap_next_phase(current_phase, current_phase + 1)
+
+                        # Travas absolutas:
+                        # - fase 4 só com sinal explícito do usuário
+                        if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
+                            desired_next = current_phase  # não avança
+
+                        # - fase 5 só se já está na 4 e usuário sinaliza aftercare
+                        if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
+                            desired_next = current_phase
+
+                        if desired_next != current_phase:
+                            self._set_intimacy_phase(usuario_key, desired_next)
+                except Exception:
+                    pass
 
                 return texto
 
@@ -1163,6 +1318,23 @@ REGRAS ABSOLUTAS:
             return ""
         except Exception:
             return ""
+
+    @staticmethod
+    def _get_intimacy_phase(facts: Dict[str, Any]) -> int:
+        try:
+            return int((facts or {}).get("intimacy.phase", 0))
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _set_intimacy_phase(usuario_key: str, phase: int) -> None:
+        phase = max(0, min(int(phase), MAX_INTIMACY_PHASE))
+        set_fact_safe(
+            usuario_key,
+            "intimacy.phase",
+            phase,
+            {"fonte": "intimacy_progression"},
+        )
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
         return route_chat_strict(
