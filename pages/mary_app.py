@@ -290,6 +290,12 @@ def _invalidate_backend_cache() -> None:
     st.session_state["backend_hist_cache_ts"] = 0.0
     st.session_state["backend_hist_cache_key"] = ""
 
+    # ✅ também derruba cache de memórias do service
+    sk = _shared_key_atual()
+    prefix_mem = f"mem::{sk}::"
+    for k in list(st.session_state.keys()):
+        if isinstance(k, str) and k.startswith(prefix_mem):
+            st.session_state.pop(k, None)
 
 def _choose_default_model(available: list[str]) -> str:
     if available and DEFAULT_MODEL in available:
@@ -363,16 +369,24 @@ def _garantir_estado_inicial() -> None:
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
-    # ✅ remove facts + TODOS history::<key>::<limit>
+    # ✅ remove facts + TODOS history::<key>::<limit> + mem::<key>::<limit>
     for k in keys:
+        # facts
         fk = f"facts::{k}"
         if fk in st.session_state:
             del st.session_state[fk]
-        prefix = f"history::{k}::"
+
+        # history
+        prefix_hist = f"history::{k}::"
         for sk in list(st.session_state.keys()):
-            if isinstance(sk, str) and sk.startswith(prefix):
+            if isinstance(sk, str) and sk.startswith(prefix_hist):
                 st.session_state.pop(sk, None)
 
+        # ✅ mem cache (é isso que estava voltando “do nada”)
+        prefix_mem = f"mem::{k}::"
+        for sk in list(st.session_state.keys()):
+            if isinstance(sk, str) and sk.startswith(prefix_mem):
+                st.session_state.pop(sk, None)
 
 def _reset_intro_flags_for_keys(keys: list[str]) -> None:
     for k in keys:
