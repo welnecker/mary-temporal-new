@@ -1242,7 +1242,7 @@ class MaryService(BaseCharacter):
                     "nsfw_on": nsfw_on,
                 }
 
-                 st.session_state["mary_debug_nsfw"] = {
+                st.session_state["mary_debug_nsfw"] = {
                     "nsfw_on": nsfw_on,
                     "model": model,
                     "timeline": timeline_final,
