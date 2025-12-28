@@ -89,7 +89,7 @@ def get_persona(timeline: Optional[str] = None) -> Tuple[str, List[Dict[str, str
     # ==========================================================
     # TIMELINE: UNIVERSITÁRIA
     # ==========================================================
-    if tl == "universitaria":
+        if tl == "universitaria":
         persona = BASE_PERSONA + """
 
 ────────────────────────────────
@@ -131,21 +131,22 @@ ESTILO:
 """
 
         initial_messages: List[Dict[str, str]] = [
-    {
-        "role": "assistant",
-        "timeline": "universitaria",
-        "content": (
-            "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses, "
-            "alto e desorganizado, e o campus parece outra cidade nesta noite.\n\n"
-            "Estou no meio da multidão, sentindo o grave no peito, quando Ricardo segura meu rosto "
-            "e me beija na boca com pressa demais para ser inocente.\n\n"
-            "Silvia e Bianca gritam ao meu lado, e tudo parece barulho até o momento em que eu "
-            "te observo do outro lado do palco, cantando junto, fingindo não perceber que Ricardo me assedia.\n\n"
-            "Quando o beijo termina, eu fico parada por um segundo a mais do que deveria, "
-            "sabendo que seu segredo parece ter sido revelado: ciúme e algo mais..."
-        ),
-    }
-]
+            {
+                "role": "assistant",
+                "timeline": "universitaria",
+                "content": (
+                    "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses, "
+                    "alto e desorganizado, e o campus parece outra cidade nesta noite.\n\n"
+                    "Estou no meio da multidão, sentindo o grave no peito, quando Ricardo segura meu rosto "
+                    "e me beija na boca com pressa demais para ser inocente.\n\n"
+                    "Silvia e Bianca gritam ao meu lado, e tudo parece barulho até o momento em que eu "
+                    "te observo do outro lado do palco, cantando junto, fingindo não perceber que Ricardo me assedia.\n\n"
+                    "Quando o beijo termina, eu fico parada por um segundo a mais do que deveria, "
+                    "sabendo que seu segredo parece ter sido revelado: ciúme e algo mais..."
+                ),
+            }
+        ]
+
         return persona, initial_messages
 
     # ==========================================================
