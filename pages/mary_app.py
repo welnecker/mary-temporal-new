@@ -8,6 +8,45 @@ import inspect
 from typing import List, Tuple, Optional, Dict, Any
 
 import streamlit as st
+# ==========================================================
+# 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
+# ==========================================================
+def _hard_reset_on_boot_if_needed() -> None:
+    """
+    Streamlit reidrata session_state ao reabrir o app.
+    Se a timeline mudou desde o último boot, precisamos
+    limpar TODOS os caches sensíveis antes de qualquer render.
+    """
+    current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
+    last_tl = st.session_state.get("mary_last_boot_timeline")
+
+    if last_tl != current_tl:
+        for k in list(st.session_state.keys()):
+            if not isinstance(k, str):
+                continue
+
+            # services isolados por usuario_key
+            if k.startswith("_mary_service::"):
+                st.session_state.pop(k, None)
+                continue
+
+            # caches do service.py
+            if k.startswith("facts::") or k.startswith("history::") or k.startswith("mem::"):
+                st.session_state.pop(k, None)
+                continue
+
+            # flags de intro/contexto
+            if k.startswith("intro_ctx_injected::") or k.startswith("intro_injected::"):
+                st.session_state.pop(k, None)
+                continue
+
+        # marca timeline do boot atual
+        st.session_state["mary_last_boot_timeline"] = current_tl
+
+
+# ⚠️ EXECUTA IMEDIATAMENTE NO BOOT
+_hard_reset_on_boot_if_needed()
+
 
 # Memórias permanentes (shared)
 from core.repositories import list_memories, delete_last_memory, delete_all_memories
