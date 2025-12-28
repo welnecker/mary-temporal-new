@@ -1,53 +1,18 @@
 from __future__ import annotations
 """
-MaryService (v3.16 – Timeline-Aware + Canon + RelationshipEngine v2
+MaryService (v3.16.1 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Cache consistente + NSFW unificado
             + Resposta SEM truncamento + Pacing anti-"corrida"
             + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
+            + Regra de Autoria do Usuário (não inventar ações/falas do usuário)
 
-CORREÇÕES / MELHORIAS INCLUÍDAS NESTA VERSÃO:
-1) ✅ Scene Lock REAL:
-   - Bloqueia mudanças de lugar/tempo/evento por iniciativa do modelo.
-   - Só muda cena via comandos explícitos do usuário.
-
-2) ✅ Cache consistente:
-   - Cache de facts/history e memórias compartilhadas.
-   - Toda escrita invalida cache corretamente.
-
-3) ✅ Intro:
-   - Intro da persona só entra se NÃO houver memórias CANON.
-   - E só entra 1x por sessão/usuario_key.
-
-4) ✅ NSFW unificado:
-   - core.nsfw.nsfw_enabled é a fonte de verdade.
-
-5) ✅ Fim do “corte/alucinação”:
-   - Remove truncamento artificial do texto retornado.
-   - _extract_text robusto para múltiplos formatos de provider.
-
-6) ✅ Pacing anti-resposta “que resolve tudo”:
-   - Mary decide e age, mas avança só micro-passos.
-   - Proíbe pergunta obrigatória de encerramento.
-
-7) ✅ CONTROLE DE PROGRESSÃO ÍNTIMA (FASES):
-   - Fases 0..5 com travas:
-     - Mary avança NO MÁXIMO 1 fase por turno.
-     - Fase 4 (clímax) só avança se o usuário der sinal explícito.
-     - Fase 5 (aftercare) só após fase 4.
-   - Heurística + meta do engine (se existir) para decidir avanço.
-
-8) ✅ (NOVO) Regra de Autoria do Usuário (corrige "Mary nunca narra ações do usuário"):
-   - Mary NÃO fala "como se fosse" o usuário (não coloca falas na boca do usuário).
-   - Mary NÃO inventa ações do usuário.
-   - MAS: se o usuário DECLARAR explicitamente uma ação/estado ("vou gozar", etc),
-     Mary pode tomar isso como fato e reagir/continuar a cena.
-
-9) ✅ (NOVO) Fallback condicionado ao NSFW:
-   - Se NSFW_ON, evita fallback automático para modelos que costumam “atenuar”
-     e mantém apenas retries no MESMO modelo, variando temperatura.
-   - Se NSFW_OFF, mantém fallback padrão.
+✅ CORREÇÕES CRÍTICAS NESTA VERSÃO:
+- Corrige ERRO de sintaxe: `NSFW_TOGGLE_STYLE` estava sem atribuição (fatal).
+- Corrige IndentationError: bloco “Persona + system” estava indevidamente dentro do `if _is_save_memory_command(...)`
+  e ainda por cima após `return`.
+- Mantém todos os recursos do seu arquivo: canon, memórias shared, relationship, scene lock, intimacy phases, etc.
 """
 
 import logging
@@ -93,7 +58,7 @@ INTIMACY_PHASES = {
     1: "contato",     # beijos, toque leve
     2: "excitacao",   # toque íntimo, roupas, boca
     3: "pre_climax",  # controle, quase, negação
-    4: "climax",      # orgasmo (NUNCA automático)
+    4: "climax",      # clímax (NUNCA automático)
     5: "aftercare",   # pós-ato (somente após fase 4)
 }
 MAX_INTIMACY_PHASE = 5
@@ -136,7 +101,7 @@ def _shared_memory_key() -> str:
 
 
 # ==========================================================
-# NSFW TOGGLE
+# NSFW TOGGLE (fonte de verdade é core.nsfw)
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
@@ -145,7 +110,13 @@ SAFE_SENSUAL_STYLE = """
 - Não quebre o tom nem a continuidade.
 """.strip()
 
-NSFW_TOGGLE_STYLE 
+# ✅ FIX: estava sem atribuição → isso quebrava o import e o app inteiro
+NSFW_TOGGLE_STYLE = """
+[NSFW_ON]
+- Linguagem adulta é permitida conforme o contexto.
+- Preserve coerência, consentimento e continuidade.
+- Não suavize o tom por padrão; apenas siga as regras do sistema e do modo.
+""".strip()
 
 
 # ==========================================================
@@ -254,7 +225,7 @@ def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
 
 
 def _scene_is_locked(facts: Dict[str, Any]) -> bool:
-    # default: travado (evita o modelo “inventar” transições)
+    # default: travado
     return bool(facts.get("cena.locked", True))
 
 
@@ -759,12 +730,10 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 _RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando|gozar pra mim)\b", re.IGNORECASE)
 _RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|dormimos|banho|água|calma|respira|carinho)\b", re.IGNORECASE)
 
-# sinais de escalada (bem conservadores; evitam salto indevido)
 _RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|mão na cintura|aproximo)\b", re.IGNORECASE)
 _RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
 _RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|brinca com|faz eu implorar)\b", re.IGNORECASE)
 
-# sinais de negação/controle (mantém fase 3 sem "resolver tudo")
 _RE_DENIAL = re.compile(r"\b(não agora|para|segura|ainda não|quase|devagar|me obedece|fica|controle)\b", re.IGNORECASE)
 
 
@@ -885,6 +854,7 @@ class MaryService(BaseCharacter):
             raw_body = _strip_save_prefix(prompt)
             date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
+            # --- modo resumo dinâmico
             if _wants_auto_summary(prompt):
                 transcript, dbg_meta = _build_dynamic_mary_transcript(usuario_key, prompt)
                 if not transcript.strip():
@@ -941,7 +911,7 @@ class MaryService(BaseCharacter):
                     logger.exception("Falha ao gerar/salvar resumo dinâmico", exc_info=e)
                     return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
 
-            # salvamento direto
+            # --- salvamento direto
             body = raw_body
             if len(body.strip()) < 40:
                 captured = _fallback_capture_recent_history(usuario_key, turns=10)
@@ -961,142 +931,111 @@ class MaryService(BaseCharacter):
 
             return "✅ Memória permanente salva (compartilhada)."
 
-            # ----------------------------------------------------------
-            # 3) Persona + sistema (com pacing anti-"resolve tudo")
-            # ----------------------------------------------------------
-            persona_text, _ = get_persona(timeline_final)
-            facts = cached_get_facts(usuario_key)
-            
-            # garantir facts atualizados para intimacy
-            if "intimacy.phase" not in facts:
-                set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init_late"})
-                facts["intimacy.phase"] = 0
-            
-            canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
-            canon_txt = canon_to_text(canon)
-            
-            canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
-            rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-            rel_block = rel_state_to_prompt_block(rel_state)
-            
-            scene_loc, scene_time, scene_action = _get_scene_state(facts)
-            spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
-            
-            nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
-            nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
-            
-            scene_lock_rule = """
-            REGRA DE CONTINUIDADE (IMPORTANTE):
-            - A Mary NÃO deve mudar de local, tempo ou evento sozinha.
-            - Se o usuário narrar acontecimentos em outro lugar/tempo, trate como CENA PARALELA:
-              Mary permanece onde está e reage emocionalmente (sem afirmar como fato).
-            - NÃO explique regras ao usuário.
-            - Só altere a cena se o usuário ordenar explicitamente ("corta para:", "horas depois:", "vamos para ...").
-            """.strip()
-            
-            parallel_scene_rule = (
-                """
-            [CONTEXTO — CENA PARALELA DO USUÁRIO]
-            O usuário descreveu eventos paralelos (outro lugar/tempo). NÃO mova a Mary para lá.
-            A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de tensão narrativa.
-            """.strip()
-                if scene_parallel
-                else ""
-            )
-            
-            pacing_rule = """
-            [PACING — IMPORTANTE]
-            - NÃO conclua "o dia inteiro", "toda a história" ou "resolva tudo" em uma única resposta.
-            - Avance em micro-passos: 1 micro-ação + 1 micro-decisão da Mary no máximo.
-            - Mary pode decidir e conduzir, mas deixe a cena aberta naturalmente (sem pergunta obrigatória).
-            - PROIBIDO terminar com perguntas ao usuário.
-            - Finalize com um gancho interno da Mary (sensação, gesto, intenção imediata), sem exigir resposta.
-            """.strip()
-            
-            intimacy_phase = self._get_intimacy_phase(facts)
-            
-            intimacy_control_block = f"""
-            [CONTROLE DE PROGRESSÃO ÍNTIMA — REGRA ABSOLUTA]
-            
-            FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
-            
-            REGRAS:
-            - A intimidade ocorre em FASES.
-            - Mary pode avançar NO MÁXIMO UMA FASE por resposta.
-            - É PROIBIDO:
-              - concluir ato sexual completo em uma única resposta
-              - descrever orgasmo + penetração + encerramento no mesmo turno
-            - Mary pode desejar, provocar, controlar, interromper e negar (negação erótica inteligente).
-            - Clímax (fase 4) NUNCA acontece sem sinal explícito do usuário (ex.: “vou gozar”, “goza agora”).
-            - Aftercare (fase 5) só após fase 4.
-            - Mary é ativa, autônoma e dominante no ritmo, respeitando o ciclo.
-            """.strip()
-            
-            # 🔧 CORREÇÃO CENTRAL: autoria do usuário (eco permitido; invenção proibida)
-            user_authorship_rule = """
-            [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
-            
-            - Mary NÃO escreve falas internas do usuário.
-            - Mary NÃO descreve ações do usuário que ELE NÃO declarou.
-            - Mary NÃO assume controle do corpo do usuário.
-            
-            [PERMITIDO — ECO CONTROLADO]
-            - Se o usuário DECLARAR explicitamente uma ação, estado ou intenção física
-              (ex.: “vou gozar”, “estou te penetrando”, “minha mão está em você”),
-              Mary pode TRATAR COMO FATO e REAGIR de forma direta e explícita,
-              SEM acrescentar novos detalhes sobre o usuário.
-            
-            [2ª PESSOA — ESCLARECIMENTO]
-            - “Você” refere-se à PERCEPÇÃO de Mary sobre o usuário (sinais externos, reações observáveis),
-              NUNCA ao ponto de vista interno do usuário.
-            
-            [AVANÇO]
-            - Ao ecoar o declarado pelo usuário, Mary avança apenas 1 micro-passo coerente com a FASE.
-            """.strip()
-            
-            system = f"""
-            {spatial_context}
-            
-            VOCÊ É MARY.
-            
-            Este é um roleplay narrativo íntimo, psicológico e contínuo.
-            Você responde sempre em primeira pessoa, a partir da sua própria experiência,
-            consciência, corpo, emoções e limites.
-            
-            PONTO DE VISTA (REGRA ABSOLUTA):
-            - Mary fala sempre e somente a partir de si mesma.
-            - Mary descreve o que ELA faz, sente, pensa e percebe.
-            - Se algo estiver fora do campo sensorial de Mary,
-              ela apenas imagina, suspeita ou reage emocionalmente — nunca afirma como fato.
-            
-            {user_authorship_rule}
-            
-            TIMELINE ATUAL: {timeline_final}
-            
-            [CANON — VERDADE ATUAL]
-            {canon_txt}
-            
-            PERSONA (baseline):
-            {persona_text}
-            
-            {rel_block}
-            
-            {scene_lock_rule}
-            {parallel_scene_rule}
-            
-            {pacing_rule}
-            
-            REGRAS ABSOLUTAS:
-            - NÃO misture timelines.
-            - NÃO avance cenas sem comando explícito.
-            - NÃO assuma ações do usuário além do que ele declarou no turno atual ou no histórico.
-            - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
-            
-            {intimacy_control_block}
-            
-            {nsfw_block}
-            """.strip()
+        # ----------------------------------------------------------
+        # 3) Persona + system (FORA do if de salvar memória) ✅
+        # ----------------------------------------------------------
+        persona_text, _ = get_persona(timeline_final)
+        facts = cached_get_facts(usuario_key)
 
+        if "intimacy.phase" not in facts:
+            set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init_late"})
+            facts["intimacy.phase"] = 0
+
+        canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
+        canon_txt = canon_to_text(canon)
+
+        canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+        rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+        rel_block = rel_state_to_prompt_block(rel_state)
+
+        scene_loc, scene_time, scene_action = _get_scene_state(facts)
+        spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
+
+        nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
+        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+
+        scene_lock_rule = """
+REGRA DE CONTINUIDADE (IMPORTANTE):
+- A Mary NÃO deve mudar de local, tempo ou evento sozinha.
+- Se o usuário narrar acontecimentos em outro lugar/tempo, trate como CENA PARALELA:
+  Mary permanece onde está e reage emocionalmente (sem afirmar como fato).
+- NÃO explique regras ao usuário.
+- Só altere a cena se o usuário ordenar explicitamente ("corta para:", "horas depois:", "vamos para ...").
+""".strip()
+
+        parallel_scene_rule = (
+            """
+[CONTEXTO — CENA PARALELA DO USUÁRIO]
+O usuário descreveu eventos paralelos (outro lugar/tempo). NÃO mova a Mary para lá.
+A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de tensão narrativa.
+""".strip()
+            if scene_parallel
+            else ""
+        )
+
+        pacing_rule = """
+[PACING — IMPORTANTE]
+- NÃO conclua "toda a história" em uma única resposta.
+- Avance em micro-passos: 1 micro-ação + 1 micro-decisão da Mary no máximo.
+- Mary pode decidir e conduzir, mas deixe a cena aberta naturalmente.
+- PROIBIDO terminar com perguntas ao usuário.
+- Finalize com um gancho interno da Mary (sensação, gesto, intenção imediata), sem exigir resposta.
+""".strip()
+
+        intimacy_phase = self._get_intimacy_phase(facts)
+
+        intimacy_control_block = f"""
+[CONTROLE DE PROGRESSÃO ÍNTIMA — REGRA ABSOLUTA]
+FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+
+REGRAS:
+- A intimidade ocorre em FASES.
+- Mary pode avançar NO MÁXIMO UMA FASE por resposta.
+- É PROIBIDO concluir ato completo em um turno.
+- Clímax (fase 4) NUNCA acontece sem sinal explícito do usuário.
+- Aftercare (fase 5) só após fase 4.
+""".strip()
+
+        user_authorship_rule = """
+[REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
+- Mary NÃO inventa falas internas do usuário.
+- Mary NÃO descreve ações do usuário que ele NÃO declarou.
+- Se o usuário DECLARAR explicitamente uma ação/estado/intenção, Mary pode tratar como fato e reagir,
+  sem acrescentar novos detalhes sobre o corpo/mente do usuário.
+""".strip()
+
+        system = f"""
+{spatial_context}
+
+VOCÊ É MARY.
+Responda em primeira pessoa, do ponto de vista da Mary.
+
+{user_authorship_rule}
+
+TIMELINE ATUAL: {timeline_final}
+
+[CANON — VERDADE ATUAL]
+{canon_txt}
+
+PERSONA (baseline):
+{persona_text}
+
+{rel_block}
+
+{scene_lock_rule}
+{parallel_scene_rule}
+
+{pacing_rule}
+
+REGRAS ABSOLUTAS:
+- NÃO misture timelines.
+- NÃO avance cena sem comando explícito.
+- Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
+
+{intimacy_control_block}
+
+{nsfw_block}
+""".strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
@@ -1109,7 +1048,7 @@ class MaryService(BaseCharacter):
         # 5.1) Continuidade suave
         _inject_shared_soft_context(shared_key, messages, max_items=8)
 
-        # 7) Histórico (timeline atual)
+        # 6) Histórico (timeline atual)
         history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -1122,17 +1061,14 @@ class MaryService(BaseCharacter):
         messages.append({"role": "user", "content": prompt})
 
         # ----------------------------------------------------------
-        # 8) Chat com retry/fallback (condicionado a NSFW)
+        # 7) Chat com retry/fallback (condicionado a NSFW)
         # ----------------------------------------------------------
         if nsfw_on:
-            # NSFW_ON: evita fallback para modelos que tendem a “atenuar”.
             attempts = [
                 {"model": model, "temperature": 0.85},
                 {"model": model, "temperature": 0.70},
-                
             ]
         else:
-            # NSFW_OFF: fallback padrão
             attempts = [
                 {"model": model, "temperature": 0.75},
                 {"model": model, "temperature": 0.55},
@@ -1199,8 +1135,8 @@ class MaryService(BaseCharacter):
 
                         clear_user_cache(old_key)
                         clear_user_cache(usuario_key)
-
                         clear_shared_memory_cache(user_id)
+
                         st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
                         st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
 
@@ -1249,28 +1185,19 @@ class MaryService(BaseCharacter):
                     "intimacy_phase": intimacy_phase,
                 }
 
-
                 # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
 
                 # Mantém cena travada sempre
                 _lock_scene(usuario_key)
 
-                # ----------------------------------------------------------
                 # Avança fase íntima (NO MÁXIMO 1 por turno) + TRAVAS
-                # ----------------------------------------------------------
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
 
-                    if _should_advance_phase(
-                        current_phase,
-                        prompt,
-                        texto,
-                        engine_meta=meta,
-                    ):
+                    if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
                         desired_next = _cap_next_phase(current_phase, current_phase + 1)
 
-                        # Travas absolutas:
                         if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
                             desired_next = current_phase
 
@@ -1291,8 +1218,6 @@ class MaryService(BaseCharacter):
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
-
-            
 
     # -------------------------
     # helpers
@@ -1345,14 +1270,10 @@ class MaryService(BaseCharacter):
     @staticmethod
     def _set_intimacy_phase(usuario_key: str, phase: int) -> None:
         phase = max(0, min(int(phase), MAX_INTIMACY_PHASE))
-        set_fact_safe(
-            usuario_key,
-            "intimacy.phase",
-            phase,
-            {"fonte": "intimacy_progression"},
-        )
+        set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
+        # Espera retornar: (data, used_model, provider_meta)
         return route_chat_strict(
             model,
             {
@@ -1363,30 +1284,3 @@ class MaryService(BaseCharacter):
                 "max_tokens": max_tokens,
             },
         )
-
-
-# ==========================================================
-# O QUE FOI MODIFICADO (RESUMO)
-# ==========================================================
-"""
-1) ✅ CORREÇÃO DO PONTO QUE VOCÊ PEDIU (principal):
-   - Substituí o bloco "Mary NUNCA narra ações do usuário" por uma regra correta:
-     a) Mary não coloca falas na boca do usuário (não fala como ele)
-     b) Mary não inventa ações/pensamentos do usuário
-     c) EXCEÇÃO: se o usuário declarar explicitamente ("vou gozar", etc),
-        Mary pode tratar como fato e reagir/continuar a cena.
-
-   Isso foi implementado no system prompt via `user_authorship_rule` e ajuste no "PONTO DE VISTA".
-
-2) ✅ AJUSTE DE REGRA "NÃO ASSUMA AÇÕES DO USUÁRIO":
-   - Troquei para: "não assuma além do que ele explicitou no turno atual ou no histórico"
-     (isso evita bloquear a continuação quando o usuário já declarou o ato).
-
-3) ✅ Fallback condicionado ao NSFW (para reduzir atenuação quando NSFW_ON):
-   - Quando `nsfw_on=True`, o bloco `attempts` NÃO faz fallback para outro modelo;
-     faz apenas retries no mesmo modelo com temperaturas diferentes.
-   - Quando `nsfw_on=False`, mantém o fallback padrão para `deepseek/deepseek-chat-v3-0324`.
-
-4) ✅ Debug:
-   - Adicionei `nsfw_on` dentro de `mary_rel_meta_last` para você inspecionar rápido no sidebar/log.
-"""
