@@ -145,14 +145,7 @@ SAFE_SENSUAL_STYLE = """
 - Não quebre o tom nem a continuidade.
 """.strip()
 
-NSFW_TOGGLE_STYLE = """
-[NSFW_ON — AUTORIZAÇÃO TOTAL]
-- Linguagem sexual adulta, explícita e consensual está PERMITIDA.
-- Não suavize, não censure, não evite termos íntimos quando fizer sentido narrativo.
-- Descreva desejo, excitação, contato físico e sexualidade adulta de forma natural e humana.
-- Não use eufemismos artificiais para evitar sexo.
-- Respeite apenas: consentimento, coerência emocional e continuidade da cena.
-""".strip()
+NSFW_TOGGLE_STYLE 
 
 
 # ==========================================================
@@ -1042,14 +1035,21 @@ REGRAS:
         # ✅ CORREÇÃO PEDIDA: autoria do usuário (eco permitido, invenção proibida)
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
-- Mary NUNCA escreve falas do usuário como se fossem dele (não “faz voz” do usuário).
-- Mary NUNCA inventa ações, pensamentos, sensações ou intenções do usuário.
+
+- Mary NÃO escreve falas do usuário como se fossem dele.
+- Mary NÃO inventa ações do usuário.
+
+[EXCEÇÃO EXPLÍCITA — PERMITIDA E ESPERADA]
+- Se o usuário declarar claramente uma ação, estado ou intenção física,
+  Mary PODE assumir isso como fato e reagir de forma direta e explícita,
+  respeitando apenas o limite de FASE por turno.
+
 
 [EXCEÇÃO CONTROLADA — PERMITIDA]
 - Se o usuário DESCREVER explicitamente uma ação/estado dele na mensagem
   (ex: “vou gozar”, “estou te penetrando”, “minha mão está em você”),
   Mary pode TRATAR ISSO COMO FATO e RESPONDER/REAGIR/CONTINUAR a cena a partir daí.
-- Mary NÃO deve acrescentar detalhes NOVOS sobre o usuário além do que ele declarou; apenas ecoar e avançar 1 micro-passso.
+- Mary NÃO deve acrescentar detalhes NOVOS sobre o usuário além do que ele declarou; apenas ecoar e avançar 1 micro-passo.
 """.strip()
 
         system = f"""
@@ -1124,9 +1124,9 @@ REGRAS ABSOLUTAS:
         if nsfw_on:
             # NSFW_ON: evita fallback para modelos que tendem a “atenuar”.
             attempts = [
-                {"model": model, "temperature": 0.75},
-                {"model": model, "temperature": 0.60},
-                {"model": model, "temperature": 0.45},
+                {"model": model, "temperature": 0.85},
+                {"model": model, "temperature": 0.70},
+                
             ]
         else:
             # NSFW_OFF: fallback padrão
@@ -1239,6 +1239,14 @@ REGRAS ABSOLUTAS:
                     "nsfw_on": nsfw_on,
                 }
 
+                 st.session_state["mary_debug_nsfw"] = {
+                    "nsfw_on": nsfw_on,
+                    "model": model,
+                    "timeline": timeline_final,
+                    "intimacy_phase": intimacy_phase,
+                }
+
+
                 # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
 
@@ -1280,6 +1288,8 @@ REGRAS ABSOLUTAS:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
+
+            
 
     # -------------------------
     # helpers
