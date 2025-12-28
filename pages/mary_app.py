@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# ==========================================================
+# IMPORTS PADRÃO
+# ==========================================================
 import time
 import re
 import traceback
@@ -8,14 +11,15 @@ import inspect
 from typing import List, Tuple, Optional, Dict, Any
 
 import streamlit as st
+
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
 # ==========================================================
 def _hard_reset_on_boot_if_needed() -> None:
     """
     Streamlit reidrata session_state ao reabrir o app.
-    Se a timeline mudou desde o último boot, precisamos
-    limpar TODOS os caches sensíveis antes de qualquer render.
+    Se a timeline mudou desde o último boot, limpamos TUDO
+    antes de qualquer render.
     """
     current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
     last_tl = st.session_state.get("mary_last_boot_timeline")
@@ -25,46 +29,45 @@ def _hard_reset_on_boot_if_needed() -> None:
             if not isinstance(k, str):
                 continue
 
-            # services isolados por usuario_key
             if k.startswith("_mary_service::"):
                 st.session_state.pop(k, None)
                 continue
 
-            # caches do service.py
-            if k.startswith("facts::") or k.startswith("history::") or k.startswith("mem::"):
+            if k.startswith(("facts::", "history::", "mem::")):
                 st.session_state.pop(k, None)
                 continue
 
-            # flags de intro/contexto
-            if k.startswith("intro_ctx_injected::") or k.startswith("intro_injected::"):
+            if k.startswith(("intro_ctx_injected::", "intro_injected::")):
                 st.session_state.pop(k, None)
-                continue
 
-        # marca timeline do boot atual
         st.session_state["mary_last_boot_timeline"] = current_tl
 
 
 # ⚠️ EXECUTA IMEDIATAMENTE NO BOOT
 _hard_reset_on_boot_if_needed()
 
-
-# Memórias permanentes (shared)
-from core.repositories import list_memories, delete_last_memory, delete_all_memories
-
-import characters.mary.persona as mary_persona
-from characters.mary.service import MaryService  # ✅ não importar _current_user_key
-import core.repositories as crep
-from core.service_router import list_models
-from core.database import db_status
+# ==========================================================
+# IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
+# ==========================================================
 from core.repositories import (
+    list_memories,
+    delete_last_memory,
+    delete_all_memories,
     get_history_docs,
     get_history_docs_multi,
     get_facts,
-    set_fact,  # ✅ para persistir NSFW
+    set_fact,
     delete_fact,
     delete_last_interaction,
     delete_user_history,
 )
+
+import characters.mary.persona as mary_persona
+from characters.mary.service import MaryService
+import core.repositories as crep
+from core.service_router import list_models
+from core.database import db_status
+
 
 # ==========================================================
 # CONFIG
