@@ -1,6 +1,6 @@
 from __future__ import annotations
 """
-MaryService (v3.15 – Timeline-Aware + Canon + RelationshipEngine v2
+MaryService (v3.16 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Cache consistente + NSFW unificado
@@ -37,13 +37,17 @@ CORREÇÕES / MELHORIAS INCLUÍDAS NESTA VERSÃO:
      - Fase 4 (clímax) só avança se o usuário der sinal explícito.
      - Fase 5 (aftercare) só após fase 4.
    - Heurística + meta do engine (se existir) para decidir avanço.
-   - Corrige NameError/escopo (self._get_intimacy_phase, self._advance_intimacy_phase).
-   - Corrige indentação/fluxo (return no lugar certo).
 
-Observação:
-- Este arquivo assume:
-  - core.nsfw.nsfw_enabled(usuario_key, nsfw_override=None, timeline=None) existe.
-  - core.service_router.route_chat_strict retorna tuple: (data, used_model, meta_provider)
+8) ✅ (NOVO) Regra de Autoria do Usuário (corrige "Mary nunca narra ações do usuário"):
+   - Mary NÃO fala "como se fosse" o usuário (não coloca falas na boca do usuário).
+   - Mary NÃO inventa ações do usuário.
+   - MAS: se o usuário DECLARAR explicitamente uma ação/estado ("vou gozar", etc),
+     Mary pode tomar isso como fato e reagir/continuar a cena.
+
+9) ✅ (NOVO) Fallback condicionado ao NSFW:
+   - Se NSFW_ON, evita fallback automático para modelos que costumam “atenuar”
+     e mantém apenas retries no MESMO modelo, variando temperatura.
+   - Se NSFW_OFF, mantém fallback padrão.
 """
 
 import logging
@@ -786,14 +790,8 @@ def _should_advance_phase(
     *,
     engine_meta: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """
-    Decide avanço de fase com segurança:
-    - Se engine_meta trouxer sinal explícito, usa.
-    - Caso contrário, usa heurística conservadora.
-    """
     meta = engine_meta or {}
 
-    # Se o engine já decidiu algo (se você adicionar essa chave lá no futuro)
     if isinstance(meta.get("intimacy_progressed"), bool):
         return bool(meta["intimacy_progressed"])
 
@@ -807,22 +805,18 @@ def _should_advance_phase(
         return bool(_RE_ESCALATE_1_TO_2.search(ut) or _RE_ESCALATE_1_TO_2.search(mt))
 
     if current_phase == 2:
-        # fase 3 é sobre controle/quase/negação
         return bool(_RE_ESCALATE_2_TO_3.search(ut) or _RE_ESCALATE_2_TO_3.search(mt))
 
     if current_phase == 3:
-        # fase 4 (clímax) NUNCA sem comando explícito do usuário
         return _user_explicitly_allows_climax(ut)
 
     if current_phase == 4:
-        # fase 5 (aftercare) só após clímax e com sinais de pós
         return _user_signals_aftercare(ut)
 
     return False
 
 
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
-    # Garantia: no máximo +1
     if desired_next > current_phase + 1:
         return current_phase + 1
     return desired_next
@@ -1017,7 +1011,6 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
             else ""
         )
 
-        # 🔥 Pacing: Mary autônoma, sem pergunta obrigatória, e sem encerrar arco numa tacada
         pacing_rule = """
 [PACING — IMPORTANTE]
 - NÃO conclua "o dia inteiro", "toda a história" ou "resolva tudo" em uma única resposta.
@@ -1046,6 +1039,19 @@ REGRAS:
 - Mary é ativa, autônoma e dominante no ritmo, mas respeita o ciclo.
 """.strip()
 
+        # ✅ CORREÇÃO PEDIDA: autoria do usuário (eco permitido, invenção proibida)
+        user_authorship_rule = """
+[REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
+- Mary NUNCA escreve falas do usuário como se fossem dele (não “faz voz” do usuário).
+- Mary NUNCA inventa ações, pensamentos, sensações ou intenções do usuário.
+
+[EXCEÇÃO CONTROLADA — PERMITIDA]
+- Se o usuário DESCREVER explicitamente uma ação/estado dele na mensagem
+  (ex: “vou gozar”, “estou te penetrando”, “minha mão está em você”),
+  Mary pode TRATAR ISSO COMO FATO e RESPONDER/REAGIR/CONTINUAR a cena a partir daí.
+- Mary NÃO deve acrescentar detalhes NOVOS sobre o usuário além do que ele declarou; apenas ecoar e avançar 1 micro-passso.
+""".strip()
+
         system = f"""
 {spatial_context}
 
@@ -1057,11 +1063,11 @@ consciência, corpo, emoções e limites.
 
 PONTO DE VISTA (REGRA ABSOLUTA):
 - Mary fala sempre e somente a partir de si mesma.
-- Mary NUNCA narra ações físicas do usuário.
-- Mary NUNCA narra pensamentos internos do usuário.
-- Mary NUNCA narra rotina privada do usuário.
+- Mary descreve o que ELA faz, sente, pensa e percebe.
 - Se algo acontece fora do campo sensorial de Mary,
-  ela apenas imagina, sente ou espera — nunca descreve como fato.
+  ela apenas imagina, suspeita, sente ou espera — nunca descreve como fato.
+
+{user_authorship_rule}
 
 TIMELINE ATUAL: {timeline_final}
 
@@ -1080,8 +1086,8 @@ PERSONA (baseline):
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
-- NÃO assuma ações do usuário.
 - NÃO avance cenas sem comando explícito.
+- NÃO assuma ações do usuário ALÉM do que ele explicitou no turno atual ou no histórico.
 - Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
 {intimacy_control_block}
@@ -1113,13 +1119,22 @@ REGRAS ABSOLUTAS:
         messages.append({"role": "user", "content": prompt})
 
         # ----------------------------------------------------------
-        # 8) Chat com retry/fallback
+        # 8) Chat com retry/fallback (condicionado a NSFW)
         # ----------------------------------------------------------
-        attempts = [
-            {"model": model, "temperature": 0.75},
-            {"model": model, "temperature": 0.55},
-            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65},
-        ]
+        if nsfw_on:
+            # NSFW_ON: evita fallback para modelos que tendem a “atenuar”.
+            attempts = [
+                {"model": model, "temperature": 0.75},
+                {"model": model, "temperature": 0.60},
+                {"model": model, "temperature": 0.45},
+            ]
+        else:
+            # NSFW_OFF: fallback padrão
+            attempts = [
+                {"model": model, "temperature": 0.75},
+                {"model": model, "temperature": 0.55},
+                {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65},
+            ]
 
         last_err: Optional[Exception] = None
 
@@ -1221,6 +1236,7 @@ REGRAS ABSOLUTAS:
                     "pattern": meta.get("pattern"),
                     "virginity_changed": meta.get("virginity_changed"),
                     "virginity_reason": meta.get("virginity_reason"),
+                    "nsfw_on": nsfw_on,
                 }
 
                 # Salva interação no histórico CERTO
@@ -1234,7 +1250,7 @@ REGRAS ABSOLUTAS:
                 # ----------------------------------------------------------
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-                    # Decide se avança
+
                     if _should_advance_phase(
                         current_phase,
                         prompt,
@@ -1244,11 +1260,9 @@ REGRAS ABSOLUTAS:
                         desired_next = _cap_next_phase(current_phase, current_phase + 1)
 
                         # Travas absolutas:
-                        # - fase 4 só com sinal explícito do usuário
                         if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
-                            desired_next = current_phase  # não avança
+                            desired_next = current_phase
 
-                        # - fase 5 só se já está na 4 e usuário sinaliza aftercare
                         if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
                             desired_next = current_phase
 
@@ -1272,13 +1286,6 @@ REGRAS ABSOLUTAS:
     # -------------------------
     @staticmethod
     def _extract_text(resp: Any) -> str:
-        """
-        Extrator robusto: não trunca.
-        Suporta múltiplos formatos:
-        - OpenAI-like: {"choices":[{"message":{"content":"..."}}]}
-        - Provider alternativo: {"output_text": "..."} / {"text": "..."} / {"content":"..."}
-        - Já-string
-        """
         try:
             if resp is None:
                 return ""
@@ -1286,7 +1293,6 @@ REGRAS ABSOLUTAS:
                 return resp.strip()
 
             if isinstance(resp, dict):
-                # OpenAI-like
                 choices = resp.get("choices")
                 if isinstance(choices, list) and choices:
                     c0 = choices[0] or {}
@@ -1295,18 +1301,15 @@ REGRAS ABSOLUTAS:
                         content = msg.get("content")
                         if isinstance(content, str) and content.strip():
                             return content.strip()
-                    # alguns providers retornam "text" em choice
                     txt = c0.get("text")
                     if isinstance(txt, str) and txt.strip():
                         return txt.strip()
 
-                # alternativos comuns
                 for k in ("output_text", "text", "content", "result"):
                     v = resp.get(k)
                     if isinstance(v, str) and v.strip():
                         return v.strip()
 
-                # às vezes vem lista em "messages"
                 msgs = resp.get("messages")
                 if isinstance(msgs, list) and msgs:
                     last = msgs[-1] or {}
@@ -1347,3 +1350,30 @@ REGRAS ABSOLUTAS:
                 "max_tokens": max_tokens,
             },
         )
+
+
+# ==========================================================
+# O QUE FOI MODIFICADO (RESUMO)
+# ==========================================================
+"""
+1) ✅ CORREÇÃO DO PONTO QUE VOCÊ PEDIU (principal):
+   - Substituí o bloco "Mary NUNCA narra ações do usuário" por uma regra correta:
+     a) Mary não coloca falas na boca do usuário (não fala como ele)
+     b) Mary não inventa ações/pensamentos do usuário
+     c) EXCEÇÃO: se o usuário declarar explicitamente ("vou gozar", etc),
+        Mary pode tratar como fato e reagir/continuar a cena.
+
+   Isso foi implementado no system prompt via `user_authorship_rule` e ajuste no "PONTO DE VISTA".
+
+2) ✅ AJUSTE DE REGRA "NÃO ASSUMA AÇÕES DO USUÁRIO":
+   - Troquei para: "não assuma além do que ele explicitou no turno atual ou no histórico"
+     (isso evita bloquear a continuação quando o usuário já declarou o ato).
+
+3) ✅ Fallback condicionado ao NSFW (para reduzir atenuação quando NSFW_ON):
+   - Quando `nsfw_on=True`, o bloco `attempts` NÃO faz fallback para outro modelo;
+     faz apenas retries no mesmo modelo com temperaturas diferentes.
+   - Quando `nsfw_on=False`, mantém o fallback padrão para `deepseek/deepseek-chat-v3-0324`.
+
+4) ✅ Debug:
+   - Adicionei `nsfw_on` dentro de `mary_rel_meta_last` para você inspecionar rápido no sidebar/log.
+"""
