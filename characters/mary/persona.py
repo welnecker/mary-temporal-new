@@ -89,7 +89,7 @@ def get_persona(timeline: Optional[str] = None) -> Tuple[str, List[Dict[str, str
     # ==========================================================
     # TIMELINE: UNIVERSITÁRIA
     # ==========================================================
-        if tl == "universitaria":
+    if tl == "universitaria":
         persona = BASE_PERSONA + """
 
 ────────────────────────────────
