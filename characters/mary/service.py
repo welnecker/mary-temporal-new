@@ -488,6 +488,122 @@ def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]],
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
+
+# ==========================================================
+# RECUPERAÇÃO SEMÂNTICA (BM25 leve) — "memória longa brutal"
+# ==========================================================
+_WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
+
+def _tok(text: str) -> List[str]:
+    return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
+
+def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
+    # Implementação BM25 simples (Okapi) — sem dependências externas.
+    q = _tok(query)
+    if not docs or not q:
+        return []
+    N = len(docs)
+    tf_list: List[Dict[str, int]] = []
+    df: Dict[str, int] = {}
+    lengths: List[int] = []
+
+    for d in docs:
+        toks = _tok(d)
+        lengths.append(len(toks))
+        tf: Dict[str, int] = {}
+        for w in toks:
+            tf[w] = tf.get(w, 0) + 1
+        tf_list.append(tf)
+        for w in set(tf.keys()):
+            df[w] = df.get(w, 0) + 1
+
+    avgdl = (sum(lengths) / N) if N else 1.0
+    k1 = 1.5
+    b = 0.75
+
+    def idf(w: str) -> float:
+        # idf "Okapi" suavizado
+        n_q = df.get(w, 0)
+        return max(0.0, ( (N - n_q + 0.5) / (n_q + 0.5) ))
+    # pré-calcula idf real (log)
+    import math
+    idf_cache = {w: math.log(1.0 + idf(w)) for w in set(q)}
+
+    scores: List[float] = []
+    for i, tf in enumerate(tf_list):
+        dl = lengths[i] or 1
+        s = 0.0
+        for w in q:
+            f = tf.get(w, 0)
+            if not f:
+                continue
+            w_idf = idf_cache.get(w, 0.0)
+            denom = f + k1 * (1 - b + b * (dl / avgdl))
+            s += w_idf * (f * (k1 + 1)) / denom
+        scores.append(s)
+
+    ranked = sorted(range(N), key=lambda i: scores[i], reverse=True)
+    ranked = [i for i in ranked if scores[i] > 0.0]
+    return ranked[: max(0, int(k))]
+
+def _inject_relevant_memories(shared_key: str, user_prompt: str, messages: List[Dict[str, str]], k: int = 8) -> None:
+    # Usa apenas memórias NÃO-CANON (canon já é injetado separadamente e pode ser grande).
+    mems = cached_list_memories(shared_key, limit=220)
+    if not mems:
+        return
+
+    soft: List[Dict[str, Any]] = []
+    docs: List[str] = []
+
+    for m in mems:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip().lower()
+        text = str(m.get("text") or "").strip()
+        if not text:
+            continue
+        if kind == "canon":
+            continue
+        soft.append(m)
+        # inclui título/chave no doc para melhorar recall
+        title = str(meta.get("title") or meta.get("key") or "").strip()
+        if title:
+            docs.append(f"{title}\n{text}")
+        else:
+            docs.append(text)
+
+    if not soft:
+        return
+
+    idxs = _bm25_topk(docs, user_prompt, k=k)
+    if not idxs:
+        return
+
+    selected = [soft[i] for i in idxs if 0 <= i < len(soft)]
+    if not selected:
+        return
+
+    lines = [
+        "[MEMÓRIAS RELEVANTES (recuperação semântica)]",
+        "Estas são as memórias mais relacionadas ao que o usuário acabou de dizer.",
+        "Use para manter coerência e continuidade, sem citar literalmente.",
+        "",
+    ]
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        title = meta.get("title") or meta.get("key") or ""
+        header = f"- REL {i}"
+        if d:
+            header += f" (data: {d})"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+        lines.append(str(m.get("text") or "").strip())
+        lines.append("")
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+
+
 # ==========================================================
 # MEMÓRIAS PERMANENTES — comandos e parsing
 # ==========================================================
@@ -1044,6 +1160,9 @@ REGRAS ABSOLUTAS:
 
         # 5) CANON sempre injetado
         _inject_canon_memories_always(shared_key, messages, max_items=80)
+
+        # 5.05) Memória longa relevante (recuperação semântica)
+        _inject_relevant_memories(shared_key, prompt, messages, k=8)
 
         # 5.1) Continuidade suave
         _inject_shared_soft_context(shared_key, messages, max_items=8)
