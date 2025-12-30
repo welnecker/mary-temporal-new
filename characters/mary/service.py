@@ -357,14 +357,20 @@ def _get_all_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]
     return cached_list_memories(shared_key, limit=limit)
 
 
-def _has_canon_memories(shared_key: str) -> bool:
-    mems = _get_all_memories(shared_key, limit=80)
-    for m in mems:
-        meta = m.get("meta") or {}
-        if str(meta.get("kind") or "").strip().lower() == "canon":
-            return True
-    return False
+def _has_canon_memories(shared_key: str, timeline: str) -> bool:
+    tl = (timeline or "").strip() or "cumplice"
 
+canon = []
+for m in mems:
+    meta = m.get("meta") or {}
+    if str(meta.get("kind") or "").strip().lower() != "canon":
+        continue
+
+    tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+    if tms and tms not in (tl, "[all]"):
+        continue
+
+    canon.append(m)
 
 def _extract_canon_overrides(mems: List[Dict[str, Any]]) -> List[Tuple[str, Any, str]]:
     out: List[Tuple[str, Any, str]] = []
@@ -396,7 +402,13 @@ def _build_overrides_block(overrides: List[Tuple[str, Any, str]]) -> str:
     return "\n".join(lines).strip()
 
 
-def _inject_canon_memories_always(shared_key: str, messages: List[Dict[str, str]], max_items: int = 80) -> None:
+def _inject_canon_memories_always(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    max_items: int = 80,
+) -> None:
+
     mems = _get_all_memories(shared_key, limit=300)
     if not mems:
         return
@@ -445,9 +457,10 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: s
         return
 
     # Se existe CANON, intro vira ruído — não injeta
-    if _has_canon_memories(shared_key):
+    if _has_canon_memories(shared_key, timeline):
         st.session_state[flag] = True
         return
+
 
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
@@ -1159,7 +1172,7 @@ REGRAS ABSOLUTAS:
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
         # 5) CANON sempre injetado
-        _inject_canon_memories_always(shared_key, messages, max_items=80)
+        _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80)
 
         # 5.05) Memória longa relevante (recuperação semântica)
         _inject_relevant_memories(shared_key, prompt, messages, k=8)
