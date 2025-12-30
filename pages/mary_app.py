@@ -32,7 +32,8 @@ def _hard_reset_on_boot_if_needed() -> None:
                 st.session_state.pop(k, None)
                 continue
 
-            if k.startswith(("facts::", "history::", "mem::")):
+            if k.startswith(("facts::", "history::", "mem::", "longmem::")):
+
                 st.session_state.pop(k, None)
                 continue
 
@@ -60,6 +61,11 @@ from core.repositories import (
     delete_fact,
     delete_last_interaction,
     delete_user_history,
+    # ✅ LONG MEMORY (Mongo text search)
+    append_long_memory,
+    list_long_memory,
+    search_long_memory_text,
+    ensure_long_memory_indexes,
 )
 
 import characters.mary.persona as mary_persona
@@ -424,8 +430,8 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_rel_meta_last"] = None
 
     # modelos disponíveis
+    
     try:
-        try:
         modelos = service_router.list_models() or []
     except Exception:
         modelos = []
@@ -797,9 +803,11 @@ def main() -> None:
     st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
-        # ==========================================================
+
+    # ==========================================================
     # 🗄️ DEBUG — BANCO DE DADOS (db_status + ping_db)
     # ==========================================================
+
     with st.expander("🗄️ Banco de Dados — Debug (db_status + ping_db)", expanded=False):
         b_kind, b_detail = db_status()
         st.write("**db_status():**")
@@ -1203,6 +1211,73 @@ def main() -> None:
         mems_view = st.session_state.get("__mem_list")
         if mems_view is not None:
             st.json(mems_view)
+
+        # ======================================================
+        # 🗃️ LONG MEMORY (DB) — 1 doc por memória + Text Search
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🗃️ Long Memory (DB) — Text Search")
+
+        lm_userkey = _shared_key_atual()  # você pode trocar para _usuario_key_atual() se quiser por timeline
+        st.caption("Key usada na Long Memory:")
+        st.code(lm_userkey)
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("🧱 Criar índices Long Memory (Mongo)", key="btn_lm_indexes"):
+                try:
+                    ensure_long_memory_indexes()
+                    st.success("✅ Índices da long_memory garantidos (se backend=mongo).")
+                except Exception as e:
+                    st.error(f"Falha ao criar índices: {type(e).__name__}: {e}")
+
+        with col2:
+            if st.button("📚 Listar últimas 50 (DB)", key="btn_lm_list"):
+                try:
+                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
+                except Exception as e:
+                    st.error(f"Falha ao listar: {type(e).__name__}: {e}")
+                    st.session_state["__lm_list"] = []
+
+        st.markdown("### ➕ Inserir memória (DB)")
+        lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
+        lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
+        lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory")
+
+        if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
+            try:
+                meta = {
+                    "kind": (lm_kind or "memory").strip(),
+                    "title": (lm_title or "").strip(),
+                    "timeline_at_save": _timeline(),
+                    "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
+                    "source": "ui_long_memory",
+                }
+                doc = append_long_memory(lm_userkey, lm_text, meta=meta)
+                st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')}")
+            except Exception as e:
+                st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
+
+        st.markdown("### 🔎 Buscar (Mongo $text)")
+        q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
+        lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
+
+        if st.button("🔍 Buscar agora", key="btn_lm_search"):
+            try:
+                st.session_state["__lm_search"] = search_long_memory_text(lm_userkey, q, limit=int(lim)) or []
+            except Exception as e:
+                st.error(f"Falha na busca: {type(e).__name__}: {e}")
+                st.session_state["__lm_search"] = []
+
+        # dumps
+        if st.session_state.get("__lm_search") is not None:
+            st.caption("Resultados da busca:")
+            st.json(st.session_state.get("__lm_search") or [])
+
+        if st.session_state.get("__lm_list") is not None:
+            st.caption("Últimas memórias (DB):")
+            st.json(st.session_state.get("__lm_list") or [])
+
 
     # ===== BOOT =====
     _boot_visual_if_empty()
