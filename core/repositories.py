@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from threading import RLock
+from uuid import uuid4
 
 from .database import get_col
 
@@ -86,7 +87,6 @@ def set_fact(usuario: str, key: str, value: Any, meta: Optional[Dict[str, Any]] 
         }},
         upsert=True,
     )
-    # Invalida cache do Streamlit se disponível
     _invalidate_cache_for_user(usuario)
 
 
@@ -96,10 +96,20 @@ def delete_fact(usuario: str, key: str) -> bool:
         return False
 
     facts = dict(doc.get("fatos", {}) or {})
-    if not _delete_dotted(facts, key):
+    removed = _delete_dotted(facts, key)
+    if not removed:
         return False
 
+    # Atualiza fatos
     _state().update_one({"usuario": usuario}, {"$set": {"fatos": facts}}, upsert=True)
+
+    # (Opcional, mas recomendado) remove também o meta associado, se existir
+    try:
+        _state().update_one({"usuario": usuario}, {"$unset": {f"meta.{key}": ""}})
+    except Exception:
+        pass
+
+    _invalidate_cache_for_user(usuario)
     return True
 
 
@@ -112,7 +122,6 @@ def save_interaction(usuario: str, mensagem_usuario: str, resposta_mary: str, mo
         "model": model_tag,
         "ts": datetime.utcnow(),
     })
-    # Invalida cache do histórico
     _invalidate_cache_for_user(usuario)
 
 
@@ -159,10 +168,14 @@ def get_history_docs_multi(
 def delete_user_history(usuario: str) -> int:
     r = _hist().delete_many({"usuario": usuario})
     if isinstance(r, int):
-        return int(r)
-    if isinstance(r, dict):
-        return int(r.get("deleted_count", 0) or 0)
-    return int(getattr(r, "deleted_count", 0) or 0)
+        deleted = int(r)
+    elif isinstance(r, dict):
+        deleted = int(r.get("deleted_count", 0) or 0)
+    else:
+        deleted = int(getattr(r, "deleted_count", 0) or 0)
+
+    _invalidate_cache_for_user(usuario)
+    return deleted
 
 
 def delete_last_interaction(usuario: str) -> bool:
@@ -174,8 +187,13 @@ def delete_last_interaction(usuario: str) -> bool:
 
     r = _hist().delete_one({"_id": last["_id"]})
     if isinstance(r, dict):
-        return int(r.get("deleted_count", 0) or 0) > 0
-    return int(getattr(r, "deleted_count", 0) or 0) > 0
+        ok = int(r.get("deleted_count", 0) or 0) > 0
+    else:
+        ok = int(getattr(r, "deleted_count", 0) or 0) > 0
+
+    _invalidate_cache_for_user(usuario)
+    return ok
+
 
 # ==========================================================
 # ---------- Memórias permanentes (compartilhadas) ----------
@@ -221,7 +239,6 @@ def append_memory(
         # --- compat: se vier dict, respeita ---
         if isinstance(text_or_entry, dict):
             entry = dict(text_or_entry)
-            # se veio meta separado, mescla sem quebrar o que já veio
             if meta:
                 entry_meta = entry.get("meta")
                 if isinstance(entry_meta, dict):
@@ -236,22 +253,25 @@ def append_memory(
 
         # validação mínima
         if not str(entry.get("text") or "").strip():
-            # não grava vazio
-            entry["text"] = ""
+            return {
+                "text": "",
+                "meta": dict(entry.get("meta") or {}),
+                "ts": datetime.utcnow(),
+                "id": f"mem_{uuid4().hex}",
+            }
 
-        # ids/ts
+        # ids/ts (sem colisão)
         entry.setdefault("ts", datetime.utcnow())
-        entry.setdefault("id", f"mem_{int(datetime.utcnow().timestamp())}")
+        entry.setdefault("id", f"mem_{uuid4().hex}")
 
-        # lista atual (read-modify-write atômico)
-        memories = list_memories(usuario, limit=max_keep)
+        # lista atual (read-modify-write atômico sob lock)
+        memories = list_memories(usuario, limit=5000)
         memories.append(entry)
 
         if max_keep and len(memories) > max_keep:
             memories = memories[-max_keep:]
 
         set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory"})
-        # Nota: set_fact já invalida cache, mas invalidamos também memórias compartilhadas
         _invalidate_cache_for_user(usuario)
         return entry
 
@@ -260,12 +280,14 @@ def delete_last_memory(usuario: str) -> bool:
     """
     Remove a última memória da lista fatos.mary.memories.
     """
-    memories = list_memories(usuario, limit=5000)
-    if not memories:
-        return False
-    memories.pop()
-    set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory_delete_last"})
-    return True
+    with _MEMORY_LOCK:
+        memories = list_memories(usuario, limit=5000)
+        if not memories:
+            return False
+        memories.pop()
+        set_fact(usuario, _mem_key(), memories, {"fonte": "permanent_memory_delete_last"})
+        _invalidate_cache_for_user(usuario)
+        return True
 
 
 def delete_all_memories(usuario: str) -> int:
@@ -273,11 +295,12 @@ def delete_all_memories(usuario: str) -> int:
     Apaga todas as memórias permanentes.
     Retorna quantas existiam.
     """
-    memories = list_memories(usuario, limit=5000)
-    n = len(memories)
-    set_fact(usuario, _mem_key(), [], {"fonte": "permanent_memory_delete_all"})
-    return n
-
+    with _MEMORY_LOCK:
+        memories = list_memories(usuario, limit=5000)
+        n = len(memories)
+        set_fact(usuario, _mem_key(), [], {"fonte": "permanent_memory_delete_all"})
+        _invalidate_cache_for_user(usuario)
+        return n
 
 
 # ---------- Eventos ----------
@@ -350,14 +373,38 @@ def ensure_indexes() -> None:
 def _invalidate_cache_for_user(usuario: str) -> None:
     """
     Invalida cache do Streamlit para um usuário específico.
+    Corrigido para casar com as chaves usadas no service:
+      - facts::{usuario}
+      - history::{usuario}::{limit}
+      - mem::{usuario}::{limit}
     Seguro: não quebra se streamlit não estiver disponível.
     """
     try:
         import streamlit as st
-        # Invalida cache de facts e history
-        for cache_key in (f"facts::{usuario}", f"history::{usuario}"):
-            if cache_key in st.session_state:
-                del st.session_state[cache_key]
+
+        # facts direto
+        fk = f"facts::{usuario}"
+        if fk in st.session_state:
+            del st.session_state[fk]
+
+        # history e mem são prefixos (porque têm ::{limit})
+        history_prefix = f"history::{usuario}::"
+        mem_prefix = f"mem::{usuario}::"
+
+        for k in list(st.session_state.keys()):
+            if not isinstance(k, str):
+                continue
+            if k.startswith(history_prefix) or k.startswith(mem_prefix):
+                del st.session_state[k]
+
+        # compat: se existir alguma versão antiga sem ::limit
+        hk = f"history::{usuario}"
+        if hk in st.session_state:
+            del st.session_state[hk]
+
+        mk = f"mem::{usuario}"
+        if mk in st.session_state:
+            del st.session_state[mk]
+
     except (ImportError, AttributeError, RuntimeError):
-        # Streamlit não disponível ou fora de contexto - ok, ignora
         pass
