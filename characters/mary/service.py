@@ -8,11 +8,12 @@ MaryService (v3.16.1 – Timeline-Aware + Canon + RelationshipEngine v2
             + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
             + Regra de Autoria do Usuário (não inventar ações/falas do usuário)
 
-✅ CORREÇÕES CRÍTICAS NESTA VERSÃO:
-- Corrige ERRO de sintaxe: `NSFW_TOGGLE_STYLE` estava sem atribuição (fatal).
-- Corrige IndentationError: bloco “Persona + system” estava indevidamente dentro do `if _is_save_memory_command(...)`
-  e ainda por cima após `return`.
-- Mantém todos os recursos do seu arquivo: canon, memórias shared, relationship, scene lock, intimacy phases, etc.
+✅ CORREÇÕES CRÍTICAS NESTA VERSÃO (inclui Memória Longa Brutal):
+- Corrige falha de escopo/indentação na checagem de CANON (era fácil quebrar e poluir o contexto).
+- Faz a recuperação BM25 respeitar TIMELINE (evita vazamento entre Universitária/Cúmplice).
+- Dedupe: evita repetir a mesma memória em CANON + RELEVANTES + SUAVE.
+- CANON agora filtra por timeline_at_save (ou [all]) e timeline atual.
+- Intro só injeta quando NÃO há CANON aplicável à timeline (intro vira ruído quando já existe canon).
 """
 
 import logging
@@ -110,7 +111,6 @@ SAFE_SENSUAL_STYLE = """
 - Não quebre o tom nem a continuidade.
 """.strip()
 
-# ✅ FIX: estava sem atribuição → isso quebrava o import e o app inteiro
 NSFW_TOGGLE_STYLE = """
 [NSFW_ON]
 - Linguagem adulta é permitida conforme o contexto.
@@ -357,26 +357,37 @@ def _get_all_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]
     return cached_list_memories(shared_key, limit=limit)
 
 
-def _has_canon_memories(shared_key: str, timeline: str) -> bool:
-    tl = (timeline or "").strip() or "cumplice"
-
-canon = []
-for m in mems:
-    meta = m.get("meta") or {}
-    if str(meta.get("kind") or "").strip().lower() != "canon":
-        continue
-
+def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
+    tl = _normalize_timeline(timeline)
     tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-    if tms and tms not in (tl, "[all]"):
-        continue
+    # sem timeline = válido (compat) | [all] = sempre
+    if not tms:
+        return True
+    return tms in (tl, "[all]")
 
-    canon.append(m)
 
-def _extract_canon_overrides(mems: List[Dict[str, Any]]) -> List[Tuple[str, Any, str]]:
+def _has_canon_memories(shared_key: str, timeline: str) -> bool:
+    """
+    Retorna True se existir ao menos 1 memória kind=canon aplicável à timeline atual (ou [all]).
+    (Corrigido: antes era fácil quebrar/ignorar timeline e poluir contexto.)
+    """
+    mems = _get_all_memories(shared_key, limit=240)
+    for m in mems:
+        meta = m.get("meta") or {}
+        if str(meta.get("kind") or "").strip().lower() != "canon":
+            continue
+        if _memory_timeline_ok(meta, timeline):
+            return True
+    return False
+
+
+def _extract_canon_overrides(mems: List[Dict[str, Any]], timeline: str) -> List[Tuple[str, Any, str]]:
     out: List[Tuple[str, Any, str]] = []
     for m in mems or []:
         meta = m.get("meta") or {}
         if str(meta.get("kind") or "").strip().lower() != "canon":
+            continue
+        if not _memory_timeline_ok(meta, timeline):
             continue
         key = str(meta.get("key") or "").strip()
         if not key:
@@ -407,23 +418,31 @@ def _inject_canon_memories_always(
     timeline: str,
     messages: List[Dict[str, str]],
     max_items: int = 80,
+    *,
+    dedupe_bucket: Optional[set] = None,
 ) -> None:
-
-    mems = _get_all_memories(shared_key, limit=300)
+    """
+    Injeta memórias CANON (kind=canon) aplicáveis à timeline (ou [all]).
+    Também atualiza um bucket de dedupe (hashes) para evitar repetição em outros blocos.
+    """
+    mems = _get_all_memories(shared_key, limit=360)
     if not mems:
         return
 
-    canon = []
+    canon: List[Dict[str, Any]] = []
     for m in mems:
         meta = m.get("meta") or {}
-        if str(meta.get("kind") or "").strip().lower() == "canon":
-            canon.append(m)
+        if str(meta.get("kind") or "").strip().lower() != "canon":
+            continue
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+        canon.append(m)
 
     if not canon:
         return
 
     selected = canon[-max_items:] if len(canon) > max_items else canon
-    overrides = _extract_canon_overrides(selected)
+    overrides = _extract_canon_overrides(selected, timeline)
     overrides_block = _build_overrides_block(overrides)
 
     lines: List[str] = []
@@ -445,22 +464,31 @@ def _inject_canon_memories_always(
         if title:
             header += f" — {title}"
         lines.append(header)
-        lines.append(str(m.get("text") or "").strip())
+
+        txt = str(m.get("text") or "").strip()
+        lines.append(txt)
         lines.append("")
+
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
-def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
+def _inject_intro_as_context_once(
+    usuario_key: str,
+    timeline: str,
+    shared_key: str,
+    messages: List[Dict[str, str]],
+) -> None:
     flag = f"intro_ctx_injected::{usuario_key}"
     if st.session_state.get(flag):
         return
 
-    # Se existe CANON, intro vira ruído — não injeta
+    # Se existe CANON aplicável à timeline, intro vira ruído — não injeta
     if _has_canon_memories(shared_key, timeline):
         st.session_state[flag] = True
         return
-
 
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
@@ -469,17 +497,33 @@ def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: s
     st.session_state[flag] = True
 
 
-def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]], max_items: int = 8) -> None:
-    mems = cached_list_memories(shared_key, limit=120)
+def _inject_shared_soft_context(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    max_items: int = 8,
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    mems = cached_list_memories(shared_key, limit=220)
     if not mems:
         return
 
-    soft = []
+    soft: List[Dict[str, Any]] = []
     for m in mems:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
         if kind == "canon":
             continue
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+        txt = str(m.get("text") or "").strip()
+        if not txt:
+            continue
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
         soft.append(m)
 
     if not soft:
@@ -495,11 +539,13 @@ def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]],
         if d:
             header += f" (data: {d})"
         lines.append(header)
-        lines.append(str(m.get("text") or "").strip())
+        txt = str(m.get("text") or "").strip()
+        lines.append(txt)
         lines.append("")
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
-
 
 
 # ==========================================================
@@ -507,8 +553,10 @@ def _inject_shared_soft_context(shared_key: str, messages: List[Dict[str, str]],
 # ==========================================================
 _WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
 
+
 def _tok(text: str) -> List[str]:
     return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
+
 
 def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     # Implementação BM25 simples (Okapi) — sem dependências externas.
@@ -534,13 +582,12 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     k1 = 1.5
     b = 0.75
 
-    def idf(w: str) -> float:
-        # idf "Okapi" suavizado
+    def _idf_raw(w: str) -> float:
         n_q = df.get(w, 0)
-        return max(0.0, ( (N - n_q + 0.5) / (n_q + 0.5) ))
-    # pré-calcula idf real (log)
+        return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
+
     import math
-    idf_cache = {w: math.log(1.0 + idf(w)) for w in set(q)}
+    idf_cache = {w: math.log(1.0 + _idf_raw(w)) for w in set(q)}
 
     scores: List[float] = []
     for i, tf in enumerate(tf_list):
@@ -559,9 +606,21 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     ranked = [i for i in ranked if scores[i] > 0.0]
     return ranked[: max(0, int(k))]
 
-def _inject_relevant_memories(shared_key: str, user_prompt: str, messages: List[Dict[str, str]], k: int = 8) -> None:
-    # Usa apenas memórias NÃO-CANON (canon já é injetado separadamente e pode ser grande).
-    mems = cached_list_memories(shared_key, limit=220)
+
+def _inject_relevant_memories(
+    shared_key: str,
+    timeline: str,
+    user_prompt: str,
+    messages: List[Dict[str, str]],
+    k: int = 8,
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    """
+    Recupera memórias NÃO-CANON relacionadas ao prompt do usuário via BM25,
+    respeitando timeline_at_save (ou [all]) e evitando duplicatas.
+    """
+    mems = cached_list_memories(shared_key, limit=260)
     if not mems:
         return
 
@@ -571,12 +630,23 @@ def _inject_relevant_memories(shared_key: str, user_prompt: str, messages: List[
     for m in mems:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
+
+        if kind == "canon":
+            continue
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+
         text = str(m.get("text") or "").strip()
         if not text:
             continue
-        if kind == "canon":
-            continue
+
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(text.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
+
         soft.append(m)
+
         # inclui título/chave no doc para melhorar recall
         title = str(meta.get("title") or meta.get("key") or "").strip()
         if title:
@@ -601,6 +671,7 @@ def _inject_relevant_memories(shared_key: str, user_prompt: str, messages: List[
         "Use para manter coerência e continuidade, sem citar literalmente.",
         "",
     ]
+
     for i, m in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
@@ -611,8 +682,13 @@ def _inject_relevant_memories(shared_key: str, user_prompt: str, messages: List[
         if title:
             header += f" — {title}"
         lines.append(header)
-        lines.append(str(m.get("text") or "").strip())
+
+        txt = str(m.get("text") or "").strip()
+        lines.append(txt)
         lines.append("")
+
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
@@ -1168,17 +1244,20 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # 4) Intro 1x por sessão (só se NÃO houver CANON)
+        # Bucket de dedupe (evita repetir o mesmo texto em CANON + RELEVANTES + SUAVE)
+        dedupe_hashes: set = set()
+
+        # 4) Intro 1x por sessão (só se NÃO houver CANON aplicável)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # 5) CANON sempre injetado
-        _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80)
+        # 5) CANON sempre injetado (filtrado por timeline / [all])
+        _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
 
-        # 5.05) Memória longa relevante (recuperação semântica)
-        _inject_relevant_memories(shared_key, prompt, messages, k=8)
+        # 5.05) Memória longa relevante (recuperação semântica BM25) — filtrada por timeline
+        _inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
 
-        # 5.1) Continuidade suave
-        _inject_shared_soft_context(shared_key, messages, max_items=8)
+        # 5.1) Continuidade suave (também filtrada por timeline + dedupe)
+        _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
 
         # 6) Histórico (timeline atual)
         history = cached_get_history(usuario_key, limit=400)
@@ -1407,12 +1486,11 @@ REGRAS ABSOLUTAS:
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
         # Espera retornar: (data, used_model, provider_meta)
         return service_router.route_chat_strict(
-                model,
-                {
-                    "messages": messages,
-                    "temperature": temperature,
-                    "top_p": 0.95,
-                    "max_tokens": max_tokens,
-                },
-            )
-
+            model,
+            {
+                "messages": messages,
+                "temperature": temperature,
+                "top_p": 0.95,
+                "max_tokens": max_tokens,
+            },
+        )
