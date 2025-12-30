@@ -1,19 +1,29 @@
 # core/canon.py
 from __future__ import annotations
-from typing import Dict, Any, Optional
+
+from typing import Any, Dict, Optional
 
 
 def get_canon(
     character: str,
     timeline: Optional[str] = None,
-    user_key: str | None = None,
+    user_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    character = (character or "").lower()
-    timeline = (timeline or "").strip() or "cumplice"
+    """
+    Canon = baseline estável por personagem + timeline.
+    Importante:
+    - O RelationshipEngine lê defaults de canon["relationship_state"].
+    - Fatos/memórias persistentes devem prevalecer sobre este baseline.
+    """
+    character = (character or "").strip().lower()
+    tl = (timeline or "").strip() or "cumplice"
+
+    # user_key está aqui para futuras extensões (canon por usuário),
+    # mas hoje o canon é global. Mantido por compat.
+    _ = user_key
 
     if character == "mary":
-
-        if timeline == "universitaria":
+        if tl == "universitaria":
             return {
                 "regras_mundo": [
                     "Se houver conflito entre persona e fatos, fatos vencem.",
@@ -38,13 +48,15 @@ def get_canon(
                     "notes": "Início de vínculo: desejo e curiosidade existem, mas há cautela e conflito interno.",
                     "_promote_streak": 0,
                     "_regress_streak": 0,
-                                    # ✅ NOVO: virgindade dinâmica
-                    "virginity": "virgem",          # virgem | nao_virgem
-                    "intimacy_level": 0,            # 0..3 (beijo/toque/sexo)
-                    "consummated": False,           # virou True quando houver consumação
+
+                    # ✅ Virgindade dinâmica (baseline)
+                    "virginity": "virgem",      # virgem | nao_virgem
+                    "intimacy_level": 0,        # 0..3 (beijo/toque/sexo)
+                    "consummated": False,       # True quando houver consumação
                 },
             }
 
+        # timeline cúmplice (default)
         return {
             "regras_mundo": [
                 "Se houver conflito entre persona e fatos, fatos vencem.",
@@ -54,10 +66,12 @@ def get_canon(
             "estado_relacao": "casados",
             "vida_em_comum": True,
             "historico_intimo_consumado": True,
+
+            # Mantidos no topo por legibilidade/uso opcional,
+            # MAS o engine lê defaults de relationship_state.
             "virginity": "nao_virgem",
             "intimacy_level": 3,
             "consummated": True,
-
 
             "relationship_state": {
                 "stage": "casados",
@@ -72,9 +86,15 @@ def get_canon(
                 "notes": "Vínculo consolidado: cumplicidade alta e intimidade natural, com espaço para tensão e afeto.",
                 "_promote_streak": 0,
                 "_regress_streak": 0,
+
+                # ✅ Também dentro do relationship_state (consistência com universitária)
+                "virginity": "nao_virgem",
+                "intimacy_level": 3,
+                "consummated": True,
             },
         }
 
+    # Canon genérico para outros personagens (fallback)
     return {
         "regras_mundo": [
             "Se houver conflito entre persona e fatos, fatos vencem.",
