@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Tuple, Optional
 import streamlit as st
 
 from core.common.base_service import BaseCharacter
-from core.service_router import route_chat_strict
+import core.service_router as service_router
 from core.canon import get_canon, canon_to_text
 from core.relationship_engine import (
     evolve_relationship,
@@ -1393,13 +1393,13 @@ REGRAS ABSOLUTAS:
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
         # Espera retornar: (data, used_model, provider_meta)
-        return route_chat_strict(
-            model,
-            {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-                "top_p": 0.95,
-                "max_tokens": max_tokens,
-            },
-        )
+        return service_router.route_chat_strict(
+                model,
+                {
+                    "messages": messages,
+                    "temperature": temperature,
+                    "top_p": 0.95,
+                    "max_tokens": max_tokens,
+                },
+            )
+
