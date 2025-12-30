@@ -349,7 +349,7 @@ def list_long_memory(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
 def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
     """
     Busca lexical em long_memory.
-    - Mongo: usa $text (precisa de índice text em 'text' e/ou 'meta.title')
+    - Mongo: usa $text + ordena por relevância (textScore) e ts.
     - Fallback: contains simples.
     """
     q = str(query or "").strip()
@@ -360,16 +360,30 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
     try:
         from .database import get_backend
         if get_backend() == "mongo":
-            # projection com textScore pode não existir no wrapper -> fazemos simples
+            lim = int(limit or 20)
+
+            # projection com score (pymongo suporta)
             cur = _longmem().find(
                 {"usuario": usuario, "$text": {"$search": q}},
-                limit=limit,
-            )
+                {
+                    "score": {"$meta": "textScore"},
+                    "usuario": 1,
+                    "text": 1,
+                    "meta": 1,
+                    "ts": 1,
+                    "id": 1,
+                },
+            ).sort([
+                ("score", {"$meta": "textScore"}),
+                ("ts", -1),
+                ("_id", -1),
+            ]).limit(lim)
+
             return list(cur)
     except Exception:
         pass
 
-    # fallback lexical simples (caso backend mude)
+    # fallback lexical simples (caso backend mude / wrapper limite)
     rows = list_long_memory(usuario, limit=2000)
     qq = q.lower()
     out: List[Dict[str, Any]] = []
@@ -380,7 +394,7 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
         hay = f"{title} {t}".strip()
         if qq in hay:
             out.append(d)
-        if len(out) >= limit:
+        if len(out) >= int(limit or 20):
             break
     return out
 
@@ -458,7 +472,7 @@ def ensure_long_memory_indexes() -> None:
 
         # índice text (Mongo aceita "text" como tipo)
         # OBS: alguns wrappers não aceitam isso; o fallback via ._col resolve.
-        _safe_create_index(_longmem(), [("text", "text")], name="lm_text_idx")
+        _safe_create_index(_longmem(), [("text", "text"), ("meta.title", "text")], name="lm_text_idx")
     except Exception:
         pass
 
