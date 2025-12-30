@@ -1,19 +1,12 @@
+# characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.16.1 – Timeline-Aware + Canon + RelationshipEngine v2
-            + Continuidade Espacial REAL (Scene Lock)
-            + Memórias Permanentes Compartilhadas (CANON)
-            + Cache consistente + NSFW unificado
-            + Resposta SEM truncamento + Pacing anti-"corrida"
-            + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
-            + Regra de Autoria do Usuário (não inventar ações/falas do usuário)
-
-✅ CORREÇÕES CRÍTICAS NESTA VERSÃO (inclui Memória Longa Brutal):
-- Corrige falha de escopo/indentação na checagem de CANON (era fácil quebrar e poluir o contexto).
-- Faz a recuperação BM25 respeitar TIMELINE (evita vazamento entre Universitária/Cúmplice).
-- Dedupe: evita repetir a mesma memória em CANON + RELEVANTES + SUAVE.
-- CANON agora filtra por timeline_at_save (ou [all]) e timeline atual.
-- Intro só injeta quando NÃO há CANON aplicável à timeline (intro vira ruído quando já existe canon).
+MaryService (v3.16.2 – Long Memory ROBUSTA via Mongo $text)
+✅ Nesta versão:
+- Long Memory (DB) vira FONTE PRINCIPAL de recuperação (canon + relevantes + suave).
+- Salvamento de memória (comando) grava em long_memory (append_long_memory).
+- Compat: ainda injeta memórias legadas (state_data/fatos.mary.memories) como fallback/migração.
+- Respeita timeline_at_save e dedupe global.
 """
 
 import logging
@@ -39,8 +32,13 @@ from core.repositories import (
     get_history_docs,
     save_interaction,
     set_fact,
+    # legado (state_data/fatos.mary.memories)
     append_memory,
     list_memories,
+    # ✅ LONG MEMORY (DB)
+    append_long_memory,
+    list_long_memory,
+    search_long_memory_text,
 )
 from core.nsfw import nsfw_enabled as nsfw_enabled_unified
 
@@ -55,12 +53,12 @@ _SERVICE_CACHE.clear()
 # CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
 # ==========================================================
 INTIMACY_PHASES = {
-    0: "tensao",      # flerte, provocação, antecipação
-    1: "contato",     # beijos, toque leve
-    2: "excitacao",   # toque íntimo, roupas, boca
-    3: "pre_climax",  # controle, quase, negação
-    4: "climax",      # clímax (NUNCA automático)
-    5: "aftercare",   # pós-ato (somente após fase 4)
+    0: "tensao",
+    1: "contato",
+    2: "excitacao",
+    3: "pre_climax",
+    4: "climax",
+    5: "aftercare",
 }
 MAX_INTIMACY_PHASE = 5
 
@@ -146,6 +144,33 @@ def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any
     return docs
 
 
+# ---- caches longmem (DB) ----
+def cached_list_long_memory(shared_key: str, limit: int = 400) -> List[Dict[str, Any]]:
+    ck = f"longmem::{shared_key}::{limit}"
+    if ck in st.session_state:
+        return st.session_state[ck]
+    try:
+        rows = list_long_memory(shared_key, limit=limit) or []
+    except Exception:
+        rows = []
+    st.session_state[ck] = rows
+    return rows
+
+
+def cached_search_long_memory(shared_key: str, query: str, limit: int = 30) -> List[Dict[str, Any]]:
+    q = (query or "").strip()
+    ck = f"longmem_search::{shared_key}::{hashlib.sha1(q.encode('utf-8')).hexdigest()}::{limit}"
+    if ck in st.session_state:
+        return st.session_state[ck]
+    try:
+        rows = search_long_memory_text(shared_key, q, limit=limit) or []
+    except Exception:
+        rows = []
+    st.session_state[ck] = rows
+    return rows
+
+
+# ---- caches legacy memories (state_data) ----
 def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
     mk = f"mem::{shared_key}::{limit}"
     if mk in st.session_state:
@@ -170,9 +195,15 @@ def clear_user_cache(usuario_key: str) -> None:
 
 
 def clear_mem_cache_for_shared(shared_key: str) -> None:
+    # legacy
     prefix = f"mem::{shared_key}::"
+    # longmem
+    prefix2 = f"longmem::{shared_key}::"
+    prefix3 = f"longmem_search::{shared_key}::"
     for k in list(st.session_state.keys()):
-        if isinstance(k, str) and k.startswith(prefix):
+        if not isinstance(k, str):
+            continue
+        if k.startswith(prefix) or k.startswith(prefix2) or k.startswith(prefix3):
             del st.session_state[k]
 
 
@@ -194,8 +225,16 @@ def append_memory_safe(
     meta: Optional[dict] = None,
     *,
     user_id: Optional[str] = None,
+    also_legacy: bool = True,  # ✅ migração suave: grava nos 2 se quiser
 ) -> None:
-    append_memory(shared_key, text, meta=meta or {})
+    meta = meta or {}
+    # ✅ Long Memory (DB) = PRINCIPAL
+    append_long_memory(shared_key, text, meta=meta)
+
+    # (Opcional) legado
+    if also_legacy:
+        append_memory(shared_key, text, meta=meta)
+
     clear_mem_cache_for_shared(shared_key)
     if user_id:
         tl = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
@@ -225,7 +264,6 @@ def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
 
 
 def _scene_is_locked(facts: Dict[str, Any]) -> bool:
-    # default: travado
     return bool(facts.get("cena.locked", True))
 
 
@@ -275,7 +313,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
 
-    # Se o usuário explicitamente pediu mudança, não é violação
     if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
         return False
     if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
@@ -351,27 +388,58 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
 
 
 # ==========================================================
-# ✅ CANON: memórias que prevalecem sobre a persona
+# ✅ CANON + MEMÓRIA LONGA (DB) — helpers
 # ==========================================================
-def _get_all_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
-    return cached_list_memories(shared_key, limit=limit)
-
-
 def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
     tl = _normalize_timeline(timeline)
     tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-    # sem timeline = válido (compat) | [all] = sempre
     if not tms:
         return True
     return tms in (tl, "[all]")
 
 
+def _hash_txt(txt: str) -> str:
+    return hashlib.sha1((txt or "").strip().encode("utf-8")).hexdigest()
+
+
+def _merge_longmem_with_legacy(shared_key: str, limit_long: int = 600, limit_legacy: int = 220) -> List[Dict[str, Any]]:
+    """
+    Fonte principal: long_memory (DB). Legado entra como fallback (migração).
+    Resultado: lista única, sem duplicar textos idênticos.
+    """
+    long_rows = cached_list_long_memory(shared_key, limit=limit_long)
+    legacy_rows = cached_list_memories(shared_key, limit=limit_legacy)
+
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    # longmem primeiro (tem prioridade)
+    for r in long_rows or []:
+        txt = str(r.get("text") or "").strip()
+        if not txt:
+            continue
+        h = _hash_txt(txt)
+        if h in seen:
+            continue
+        seen.add(h)
+        out.append(r)
+
+    # legado depois
+    for r in legacy_rows or []:
+        txt = str(r.get("text") or "").strip()
+        if not txt:
+            continue
+        h = _hash_txt(txt)
+        if h in seen:
+            continue
+        seen.add(h)
+        out.append(r)
+
+    return out
+
+
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
-    """
-    Retorna True se existir ao menos 1 memória kind=canon aplicável à timeline atual (ou [all]).
-    (Corrigido: antes era fácil quebrar/ignorar timeline e poluir contexto.)
-    """
-    mems = _get_all_memories(shared_key, limit=240)
+    mems = _merge_longmem_with_legacy(shared_key, limit_long=700, limit_legacy=260)
     for m in mems:
         meta = m.get("meta") or {}
         if str(meta.get("kind") or "").strip().lower() != "canon":
@@ -421,11 +489,7 @@ def _inject_canon_memories_always(
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
-    """
-    Injeta memórias CANON (kind=canon) aplicáveis à timeline (ou [all]).
-    Também atualiza um bucket de dedupe (hashes) para evitar repetição em outros blocos.
-    """
-    mems = _get_all_memories(shared_key, limit=360)
+    mems = _merge_longmem_with_legacy(shared_key, limit_long=900, limit_legacy=360)
     if not mems:
         return
 
@@ -441,7 +505,7 @@ def _inject_canon_memories_always(
     if not canon:
         return
 
-    selected = canon[-max_items:] if len(canon) > max_items else canon
+    selected = canon[:max_items] if len(canon) > max_items else canon  # longmem já vem recent->old
     overrides = _extract_canon_overrides(selected, timeline)
     overrides_block = _build_overrides_block(overrides)
 
@@ -470,7 +534,7 @@ def _inject_canon_memories_always(
         lines.append("")
 
         if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+            dedupe_bucket.add(_hash_txt(txt))
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
@@ -485,7 +549,6 @@ def _inject_intro_as_context_once(
     if st.session_state.get(flag):
         return
 
-    # Se existe CANON aplicável à timeline, intro vira ruído — não injeta
     if _has_canon_memories(shared_key, timeline):
         st.session_state[flag] = True
         return
@@ -505,7 +568,7 @@ def _inject_shared_soft_context(
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
-    mems = cached_list_memories(shared_key, limit=220)
+    mems = _merge_longmem_with_legacy(shared_key, limit_long=600, limit_legacy=220)
     if not mems:
         return
 
@@ -521,7 +584,7 @@ def _inject_shared_soft_context(
         if not txt:
             continue
         if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            h = _hash_txt(txt)
             if h in dedupe_bucket:
                 continue
         soft.append(m)
@@ -529,7 +592,7 @@ def _inject_shared_soft_context(
     if not soft:
         return
 
-    selected = soft[-max_items:] if len(soft) > max_items else soft
+    selected = soft[:max_items] if len(soft) > max_items else soft  # recent-first
 
     lines = ["[MEMÓRIAS COMPARTILHADAS (contexto suave)]", "Use para manter coerência, sem citar literalmente.", ""]
     for i, m in enumerate(selected, 1):
@@ -543,70 +606,14 @@ def _inject_shared_soft_context(
         lines.append(txt)
         lines.append("")
         if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+            dedupe_bucket.add(_hash_txt(txt))
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
 # ==========================================================
-# RECUPERAÇÃO SEMÂNTICA (BM25 leve) — "memória longa brutal"
+# ✅ RECUPERAÇÃO RELEVANTE (AGORA: Mongo $text) + fallback
 # ==========================================================
-_WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
-
-
-def _tok(text: str) -> List[str]:
-    return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
-
-
-def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
-    # Implementação BM25 simples (Okapi) — sem dependências externas.
-    q = _tok(query)
-    if not docs or not q:
-        return []
-    N = len(docs)
-    tf_list: List[Dict[str, int]] = []
-    df: Dict[str, int] = {}
-    lengths: List[int] = []
-
-    for d in docs:
-        toks = _tok(d)
-        lengths.append(len(toks))
-        tf: Dict[str, int] = {}
-        for w in toks:
-            tf[w] = tf.get(w, 0) + 1
-        tf_list.append(tf)
-        for w in set(tf.keys()):
-            df[w] = df.get(w, 0) + 1
-
-    avgdl = (sum(lengths) / N) if N else 1.0
-    k1 = 1.5
-    b = 0.75
-
-    def _idf_raw(w: str) -> float:
-        n_q = df.get(w, 0)
-        return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
-
-    import math
-    idf_cache = {w: math.log(1.0 + _idf_raw(w)) for w in set(q)}
-
-    scores: List[float] = []
-    for i, tf in enumerate(tf_list):
-        dl = lengths[i] or 1
-        s = 0.0
-        for w in q:
-            f = tf.get(w, 0)
-            if not f:
-                continue
-            w_idf = idf_cache.get(w, 0.0)
-            denom = f + k1 * (1 - b + b * (dl / avgdl))
-            s += w_idf * (f * (k1 + 1)) / denom
-        scores.append(s)
-
-    ranked = sorted(range(N), key=lambda i: scores[i], reverse=True)
-    ranked = [i for i in ranked if scores[i] > 0.0]
-    return ranked[: max(0, int(k))]
-
-
 def _inject_relevant_memories(
     shared_key: str,
     timeline: str,
@@ -617,62 +624,123 @@ def _inject_relevant_memories(
     dedupe_bucket: Optional[set] = None,
 ) -> None:
     """
-    Recupera memórias NÃO-CANON relacionadas ao prompt do usuário via BM25,
-    respeitando timeline_at_save (ou [all]) e evitando duplicatas.
+    Fonte principal: search_long_memory_text (Mongo $text).
+    Fallback: BM25 local sobre merge_longmem+legacy (sem depender de state_data apenas).
     """
-    mems = cached_list_memories(shared_key, limit=260)
-    if not mems:
+    q = (user_prompt or "").strip()
+    if not q:
         return
 
-    soft: List[Dict[str, Any]] = []
-    docs: List[str] = []
+    # ---- 1) Mongo $text (robusto) ----
+    rows = cached_search_long_memory(shared_key, q, limit=max(20, k * 4))
+    picked: List[Dict[str, Any]] = []
 
-    for m in mems:
+    for m in rows or []:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
-
         if kind == "canon":
             continue
         if not _memory_timeline_ok(meta, timeline):
             continue
-
-        text = str(m.get("text") or "").strip()
-        if not text:
+        txt = str(m.get("text") or "").strip()
+        if not txt:
             continue
-
         if dedupe_bucket is not None:
-            h = hashlib.sha1(text.encode("utf-8")).hexdigest()
+            h = _hash_txt(txt)
             if h in dedupe_bucket:
                 continue
+        picked.append(m)
+        if len(picked) >= k:
+            break
 
-        soft.append(m)
+    # ---- 2) fallback (se $text não trouxe nada) ----
+    if not picked:
+        # reusa sua BM25 antiga, mas agora sobre um corpus REAL (longmem+legacy)
+        _WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
 
-        # inclui título/chave no doc para melhorar recall
-        title = str(meta.get("title") or meta.get("key") or "").strip()
-        if title:
-            docs.append(f"{title}\n{text}")
-        else:
-            docs.append(text)
+        def _tok(text: str) -> List[str]:
+            return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
 
-    if not soft:
-        return
+        def _bm25_topk(docs: List[str], query: str, kk: int = 8) -> List[int]:
+            qtok = _tok(query)
+            if not docs or not qtok:
+                return []
+            N = len(docs)
+            tf_list: List[Dict[str, int]] = []
+            df: Dict[str, int] = {}
+            lengths: List[int] = []
+            for d in docs:
+                toks = _tok(d)
+                lengths.append(len(toks))
+                tf: Dict[str, int] = {}
+                for w in toks:
+                    tf[w] = tf.get(w, 0) + 1
+                tf_list.append(tf)
+                for w in set(tf.keys()):
+                    df[w] = df.get(w, 0) + 1
+            avgdl = (sum(lengths) / N) if N else 1.0
+            k1 = 1.5
+            b = 0.75
 
-    idxs = _bm25_topk(docs, user_prompt, k=k)
-    if not idxs:
-        return
+            def _idf_raw(w: str) -> float:
+                n_q = df.get(w, 0)
+                return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
 
-    selected = [soft[i] for i in idxs if 0 <= i < len(soft)]
-    if not selected:
+            import math
+            idf_cache = {w: math.log(1.0 + _idf_raw(w)) for w in set(qtok)}
+
+            scores: List[float] = []
+            for i, tf in enumerate(tf_list):
+                dl = lengths[i] or 1
+                s = 0.0
+                for w in qtok:
+                    f = tf.get(w, 0)
+                    if not f:
+                        continue
+                    w_idf = idf_cache.get(w, 0.0)
+                    denom = f + k1 * (1 - b + b * (dl / avgdl))
+                    s += w_idf * (f * (k1 + 1)) / denom
+                scores.append(s)
+
+            ranked = sorted(range(N), key=lambda i: scores[i], reverse=True)
+            ranked = [i for i in ranked if scores[i] > 0.0]
+            return ranked[: max(0, int(kk))]
+
+        mems = _merge_longmem_with_legacy(shared_key, limit_long=1200, limit_legacy=260)
+        soft: List[Dict[str, Any]] = []
+        docs: List[str] = []
+        for m in mems:
+            meta = m.get("meta") or {}
+            kind = str(meta.get("kind") or "").strip().lower()
+            if kind == "canon":
+                continue
+            if not _memory_timeline_ok(meta, timeline):
+                continue
+            text = str(m.get("text") or "").strip()
+            if not text:
+                continue
+            if dedupe_bucket is not None:
+                h = _hash_txt(text)
+                if h in dedupe_bucket:
+                    continue
+            soft.append(m)
+            title = str(meta.get("title") or meta.get("key") or "").strip()
+            docs.append(f"{title}\n{text}" if title else text)
+
+        idxs = _bm25_topk(docs, q, kk=k)
+        picked = [soft[i] for i in idxs if 0 <= i < len(soft)]
+
+    if not picked:
         return
 
     lines = [
-        "[MEMÓRIAS RELEVANTES (recuperação semântica)]",
+        "[MEMÓRIAS RELEVANTES (Long Memory / DB)]",
         "Estas são as memórias mais relacionadas ao que o usuário acabou de dizer.",
         "Use para manter coerência e continuidade, sem citar literalmente.",
         "",
     ]
 
-    for i, m in enumerate(selected, 1):
+    for i, m in enumerate(picked, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
         title = meta.get("title") or meta.get("key") or ""
@@ -688,7 +756,7 @@ def _inject_relevant_memories(
         lines.append("")
 
         if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+            dedupe_bucket.add(_hash_txt(txt))
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
@@ -939,8 +1007,6 @@ _RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|mão 
 _RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
 _RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|brinca com|faz eu implorar)\b", re.IGNORECASE)
 
-_RE_DENIAL = re.compile(r"\b(não agora|para|segura|ainda não|quase|devagar|me obedece|fica|controle)\b", re.IGNORECASE)
-
 
 def _user_explicitly_allows_climax(user_text: str) -> bool:
     return bool(_RE_CLIMAX_SIGNAL.search(user_text or ""))
@@ -1005,7 +1071,6 @@ class MaryService(BaseCharacter):
         timeline: Optional[str] = None,
         nsfw: Optional[bool] = None,
     ) -> str:
-        # prompt
         if prompt is None:
             prompt = (st.session_state.get("chat_input") or "").strip()
         else:
@@ -1022,48 +1087,38 @@ class MaryService(BaseCharacter):
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id)
 
-        # ----------------------------------------------------------
-        # 0) Garantir scene lock/facts mínimos
-        # ----------------------------------------------------------
+        # 0) Scene lock
         facts0 = cached_get_facts(usuario_key)
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
 
-        # ----------------------------------------------------------
-        # 0.1) INTIMACY PHASE — inicialização segura
-        # ----------------------------------------------------------
+        # 0.1) intimacy init
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0["intimacy.phase"] = 0
 
-        # ----------------------------------------------------------
-        # 1) Mudança explícita de local/tempo (permitida)
-        # ----------------------------------------------------------
+        # 1) mudança explícita de local
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             _lock_scene(usuario_key)
             return f"_Eu te puxo comigo até **{novo_local}**…_"
 
-        # ----------------------------------------------------------
-        # 1.1) Cena paralela (não teleporta Mary)
-        # ----------------------------------------------------------
+        # 1.1) cena paralela
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
         scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
 
-        # ----------------------------------------------------------
-        # 2) Comando: salvar memória (texto direto OU resumo dinâmico)
-        # ----------------------------------------------------------
+        # 2) comando salvar memória (agora grava LONG MEMORY)
         if _is_save_memory_command(prompt):
             raw_body = _strip_save_prefix(prompt)
             date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
 
-            # --- modo resumo dinâmico
+            # resumo dinâmico
             if _wants_auto_summary(prompt):
                 transcript, dbg_meta = _build_dynamic_mary_transcript(usuario_key, prompt)
                 if not transcript.strip():
-                    return "⚠️ Não encontrei histórico suficiente da Mary para resumir. Converse mais um pouco e peça novamente."
+                    return "⚠️ Não encontrei histórico suficiente da Mary para resumir."
 
                 summary_system = (
                     "Você é a personagem Mary, mas sua tarefa agora é gerar um RESUMO FACTUAL para memória.\n"
@@ -1092,7 +1147,7 @@ class MaryService(BaseCharacter):
 
                     resumo = self._extract_text(data)
                     if not resumo:
-                        return "⚠️ Não consegui gerar o resumo (modelo retornou vazio). Tente novamente."
+                        return "⚠️ Não consegui gerar o resumo (modelo retornou vazio)."
 
                     meta = {
                         "kind": "dynamic_summary",
@@ -1102,21 +1157,20 @@ class MaryService(BaseCharacter):
                         **(dbg_meta or {}),
                     }
 
-                    append_memory_safe(shared_key, resumo.strip(), meta=meta, user_id=user_id)
+                    append_memory_safe(shared_key, resumo.strip(), meta=meta, user_id=user_id, also_legacy=True)
 
                     return (
-                        "✅ **Resumo salvo na memória permanente** (compartilhado)\n\n"
+                        "✅ **Resumo salvo na Long Memory (DB)**\n\n"
                         f"📌 **Data:** `{date_iso or '—'}`\n"
                         f"🧭 **Recorte:** `{(dbg_meta or {}).get('mode','—')}`\n\n"
                         "---\n\n"
                         f"{resumo.strip()}"
                     )
-
                 except Exception as e:
                     logger.exception("Falha ao gerar/salvar resumo dinâmico", exc_info=e)
                     return f"⚠️ Falha ao gerar/salvar resumo: {type(e).__name__}: {e}"
 
-            # --- salvamento direto
+            # salvamento direto
             body = raw_body
             if len(body.strip()) < 40:
                 captured = _fallback_capture_recent_history(usuario_key, turns=10)
@@ -1124,21 +1178,19 @@ class MaryService(BaseCharacter):
                     body = f"{body}\n\n[FONTE: recorte do histórico]\n{captured}".strip()
 
             if not body.strip():
-                return "⚠️ Não consegui salvar: cole o texto do momento (ou descreva com detalhes) e informe a data (dd/mm/aaaa)."
+                return "⚠️ Não consegui salvar: cole o texto do momento."
 
             meta = {"kind": "user_request", "date": date_iso or "", "timeline_at_save": timeline_final}
 
             try:
-                append_memory_safe(shared_key, body.strip(), meta=meta, user_id=user_id)
+                append_memory_safe(shared_key, body.strip(), meta=meta, user_id=user_id, also_legacy=True)
             except Exception as e:
                 logger.exception("Falha ao salvar memória", exc_info=e)
                 return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
 
-            return "✅ Memória permanente salva (compartilhada)."
+            return "✅ Memória salva na Long Memory (DB) e no legado (compat)."
 
-        # ----------------------------------------------------------
-        # 3) Persona + system (FORA do if de salvar memória) ✅
-        # ----------------------------------------------------------
+        # 3) persona + system
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
 
@@ -1244,22 +1296,21 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # Bucket de dedupe (evita repetir o mesmo texto em CANON + RELEVANTES + SUAVE)
         dedupe_hashes: set = set()
 
-        # 4) Intro 1x por sessão (só se NÃO houver CANON aplicável)
+        # 4) Intro 1x (só se não houver canon)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # 5) CANON sempre injetado (filtrado por timeline / [all])
+        # 5) CANON (agora vem da Long Memory DB, com fallback legado)
         _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
 
-        # 5.05) Memória longa relevante (recuperação semântica BM25) — filtrada por timeline
+        # 5.05) RELEVANTES (agora Mongo $text)
         _inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
 
-        # 5.1) Continuidade suave (também filtrada por timeline + dedupe)
+        # 5.1) SUAVE (agora Long Memory DB, fallback legado)
         _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
 
-        # 6) Histórico (timeline atual)
+        # 6) histórico timeline atual
         history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -1271,9 +1322,7 @@ REGRAS ABSOLUTAS:
 
         messages.append({"role": "user", "content": prompt})
 
-        # ----------------------------------------------------------
-        # 7) Chat com retry/fallback (condicionado a NSFW)
-        # ----------------------------------------------------------
+        # 7) chat retry/fallback
         if nsfw_on:
             attempts = [
                 {"model": model, "temperature": 0.85},
@@ -1301,7 +1350,6 @@ REGRAS ABSOLUTAS:
                 if not texto:
                     continue
 
-                # Relationship Engine (pós-resposta)
                 promoted = False
                 meta: Dict[str, Any] = {}
 
@@ -1332,7 +1380,6 @@ REGRAS ABSOLUTAS:
                     rel_state = new_rel
                     _save_rel_state(usuario_key, timeline_final, rel_state)
 
-                    # Promoção automática de timeline: universitária -> cúmplice
                     if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                         promoted = True
                         old_key = usuario_key
@@ -1369,7 +1416,6 @@ REGRAS ABSOLUTAS:
                     promoted = False
                     meta = meta or {}
 
-                # Debug rápido
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1396,13 +1442,9 @@ REGRAS ABSOLUTAS:
                     "intimacy_phase": intimacy_phase,
                 }
 
-                # Salva interação no histórico CERTO
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
-
-                # Mantém cena travada sempre
                 _lock_scene(usuario_key)
 
-                # Avança fase íntima (NO MÁXIMO 1 por turno) + TRAVAS
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
 
@@ -1484,7 +1526,6 @@ REGRAS ABSOLUTAS:
         set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
-        # Espera retornar: (data, used_model, provider_meta)
         return service_router.route_chat_strict(
             model,
             {
