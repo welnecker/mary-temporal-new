@@ -3,13 +3,22 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Tuple
 
-from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
 from .openrouter import chat as openrouter_chat, DEFAULT_MODELS as OR_MODELS
 from .together import chat as together_chat, DEFAULT_MODELS as TG_MODELS
 
+# ✅ Hugging Face provider (novo)
+from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
+
+# Modelo seguro de fallback
 SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
+
+# Alias opcionais
 MODEL_ALIASES: Dict[str, str] = {}
 
+
+# -------------------------
+# DETECÇÃO DE PROVIDER
+# -------------------------
 def available_providers() -> List[Tuple[str, bool, str]]:
     have_or = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN"))
     have_tg = bool(os.getenv("TOGETHER_API_KEY"))
@@ -20,6 +29,7 @@ def available_providers() -> List[Tuple[str, bool, str]]:
         ("HuggingFace", have_hf, "OK" if have_hf else "sem chave"),
     ]
 
+
 def list_models(provider: str | None = None) -> List[str]:
     if provider == "OpenRouter":
         return OR_MODELS[:]
@@ -27,21 +37,41 @@ def list_models(provider: str | None = None) -> List[str]:
         return TG_MODELS[:]
     if provider == "HuggingFace":
         return HF_MODELS[:]
-    return (OR_MODELS[:] + TG_MODELS[:] + HF_MODELS[:]) or [SAFE_FALLBACK_MODEL]
+    return OR_MODELS[:] + TG_MODELS[:] + HF_MODELS[:]
 
+
+# -----------------------------------------
+# Identificação correta do provedor
+# -----------------------------------------
 def _provider_for(model_id: str) -> str:
     m = (model_id or "").lower().strip()
 
-    # HuggingFace router ids geralmente têm ":" no final (namespace/provider)
-    if ":" in m and m.startswith("zai-org/"):
+    # ✅ HuggingFace Router (geralmente tem sufixo ":provider")
+    # Ex: zai-org/glm-4.7-fp8:zai-org
+    if ":" in m:
         return "HuggingFace"
 
     # Together
-    if m.startswith("together/") or m.startswith("deepseek-ai/") or m.startswith("moonshotai/") or m.startswith("google/"):
+    if m.startswith("together/"):
+        return "Together"
+    if m.startswith("deepseek-ai/"):
+        return "Together"
+    if m.startswith("moonshotai/"):
+        return "Together"
+    if m.startswith("google/"):
         return "Together"
 
-    # OpenRouter (default)
+    # OpenRouter — inclui:
+    # x-ai/grok-4.1-fast:free
+    # tngtech/tng-r1t-chimera:free
+    # e todos os outros modelos OpenRouter
+    if m.startswith("x-ai/"):
+        return "OpenRouter"
+    if m.startswith("tngtech/"):
+        return "OpenRouter"
+
     return "OpenRouter"
+
 
 def _normalize_model_id(raw: str) -> str:
     if not raw:
@@ -51,6 +81,10 @@ def _normalize_model_id(raw: str) -> str:
         return MODEL_ALIASES[low]
     return raw
 
+
+# -----------------------------------------
+# CHAMADA GERAL (SEM reasoning especial)
+# -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     norm_model = _normalize_model_id(model)
     provider = _provider_for(norm_model)
@@ -69,7 +103,20 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
             return openrouter_chat(SAFE_FALLBACK_MODEL, messages, **kwargs)
         raise
 
+
+# ============================================================
+# CHAMADA STRICT (ONDE VAI O REASONING DINÂMICO DA MARY)
+# ============================================================
 def route_chat_strict(model: str, payload: Dict[str, Any]):
+    """
+    payload deve conter:
+        messages: [...]
+        max_tokens: int
+        temperature: float
+        top_p: float
+        extra: dict (opcional)
+    """
+
     norm_model = _normalize_model_id(model)
     provider = _provider_for(norm_model)
 
@@ -80,16 +127,20 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
         "top_p": payload.get("top_p", 0.95),
     }
 
+    # EXTRA: reasoning, tool_choice, etc
     extra = payload.get("extra", None)
     if extra:
         kwargs["extra"] = extra
 
+    # ✅ HUGGINGFACE
     if provider == "HuggingFace":
         return hf_chat(norm_model, msgs, **kwargs)
 
+    # --- TOGETHER ---
     if provider == "Together":
         return together_chat(norm_model, msgs, **kwargs)
 
+    # --- OPENROUTER ---
     try:
         return openrouter_chat(norm_model, msgs, **kwargs)
     except RuntimeError as e:
