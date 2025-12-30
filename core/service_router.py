@@ -1,5 +1,6 @@
+#https://github.com/welnecker/mary-temporal-new/core/service_router.py
 from __future__ import annotations
-
+from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
 import os
 from typing import Any, Dict, List, Tuple
 
