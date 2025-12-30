@@ -66,7 +66,7 @@ import characters.mary.persona as mary_persona
 from characters.mary.service import MaryService
 import core.repositories as crep
 import core.service_router as service_router
-from core.database import db_status
+from core.database import db_status, ping_db, get_backend
 
 
 # ==========================================================
@@ -796,6 +796,72 @@ def main() -> None:
     st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
+    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
+    backend, detail = db_status()
+    st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
+        # ==========================================================
+    # 🗄️ DEBUG — BANCO DE DADOS (db_status + ping_db)
+    # ==========================================================
+    with st.expander("🗄️ Banco de Dados — Debug (db_status + ping_db)", expanded=False):
+        b_kind, b_detail = db_status()
+        st.write("**db_status():**")
+        st.code(f"{b_kind} — {b_detail}")
+
+        colA, colB, colC = st.columns([1, 1, 1])
+        with colA:
+            run_ping = st.button("🔎 Rodar ping_db()", key="btn_run_ping_db")
+        with colB:
+            auto_ping = st.checkbox("Auto ping (a cada rerun)", value=False, key="chk_auto_ping_db")
+        with colC:
+            show_env = st.checkbox("Mostrar config (mascarada)", value=False, key="chk_show_db_env")
+
+        # rodar ping
+        if run_ping or auto_ping:
+            backend, ok, info = ping_db()
+            st.write("**ping_db():**")
+            if ok:
+                st.success(f"{backend} ✅ {info}")
+            else:
+                st.error(f"{backend} ❌ {info}")
+
+        # mostrar configuração (sem vazar segredo)
+        if show_env:
+            try:
+                from core.config import settings as _settings  # type: ignore
+
+                # tenta obter uri (mascarada)
+                uri = ""
+                try:
+                    uri = str(_settings.mongo_uri() or "")
+                except Exception:
+                    uri = ""
+
+                def _mask_uri(u: str) -> str:
+                    u = u.strip()
+                    if not u:
+                        return ""
+                    # mascara user:pass@
+                    u = re.sub(r"//([^:/@]+):([^@]+)@", r"//***:***@", u)
+                    # encurta query params
+                    if "?" in u:
+                        base, _q = u.split("?", 1)
+                        return base + "?…"
+                    return u
+
+                dbname = (getattr(_settings, "MONGO_DB", "") or "").strip() or getattr(_settings, "APP_NAME", "app")
+                st.write("**Config detectada:**")
+                st.json(
+                    {
+                        "DB_BACKEND (settings/env)": (getattr(_settings, "DB_BACKEND", "") or ""),
+                        "get_backend() (runtime)": get_backend(),
+                        "mongo_uri() (mascarada)": _mask_uri(uri),
+                        "MONGO_DB or APP_NAME": dbname,
+                    }
+                )
+            except Exception as e:
+                st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
+
+
 
     # ===== Header =====
     st.markdown(
