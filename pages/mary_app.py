@@ -56,6 +56,7 @@ from core.repositories import (
     get_history_docs_multi,
     get_facts,
     set_fact,
+    append_memory,  # ✅ necessário para o botão "virgem"
     delete_fact,
     delete_last_interaction,
     delete_user_history,
@@ -260,6 +261,58 @@ def _keys_para_mary() -> list[str]:
 
 
 # ==========================================================
+# ✅ CANON BUTTON HELPERS (Virgem -> Consumado)
+# ==========================================================
+def _today_iso() -> str:
+    return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, user_id: str) -> None:
+    """
+    Marca no CANON que Mary NÃO é mais virgem (consumado).
+    - Grava na memória permanente shared como kind='canon' (fonte de verdade).
+    - Atualiza rel.state::<timeline> nos facts (camada derivada, para consistência imediata).
+    """
+    date_iso = _today_iso()
+
+    canon_text = (
+        f"MEMÓRIA CANÔNICA: Mary e {user_id} consumaram a relação. "
+        f"Mary NÃO é mais virgem. (válido para o universo compartilhado)\n"
+        f"Data: {date_iso}\n"
+        f"Timeline ativa no momento do registro: {timeline}"
+    )
+
+    meta = {
+        "kind": "canon",
+        "title": "Virgindade — consumado",
+        "key": "virginity",
+        "value": "nao_virgem",
+        "date": date_iso,
+        "source": "ui_button",
+        "timeline_at_save": timeline,
+        "user_id": user_id,
+    }
+
+    # 1) CANON (shared)
+    append_memory(shared_key, canon_text, meta=meta)
+
+    # 2) FACTS (relationship_state) — derivado
+    facts = get_facts(usuario_key) or {}
+    rel_key = f"rel.state::{timeline}"
+    rel = facts.get(rel_key) if isinstance(facts.get(rel_key), dict) else {}
+
+    if not isinstance(rel, dict):
+        rel = {}
+
+    rel["consummated"] = True
+    rel["virginity"] = "nao_virgem"
+    rel.setdefault("allows_penetration", True)
+
+    set_fact(usuario_key, rel_key, rel, {"fonte": "ui_button_canon"})
+    set_fact(usuario_key, "mary.virginity", "nao_virgem", {"fonte": "ui_button_canon"})
+
+
+# ==========================================================
 # HELPERS
 # ==========================================================
 def _service_key_for_userkey(userkey: str) -> str:
@@ -337,6 +390,7 @@ def _invalidate_backend_cache() -> None:
     for k in list(st.session_state.keys()):
         if isinstance(k, str) and k.startswith(prefix_mem):
             st.session_state.pop(k, None)
+
 
 def _choose_default_model(available: list[str]) -> str:
     if available and DEFAULT_MODEL in available:
@@ -423,11 +477,12 @@ def _clear_service_caches_for_keys(keys: list[str]) -> None:
             if isinstance(sk, str) and sk.startswith(prefix_hist):
                 st.session_state.pop(sk, None)
 
-        # ✅ mem cache (é isso que estava voltando “do nada”)
+        # ✅ mem cache
         prefix_mem = f"mem::{k}::"
         for sk in list(st.session_state.keys()):
             if isinstance(sk, str) and sk.startswith(prefix_mem):
                 st.session_state.pop(sk, None)
+
 
 def _reset_intro_flags_for_keys(keys: list[str]) -> None:
     for k in keys:
@@ -738,7 +793,7 @@ def main() -> None:
     # ✅ IMPORTANTÍSSIMO: service é por usuario_key
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard)")
+    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -929,6 +984,58 @@ def main() -> None:
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
+
+        # ======================================================
+        # ✅ BOTÃO "VIRGEM" (CANON) — gravar consumado
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🧬 Canon — Estado íntimo")
+
+        uk_now = _usuario_key_atual()
+        tl_now = _timeline()
+        sk_now = _shared_key_atual()
+        uid_now = str(st.session_state.get("user_id", "Janio Donisete"))
+
+        try:
+            facts_now = get_facts(uk_now) or {}
+        except Exception:
+            facts_now = {}
+
+        rel_now = (
+            facts_now.get(f"rel.state::{tl_now}")
+            if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict)
+            else {}
+        )
+        is_consumado = bool(rel_now.get("consummated")) or (str(rel_now.get("virginity") or "") == "nao_virgem")
+
+        label_btn = "✅ Virgem (marcar CONSUMADO)" if not is_consumado else "🔥 Consumado (manter)"
+
+        if st.button(label_btn, key="btn_canon_virginity_consumado"):
+            try:
+                if not is_consumado:
+                    _set_virginity_canon(
+                        usuario_key=uk_now,
+                        shared_key=sk_now,
+                        timeline=tl_now,
+                        user_id=uid_now,
+                    )
+
+                # limpa caches para refletir imediatamente
+                st.session_state["chat_history"] = []
+                st.session_state["mary_intro_done"] = False
+                _invalidate_backend_cache()
+                _clear_mary_caches_all_related(also_clear_other_timeline=True)
+                _kill_all_mary_services()
+
+                st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
+
+        st.caption(
+            "Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga."
+        )
 
         st.markdown("---")
         st.subheader("🔍 Debug")
