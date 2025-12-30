@@ -65,7 +65,7 @@ from core.repositories import (
 import characters.mary.persona as mary_persona
 from characters.mary.service import MaryService
 import core.repositories as crep
-from core.service_router import list_models
+import core.service_router as service_router
 from core.database import db_status
 
 
@@ -964,18 +964,25 @@ def main() -> None:
         st.caption(f"🔑 usuario_key atual: {_usuario_key_atual()}")
 
         try:
-            all_models = list_models() or []
+            all_models = service_router.list_models() or []
         except Exception:
             all_models = []
+        
         if not all_models:
             all_models = [FALLBACK_MODEL]
-
+        
         if st.session_state.get("model") not in all_models:
             st.session_state["model"] = _choose_default_model(all_models)
-
+        
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
-        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
+        
+        st.selectbox(
+            "🧠 Modelo",
+            all_models,
+            index=idx,
+            key="model",
+        )
 
         st.markdown("---")
         # ✅ NSFW: persiste no facts quando muda (INLINE)
