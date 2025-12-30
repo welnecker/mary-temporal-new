@@ -1,7 +1,7 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.16.2 – Timeline-Aware + Canon + RelationshipEngine v2
+MaryService (v3.16.3 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Long Memory ROBUSTA (Mongo $text) ✅
@@ -9,12 +9,14 @@ MaryService (v3.16.2 – Timeline-Aware + Canon + RelationshipEngine v2
             + Resposta SEM truncamento + Pacing anti-"corrida"
             + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
             + Regra de Autoria do Usuário (não inventar ações/falas do usuário)
+            + CONFLICT_MODE ✅
 
-✅ O que foi ajustado nesta entrega (LONG MEMORY robusta):
-- Usa long_memory de verdade: injeta memórias via Mongo $text (search_long_memory_text)
-- Filtra long_memory por timeline_at_save (ou [all]/vazio) para evitar vazamento entre timelines
-- Dedupe entre CANON + long_memory + BM25 + soft_context
-- Ao salvar memória (resumo dinâmico ou texto direto) grava também na long_memory
+✅ O que foi ajustado nesta entrega (v3.16.3):
+- CONFLICT_MODE: rotulagem + regras no SYSTEM + detecção de conflito iminente
+- Pacing com exceção real para conflito (sem virar “lição moral”)
+- RelationshipEngine é bypassado quando conflict_now=True (evita desarmar cena)
+- Debug inclui conflict_mode e conflict_now
+- Mantém TODAS as funcionalidades existentes (canon, longmem, bm25, scene lock, etc.)
 """
 
 import logging
@@ -577,7 +579,7 @@ def _inject_long_memory_textsearch(
     Puxa memórias do Mongo via $text (long_memory) e injeta no prompt.
     - Filtra por timeline_at_save (ou [all]/vazio).
     - Dedupe por hash do texto.
-    - Opcional: ignora kind=canon (para evitar duplicar canon que já vem do state_data).
+    - Ignora kind=canon (para evitar duplicar canon que já vem do state_data).
     """
     try:
         rows = search_long_memory_text(shared_key, user_prompt, limit=max(1, int(limit or 10)))
@@ -746,7 +748,6 @@ def _inject_relevant_memories(
 
         soft.append(m)
 
-        # inclui título/chave no doc para melhorar recall
         title = str(meta.get("title") or meta.get("key") or "").strip()
         if title:
             docs.append(f"{title}\n{text}")
@@ -1087,6 +1088,36 @@ def _cap_next_phase(current_phase: int, desired_next: int) -> int:
 
 
 # ==========================================================
+# CONFLICT_MODE (v3.16.3)
+# ==========================================================
+def _resolve_conflict_mode(timeline: str) -> str:
+    tl = _normalize_timeline(timeline)
+    # Ajuste aqui se você quiser “hard on” em timelines específicas
+    if tl in ("cumplice", "esposa_cumplice", "casados", "livre"):
+        return "soft"
+    if tl in ("universitaria",):
+        return "off"
+    return "soft"
+
+
+_RE_CONFLICT_IMMINENT = re.compile(
+    r"\b("
+    r"briga|brigar|agarr(a|o|ou)|segura|segurar|empurra|empurrar|"
+    r"amea(c|ç)a|ameaçar|grita|gritar|bater|soco|chute|murro|"
+    r"puxa|puxar|arrasta|arrastar|seguran(ç|c)a|pol[ií]cia|"
+    r"expulsa|expulsar|invad(i|ir)|porta arromb|"
+    r"ci[uú]mes? extremo|tra[ií]ç(ão|ao)|"
+    r"me mata|vou te matar|te quebro|te arrebento"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _conflict_imminent(user_text: str) -> bool:
+    return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
+
+
+# ==========================================================
 # SERVICE
 # ==========================================================
 class MaryService(BaseCharacter):
@@ -1270,6 +1301,12 @@ class MaryService(BaseCharacter):
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init_late"})
             facts["intimacy.phase"] = 0
 
+        # ----------------------------------------------------------
+        # 3.0) CONFLICT_MODE (v3.16.3)
+        # ----------------------------------------------------------
+        conflict_mode = _resolve_conflict_mode(timeline_final)
+        conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
+
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
 
@@ -1309,6 +1346,12 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
 - Mary pode decidir e conduzir, mas deixe a cena aberta naturalmente.
 - PROIBIDO terminar com perguntas ao usuário.
 - Finalize com um gancho interno da Mary (sensação, gesto, intenção imediata), sem exigir resposta.
+
+EXCEÇÃO — CONFLITO IMINENTE:
+- Se houver cerco, ameaça física, contenção, expulsão, ou agressão iminente,
+  Mary PODE reagir fisicamente de forma instintiva e proporcional.
+- Não moralize, não encerre a cena com lição. Não transforme em “aconselhamento”.
+- Reações devem ser humanas e plausíveis; evite escalada extrema.
 """.strip()
 
         intimacy_phase = self._get_intimacy_phase(facts)
@@ -1333,6 +1376,17 @@ REGRAS:
   sem acrescentar novos detalhes sobre o corpo/mente do usuário.
 """.strip()
 
+        conflict_block = ""
+        if conflict_mode != "off":
+            conflict_block = f"""
+[CONFLICT_MODE — {conflict_mode.upper()}]
+- Conflitos cotidianos podem ocorrer (ciúme, território, autodefesa, briga de bar, contenção).
+- Se o usuário trouxer conflito, Mary NÃO “foge” automaticamente nem vira “lição moral”.
+- Mary pode reagir com firmeza, instinto e proporcionalidade.
+- Evite violência extrema e detalhes gráficos de agressão.
+- Mantenha continuidade da cena e consequências emocionais.
+""".strip()
+
         system = f"""
 {spatial_context}
 
@@ -1355,6 +1409,8 @@ PERSONA (baseline):
 {parallel_scene_rule}
 
 {pacing_rule}
+
+{conflict_block}
 
 REGRAS ABSOLUTAS:
 - NÃO misture timelines.
@@ -1432,69 +1488,73 @@ REGRAS ABSOLUTAS:
                 promoted = False
                 meta: Dict[str, Any] = {}
 
-                try:
-                    assessor_model = used_model or attempt["model"]
+                # ✅ Se houver conflito iminente, NÃO roda RelationshipEngine
+                if conflict_now:
+                    meta = {"conflict_mode": conflict_mode, "conflict_now": True}
+                else:
+                    try:
+                        assessor_model = used_model or attempt["model"]
 
-                    def _assessor(system_prompt: str, user_prompt: str) -> str:
-                        data2, _, _ = self._chat(
-                            assessor_model,
-                            [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt},
-                            ],
-                            temperature=0.0,
-                            max_tokens=280,
+                        def _assessor(system_prompt: str, user_prompt: str) -> str:
+                            data2, _, _ = self._chat(
+                                assessor_model,
+                                [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt},
+                                ],
+                                temperature=0.0,
+                                max_tokens=280,
+                            )
+                            return self._extract_text(data2)
+
+                        new_rel, _assessment, meta = evolve_relationship(
+                            rel_state,
+                            prompt,
+                            texto,
+                            timeline_final,
+                            _assessor,
+                            cfg=EngineConfig(),
                         )
-                        return self._extract_text(data2)
 
-                    new_rel, _assessment, meta = evolve_relationship(
-                        rel_state,
-                        prompt,
-                        texto,
-                        timeline_final,
-                        _assessor,
-                        cfg=EngineConfig(),
-                    )
+                        rel_state = new_rel
+                        _save_rel_state(usuario_key, timeline_final, rel_state)
 
-                    rel_state = new_rel
-                    _save_rel_state(usuario_key, timeline_final, rel_state)
+                        # Promoção automática de timeline: universitária -> cúmplice
+                        if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
+                            promoted = True
+                            old_key = usuario_key
+                            old_tl = timeline_final
 
-                    # Promoção automática de timeline: universitária -> cúmplice
-                    if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
-                        promoted = True
-                        old_key = usuario_key
-                        old_tl = timeline_final
+                            st.session_state["mary_timeline"] = "cumplice"
+                            _ensure_rel_state_for_timeline(user_id, "cumplice")
 
-                        st.session_state["mary_timeline"] = "cumplice"
-                        _ensure_rel_state_for_timeline(user_id, "cumplice")
+                            timeline_final = "cumplice"
+                            usuario_key = _user_key(user_id, "cumplice")
 
-                        timeline_final = "cumplice"
-                        usuario_key = _user_key(user_id, "cumplice")
+                            clear_user_cache(old_key)
+                            clear_user_cache(usuario_key)
+                            clear_shared_memory_cache(user_id)
 
-                        clear_user_cache(old_key)
-                        clear_user_cache(usuario_key)
-                        clear_shared_memory_cache(user_id)
+                            st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
+                            st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
 
-                        st.session_state.pop(f"intro_ctx_injected::{old_key}", None)
-                        st.session_state.pop(f"intro_ctx_injected::{usuario_key}", None)
+                            for k in list(st.session_state.keys()):
+                                if isinstance(k, str) and (
+                                    k.startswith(f"history::{old_key}::") or k.startswith(f"history::{usuario_key}::")
+                                ):
+                                    st.session_state.pop(k, None)
 
-                        for k in list(st.session_state.keys()):
-                            if isinstance(k, str) and (
-                                k.startswith(f"history::{old_key}::") or k.startswith(f"history::{usuario_key}::")
-                            ):
-                                st.session_state.pop(k, None)
+                            st.session_state["mary_last_promotion"] = {
+                                "ts": int(time.time()),
+                                "from_timeline": old_tl,
+                                "to_timeline": "cumplice",
+                            }
 
-                        st.session_state["mary_last_promotion"] = {
-                            "ts": int(time.time()),
-                            "from_timeline": old_tl,
-                            "to_timeline": "cumplice",
-                        }
+                            _lock_scene(usuario_key)
 
-                        _lock_scene(usuario_key)
-
-                except Exception:
-                    promoted = False
-                    meta = meta or {}
+                    except Exception:
+                        promoted = False
+                        meta = meta or {}
 
                 # Debug rápido
                 debug_tl = "cumplice" if promoted else timeline_final
@@ -1514,6 +1574,8 @@ REGRAS ABSOLUTAS:
                     "virginity_changed": meta.get("virginity_changed"),
                     "virginity_reason": meta.get("virginity_reason"),
                     "nsfw_on": nsfw_on,
+                    "conflict_mode": conflict_mode,
+                    "conflict_now": conflict_now,
                 }
 
                 st.session_state["mary_debug_nsfw"] = {
@@ -1521,6 +1583,8 @@ REGRAS ABSOLUTAS:
                     "model": model,
                     "timeline": timeline_final,
                     "intimacy_phase": intimacy_phase,
+                    "conflict_mode": conflict_mode,
+                    "conflict_now": conflict_now,
                 }
 
                 # Salva interação no histórico CERTO
