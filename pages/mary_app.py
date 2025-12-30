@@ -425,7 +425,8 @@ def _garantir_estado_inicial() -> None:
 
     # modelos disponíveis
     try:
-        modelos = list_models() or []
+        try:
+        modelos = service_router.list_models() or []
     except Exception:
         modelos = []
 
@@ -793,9 +794,6 @@ def main() -> None:
     # ✅ IMPORTANTÍSSIMO: service é por usuario_key
     svc = _get_service()
 
-    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
-    backend, detail = db_status()
-    st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
     st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
