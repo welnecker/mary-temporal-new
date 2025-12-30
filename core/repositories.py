@@ -15,6 +15,7 @@ _MEMORY_LOCK = RLock()
 _state = lambda: get_col("state_data")
 _hist = lambda: get_col("history")
 _events = lambda: get_col("events")
+_longmem = lambda: get_col("long_memory")  # ✅ NOVO: long memory (1 doc por memória)
 
 
 # ---------- helpers internos ----------
@@ -303,6 +304,87 @@ def delete_all_memories(usuario: str) -> int:
         return n
 
 
+# ==========================================================
+# ✅ LONG MEMORY (1 doc por memória + Text Search no Mongo)
+# ==========================================================
+def append_long_memory(
+    usuario: str,
+    text: str,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Insere 1 memória como 1 documento em long_memory.
+    Retorna o doc gravado (com id e ts).
+    """
+    meta = meta or {}
+    doc: Dict[str, Any] = {
+        "usuario": usuario,
+        "text": str(text or "").strip(),
+        "meta": dict(meta),
+        "ts": datetime.utcnow(),
+        "id": f"lm_{uuid4().hex}",
+    }
+
+    # validação mínima
+    if not doc["text"]:
+        return doc
+
+    _longmem().insert_one(doc)
+    _invalidate_cache_for_user(usuario)
+    return doc
+
+
+def list_long_memory(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """
+    Lista memórias longas (mais recentes primeiro).
+    """
+    cur = _longmem().find(
+        {"usuario": usuario},
+        sort=[("ts", -1), ("_id", -1)],
+        limit=limit,
+    )
+    return list(cur)
+
+
+def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """
+    Busca lexical em long_memory.
+    - Mongo: usa $text (precisa de índice text em 'text' e/ou 'meta.title')
+    - Fallback: contains simples.
+    """
+    q = str(query or "").strip()
+    if not q:
+        return []
+
+    # tenta Mongo $text primeiro
+    try:
+        from .database import get_backend
+        if get_backend() == "mongo":
+            # projection com textScore pode não existir no wrapper -> fazemos simples
+            cur = _longmem().find(
+                {"usuario": usuario, "$text": {"$search": q}},
+                limit=limit,
+            )
+            return list(cur)
+    except Exception:
+        pass
+
+    # fallback lexical simples (caso backend mude)
+    rows = list_long_memory(usuario, limit=2000)
+    qq = q.lower()
+    out: List[Dict[str, Any]] = []
+    for d in rows:
+        t = str(d.get("text") or "").lower()
+        m = d.get("meta") or {}
+        title = str(m.get("title") or "").lower() if isinstance(m, dict) else ""
+        hay = f"{title} {t}".strip()
+        if qq in hay:
+            out.append(d)
+        if len(out) >= limit:
+            break
+    return out
+
+
 # ---------- Eventos ----------
 def register_event(
     usuario: str,
@@ -337,10 +419,14 @@ def last_event(usuario: str, tipo: str) -> Optional[Dict[str, Any]]:
     )
 
 
-def _safe_create_index(col_obj, keys):
+def _safe_create_index(col_obj, keys, **kwargs) -> bool:
+    """
+    Cria índice tanto no wrapper quanto no pymongo interno (._col), se existir.
+    Aceita kwargs para índices text, nomes, etc.
+    """
     try:
         if hasattr(col_obj, "create_index"):
-            col_obj.create_index(keys)
+            col_obj.create_index(keys, **kwargs)
             return True
     except Exception:
         pass
@@ -348,12 +434,33 @@ def _safe_create_index(col_obj, keys):
     try:
         inner = getattr(col_obj, "_col", None)
         if inner is not None and hasattr(inner, "create_index"):
-            inner.create_index(keys)
+            inner.create_index(keys, **kwargs)
             return True
     except Exception:
         pass
 
     return False
+
+
+def ensure_long_memory_indexes() -> None:
+    """
+    Índices específicos da long_memory:
+    - text index em "text" (e opcionalmente em meta.title)
+    - índice (usuario, ts) para listagem rápida
+    """
+    try:
+        from .database import get_backend
+        if get_backend() != "mongo":
+            return
+
+        # índice por usuário + tempo
+        _safe_create_index(_longmem(), [("usuario", 1), ("ts", -1), ("_id", -1)], name="lm_user_ts_idx")
+
+        # índice text (Mongo aceita "text" como tipo)
+        # OBS: alguns wrappers não aceitam isso; o fallback via ._col resolve.
+        _safe_create_index(_longmem(), [("text", "text")], name="lm_text_idx")
+    except Exception:
+        pass
 
 
 def ensure_indexes() -> None:
@@ -362,9 +469,12 @@ def ensure_indexes() -> None:
         if get_backend() != "mongo":
             return
 
-        _safe_create_index(_hist(), [("usuario", 1), ("ts", 1), ("_id", 1)])
-        _safe_create_index(_state(), [("usuario", 1)])
-        _safe_create_index(_events(), [("usuario", 1), ("ts", -1), ("_id", -1)])
+        _safe_create_index(_hist(), [("usuario", 1), ("ts", 1), ("_id", 1)], name="hist_user_ts_idx")
+        _safe_create_index(_state(), [("usuario", 1)], name="state_user_idx")
+        _safe_create_index(_events(), [("usuario", 1), ("ts", -1), ("_id", -1)], name="events_user_ts_idx")
+
+        # ✅ NOVO: long_memory
+        ensure_long_memory_indexes()
     except Exception:
         pass
 
@@ -405,6 +515,12 @@ def _invalidate_cache_for_user(usuario: str) -> None:
         mk = f"mem::{usuario}"
         if mk in st.session_state:
             del st.session_state[mk]
+
+        # (opcional) se você cachear longmem no futuro:
+        # lm_prefix = f"longmem::{usuario}::"
+        # for k in list(st.session_state.keys()):
+        #     if isinstance(k, str) and k.startswith(lm_prefix):
+        #         del st.session_state[k]
 
     except (ImportError, AttributeError, RuntimeError):
         pass
