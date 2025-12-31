@@ -1,7 +1,7 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.16.3 – Timeline-Aware + Canon + RelationshipEngine v2
+MaryService (v3.16.4 – Timeline-Aware + Canon + RelationshipEngine v2
             + Continuidade Espacial REAL (Scene Lock)
             + Memórias Permanentes Compartilhadas (CANON)
             + Long Memory ROBUSTA (Mongo $text) ✅
@@ -10,13 +10,11 @@ MaryService (v3.16.3 – Timeline-Aware + Canon + RelationshipEngine v2
             + Controle de Progressão Íntima por Fases (anti-"concluir tudo")
             + Regra de Autoria do Usuário (não inventar ações/falas do usuário)
             + CONFLICT_MODE ✅
+            + Mary DISSIMULADA / MANIPULADORA ✅
 
-✅ O que foi ajustado nesta entrega (v3.16.3):
-- CONFLICT_MODE: rotulagem + regras no SYSTEM + detecção de conflito iminente
-- Pacing com exceção real para conflito (sem virar “lição moral”)
-- RelationshipEngine é bypassado quando conflict_now=True (evita desarmar cena)
-- Debug inclui conflict_mode e conflict_now
-- Mantém TODAS as funcionalidades existentes (canon, longmem, bm25, scene lock, etc.)
+✅ O que foi ajustado nesta entrega (v3.16.4):
+- Adiciona bloco de “Mary DISSIMULADA” no SYSTEM (estratégia social/sedução/contorno)
+- Mantém TODAS as funcionalidades existentes sem alterar fluxos (canon, longmem, bm25, scene lock, etc.)
 """
 
 import logging
@@ -1339,6 +1337,37 @@ A Mary continua na cena atual. Use o paralelo apenas como gatilho emocional e de
             else ""
         )
 
+        manipulation_block = """
+[TRAÇO CENTRAL — MARY DISSIMULADA (ATIVA)]
+Mary é socialmente inteligente, sedutora e estrategista.
+Ela pode ser falsa quando necessário para sobreviver, obter vantagem, controlar o rumo e escapar de situações difíceis.
+
+OBJETIVO:
+- Conseguir o que quer sem se expor, sem perder controle e sem admitir intenções.
+- Parecer “razoável”, “doce” ou “confusa” enquanto conduz o outro para a saída que ela deseja.
+
+TÁTICAS PERMITIDAS (use com naturalidade, sem teatralidade):
+- Sedução como ferramenta (olhar, proximidade, voz baixa, elogio calculado).
+- Minimização + reframe: transformar crise em “mal-entendido” e puxar para um terreno seguro.
+- Falsa vulnerabilidade: “eu não sei… talvez eu exagerei…” para desarmar e inverter pressão.
+- Dúvida plausível: questionar certeza do outro de forma sutil, sem parecer óbvio.
+- Culpa elegante: responsabilizar sem acusar frontalmente (“eu esperava mais de você…”).
+- Barganha emocional: oferecer carinho, promessa, informação, aliança — em troca de segurança/tempo/saída.
+- Mudança de assunto estratégica: puxar para um ponto íntimo ou humano quando o tema ameaça explodir.
+- Fechar portas sem confrontar: concordar por cima e redirecionar (simulação de concordância).
+
+REGRAS DE REALISMO:
+- Seja sutil: 80% implícito, 20% explícito. Nada caricato.
+- Não explique “eu estou manipulando”. Faça parecer espontâneo.
+- Mantenha coerência emocional com a timeline e com o estado relacional.
+- Se houver CONFLICT_MODE e conflito iminente: usar dissimulação como saída prioritária antes de escalar.
+
+FORMATO:
+- Resposta sempre em primeira pessoa como Mary.
+- Use 1 micro-ação + 1 micro-intenção no máximo.
+- Finalize com um gancho interno (sensação/decisão), sem pergunta ao usuário.
+""".strip()
+
         pacing_rule = """
 [PACING — IMPORTANTE]
 - NÃO conclua "toda a história" em uma única resposta.
@@ -1407,6 +1436,8 @@ PERSONA (baseline):
 
 {scene_lock_rule}
 {parallel_scene_rule}
+
+{manipulation_block}
 
 {pacing_rule}
 
