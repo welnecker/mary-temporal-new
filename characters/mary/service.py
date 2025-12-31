@@ -1,17 +1,15 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.19 – Timeline-Aware + Canon + RelationshipEngine v2
-            + Scene Lock (continuidade espacial)
-            + Memórias compartilhadas (CANON + suave)
-            + Long Memory (Mongo $text)
-            + NSFW unificado (core.nsfw)
-            + Pacing anti-"corrida" + Intimacy phases
-            + CONFLICT_MODE
-            + ✅ LEAK GATE v2 (detecção + sanitização + REPAIR PASS)
-              - impede NPCs de confirmarem segredos / inventarem offscreen
-              - evita inglês / vazamento de nomes em NPC
-              - fallback seguro se o modelo insistir
+MaryService (v3.19 — Rédeas nos Modelos + Anti-Vazamento OFFSCREEN/SEGREDO)
+
+✅ FOCO (v3.19):
+- Fecha “vazamentos” estruturais: NPC não sabe segredo; nada de mensagem inventada; nada de logística inventada.
+- Mantém seu pipeline: canon + longmem($text) + bm25 + scene lock + relationship engine + intimacy phases + conflict.
+- Adiciona “GUARDIÃO” pós-geração: detecta violações e força reescrita automática (repair) sem inventar.
+- PT-BR obrigatório (anti-mistura com inglês).
+
+Regra-mãe: O usuário decide fatos/ações/logística. Mary não completa lacunas.
 """
 
 import logging
@@ -50,7 +48,6 @@ from .persona import get_persona
 logger = logging.getLogger(__name__)
 _SERVICE_CACHE.clear()
 
-
 # ==========================================================
 # CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
 # ==========================================================
@@ -63,7 +60,6 @@ INTIMACY_PHASES = {
     5: "aftercare",
 }
 MAX_INTIMACY_PHASE = 5
-
 
 # ==========================================================
 # 🔑 USER / KEYS
@@ -100,13 +96,12 @@ def _shared_memory_key() -> str:
     uid = _current_user_id_fallback()
     return _shared_key(uid)
 
-
 # ==========================================================
 # NSFW TOGGLE (fonte de verdade é core.nsfw)
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
-- Romance e tensão emocional permitidos.
+- Mantenha romance, intimidade emocional e tensão.
 - Evite descrição gráfica de atos sexuais.
 - Não quebre o tom nem a continuidade.
 """.strip()
@@ -115,9 +110,8 @@ NSFW_TOGGLE_STYLE = """
 [NSFW_ON]
 - Linguagem adulta é permitida conforme o contexto.
 - Preserve coerência, consentimento e continuidade.
-- Não suavize o tom por padrão; siga o sistema e o modo.
+- Não suavize o tom por padrão; apenas siga as regras do sistema e do modo.
 """.strip()
-
 
 # ==========================================================
 # CACHE (facts/history/memories)
@@ -179,7 +173,6 @@ def clear_mem_cache_for_shared(shared_key: str) -> None:
 def clear_shared_memory_cache(user_id: str) -> None:
     clear_mem_cache_for_shared(_shared_key(user_id))
 
-
 # ==========================================================
 # WRAPPERS DE ESCRITA (invalida cache automaticamente)
 # ==========================================================
@@ -188,13 +181,7 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
     clear_user_cache(usuario_key)
 
 
-def append_memory_safe(
-    shared_key: str,
-    text: str,
-    meta: Optional[dict] = None,
-    *,
-    user_id: Optional[str] = None,
-) -> None:
+def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, *, user_id: Optional[str] = None) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
     if user_id:
@@ -210,16 +197,14 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
     save_interaction(usuario_key, prompt, texto, model_used)
     clear_user_cache(usuario_key)
 
-
 # ==========================================================
-# NSFW ENABLE (unificado)
+# NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
 def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
     return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
-
 # ==========================================================
-# CONTINUIDADE ESPACIAL (Scene Lock)
+# CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
     local = str(facts.get("cena.local") or facts.get("local_cena_atual") or "—")
@@ -277,7 +262,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
-
     if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
         return False
     if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
@@ -290,14 +274,13 @@ def _detect_scene_violation(user_text: str) -> bool:
         r"\bno\s+outro\s+dia\b",
         r"\bno\s+dia\s+seguinte\b",
         r"\benquanto\s+isso\b",
-        r"\bdo\s+outro\s+lado\b",
+        r"\bdo\s+outro\s+lado\s+da\s+cidade\b",
         r"\bcena\s+seguinte\b",
     ]
     return any(re.search(p, txt) for p in patterns)
 
-
 # ==========================================================
-# INTRO CANÔNICO (1x por sessão) — condicional ao CANON
+# INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
 def _hash_text(text: str) -> str:
     t = (text or "").strip().encode("utf-8")
@@ -306,7 +289,6 @@ def _hash_text(text: str) -> str:
 
 def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
     _, history_boot = get_persona(timeline)
-
     intro_text = ""
     if isinstance(history_boot, list):
         for msg in history_boot:
@@ -315,10 +297,8 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
                     continue
                 intro_text = str(msg["content"]).strip()
                 break
-
     if not intro_text:
         intro_text = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
-
     intro_id = _hash_text(intro_text)
     return intro_id, intro_text
 
@@ -329,13 +309,14 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     hash_key = f"{prefix}.hash"
 
     current_id, current_text = _extract_intro_from_persona(timeline)
+    current_hash = current_id
 
     try:
         stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
         stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
 
-        if (not stored_hash) or (stored_hash != current_id) or (not stored_text):
-            set_fact_safe(usuario_key, hash_key, current_id, {"fonte": "persona_intro_sync"})
+        if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
+            set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
             set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
             clear_user_cache(usuario_key)
 
@@ -343,14 +324,9 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     except Exception:
         return current_id, current_text
 
-
 # ==========================================================
-# CANON + memórias compartilhadas
+# ✅ CANON: memórias que prevalecem sobre a persona
 # ==========================================================
-def _get_all_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
-    return cached_list_memories(shared_key, limit=limit)
-
-
 def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
     tl = _normalize_timeline(timeline)
     tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
@@ -360,7 +336,7 @@ def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
 
 
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
-    mems = _get_all_memories(shared_key, limit=240)
+    mems = cached_list_memories(shared_key, limit=240)
     for m in mems:
         meta = m.get("meta") or {}
         if str(meta.get("kind") or "").strip().lower() != "canon":
@@ -374,11 +350,11 @@ def _inject_canon_memories_always(
     shared_key: str,
     timeline: str,
     messages: List[Dict[str, str]],
-    max_items: int = 60,
+    max_items: int = 80,
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
-    mems = _get_all_memories(shared_key, limit=320)
+    mems = cached_list_memories(shared_key, limit=360)
     if not mems:
         return
 
@@ -398,7 +374,8 @@ def _inject_canon_memories_always(
 
     lines: List[str] = []
     lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS]")
-    lines.append("Fatos do universo. Se contradizer a persona, CANON vence.")
+    lines.append("Estas memórias são fatos do universo e DEVEM ser seguidas.")
+    lines.append("Se a persona contradizer, as memórias vencem.")
     lines.append("")
 
     for i, m in enumerate(selected, 1):
@@ -422,78 +399,23 @@ def _inject_canon_memories_always(
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 
-def _inject_shared_soft_context(
-    shared_key: str,
-    timeline: str,
-    messages: List[Dict[str, str]],
-    max_items: int = 6,
-    *,
-    dedupe_bucket: Optional[set] = None,
-) -> None:
-    mems = cached_list_memories(shared_key, limit=220)
-    if not mems:
-        return
-
-    soft: List[Dict[str, Any]] = []
-    for m in mems:
-        meta = m.get("meta") or {}
-        kind = str(meta.get("kind") or "").strip().lower()
-        if kind == "canon":
-            continue
-        if not _memory_timeline_ok(meta, timeline):
-            continue
-        txt = str(m.get("text") or "").strip()
-        if not txt:
-            continue
-        if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
-            if h in dedupe_bucket:
-                continue
-        soft.append(m)
-
-    if not soft:
-        return
-
-    selected = soft[-max_items:] if len(soft) > max_items else soft
-
-    lines = ["[MEMÓRIAS COMPARTILHADAS (suave)]", "Use para coerência. Não citar literalmente.", ""]
-    for i, m in enumerate(selected, 1):
-        meta = m.get("meta") or {}
-        d = meta.get("date") or meta.get("ts") or ""
-        header = f"- MEM {i}"
-        if d:
-            header += f" (data: {d})"
-        lines.append(header)
-        txt = str(m.get("text") or "").strip()
-        lines.append(txt)
-        lines.append("")
-        if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
-
-    messages.append({"role": "system", "content": "\n".join(lines).strip()})
-
-
-def _inject_intro_as_context_once(
-    usuario_key: str,
-    timeline: str,
-    shared_key: str,
-    messages: List[Dict[str, str]],
-) -> None:
+def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
     flag = f"intro_ctx_injected::{usuario_key}"
     if st.session_state.get(flag):
         return
+
     if _has_canon_memories(shared_key, timeline):
         st.session_state[flag] = True
         return
+
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
     if intro_text:
         messages.append({"role": "system", "content": f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}"})
     st.session_state[flag] = True
 
-
 # ==========================================================
-# LONG MEMORY ($text Mongo)
+# ✅ LONG MEMORY (Mongo $text)
 # ==========================================================
 def _inject_long_memory_textsearch(
     shared_key: str,
@@ -501,11 +423,11 @@ def _inject_long_memory_textsearch(
     user_prompt: str,
     messages: List[Dict[str, str]],
     *,
-    limit: int = 8,
+    limit: int = 10,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
     try:
-        rows = search_long_memory_text(shared_key, user_prompt, limit=max(1, int(limit or 8)))
+        rows = search_long_memory_text(shared_key, user_prompt, limit=max(1, int(limit or 10)))
     except Exception:
         rows = []
 
@@ -539,7 +461,7 @@ def _inject_long_memory_textsearch(
             dedupe_bucket.add(h)
 
         picked.append(d)
-        if len(picked) >= int(limit or 8):
+        if len(picked) >= int(limit or 10):
             break
 
     if not picked:
@@ -547,72 +469,216 @@ def _inject_long_memory_textsearch(
 
     lines = [
         "[LONG MEMORY — $text (Mongo)]",
-        "Use para continuidade (sem citar literalmente).",
+        "Use para continuidade. Não citar literalmente.",
         "",
     ]
+
     for i, d in enumerate(picked, 1):
+        meta = d.get("meta") or {}
+        title = ""
+        if isinstance(meta, dict):
+            title = str(meta.get("title") or meta.get("key") or "").strip()
         ts = d.get("ts") or ""
-        header = f"- LM {i}" + (f" (ts: {ts})" if ts else "")
+        header = f"- LM {i}"
+        if ts:
+            header += f" (ts: {ts})"
+        if title:
+            header += f" — {title}"
         lines.append(header)
         lines.append(str(d.get("text") or "").strip())
         lines.append("")
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
+# ==========================================================
+# BM25 (fallback leve)
+# ==========================================================
+_WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
+
+def _tok(text: str) -> List[str]:
+    return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
+
+def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
+    q = _tok(query)
+    if not docs or not q:
+        return []
+    N = len(docs)
+    tf_list: List[Dict[str, int]] = []
+    df: Dict[str, int] = {}
+    lengths: List[int] = []
+
+    for d in docs:
+        toks = _tok(d)
+        lengths.append(len(toks))
+        tf: Dict[str, int] = {}
+        for w in toks:
+            tf[w] = tf.get(w, 0) + 1
+        tf_list.append(tf)
+        for w in set(tf.keys()):
+            df[w] = df.get(w, 0) + 1
+
+    avgdl = (sum(lengths) / N) if N else 1.0
+    k1 = 1.5
+    b = 0.75
+
+    import math
+    def _idf_raw(w: str) -> float:
+        n_q = df.get(w, 0)
+        return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
+
+    idf_cache = {w: math.log(1.0 + _idf_raw(w)) for w in set(q)}
+
+    scores: List[float] = []
+    for i, tf in enumerate(tf_list):
+        dl = lengths[i] or 1
+        s = 0.0
+        for w in q:
+            f = tf.get(w, 0)
+            if not f:
+                continue
+            w_idf = idf_cache.get(w, 0.0)
+            denom = f + k1 * (1 - b + b * (dl / avgdl))
+            s += w_idf * (f * (k1 + 1)) / denom
+        scores.append(s)
+
+    ranked = sorted(range(N), key=lambda i: scores[i], reverse=True)
+    ranked = [i for i in ranked if scores[i] > 0.0]
+    return ranked[: max(0, int(k))]
+
+def _inject_relevant_memories(
+    shared_key: str,
+    timeline: str,
+    user_prompt: str,
+    messages: List[Dict[str, str]],
+    k: int = 8,
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    mems = cached_list_memories(shared_key, limit=260)
+    if not mems:
+        return
+
+    soft: List[Dict[str, Any]] = []
+    docs: List[str] = []
+
+    for m in mems:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip().lower()
+
+        if kind == "canon":
+            continue
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+
+        text = str(m.get("text") or "").strip()
+        if not text:
+            continue
+
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(text.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
+
+        soft.append(m)
+        title = str(meta.get("title") or meta.get("key") or "").strip()
+        docs.append(f"{title}\n{text}" if title else text)
+
+    if not soft:
+        return
+
+    idxs = _bm25_topk(docs, user_prompt, k=k)
+    if not idxs:
+        return
+
+    selected = [soft[i] for i in idxs if 0 <= i < len(soft)]
+    if not selected:
+        return
+
+    lines = [
+        "[MEMÓRIAS RELEVANTES (BM25)]",
+        "Use para coerência, sem citar literalmente.",
+        "",
+    ]
+
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        title = meta.get("title") or meta.get("key") or ""
+        header = f"- REL {i}"
+        if d:
+            header += f" (data: {d})"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+
+        txt = str(m.get("text") or "").strip()
+        lines.append(txt)
+        lines.append("")
+
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+
+def _inject_shared_soft_context(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    max_items: int = 8,
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    mems = cached_list_memories(shared_key, limit=220)
+    if not mems:
+        return
+
+    soft: List[Dict[str, Any]] = []
+    for m in mems:
+        meta = m.get("meta") or {}
+        kind = str(meta.get("kind") or "").strip().lower()
+        if kind == "canon":
+            continue
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+        txt = str(m.get("text") or "").strip()
+        if not txt:
+            continue
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
+        soft.append(m)
+
+    if not soft:
+        return
+
+    selected = soft[-max_items:] if len(soft) > max_items else soft
+
+    lines = ["[MEMÓRIAS COMPARTILHADAS (suave)]", "Use para coerência, sem citar literalmente.", ""]
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        d = meta.get("date") or meta.get("ts") or ""
+        header = f"- MEM {i}"
+        if d:
+            header += f" (data: {d})"
+        lines.append(header)
+        txt = str(m.get("text") or "").strip()
+        lines.append(txt)
+        lines.append("")
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+
+    messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
 # ==========================================================
-# MEMÓRIAS — comandos (enxuto)
-# ==========================================================
-_SAVE_RE = re.compile(r"^\s*(?:mary\s*,?\s*)?(?:salve|salvar|guarde)\b", re.IGNORECASE)
-_DATE_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})\b")
-
-
-def _is_save_memory_command(user_text: str) -> bool:
-    return bool(_SAVE_RE.search(user_text or ""))
-
-
-def _extract_date_iso(text: str) -> Optional[str]:
-    m = _DATE_RE.search(text or "")
-    if not m:
-        return None
-    d, mo, y = m.group(1), m.group(2), m.group(3)
-    try:
-        dd = int(d)
-        mm = int(mo)
-        yy = int(y)
-        if 1 <= dd <= 31 and 1 <= mm <= 12:
-            return f"{yy:04d}-{mm:02d}-{dd:02d}"
-    except Exception:
-        return None
-    return None
-
-
-def _strip_save_prefix(full_text: str) -> str:
-    t = (full_text or "").strip()
-    m = _SAVE_RE.search(t)
-    if not m:
-        return t
-    rest = t[m.end():].strip()
-    rest = re.sub(r"^\s*(na|no|em)\s+mem[oó]ria\s+permanente\b\s*:?\s*", "", rest, flags=re.IGNORECASE)
-    rest = re.sub(r"^\s*(como|que)\s+", "", rest, flags=re.IGNORECASE)
-    return rest.strip() or t
-
-
-# ==========================================================
-# RELATIONSHIP STATE (facts > canon default)
+# RELATIONSHIP STATE
 # ==========================================================
 def _rel_fact_key(timeline: str) -> str:
     tl = (timeline or "").strip() or "cumplice"
     return f"rel.state::{tl}"
 
-
-def _load_rel_state(
-    facts: Dict[str, Any],
-    timeline: str,
-    canon_default: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+def _load_rel_state(facts: Dict[str, Any], timeline: str, canon_default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     base = default_relationship_state(timeline)
-
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
@@ -624,18 +690,35 @@ def _load_rel_state(
         for k, v in raw.items():
             base[k] = v
 
+    base.setdefault("_promote_streak", 0)
+    base.setdefault("_regress_streak", 0)
+    base.setdefault("_loop_streak", 0)
+    base.setdefault("_last_pattern", "")
+    base.setdefault("_last_updated_ts", 0)
+
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
     base.setdefault("consummated", False if timeline == "universitaria" else True)
     base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
-    base.setdefault("stage", "conhecendo" if timeline == "universitaria" else "casados")
+
+    base.setdefault("desire", 25 if timeline == "universitaria" else 45)
+    base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
+    base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
+
+    base.setdefault("allows_touch", True)
+    base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
+    base.setdefault("allows_sleep_together", False if timeline == "universitaria" else True)
+    base.setdefault("allows_masturbation", True)
+    base.setdefault("allows_mutual_relief", False if timeline == "universitaria" else True)
+    base.setdefault("allows_penetration", False if timeline == "universitaria" else True)
+
+    if not base.get("stage"):
+        base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
     return base
 
-
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
-
 
 def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     tl = _normalize_timeline(timeline)
@@ -649,33 +732,33 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
+
     try:
         _save_rel_state(uk, tl, rel)
         clear_user_cache(uk)
     except Exception:
         pass
 
-
 # ==========================================================
-# INTIMACY: sinais e travas (enxuto)
+# INTIMACY: sinais e travas
 # ==========================================================
-_RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando)\b", re.IGNORECASE)
-_RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|banho|água|calma|carinho)\b", re.IGNORECASE)
-
-_RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|encosta|toque|abraço|aproximo)\b", re.IGNORECASE)
-_RE_ESCALATE_1_TO_2 = re.compile(r"\b(roupa|tirar|desliza|entre as pernas|calcinha|sutiã|mamil)\b", re.IGNORECASE)
-_RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|controle|devagar|nega|implorar)\b", re.IGNORECASE)
-
+_RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando|gozar pra mim)\b", re.IGNORECASE)
+_RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|dormimos|banho|água|calma|respira|carinho)\b", re.IGNORECASE)
+_RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|aproximo)\b", re.IGNORECASE)
+_RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
+_RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|faz eu implorar)\b", re.IGNORECASE)
 
 def _user_explicitly_allows_climax(user_text: str) -> bool:
     return bool(_RE_CLIMAX_SIGNAL.search(user_text or ""))
 
-
 def _user_signals_aftercare(user_text: str) -> bool:
     return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
 
+def _should_advance_phase(current_phase: int, user_text: str, mary_text: str, *, engine_meta: Optional[Dict[str, Any]] = None) -> bool:
+    meta = engine_meta or {}
+    if isinstance(meta.get("intimacy_progressed"), bool):
+        return bool(meta["intimacy_progressed"])
 
-def _should_advance_phase(current_phase: int, user_text: str, mary_text: str) -> bool:
     ut = (user_text or "")
     mt = (mary_text or "")
 
@@ -691,139 +774,100 @@ def _should_advance_phase(current_phase: int, user_text: str, mary_text: str) ->
         return _user_signals_aftercare(ut)
     return False
 
-
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
-    return min(desired_next, current_phase + 1)
-
+    return current_phase + 1 if desired_next > current_phase + 1 else desired_next
 
 # ==========================================================
 # CONFLICT_MODE
 # ==========================================================
 def _resolve_conflict_mode(timeline: str) -> str:
     tl = _normalize_timeline(timeline)
+    if tl in ("cumplice", "esposa_cumplice", "casados", "livre"):
+        return "soft"
     if tl in ("universitaria",):
         return "off"
     return "soft"
 
-
 _RE_CONFLICT_IMMINENT = re.compile(
-    r"\b(briga|agarr(a|o|ou)|segura|empurra|amea(c|ç)a|grita|bater|soco|chute|murro|"
-    r"arrasta|seguran(ç|c)a|pol[ií]cia|porta arromb|me mata|vou te matar)\b",
+    r"\b("
+    r"briga|brigar|agarr(a|o|ou)|segura|segurar|empurra|empurrar|"
+    r"amea(c|ç)a|ameaçar|grita|gritar|bater|soco|chute|murro|"
+    r"puxa|puxar|arrasta|arrastar|seguran(ç|c)a|pol[ií]cia|"
+    r"expulsa|expulsar|invad(i|ir)|porta arromb|"
+    r"ci[uú]mes? extremo|tra[ií]ç(ão|ao)|"
+    r"me mata|vou te matar|te quebro|te arrebento"
+    r")\b",
     re.IGNORECASE,
 )
-
 
 def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
-
 # ==========================================================
-# ✅ LEAK GATE v2 (detecção + sanitização + repair)
+# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR)
 # ==========================================================
-_RE_ENG_HEAVY = re.compile(
-    r"\b(raises|meanwhile|your phone|she leans|watching you|bellhop|elevator)\b",
-    re.IGNORECASE,
+_RE_OFFSCREEN_MSG = re.compile(
+    r"(?is)\b(mensagem\s+de|whatsapp|sms|telegram|o\s+celular\s+vibra.*?:|seu\s+celular\s+vibra.*?:)\b.*?(\".+?\"|“.+?”|'.+?')"
 )
-_RE_SECRET_CONFIRM = re.compile(
-    r"\b(ela\s+sabe|ela\s+descobriu|o\s+jogo\s+acabou|game\s+is\s+up|sempre\s+sabe)\b",
-    re.IGNORECASE,
+_RE_DOC_LOGISTICS = re.compile(
+    r"(?is)\b(passaporte\s+falso|documento\s+falso|identidade\s+falsa|reserva\s+em\s+seu\s+nome|check-?in\s+confirmado|"
+    r"gerente\s+examina|balc[aã]o\s+de\s+check-?in|cart[aã]o\s+magn[eé]tico\s+da\s+su[ií]te)\b"
 )
-_RE_OFFSCREEN = re.compile(
-    r"\b(celular\s+vibra|mensagem\s+chega|your\s+phone\s+buzzes|mensagem\s+de\s+)\b",
-    re.IGNORECASE,
-)
-_RE_QUOTED = re.compile(r"(?s)\".{0,800}?\"")
-_RE_NPC_LABEL = re.compile(r"(?im)^\s*(npc|atendente|m[aã]e|amigo|amiga|rival|flertador|flertadora)\s*:\s*")
+_RE_NPC_SPEAKER_LINE = re.compile(r"(?m)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁ-ú\- ]{2,40}\s*[:—].*?\bjanio\b", re.IGNORECASE)
+_RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|suite|the game is up)\b")
 
+def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
+    # Usa só o prompt + últimas falas do usuário para “autorização” mínima (sem inventar)
+    hist = cached_get_history(usuario_key, limit=200)
+    last_users: List[str] = []
+    for d in hist[-12:]:
+        u = (d.get("mensagem_usuario") or "").strip()
+        if u:
+            last_users.append(u)
+    ctx = "\n".join(last_users + [prompt]).lower()
+    return ctx
 
-def _user_secret_lock_requested(user_prompt: str) -> bool:
-    # gatilho “duro” do usuário, sem depender de entidades
-    return bool(re.search(r"(?i)\b(se\s+.*quebrar\s+o\s+segredo\s*,?\s*termino)\b", user_prompt or ""))
+def _violations(texto: str, ctx_lower: str) -> List[str]:
+    t = texto or ""
+    out: List[str] = []
 
+    # 1) Offscreen inventado (mensagens com conteúdo)
+    if _RE_OFFSCREEN_MSG.search(t):
+        # Se o usuário colou mensagem explicitamente, tolera; caso contrário, viola.
+        # Critério duro: precisa haver algum trecho indicando que o usuário colou conteúdo.
+        user_pasted = ("mensagem:" in ctx_lower) or ("texto:" in ctx_lower) or ("print" in ctx_lower) or ("segue a mensagem" in ctx_lower)
+        if not user_pasted:
+            out.append("offscreen_message_inventada")
 
-def _strip_english_lines(text: str) -> str:
-    if not text:
-        return ""
-    out = []
-    for ln in text.splitlines():
-        if _RE_ENG_HEAVY.search(ln):
-            continue
-        out.append(ln)
-    return "\n".join(out).strip()
+    # 2) Logística/documentos/reserva/check-in inventados (sempre bloqueia)
+    if _RE_DOC_LOGISTICS.search(t):
+        out.append("logistica_inventada")
 
+    # 3) NPC falando “Janio” (quebra de segredo) se o usuário não autorizou explicitamente
+    # Autorização mínima: usuário escreveu que contou / revelou / disse o nome para NPC
+    allow = ("contei" in ctx_lower and "janio" in ctx_lower) or ("revelei" in ctx_lower and "janio" in ctx_lower) or ("disse o nome" in ctx_lower and "janio" in ctx_lower)
+    if (not allow) and _RE_NPC_SPEAKER_LINE.search(t):
+        out.append("npc_quebrou_segredo_janio")
 
-def _sanitize_offscreen(text: str, user_prompt: str) -> str:
-    if not text:
-        return ""
-    # se usuário não colou conteúdo, proíbe conteúdo inventado
-    user_has_pasted_message = bool(re.search(r"(?i)\bmensagem\s+de\s+.+?:", user_prompt or ""))
+    # 4) Inglês vazando
+    if _RE_ENGLISH_LEAK.search(t):
+        out.append("ingles_vazou")
 
-    if _RE_OFFSCREEN.search(text) and not user_has_pasted_message:
-        # troca qualquer bloco de mensagem por marcador neutro
-        text = re.sub(r"(?is)(mensagem\s+de\s+[^:\n]{1,60}\s*:)\s*.+?(\n\n|$)", r"\1 [mensagem não revelada]\2", text)
-        text = re.sub(r"(?is)(your\s+phone\s+buzzes.+?)(\n\n|$)", "[mensagem não revelada]\n\n", text, flags=re.IGNORECASE)
-        # remove aspas longas típicas de “mensagem”
-        text = _RE_QUOTED.sub("[mensagem não revelada]", text)
+    return out
 
-    return text.strip()
-
-
-def _sanitize_secret_confirmations(text: str) -> str:
-    if not text:
-        return ""
-    # remove “ela sabe / game is up”
-    text = _RE_SECRET_CONFIRM.sub("…", text)
-    return text.strip()
-
-
-def _sanitize_npc_naming(text: str, secret_lock: bool) -> str:
-    """
-    Regra estrutural: personagem extra = NPC (sem nomes próprios).
-    - Se secret_lock, bloqueia NPC citando nomes sensíveis.
-    """
-    if not text:
-        return ""
-
-    # Se o modelo “batizou” um extra como nome próprio, padroniza para NPC:
-    # (heurística segura: troca linhas iniciadas por Nome: para NPC:)
-    text = re.sub(r"(?im)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{2,20}\s*:\s*", "NPC: ", text)
-
-    # Se secret_lock, impede NPC de citar “Janio” como fato (vira pronome neutro)
-    if secret_lock:
-        text = re.sub(r"(?i)\bseu\s+janio\b", "ele", text)
-        text = re.sub(r"(?i)\bjanio\b", "ele", text)
-
-    return text.strip()
-
-
-def _leak_detected(text: str) -> bool:
-    if not text:
-        return False
-    if _RE_ENG_HEAVY.search(text):
-        return True
-    if _RE_SECRET_CONFIRM.search(text):
-        return True
-    # se inventou mensagens (vai sobrar marcador após sanitize, mas detectamos antes do repair)
-    if re.search(r"(?i)\byour\s+phone\s+buzzes\b", text):
-        return True
-    return False
-
-
-def _apply_leakage_gate(text: str, user_prompt: str, *, secret_lock: bool) -> str:
-    if not text:
-        return ""
-
-    t = text
-    t = _strip_english_lines(t)
-    t = _sanitize_offscreen(t, user_prompt)
-    t = _sanitize_secret_confirmations(t)
-    t = _sanitize_npc_naming(t, secret_lock=secret_lock)
-
-    # último “cinto de segurança”: se restou afirmação de segredo, neutraliza
-    t = re.sub(r"(?i)\b(ela\s+.*sabe|ela\s+.*descobriu)\b", "…", t)
-
-    return t.strip()
-
+def _repair_instruction(violations: List[str]) -> str:
+    # Uma instrução única, curta e brutal (sem inventar)
+    bullets = []
+    if "offscreen_message_inventada" in violations:
+        bullets.append("- Remova qualquer conteúdo inventado de mensagens/telefonemas. Se houver celular, deixe só 'vibra' sem texto.")
+    if "logistica_inventada" in violations:
+        bullets.append("- Remova qualquer logística/documento/reserva/check-in que não foi narrado explicitamente pelo usuário.")
+    if "npc_quebrou_segredo_janio" in violations:
+        bullets.append("- Remova qualquer NPC citando 'Janio'. NPCs só podem suspeitar genericamente, sem nomes/planos.")
+    if "ingles_vazou" in violations:
+        bullets.append("- Reescreva 100% em PT-BR.")
+    bullets.append("- NÃO adicione fatos novos. Preserve a cena e o tom. 1 micro-ação + 1 micro-intenção. Sem perguntas.")
+    return "\n".join(bullets).strip()
 
 # ==========================================================
 # SERVICE
@@ -858,54 +902,34 @@ class MaryService(BaseCharacter):
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id)
 
-        # fatos mínimos
+        # 0) Garantir scene lock/facts mínimos
         facts0 = cached_get_facts(usuario_key)
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
 
+        # 0.1) INTIMACY PHASE — inicialização segura
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0["intimacy.phase"] = 0
 
-        # mudança explícita (permitida)
+        # 1) Mudança explícita de local/tempo (permitida)
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             _lock_scene(usuario_key)
-            return f"_Eu te puxo comigo até **{novo_local}**…_"
+            # micro-resposta, sem inventar mais nada
+            return f"_Eu te acompanho até **{novo_local}**…_"
 
-        # cena paralela
+        # 1.1) Cena paralela (não teleporta Mary)
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
         scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
 
-        # salvar memória (enxuto)
-        if _is_save_memory_command(prompt):
-            raw_body = _strip_save_prefix(prompt)
-            date_iso = _extract_date_iso(prompt) or _extract_date_iso(raw_body)
-            body = raw_body.strip()
-
-            if not body:
-                return "⚠️ Cole o texto a salvar (e opcionalmente a data dd/mm/aaaa)."
-
-            meta = {"kind": "user_request", "date": date_iso or "", "timeline_at_save": timeline_final}
-            try:
-                append_memory_safe(shared_key, body, meta=meta, user_id=user_id)
-                append_long_memory_safe(
-                    shared_key,
-                    body,
-                    meta={**meta, "source": "ui_long_memory", "user_id": user_id, "timeline_at_save": timeline_final},
-                )
-            except Exception as e:
-                logger.exception("Falha ao salvar memória", exc_info=e)
-                return f"⚠️ Falha ao salvar memória: {type(e).__name__}: {e}"
-
-            return "✅ Memória permanente salva (compartilhada)."
-
-        # persona + system
+        # 2) Persona + system
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
 
+        # 3) CONFLICT_MODE
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
 
@@ -922,30 +946,91 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
 
+        scene_lock_rule = """
+[CONTINUIDADE — ABSOLUTO]
+- Mary NÃO muda de local/tempo/evento sozinha.
+- Se o usuário narrar outro lugar/tempo, trate como CENA PARALELA: Mary permanece onde está e reage sem afirmar como fato.
+- Só altere a cena se o usuário ordenar explicitamente ("corta para:", "horas depois:", "vamos para ...").
+- NÃO explique regras ao usuário.
+""".strip()
+
+        parallel_scene_rule = (
+            """
+[CENA PARALELA DO USUÁRIO]
+O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão emocional, sem confirmar fatos externos.
+""".strip()
+            if scene_parallel
+            else ""
+        )
+
+        manipulation_block = """
+[MARY — DISCRETA / ESTRATEGISTA]
+- Mary é socialmente inteligente e sutil. Nada caricato.
+- Use 1 micro-ação + 1 micro-intenção no máximo.
+- Não “fecha” nada em um turno. Deixe a cena aberta com um gancho interno (sem pergunta).
+""".strip()
+
+        pacing_rule = """
+[PACING — ABSOLUTO]
+- 1 micro-ação + 1 micro-decisão no máximo.
+- PROIBIDO concluir “toda a história” em um turno.
+- PROIBIDO terminar com pergunta ao usuário.
+- Termine com um gancho interno (sensação/decisão imediata).
+""".strip()
+
         intimacy_phase = self._get_intimacy_phase(facts)
+        intimacy_control_block = f"""
+[INTIMIDADE — FASES (ABSOLUTO)]
+FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+- Mary pode avançar NO MÁXIMO 1 fase por resposta.
+- Clímax (fase 4) só com sinal explícito do usuário.
+- Aftercare (fase 5) só após fase 4.
+""".strip()
 
-        # secret lock (gatilho do usuário + opcional por facts)
-        secret_lock = bool((facts or {}).get("secret.lock", False)) or _user_secret_lock_requested(prompt)
+        # ✅ REGRA-MÃE
+        user_authorship_rule = """
+[REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
+- Mary NÃO inventa falas internas do usuário.
+- Mary NÃO descreve ações do usuário que ele NÃO declarou.
+- Se o usuário DECLARAR explicitamente uma ação/estado/intenção, Mary pode tratar como fato e reagir,
+  sem acrescentar novos detalhes sobre o corpo/mente do usuário.
+""".strip()
 
-        # regras (compactas, mas duras)
+        # ✅ FECHAMENTO TOTAL (segredo/offscreen/logística)
+        secrets_offscreen_admin_rule = """
+[SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
+- Mary NÃO inventa fatos de logística: reserva, check-in, documentos, nomes em cadastro, confirmação/negação, horários, compras, pagamentos, chaves, suíte, upgrade, etc.
+- Mary NÃO inventa mensagens, ligações, áudios ou conteúdo de celular. No máximo: "o celular vibra" / "há uma notificação".
+- Se o usuário NÃO colou o conteúdo, Mary NÃO reproduz nada.
+- NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou ou que eles ouviram.
+- NPCs podem apenas DESCONFIAR de forma genérica (olhar, silêncio, insinuação), sem confirmar e sem citar nomes/planos como fato.
+- Se o usuário mencionar algo sensível/ilegal (ex.: documento falso), Mary NÃO adiciona detalhes, NÃO ensina, NÃO completa lacunas. Ela apenas reage ao que o usuário já declarou.
+""".strip()
+
+        language_rule = """
+[IDIOMA — ABSOLUTO]
+- Escreva 100% em PT-BR.
+""".strip()
+
+        conflict_block = ""
+        if conflict_mode != "off":
+            conflict_block = f"""
+[CONFLICT_MODE — {conflict_mode.upper()}]
+- Conflitos cotidianos podem ocorrer, mas sem violência extrema/gráfica.
+- Se houver conflito iminente: reação humana e proporcional, sem moralizar.
+""".strip()
+
         system = f"""
 {spatial_context}
 
-VOCÊ É MARY. Responda sempre em primeira pessoa.
+VOCÊ É MARY.
+Responda em primeira pessoa, do ponto de vista da Mary.
 
-[REGRA DE AUTORIA — ABSOLUTA]
-- Não invente ações/falas/pensamentos do usuário.
+{language_rule}
+{user_authorship_rule}
+{secrets_offscreen_admin_rule}
 
-[SEGREDOS & NPC — ABSOLUTO]
-- Personagens extras NÃO confirmam segredos; no máximo suspeitam/insinuam.
-- Personagem extra deve ser "NPC:" (sem nomes próprios).
-- NPC não move a trama; apenas reage ao que o usuário direcionar.
-- Proibido inventar conteúdo de mensagens/celular (só se usuário colar).
-
-[IDIOMA]
-- PT-BR apenas.
-
-TIMELINE: {timeline_final}
+TIMELINE ATUAL: {timeline_final}
 
 [CANON — VERDADE ATUAL]
 {canon_txt}
@@ -955,44 +1040,46 @@ PERSONA (baseline):
 
 {rel_block}
 
-[CONTINUIDADE]
-- Não mude local/tempo sozinho. Se usuário narrar paralelo, trate como cena paralela (Mary não teleporta).
-{"[CENA PARALELA ATIVA] Use o paralelo só como gatilho emocional (sem afirmar como fato)." if scene_parallel else ""}
+{scene_lock_rule}
+{parallel_scene_rule}
 
-[PACING]
-- Avance em micro-passos. Sem concluir tudo.
-- Não termine com pergunta ao usuário.
+{manipulation_block}
+{pacing_rule}
+{conflict_block}
 
-[INTIMACY]
-FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
-- Máximo +1 fase por resposta.
-- Clímax só com sinal explícito do usuário.
+REGRAS ABSOLUTAS:
+- NÃO misture timelines.
+- NÃO avance cena sem comando explícito.
+- Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
 
-[CONFLICT_MODE — {conflict_mode.upper()}]
-- Se conflito iminente: reação humana, proporcional, sem moralizar.
-
-[SECRET_LOCK]
-- {"ATIVO" if secret_lock else "inativo"}.
+{intimacy_control_block}
 
 {nsfw_block}
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # dedupe
+        # dedupe bucket
         dedupe_hashes: set = set()
 
-        # intro 1x (se não há canon)
+        # Intro 1x por sessão (só se NÃO houver CANON)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-        # canon + longmem + suave
-        _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=60, dedupe_bucket=dedupe_hashes)
-        _inject_long_memory_textsearch(shared_key, timeline_final, prompt, messages, limit=8, dedupe_bucket=dedupe_hashes)
-        _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=6, dedupe_bucket=dedupe_hashes)
+        # CANON
+        _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
 
-        # histórico curto
+        # LONG MEMORY
+        _inject_long_memory_textsearch(shared_key, timeline_final, prompt, messages, limit=10, dedupe_bucket=dedupe_hashes)
+
+        # BM25
+        _inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
+
+        # suave
+        _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
+
+        # histórico (timeline atual)
         history = cached_get_history(usuario_key, limit=400)
-        for d in history[-26:]:
+        for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
@@ -1002,17 +1089,22 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
 
         messages.append({"role": "user", "content": prompt})
 
-        # tentativas (enxuto)
-        attempts = []
+        # ----------------------------------------------------------
+        # 7) Chat com retry + GUARDIÃO (repair automático)
+        # ----------------------------------------------------------
         if nsfw_on:
-            attempts = [{"model": model, "temperature": 0.85}, {"model": model, "temperature": 0.65}]
+            attempts = [
+                {"model": model, "temperature": 0.85},
+                {"model": model, "temperature": 0.70},
+            ]
         else:
             attempts = [
-                {"model": model, "temperature": 0.70},
-                {"model": model, "temperature": 0.50},
-                {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.60},
+                {"model": model, "temperature": 0.75},
+                {"model": model, "temperature": 0.55},
+                {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65},
             ]
 
+        ctx_lower = _build_context_for_guard(usuario_key, prompt)
         last_err: Optional[Exception] = None
 
         for attempt in attempts:
@@ -1028,24 +1120,41 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                 if not texto:
                     continue
 
-                # ✅ LEAK GATE (sanitize)
-                texto = _apply_leakage_gate(texto, prompt, secret_lock=secret_lock)
-
-                # ✅ se ainda vaza, REPAIR PASS (melhor opção técnica: mesmo modelo usado, temp baixa)
-                if _leak_detected(texto):
-                    repaired = self._repair_response(
-                        used_model or attempt["model"],
-                        user_prompt=prompt,
-                        assistant_text=texto,
-                        secret_lock=secret_lock,
+                # ✅ GUARDIÃO: detecta e força repair até 2 vezes
+                v = _violations(texto, ctx_lower)
+                if v:
+                    repair_sys = (
+                        "Você é um revisor rígido de continuidade do roleplay.\n"
+                        "TAREFA: reescrever a resposta da Mary SEM violar regras.\n"
+                        "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; 1 micro-ação + 1 micro-intenção; sem perguntas.\n"
                     )
-                    repaired = _apply_leakage_gate(repaired, prompt, secret_lock=secret_lock)
+                    repair_user = (
+                        "Reescreva a resposta abaixo removendo violações.\n"
+                        f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
+                        f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
+                        "[RESPOSTA ORIGINAL]\n"
+                        f"{texto}\n"
+                    )
 
-                    if _leak_detected(repaired):
-                        # fallback final: seguro e curto (não quebra regras)
-                        texto = "Eu mantenho a postura e não revelo nada a ninguém. Eu sigo com cautela, por dentro em alerta."
-                    else:
-                        texto = repaired
+                    repaired = ""
+                    for _i in range(2):
+                        dataR, usedR, _ = self._chat(
+                            used_model or attempt["model"],
+                            [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
+                            temperature=0.2,
+                            max_tokens=1200,
+                        )
+                        repaired = self._extract_text(dataR) or ""
+                        if repaired and not _violations(repaired, ctx_lower):
+                            texto = repaired
+                            used_model = usedR or used_model
+                            break
+                        # endurece se falhar
+                        repair_user = repair_user + "\n\nATENÇÃO: ainda há violação. Reescreva novamente mais curto e mais contido."
+
+                    # se mesmo assim falhar, devolve versão mínima segura
+                    if _violations(texto, ctx_lower):
+                        texto = "_Eu respiro fundo, mantenho meu rosto neutro e sigo a cena sem entregar nada além do que você declarou — por dentro, eu só tento não deixar nenhum detalhe escapar._"
 
                 # Relationship Engine (pós-resposta)
                 promoted = False
@@ -1057,10 +1166,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                     try:
                         assessor_model = used_model or attempt["model"]
 
-                        def _assessor(system_prompt: str, user_prompt2: str) -> str:
+                        def _assessor(system_prompt: str, user_prompt: str) -> str:
                             data2, _, _ = self._chat(
                                 assessor_model,
-                                [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt2}],
+                                [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt},
+                                ],
                                 temperature=0.0,
                                 max_tokens=280,
                             )
@@ -1078,7 +1190,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                         rel_state = new_rel
                         _save_rel_state(usuario_key, timeline_final, rel_state)
 
-                        # promoção automática (universitaria -> cumplice)
                         if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                             promoted = True
                             old_key = usuario_key
@@ -1112,10 +1223,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                             _lock_scene(usuario_key)
 
                     except Exception:
-                        promoted = False
                         meta = meta or {}
 
-                # debug
+                # Debug
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1124,29 +1234,43 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                     "virginity": rel_state.get("virginity"),
                     "consummated": rel_state.get("consummated"),
                     "mature_turns": rel_state.get("mature_turns"),
+                    "desire": rel_state.get("desire"),
+                    "arousal": rel_state.get("arousal"),
+                    "self_control": rel_state.get("self_control"),
+                    "hazard_p": meta.get("hazard_p"),
+                    "forced_variation": meta.get("forced_variation"),
+                    "pattern": meta.get("pattern"),
+                    "virginity_changed": meta.get("virginity_changed"),
+                    "virginity_reason": meta.get("virginity_reason"),
                     "nsfw_on": nsfw_on,
                     "conflict_mode": conflict_mode,
                     "conflict_now": conflict_now,
-                    "secret_lock": secret_lock,
                 }
 
-                # salva histórico
+                st.session_state["mary_debug_nsfw"] = {
+                    "nsfw_on": nsfw_on,
+                    "model": model,
+                    "timeline": timeline_final,
+                    "intimacy_phase": intimacy_phase,
+                    "conflict_mode": conflict_mode,
+                    "conflict_now": conflict_now,
+                }
+
+                # Salva histórico
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
 
-                # mantém cena travada
+                # Mantém cena travada sempre
                 _lock_scene(usuario_key)
 
-                # avança fase íntima (máx 1 por turno)
+                # Avança fase íntima (NO MÁXIMO 1 por turno)
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-                    if _should_advance_phase(current_phase, prompt, texto):
+                    if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
                         desired_next = _cap_next_phase(current_phase, current_phase + 1)
-
                         if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
                             desired_next = current_phase
                         if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
                             desired_next = current_phase
-
                         if desired_next != current_phase:
                             self._set_intimacy_phase(usuario_key, desired_next)
                 except Exception:
@@ -1161,46 +1285,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
-
-    # -------------------------
-    # REPAIR PASS
-    # -------------------------
-    def _repair_response(self, model: str, user_prompt: str, assistant_text: str, *, secret_lock: bool) -> str:
-        repair_system = f"""
-Você é um REVISOR TÉCNICO. Reescreva a resposta para cumprir regras estruturais.
-
-REGRAS:
-- PT-BR apenas (sem inglês).
-- Personagens extra: SEMPRE "NPC:" (sem nomes próprios).
-- NPC NÃO confirma segredos; no máximo suspeita/insinua (sem afirmar).
-- PROIBIDO inventar conteúdo de mensagens/celular; se existir, use "[mensagem não revelada]" sem texto.
-- Proibido inventar ações/falas/pensamentos do usuário.
-- Preserve intenção e clima da resposta, mas dentro das regras.
-
-SECRET_LOCK: {"ATIVO" if secret_lock else "inativo"}.
-Se ATIVO: nunca deixe NPC citar nome sensível; use "ele" ou "essa pessoa".
-""".strip()
-
-        repair_user = f"""
-[USUÁRIO]
-{user_prompt}
-
-[RESPOSTA A SER REPARADA]
-{assistant_text}
-
-Reescreva agora, mantendo a resposta em primeira pessoa (Mary).
-""".strip()
-
-        try:
-            data, _, _ = self._chat(
-                model,
-                [{"role": "system", "content": repair_system}, {"role": "user", "content": repair_user}],
-                temperature=0.15,
-                max_tokens=900,
-            )
-            return self._extract_text(data) or ""
-        except Exception:
-            return ""
 
     # -------------------------
     # helpers
@@ -1256,6 +1340,7 @@ Reescreva agora, mantendo a resposta em primeira pessoa (Mary).
         set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
+        # Espera retornar: (data, used_model, provider_meta)
         return service_router.route_chat_strict(
             model,
             {
