@@ -1037,7 +1037,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, '—')})
                         used_model or attempt["model"],
                         user_prompt=prompt,
                         assistant_text=texto,
-                        *,
                         secret_lock=secret_lock,
                     )
                     repaired = _apply_leakage_gate(repaired, prompt, secret_lock=secret_lock)
