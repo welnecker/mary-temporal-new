@@ -1,14 +1,15 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.20 — Rédeas EXTREMAS + Fail-Closed + Anti-POV do Usuário)
+MaryService (v3.20 — Blindagem de POV + Rédeas Reais + Anti-Offscreen/Logística)
 
 ✅ FOCO (v3.20):
-- Mata de vez: POV do usuário (Janio/Marcos), logística inventada (suíte/elevador/banco/etc),
-  offscreen inventado (mensagens/celular com conteúdo) e placeholders ([mensagem não revelada]).
-- Mantém seu pipeline: canon + longmem($text) + bm25 + scene lock + relationship engine + intimacy phases + conflict.
-- “GUARDIÃO” pós-geração com regras mais agressivas + sanitização hard + repair 1x (fail-closed).
+- CORRIGE de vez a “contaminação de POV”: usuário pode narrar em 1ª pessoa (Janio/Marcos/etc) e a Mary NÃO assume essa voz.
+- PROÍBE placeholders tipo “[mensagem não revelada]” (isso quebra tudo e vira muleta).
+- MANTÉM seu pipeline: canon + longmem($text) + bm25 + scene lock + relationship engine + intimacy phases + conflict.
+- GUARDA-CHUVA pós-geração (GUARDIÃO): detecta violações e força “repair” automático SEM inventar.
 - PT-BR obrigatório.
+- Formato estável: 4 parágrafos curtos (sem virar 1 parágrafo só).
 
 Regra-mãe: O usuário decide fatos/ações/logística. Mary não completa lacunas.
 """
@@ -523,6 +524,7 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     b = 0.75
 
     import math
+
     def _idf_raw(w: str) -> float:
         n_q = df.get(w, 0)
         return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
@@ -805,40 +807,25 @@ def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
 # ==========================================================
-# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / anti-POV-user)
+# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV)
 # ==========================================================
 _RE_OFFSCREEN_MSG = re.compile(
     r"(?is)\b(mensagem\s+de|whatsapp|sms|telegram|o\s+celular\s+vibra.*?:|seu\s+celular\s+vibra.*?:)\b.*?(\".+?\"|“.+?”|'.+?')"
 )
 _RE_DOC_LOGISTICS = re.compile(
     r"(?is)\b(passaporte\s+falso|documento\s+falso|identidade\s+falsa|reserva\s+em\s+seu\s+nome|check-?in\s+confirmado|"
-    r"gerente\s+examina|balc[aã]o\s+de\s+check-?in|cart[aã]o\s+magn[eé]tico\s+da\s+su[ií]te)\b"
+    r"gerente\s+examina|balc[aã]o\s+de\s+check-?in|cart[aã]o\s+magn[eé]tico\s+da\s+su[ií]te|upgrade|"
+    r"confirmam\s+a\s+reserva|negam\s+a\s+reserva|sistema\s+do\s+hotel)\b"
 )
 _RE_NPC_SPEAKER_LINE = re.compile(r"(?m)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁ-ú\- ]{2,40}\s*[:—].*?\bjanio\b", re.IGNORECASE)
-_RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|suite|the game is up)\b")
+_RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|the game is up)\b")
 
-# Placeholders/redactions (NUNCA permitir)
-_RE_REDACTED_PLACEHOLDER = re.compile(
-    r"(?is)\[(?:mensagem|message|redacted|conte[uú]do)[^\]]*\]|\bmensagem\s+n[aã]o\s+revelada\b"
-)
+# placeholder proibido
+_RE_PLACEHOLDER_REVEAL = re.compile(r"(?i)\[\s*mensagem\s+n[aã]o\s+revelada\s*\]")
 
-# POV errado: modelo assumindo identidade do usuário / “Janio” / “Marcos…” em 1ª pessoa
-_RE_POV_WRONG = re.compile(
-    r"(?is)\b(eu\s+(?:sou|me\s+chamo|chamo-me)\s+(?:janio|donisete|marcos|marcos\s+von\s+mecklenburg))\b"
-)
-
-# POV errado (expandido): “eu/minha/meu” narrando DISFARCE/LOGÍSTICA do usuário
-_RE_POV_WRONG_EXPANDED = re.compile(
-    r"(?is)\b("
-    r"meu\s+(?:terno|look|passaporte|disfarce|cart[aã]o|check-?in|quarto|su[ií]te|elevador|janela|varanda|ofur[oô]|gorjeta|maleta|reserva)"
-    r"|herdeiro|executivo|magnata|alem[aã]o|von\s+mecklenburg"
-    r"|o\s+banco\b|parcelas\b|credi[aá]rio\b"
-    r")\b"
-)
-
-# Offscreen inventado (qualquer menção a celular/notifications/banco)
-_RE_OFFSCREEN_ANY = re.compile(
-    r"(?is)\b(celular\s+vibra|notifica(c|ç)[aã]o|whatsapp|sms|telegram|mensagem\s+chega|o\s+banco\s+)\b"
+# POV do usuário “vaza” se Mary assume identidade/voz do narrador do prompt (Janio/Marcos/etc)
+_RE_POV_USER_ID = re.compile(
+    r"(?is)\b(me chamo|meu nome é|eu sou)\s+(janio|donisete|marcos|von\s+mecklenburg)\b"
 )
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
@@ -854,6 +841,10 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
 def _violations(texto: str, ctx_lower: str) -> List[str]:
     t = texto or ""
     out: List[str] = []
+
+    # 0) placeholders proibidos
+    if _RE_PLACEHOLDER_REVEAL.search(t):
+        out.append("placeholder_mensagem_nao_revelada")
 
     # 1) Offscreen inventado (mensagens com conteúdo)
     if _RE_OFFSCREEN_MSG.search(t):
@@ -874,64 +865,41 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
     if _RE_ENGLISH_LEAK.search(t):
         out.append("ingles_vazou")
 
-    # 5) Placeholders/redactions (proibido)
-    if _RE_REDACTED_PLACEHOLDER.search(t):
-        out.append("placeholder_redacao_proibido")
-
-    # 6) POV errado (assistente falando como usuário)
-    if _RE_POV_WRONG.search(t):
-        out.append("pov_errado_user")
-
-    # 7) POV errado (expandido): narrando disfarce/logística do usuário
-    if _RE_POV_WRONG_EXPANDED.search(t):
-        out.append("pov_errado_user_expandido")
-
-    # 8) Offscreen (qualquer menção) + usuário NÃO colou conteúdo => bloquear
-    if _RE_OFFSCREEN_ANY.search(t):
-        user_pasted = ("mensagem:" in ctx_lower) or ("texto:" in ctx_lower) or ("print" in ctx_lower) or ("segue a mensagem" in ctx_lower)
-        if not user_pasted:
-            out.append("offscreen_inventado")
+    # 5) Mary assumindo identidade do narrador do usuário
+    if _RE_POV_USER_ID.search(t):
+        out.append("pov_usuario_assumido")
 
     return out
 
 def _repair_instruction(violations: List[str]) -> str:
     bullets = []
+    if "placeholder_mensagem_nao_revelada" in violations:
+        bullets.append("- Remova QUALQUER placeholder tipo '[mensagem não revelada]'. Não substitua por nada.")
     if "offscreen_message_inventada" in violations:
-        bullets.append("- Remova qualquer conteúdo inventado de mensagens/telefonemas. Se houver celular, deixe só 'há uma notificação' sem texto.")
+        bullets.append("- Remova qualquer conteúdo inventado de mensagens/telefonemas. Se houver celular, deixe só 'vibra' sem texto.")
     if "logistica_inventada" in violations:
         bullets.append("- Remova qualquer logística/documento/reserva/check-in que não foi narrado explicitamente pelo usuário.")
     if "npc_quebrou_segredo_janio" in violations:
         bullets.append("- Remova qualquer NPC citando 'Janio'. NPCs só podem suspeitar genericamente, sem nomes/planos.")
     if "ingles_vazou" in violations:
         bullets.append("- Reescreva 100% em PT-BR.")
-    if "placeholder_redacao_proibido" in violations:
-        bullets.append("- Remova QUALQUER placeholder do tipo [mensagem...], [redacted], 'mensagem não revelada'. Escreva normal, sem lacunas.")
-    if "pov_errado_user" in violations:
-        bullets.append("- A resposta DEVE ser em primeira pessoa da Mary. NÃO assuma ser Janio/Marcos nem narre ações do usuário como se fosse você.")
-    if "pov_errado_user_expandido" in violations:
-        bullets.append("- Você NUNCA narra suíte/elevador/terno/herdeiro/banco/parcelas como 'meu/minha'. Isso é POV do usuário. Mary só reage com cautela, sem confirmar fatos.")
-    if "offscreen_inventado" in violations:
-        bullets.append("- Se houver celular/notificação, no máximo diga 'há uma notificação' SEM conteúdo e SEM banco/parcelas/mensagens.")
+    if "pov_usuario_assumido" in violations:
+        bullets.append("- Reescreva como MARY (1ª pessoa da Mary). Não assuma 'eu sou Janio/Marcos' nem narre como o usuário.")
+    bullets.append("- Formato: 4 parágrafos curtos (2–4 frases).")
     bullets.append("- NÃO adicione fatos novos. Preserve a cena e o tom. 1 micro-ação + 1 micro-intenção. Sem perguntas.")
     return "\n".join(bullets).strip()
 
-def _hard_sanitize(texto: str) -> str:
-    """Última barreira: remove placeholders e qualquer bloco de 'mensagem' inventada."""
-    t = (texto or "")
-
-    # remove placeholders e “mensagem não revelada”
-    t = _RE_REDACTED_PLACEHOLDER.sub("", t)
-
-    # remove linhas vazias/lixo geradas
-    t = re.sub(r"(?m)^\s*\[\s*\]\s*$", "", t)
-
-    # se houver tentativa de “conteúdo de celular”, corta agressivamente após a frase
-    t = re.sub(r"(?is)(celular\s+vibra[^\n\r]{0,160}).*", r"\1.", t)
-
-    # normaliza espaços
-    t = re.sub(r"[ \t]{2,}", " ", t)
-    t = re.sub(r"\n{3,}", "\n\n", t).strip()
-    return t
+# ==========================================================
+# ✅ Blindagem de POV (o usuário pode escrever em 1ª pessoa)
+# ==========================================================
+def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
+    p = (raw_prompt or "").strip()
+    return (
+        "[CENA DO USUÁRIO — NÃO É A VOZ DA MARY]\n"
+        "O texto abaixo é a narração/ação do usuário. Você (Mary) NÃO deve continuar em 1ª pessoa como se fosse ele.\n"
+        "Responda apenas como Mary, em primeira pessoa da Mary, mantendo segredos e sem inventar logística.\n\n"
+        f"{p}"
+    )
 
 # ==========================================================
 # SERVICE
@@ -1029,13 +997,18 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         manipulation_block = """
 [MARY — DISCRETA / ESTRATEGISTA]
 - Mary é socialmente inteligente e sutil. Nada caricato.
-- Use 1 micro-ação + 1 micro-intenção no máximo.
-- Não “fecha” nada em um turno. Deixe a cena aberta com um gancho interno (sem pergunta).
+- Evite “teatro” e narração grandiosa.
+""".strip()
+
+        format_rule = """
+[FORMATO — ABSOLUTO]
+- Entregue SEMPRE 4 parágrafos curtos (2–4 frases cada).
+- Sem listas, sem títulos, sem meta-comentários.
 """.strip()
 
         pacing_rule = """
 [PACING — ABSOLUTO]
-- 1 micro-ação + 1 micro-decisão no máximo.
+- Em cada parágrafo: no máximo 1 micro-ação + 1 micro-intenção.
 - PROIBIDO concluir “toda a história” em um turno.
 - PROIBIDO terminar com pergunta ao usuário.
 - Termine com um gancho interno (sensação/decisão imediata).
@@ -1058,17 +1031,20 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
   sem acrescentar novos detalhes sobre o corpo/mente do usuário.
 """.strip()
 
+        pov_rule = """
+[BLINDAGEM DE POV — ABSOLUTA]
+- O usuário pode narrar em 1ª pessoa (como Janio/Marcos/etc). ISSO NÃO MUDA a sua voz.
+- Você escreve apenas como MARY (1ª pessoa da Mary). Nunca “continua” como o narrador do usuário.
+""".strip()
+
         secrets_offscreen_admin_rule = """
 [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
 - Mary NÃO inventa fatos de logística: reserva, check-in, documentos, nomes em cadastro, confirmação/negação, horários, compras, pagamentos, chaves, suíte, upgrade, etc.
-- Mary NÃO inventa mensagens, ligações, áudios ou conteúdo de celular. No máximo: "há uma notificação" (SEM texto).
-- PROIBIDO usar placeholders tipo: [mensagem não revelada], [redacted], [conteúdo oculto]. Se você não sabe, OMITA.
-- PROIBIDO assumir identidade do usuário (Janio/Marcos) em primeira pessoa. Mary é Mary.
-- PROIBIDO narrar "meu terno / minha suíte / meu elevador / meu banco / minhas parcelas" etc. Isso é POV do usuário.
+- Mary NÃO inventa mensagens, ligações, áudios ou conteúdo de celular. No máximo: "o celular vibra" / "há uma notificação".
+- Se o usuário NÃO colou o conteúdo, Mary NÃO reproduz nada.
 - NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou ou que eles ouviram.
 - NPCs podem apenas DESCONFIAR de forma genérica (olhar, silêncio, insinuação), sem confirmar e sem citar nomes/planos como fato.
 - Se o usuário mencionar algo sensível/ilegal (ex.: documento falso), Mary NÃO adiciona detalhes, NÃO ensina, NÃO completa lacunas. Ela apenas reage ao que o usuário já declarou.
-- Em CENA PARALELA, Mary NÃO descreve o que acontece lá. Ela reage por dentro, sem confirmar fatos.
 """.strip()
 
         language_rule = """
@@ -1091,6 +1067,7 @@ VOCÊ É MARY.
 Responda em primeira pessoa, do ponto de vista da Mary.
 
 {language_rule}
+{pov_rule}
 {user_authorship_rule}
 {secrets_offscreen_admin_rule}
 
@@ -1107,8 +1084,9 @@ PERSONA (baseline):
 {scene_lock_rule}
 {parallel_scene_rule}
 
-{manipulation_block}
+{format_rule}
 {pacing_rule}
+{manipulation_block}
 {conflict_block}
 
 REGRAS ABSOLUTAS:
@@ -1123,38 +1101,28 @@ REGRAS ABSOLUTAS:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
 
-        # dedupe bucket
         dedupe_hashes: set = set()
 
-        # Intro 1x por sessão (só se NÃO houver CANON)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
-
-        # CANON
         _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
-
-        # LONG MEMORY
         _inject_long_memory_textsearch(shared_key, timeline_final, prompt, messages, limit=10, dedupe_bucket=dedupe_hashes)
-
-        # BM25
         _inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
-
-        # suave
         _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
 
-        # histórico (timeline atual)
         history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
-                messages.append({"role": "user", "content": u})
+                messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
             if a:
                 messages.append({"role": "assistant", "content": a})
 
-        messages.append({"role": "user", "content": prompt})
+        # ✅ ÚLTIMA MENSAGEM: blindagem de POV (resolve “Mary virou Janio”)
+        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
 
         # ----------------------------------------------------------
-        # Chat com retry + GUARDIÃO (repair automático fail-closed)
+        # Chat com retry + GUARDIÃO (repair automático)
         # ----------------------------------------------------------
         if nsfw_on:
             attempts = [
@@ -1184,17 +1152,13 @@ REGRAS ABSOLUTAS:
                 if not texto:
                     continue
 
-                # Sanitização hard imediata
-                texto = _hard_sanitize(texto)
-
-                # ✅ GUARDIÃO: detecta e força repair 1x (fail-closed)
                 v = _violations(texto, ctx_lower)
                 if v:
                     repair_sys = (
                         "Você é um revisor rígido de continuidade do roleplay.\n"
                         "TAREFA: reescrever a resposta da Mary SEM violar regras.\n"
-                        "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; 1 micro-ação + 1 micro-intenção; sem perguntas.\n"
-                        "PROIBIDO: placeholders ([mensagem...], [redacted], 'mensagem não revelada') e POV do usuário (Mary não é Janio/Marcos).\n"
+                        "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; 4 parágrafos curtos; "
+                        "micro-ação/micro-intenção; sem perguntas; Mary não assume voz do usuário.\n"
                     )
                     repair_user = (
                         "Reescreva a resposta abaixo removendo violações.\n"
@@ -1204,20 +1168,28 @@ REGRAS ABSOLUTAS:
                         f"{texto}\n"
                     )
 
-                    dataR, usedR, _ = self._chat(
-                        used_model or attempt["model"],
-                        [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
-                        temperature=0.2,
-                        max_tokens=900,
-                    )
-                    repaired = _hard_sanitize(self._extract_text(dataR) or "")
+                    repaired = ""
+                    for _i in range(2):
+                        dataR, usedR, _ = self._chat(
+                            used_model or attempt["model"],
+                            [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
+                            temperature=0.2,
+                            max_tokens=1200,
+                        )
+                        repaired = (self._extract_text(dataR) or "").strip()
+                        if repaired and not _violations(repaired, ctx_lower):
+                            texto = repaired
+                            used_model = usedR or used_model
+                            break
+                        repair_user = repair_user + "\n\nATENÇÃO: ainda há violação. Reescreva novamente mais curto e mais contido, mantendo 4 parágrafos."
 
-                    if repaired and not _violations(repaired, ctx_lower):
-                        texto = repaired
-                        used_model = usedR or used_model
-                    else:
-                        # fail-closed: mínimo seguro
-                        texto = "_Eu mantenho a expressão calma e fico no que você declarou, sem completar lacunas. Por dentro, eu só me controlo para não deixar nenhum detalhe escapar._"
+                    if _violations(texto, ctx_lower):
+                        texto = (
+                            "Eu mantenho meu rosto neutro e respiro com cuidado, como se nada me atingisse.\n\n"
+                            "Por dentro, eu seguro cada reação para não entregar nada que você não tenha declarado.\n\n"
+                            "Eu escolho só um gesto mínimo — suficiente para manter a tensão, sem criar fatos novos.\n\n"
+                            "E sigo, firme, decidida a não deixar nenhum detalhe escapar."
+                        )
 
                 # Relationship Engine (pós-resposta)
                 promoted = False
@@ -1288,7 +1260,6 @@ REGRAS ABSOLUTAS:
                     except Exception:
                         meta = meta or {}
 
-                # Debug
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1319,13 +1290,9 @@ REGRAS ABSOLUTAS:
                     "conflict_now": conflict_now,
                 }
 
-                # Salva histórico
                 save_interaction_safe(usuario_key, prompt, texto, used_model or attempt["model"])
-
-                # Mantém cena travada sempre
                 _lock_scene(usuario_key)
 
-                # Avança fase íntima (NO MÁXIMO 1 por turno)
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
                     if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
@@ -1403,7 +1370,6 @@ REGRAS ABSOLUTAS:
         set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
-        # Espera retornar: (data, used_model, provider_meta)
         return service_router.route_chat_strict(
             model,
             {
