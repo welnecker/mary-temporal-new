@@ -1321,6 +1321,17 @@ def main() -> None:
     visual_limit = int(st.session_state.get("visual_limit", DEFAULT_VISUAL_LIMIT))
     visible = hist[-visual_limit:] if len(hist) > visual_limit else hist
 
+    # ===== COUNTER (mensagens / interações) =====
+    shown_msgs = len(visible)
+    total_msgs = len(hist)
+    shown_interactions = sum(1 for r, _ in visible if r == "user")
+    total_interactions = sum(1 for r, _ in hist if r == "user")
+    st.caption(
+        f"📌 Mostrando {shown_interactions} interações ({shown_msgs} mensagens) — "
+        f"Total no capítulo: {total_interactions} interações ({total_msgs} mensagens)."
+    )
+
+
     for role, content in visible:
         with st.chat_message(role):
             if role == "assistant":
