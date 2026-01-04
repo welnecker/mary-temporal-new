@@ -66,6 +66,8 @@ from core.repositories import (
     list_long_memory,
     search_long_memory_text,
     ensure_long_memory_indexes,
+    delete_last_long_memory,
+    delete_all_long_memory,
 )
 
 import characters.mary.persona as mary_persona
@@ -1238,6 +1240,38 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Falha ao listar: {type(e).__name__}: {e}")
                     st.session_state["__lm_list"] = []
+
+
+        # ---- deletes (DB) ----
+        col3, col4 = st.columns(2)
+
+        with col3:
+            if st.button("🧽 Apagar última (DB)", key="btn_lm_delete_last"):
+                try:
+                    ok = delete_last_long_memory(lm_userkey)
+                    if ok:
+                        st.success("✅ Última memória (DB) apagada.")
+                    else:
+                        st.info("Nada para apagar (DB).")
+                    # refresh
+                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
+                except Exception as e:
+                    st.error(f"Falha ao apagar última (DB): {type(e).__name__}: {e}")
+                st.rerun()
+
+        with col4:
+            confirm_all = st.checkbox("Confirmo apagar TODAS (DB)", key="lm_confirm_delete_all")
+            if st.button("💣 Apagar TODAS (DB)", key="btn_lm_delete_all", disabled=not confirm_all):
+                try:
+                    n = delete_all_long_memory(lm_userkey)
+                    st.success(f"✅ Apaguei {n} memórias (DB).")
+                    st.session_state["__lm_list"] = []
+                    st.session_state["__lm_search"] = []
+                    st.session_state["lm_confirm_delete_all"] = False
+                except Exception as e:
+                    st.error(f"Falha ao apagar todas (DB): {type(e).__name__}: {e}")
+                st.rerun()
+
 
         st.markdown("### ➕ Inserir memória (DB)")
         lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
