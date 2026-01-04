@@ -1321,6 +1321,13 @@ def main() -> None:
     visual_limit = int(st.session_state.get("visual_limit", DEFAULT_VISUAL_LIMIT))
     visible = hist[-visual_limit:] if len(hist) > visual_limit else hist
 
+    for role, content in visible:
+        with st.chat_message(role):
+            if role == "assistant":
+                st.markdown(_format_paragraphs(content))
+            else:
+                st.markdown(content)
+
     # ===== COUNTER (mensagens / interações) =====
     shown_msgs = len(visible)
     total_msgs = len(hist)
@@ -1330,14 +1337,6 @@ def main() -> None:
         f"📌 Mostrando {shown_interactions} interações ({shown_msgs} mensagens) — "
         f"Total no capítulo: {total_interactions} interações ({total_msgs} mensagens)."
     )
-
-
-    for role, content in visible:
-        with st.chat_message(role):
-            if role == "assistant":
-                st.markdown(_format_paragraphs(content))
-            else:
-                st.markdown(content)
 
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
