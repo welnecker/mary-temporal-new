@@ -757,7 +757,13 @@ def _user_explicitly_allows_climax(user_text: str) -> bool:
 def _user_signals_aftercare(user_text: str) -> bool:
     return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
 
-def _should_advance_phase(current_phase: int, user_text: str, mary_text: str, *, engine_meta: Optional[Dict[str, Any]] = None) -> bool:
+def _should_advance_phase(
+    current_phase: int,
+    user_text: str,
+    mary_text: str,
+    *,
+    engine_meta: Optional[Dict[str, Any]] = None,
+) -> bool:
     meta = engine_meta or {}
     if isinstance(meta.get("intimacy_progressed"), bool):
         return bool(meta["intimacy_progressed"])
@@ -779,6 +785,59 @@ def _should_advance_phase(current_phase: int, user_text: str, mary_text: str, *,
 
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
     return current_phase + 1 if desired_next > current_phase + 1 else desired_next
+
+
+# ==========================================================
+# RIVALRY / DEFENSIVE BOND (Mary x Rivais)
+# ==========================================================
+# Detecção LEVE de “rival” tentando se aproximar do Janio.
+# Importante: isso NÃO dá onisciência. Só reage ao que o usuário trouxe.
+_RE_RIVAL_FEMALE = re.compile(
+    r"\b("
+    r"amanda|"
+    r"outra\s+mulher|"
+    r"ela\s+se\s+aproxima|"
+    r"se\s+aproximou\s+dele|"
+    r"falou\s+com\s+ele\s+sozinha|"
+    r"consol(a|ando)|"
+    r"apoio\s+afetivo|"
+    r"apoio\s+emocional|"
+    r"abraç(ou|a)|"
+    r"toc(ou|a)\s+nele|"
+    r"pegou\s+no\s+braço|"
+    r"deu\s+em\s+cima|"
+    r"flert(ou|a)|"
+    r"quer\s+ele|"
+    r"tentou\s+beij(ar|o)|"
+    r"faz(er)?\s+ele\s+esquecer"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _detect_rivalry_threat(user_text: str, *, rel_state: Dict[str, Any]) -> bool:
+    """
+    Ativa o 'modo defesa instintiva' da Mary quando uma rival tenta se aproximar do Janio
+    num contexto em que:
+      - ainda há vínculo (não é indiferença/rompimento)
+      - existe culpa ativa (ela traiu / há arrependimento pendente)
+    Não cria onisciência: reage apenas ao que o usuário descreveu.
+    """
+    txt = (user_text or "").strip()
+    if not txt:
+        return False
+
+    stage = str((rel_state or {}).get("stage") or "").strip().lower()
+    if stage in ("rompidos", "indiferente", "acabou", "fim"):
+        return False
+
+    guilt = rel_state.get("guilt", 0)
+    infidelity = bool(rel_state.get("infidelity", False))
+    has_guilt = (isinstance(guilt, (int, float)) and guilt > 0) or infidelity
+    if not has_guilt:
+        return False
+
+    return bool(_RE_RIVAL_FEMALE.search(txt))
+
 
 # ==========================================================
 # CONFLICT_MODE
