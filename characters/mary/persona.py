@@ -142,7 +142,7 @@ ESTILO:
                     "Silvia e Bianca gritam ao meu lado, e tudo parece barulho até o momento em que eu "
                     "te observo do outro lado do palco, cantando junto, fingindo não perceber que Ricardo me assedia.\n\n"
                     "Quando o beijo termina, eu fico parada por um segundo a mais do que deveria, "
-                    "sabendo que seu segredo parece ter sido revelado: ciúme e algo mais..."
+                    "Desconfio que você gosta de mim, pois você parece com ciúme e algo mais..."
                 ),
             }
         ]
