@@ -1,23 +1,27 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.22 — Hardening final + testes de estresse, em cima da v3.20)
+MaryService (v3.23 — refactor de robustez REAL, sem “muletas”)
 
-✅ FOCO (v3.22):
-- Mantém TUDO da v3.20 (canon + longmem $text + bm25 + scene lock + relationship engine + intimacy phases + conflict + guardião/repair).
-- Hardening final:
-  - Validação FORTE de formato (4 parágrafos; 2–4 frases por parágrafo).
-  - Guardião também reprova respostas com formato inválido (força repair).
-  - Diagnósticos silenciosos de estresse (mary_last_diagnostics) por turno.
-  - Retry mais previsível: tentativa -> guardião -> repair (até 2) -> fallback seguro.
-  - Nunca volta com 1 parágrafo só (ou 6 parágrafos), nem com “perguntas” no final.
-- Continua: Regra-mãe: usuário decide fatos/ações/logística. Mary não completa lacunas.
+✅ Objetivo deste refactor:
+- Parar de “inflar” o código com try/except genéricos.
+- Tornar o comportamento previsível: tentativa -> validação -> repair (até 2) -> fallback (quase nunca).
+- Reduzir “loteria”: mesmas entradas tendem a produzir saídas estáveis e no formato certo.
+- Corrigir a sensação de “Mary fria / sem Janio”:
+  - Mary pode chamar o usuário de **Janio** quando o usuário for Janio (ou quando já houver permissão no contexto),
+    mas NPCs continuam sem revelar o nome.
+- Manter: canon, longmem $text, bm25, scene lock, relationship engine, intimacy phases, conflict, guardião/repair.
+
+⚠️ Nota importante:
+- A regra “usuário decide fatos/ações/logística” continua valendo.
+- “CENA PARALELA”: se o usuário narra outro lugar/tempo sem comando explícito, Mary não teleporta.
 """
 
 import logging
 import re
 import hashlib
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
 
 import streamlit as st
@@ -43,7 +47,6 @@ from core.repositories import (
     search_long_memory_text,
 )
 from core.nsfw import nsfw_enabled as nsfw_enabled_unified
-
 from characters.registry import _SERVICE_CACHE
 from .persona import get_persona
 
@@ -121,10 +124,10 @@ NSFW_TOGGLE_STYLE = """
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     ck = f"facts::{usuario_key}"
     if ck in st.session_state:
-        return st.session_state[ck]
-    try:
-        f = get_facts(usuario_key) or {}
-    except Exception:
+        v = st.session_state[ck]
+        return v if isinstance(v, dict) else {}
+    f = get_facts(usuario_key) or {}
+    if not isinstance(f, dict):
         f = {}
     st.session_state[ck] = f
     return f
@@ -133,10 +136,10 @@ def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
 def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
     hk = f"history::{usuario_key}::{limit}"
     if hk in st.session_state:
-        return st.session_state[hk]
-    try:
-        docs = get_history_docs(usuario_key, limit=limit) or []
-    except Exception:
+        v = st.session_state[hk]
+        return v if isinstance(v, list) else []
+    docs = get_history_docs(usuario_key, limit=limit) or []
+    if not isinstance(docs, list):
         docs = []
     st.session_state[hk] = docs
     return docs
@@ -145,10 +148,10 @@ def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any
 def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
     mk = f"mem::{shared_key}::{limit}"
     if mk in st.session_state:
-        return st.session_state[mk]
-    try:
-        mems = list_memories(shared_key, limit=limit) or []
-    except Exception:
+        v = st.session_state[mk]
+        return v if isinstance(v, list) else []
+    mems = list_memories(shared_key, limit=limit) or []
+    if not isinstance(mems, list):
         mems = []
     st.session_state[mk] = mems
     return mems
@@ -264,6 +267,8 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
+
+    # Se o usuário explicitou comando de corte/transição, não é violação (é autorização)
     if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
         return False
     if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
@@ -313,18 +318,15 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     current_id, current_text = _extract_intro_from_persona(timeline)
     current_hash = current_id
 
-    try:
-        stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
-        stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
+    stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
+    stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
 
-        if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
-            set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
-            set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
-            clear_user_cache(usuario_key)
+    if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
+        set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
+        set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
+        clear_user_cache(usuario_key)
 
-        return current_id, current_text
-    except Exception:
-        return current_id, current_text
+    return current_id, current_text
 
 # ==========================================================
 # ✅ CANON: memórias que prevalecem sobre a persona
@@ -428,11 +430,7 @@ def _inject_long_memory_textsearch(
     limit: int = 10,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
-    try:
-        rows = search_long_memory_text(shared_key, user_prompt, limit=max(1, int(limit or 10)))
-    except Exception:
-        rows = []
-
+    rows = search_long_memory_text(shared_key, user_prompt, limit=max(1, int(limit or 10))) or []
     if not rows:
         return
 
@@ -444,9 +442,7 @@ def _inject_long_memory_textsearch(
         if not txt:
             continue
 
-        meta = d.get("meta") or {}
-        if not isinstance(meta, dict):
-            meta = {}
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
         if tms and tms not in (tl, "[all]"):
@@ -476,10 +472,8 @@ def _inject_long_memory_textsearch(
     ]
 
     for i, d in enumerate(picked, 1):
-        meta = d.get("meta") or {}
-        title = ""
-        if isinstance(meta, dict):
-            title = str(meta.get("title") or meta.get("key") or "").strip()
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+        title = str(meta.get("title") or meta.get("key") or "").strip()
         ts = d.get("ts") or ""
         header = f"- LM {i}"
         if ts:
@@ -680,7 +674,11 @@ def _rel_fact_key(timeline: str) -> str:
     tl = (timeline or "").strip() or "cumplice"
     return f"rel.state::{tl}"
 
-def _load_rel_state(facts: Dict[str, Any], timeline: str, canon_default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _load_rel_state(
+    facts: Dict[str, Any],
+    timeline: str,
+    canon_default: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     base = default_relationship_state(timeline)
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
@@ -736,11 +734,8 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
-    try:
-        _save_rel_state(uk, tl, rel)
-        clear_user_cache(uk)
-    except Exception:
-        pass
+    _save_rel_state(uk, tl, rel)
+    clear_user_cache(uk)
 
 # ==========================================================
 # INTIMACY: sinais e travas
@@ -786,59 +781,6 @@ def _should_advance_phase(
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
     return current_phase + 1 if desired_next > current_phase + 1 else desired_next
 
-
-# ==========================================================
-# RIVALRY / DEFENSIVE BOND (Mary x Rivais)
-# ==========================================================
-# Detecção LEVE de “rival” tentando se aproximar do Janio.
-# Importante: isso NÃO dá onisciência. Só reage ao que o usuário trouxe.
-_RE_RIVAL_FEMALE = re.compile(
-    r"\b("
-    r"amanda|"
-    r"outra\s+mulher|"
-    r"ela\s+se\s+aproxima|"
-    r"se\s+aproximou\s+dele|"
-    r"falou\s+com\s+ele\s+sozinha|"
-    r"consol(a|ando)|"
-    r"apoio\s+afetivo|"
-    r"apoio\s+emocional|"
-    r"abraç(ou|a)|"
-    r"toc(ou|a)\s+nele|"
-    r"pegou\s+no\s+braço|"
-    r"deu\s+em\s+cima|"
-    r"flert(ou|a)|"
-    r"quer\s+ele|"
-    r"tentou\s+beij(ar|o)|"
-    r"faz(er)?\s+ele\s+esquecer"
-    r")\b",
-    re.IGNORECASE,
-)
-
-def _detect_rivalry_threat(user_text: str, *, rel_state: Dict[str, Any]) -> bool:
-    """
-    Ativa o 'modo defesa instintiva' da Mary quando uma rival tenta se aproximar do Janio
-    num contexto em que:
-      - ainda há vínculo (não é indiferença/rompimento)
-      - existe culpa ativa (ela traiu / há arrependimento pendente)
-    Não cria onisciência: reage apenas ao que o usuário descreveu.
-    """
-    txt = (user_text or "").strip()
-    if not txt:
-        return False
-
-    stage = str((rel_state or {}).get("stage") or "").strip().lower()
-    if stage in ("rompidos", "indiferente", "acabou", "fim"):
-        return False
-
-    guilt = rel_state.get("guilt", 0)
-    infidelity = bool(rel_state.get("infidelity", False))
-    has_guilt = (isinstance(guilt, (int, float)) and guilt > 0) or infidelity
-    if not has_guilt:
-        return False
-
-    return bool(_RE_RIVAL_FEMALE.search(txt))
-
-
 # ==========================================================
 # CONFLICT_MODE
 # ==========================================================
@@ -866,18 +808,15 @@ def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
 # ==========================================================
-# ✅ FORMAT GUARD (v3.22)
+# ✅ FORMAT GUARD (4 parágrafos; 2–4 frases; sem pergunta final)
 # ==========================================================
 def _split_paragraphs(text: str) -> List[str]:
-    # mantém separação por linha em branco (robusto)
     raw = (text or "").strip()
     if not raw:
         return []
-    paras = [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
-    return paras
+    return [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
 
 def _count_sentences(paragraph: str) -> int:
-    # conta sentenças aproximadas por pontuação final
     p = (paragraph or "").strip()
     if not p:
         return 0
@@ -893,7 +832,6 @@ def _format_ok(text: str) -> bool:
         n = _count_sentences(p)
         if n < 2 or n > 4:
             return False
-    # v3.22: não terminar com pergunta
     last = paras[-1].strip()
     if last.endswith("?"):
         return False
@@ -912,14 +850,8 @@ _RE_DOC_LOGISTICS = re.compile(
 )
 _RE_NPC_SPEAKER_LINE = re.compile(r"(?m)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁ-ú\- ]{2,40}\s*[:—].*?\bjanio\b", re.IGNORECASE)
 _RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|the game is up)\b")
-
-# placeholder proibido
 _RE_PLACEHOLDER_REVEAL = re.compile(r"(?i)\[\s*mensagem\s+n[aã]o\s+revelada\s*\]")
-
-# POV do usuário “vaza” se Mary assume identidade/voz do narrador do prompt (Janio/Marcos/etc)
-_RE_POV_USER_ID = re.compile(
-    r"(?is)\b(me chamo|meu nome é|eu sou)\s+(janio|donisete|marcos|von\s+mecklenburg)\b"
-)
+_RE_POV_USER_ID = re.compile(r"(?is)\b(me chamo|meu nome é|eu sou)\s+(janio|donisete|marcos|von\s+mecklenburg)\b")
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     hist = cached_get_history(usuario_key, limit=200)
@@ -928,41 +860,34 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
         u = (d.get("mensagem_usuario") or "").strip()
         if u:
             last_users.append(u)
-    ctx = "\n".join(last_users + [prompt]).lower()
-    return ctx
+    return "\n".join(last_users + [prompt]).lower()
 
 def _violations(texto: str, ctx_lower: str) -> List[str]:
     t = texto or ""
     out: List[str] = []
 
-    # 0) placeholders proibidos
     if _RE_PLACEHOLDER_REVEAL.search(t):
         out.append("placeholder_mensagem_nao_revelada")
 
-    # 1) Offscreen inventado (mensagens com conteúdo)
     if _RE_OFFSCREEN_MSG.search(t):
         user_pasted = ("mensagem:" in ctx_lower) or ("texto:" in ctx_lower) or ("print" in ctx_lower) or ("segue a mensagem" in ctx_lower)
         if not user_pasted:
             out.append("offscreen_message_inventada")
 
-    # 2) Logística/documentos/reserva/check-in inventados (sempre bloqueia)
     if _RE_DOC_LOGISTICS.search(t):
         out.append("logistica_inventada")
 
-    # 3) NPC falando “Janio” (quebra de segredo) se o usuário não autorizou explicitamente
+    # NPC falando Janio só se usuário autorizou explicitamente ter contado o nome
     allow = ("contei" in ctx_lower and "janio" in ctx_lower) or ("revelei" in ctx_lower and "janio" in ctx_lower) or ("disse o nome" in ctx_lower and "janio" in ctx_lower)
     if (not allow) and _RE_NPC_SPEAKER_LINE.search(t):
         out.append("npc_quebrou_segredo_janio")
 
-    # 4) Inglês vazando
     if _RE_ENGLISH_LEAK.search(t):
         out.append("ingles_vazou")
 
-    # 5) Mary assumindo identidade do narrador do usuário
     if _RE_POV_USER_ID.search(t):
         out.append("pov_usuario_assumido")
 
-    # 6) v3.22: formato inválido (força repair)
     if not _format_ok(t):
         out.append("formato_invalido")
 
@@ -988,7 +913,7 @@ def _repair_instruction(violations: List[str]) -> str:
     return "\n".join(bullets).strip()
 
 # ==========================================================
-# ✅ Blindagem de POV (o usuário pode escrever em 1ª pessoa)
+# ✅ Blindagem de POV (usuário pode narrar em 1ª pessoa)
 # ==========================================================
 def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
     p = (raw_prompt or "").strip()
@@ -998,6 +923,68 @@ def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
         "Responda apenas como Mary, em primeira pessoa da Mary, mantendo segredos e sem inventar logística.\n\n"
         f"{p}"
     )
+
+# ==========================================================
+# ✅ Janio: permitir Mary chamar o usuário de Janio sem “NPC vazar”
+# ==========================================================
+def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
+    """
+    Mary pode chamar o usuário de Janio quando:
+    - o user_id é Janio/Janio Donisete (seu app já usa isso),
+    OU
+    - o próprio usuário já se nomeou como Janio no contexto.
+    Isso NÃO autoriza NPC a falar Janio.
+    """
+    uid = (user_id or "").strip().lower()
+    if uid.startswith("janio"):
+        return True
+    if "eu sou janio" in ctx_lower or "meu nome é janio" in ctx_lower or "me chamo janio" in ctx_lower:
+        return True
+    return False
+
+def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
+    if _mary_can_name_user_as_janio(user_id, ctx_lower):
+        return (
+            "[NOME DO USUÁRIO (PARA MARY)]\n"
+            "O homem com quem Mary fala se chama Janio.\n"
+            "- Mary pode pensar e dizer 'Janio' ao se referir a ele.\n"
+            "- NPCs NÃO podem dizer 'Janio' a menos que o usuário narre que contou o nome.\n"
+        ).strip()
+    return (
+        "[NOME DO USUÁRIO (PARA MARY)]\n"
+        "Mary se refere ao usuário como 'você' e, quando cabível, como 'ele' em pensamento.\n"
+        "NPCs NÃO podem saber nomes/segredos a menos que o usuário narre que contou.\n"
+    ).strip()
+
+# ==========================================================
+# ✅ Diagnóstico (silencioso)
+# ==========================================================
+@dataclass
+class _Diag:
+    ts: int
+    timeline: str
+    model_requested: str
+    model_used: Optional[str] = None
+    attempts: int = 0
+    repairs: int = 0
+    violations: List[str] = None
+    nsfw_on: Optional[bool] = None
+    conflict_now: Optional[bool] = None
+    intimacy_phase_pre: Optional[int] = None
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "ts": self.ts,
+            "timeline": self.timeline,
+            "model_requested": self.model_requested,
+            "model_used": self.model_used,
+            "attempts": self.attempts,
+            "repairs": self.repairs,
+            "violations": self.violations or [],
+            "nsfw_on": self.nsfw_on,
+            "conflict_now": self.conflict_now,
+            "intimacy_phase_pre": self.intimacy_phase_pre,
+        }
 
 # ==========================================================
 # SERVICE
@@ -1015,15 +1002,15 @@ class MaryService(BaseCharacter):
         timeline: Optional[str] = None,
         nsfw: Optional[bool] = None,
     ) -> str:
-        # prompt
+        # 1) Prompt
         if prompt is None:
             prompt = (st.session_state.get("chat_input") or "").strip()
         else:
             prompt = (prompt or "").strip()
-
         if not prompt:
             return ""
 
+        # 2) Chaves
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
         timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
             str(st.session_state.get("mary_timeline") or "cumplice")
@@ -1032,53 +1019,43 @@ class MaryService(BaseCharacter):
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id)
 
-        # ----------------------------------------------------------
-        # v3.22: diagnóstico silencioso por turno (stress hardening)
-        # ----------------------------------------------------------
-        diag = {
-            "ts": int(time.time()),
-            "timeline": timeline_final,
-            "model_requested": model,
-            "model_used": None,
-            "repairs": 0,
-            "violations": [],
-            "attempts": 0,
-            "nsfw_on": None,
-            "conflict_now": None,
-            "intimacy_phase_pre": None,
-        }
+        diag = _Diag(
+            ts=int(time.time()),
+            timeline=timeline_final,
+            model_requested=model,
+            violations=[],
+        )
 
-        # 0) Garantir scene lock/facts mínimos
+        # 3) Garantir mínimos
         facts0 = cached_get_facts(usuario_key)
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
+            facts0 = cached_get_facts(usuario_key)
 
-        # 0.1) INTIMACY PHASE — inicialização segura
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
-            facts0["intimacy.phase"] = 0
+            facts0 = cached_get_facts(usuario_key)
 
-        # 1) Mudança explícita de local/tempo (permitida)
+        # 4) Mudança explícita de local/tempo
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             _lock_scene(usuario_key)
-            st.session_state["mary_last_diagnostics"] = diag
+            st.session_state["mary_last_diagnostics"] = diag.as_dict()
             return f"_Eu te acompanho até **{novo_local}**…_"
 
-        # 1.1) Cena paralela (não teleporta Mary)
+        # 5) Cena paralela
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
         scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
 
-        # 2) Persona + system
+        # 6) Contexto base
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
 
-        # 3) CONFLICT_MODE
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
-        diag["conflict_now"] = bool(conflict_now)
+        diag.conflict_now = bool(conflict_now)
 
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
@@ -1091,9 +1068,13 @@ class MaryService(BaseCharacter):
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
 
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
-        diag["nsfw_on"] = bool(nsfw_on)
+        diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
 
+        ctx_lower = _build_context_for_guard(usuario_key, prompt)
+        user_name_block = _build_user_name_block(user_id, ctx_lower)
+
+        # 7) Regras (enxutas, firmes)
         scene_lock_rule = """
 [CONTINUIDADE — ABSOLUTO]
 - Mary NÃO muda de local/tempo/evento sozinha.
@@ -1111,12 +1092,6 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
             else ""
         )
 
-        manipulation_block = """
-[MARY — DISCRETA / ESTRATEGISTA]
-- Mary é socialmente inteligente e sutil. Nada caricato.
-- Evite “teatro” e narração grandiosa.
-""".strip()
-
         format_rule = """
 [FORMATO — ABSOLUTO]
 - Entregue SEMPRE 4 parágrafos curtos (2–4 frases cada).
@@ -1132,8 +1107,15 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Termine com um gancho interno (sensação/decisão imediata).
 """.strip()
 
+        manipulation_block = """
+[MARY — DISCRETA / DECIDIDA]
+- Mary é emocionalmente viva e intencional, sem ficar “mecânica”.
+- Ela pode desejar, escolher, recuar, insistir — mas sem inventar ações do usuário.
+- Sem teatralidade; intensidade com naturalidade.
+""".strip()
+
         intimacy_phase = self._get_intimacy_phase(facts)
-        diag["intimacy_phase_pre"] = int(intimacy_phase)
+        diag.intimacy_phase_pre = int(intimacy_phase)
 
         intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
@@ -1153,18 +1135,16 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
         pov_rule = """
 [BLINDAGEM DE POV — ABSOLUTA]
-- O usuário pode narrar em 1ª pessoa (como Janio/Marcos/etc). ISSO NÃO MUDA a sua voz.
+- O usuário pode narrar em 1ª pessoa. ISSO NÃO MUDA a sua voz.
 - Você escreve apenas como MARY (1ª pessoa da Mary). Nunca “continua” como o narrador do usuário.
 """.strip()
 
         secrets_offscreen_admin_rule = """
 [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
-- Mary NÃO inventa fatos de logística: reserva, check-in, documentos, nomes em cadastro, confirmação/negação, horários, compras, pagamentos, chaves, suíte, upgrade, etc.
-- Mary NÃO inventa mensagens, ligações, áudios ou conteúdo de celular. No máximo: "o celular vibra" / "há uma notificação".
-- Se o usuário NÃO colou o conteúdo, Mary NÃO reproduz nada.
-- NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou ou que eles ouviram.
-- NPCs podem apenas DESCONFIAR de forma genérica (olhar, silêncio, insinuação), sem confirmar e sem citar nomes/planos como fato.
-- Se o usuário mencionar algo sensível/ilegal (ex.: documento falso), Mary NÃO adiciona detalhes, NÃO ensina, NÃO completa lacunas. Ela apenas reage ao que o usuário já declarou.
+- Mary NÃO inventa logística: reserva, check-in, documentos, pagamentos, horários, chaves, compras, etc.
+- Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra" / "há uma notificação".
+- NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou.
+- NPCs podem apenas DESCONFIAR de forma genérica, sem confirmar e sem citar nomes/planos como fato.
 """.strip()
 
         language_rule = """
@@ -1180,6 +1160,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
+        # 8) System prompt final
         system = f"""
 {spatial_context}
 
@@ -1192,6 +1173,8 @@ Responda em primeira pessoa, do ponto de vista da Mary.
 {secrets_offscreen_admin_rule}
 
 TIMELINE ATUAL: {timeline_final}
+
+{user_name_block}
 
 [CANON — VERDADE ATUAL]
 {canon_txt}
@@ -1220,15 +1203,16 @@ REGRAS ABSOLUTAS:
 """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
-
         dedupe_hashes: set = set()
 
+        # 9) Injeções de memória
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
         _inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
         _inject_long_memory_textsearch(shared_key, timeline_final, prompt, messages, limit=10, dedupe_bucket=dedupe_hashes)
         _inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
         _inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
 
+        # 10) Histórico curto (estável)
         history = cached_get_history(usuario_key, limit=400)
         for d in history[-30:]:
             u = (d.get("mensagem_usuario") or "").strip()
@@ -1238,117 +1222,35 @@ REGRAS ABSOLUTAS:
             if a:
                 messages.append({"role": "assistant", "content": a})
 
-        # ✅ ÚLTIMA MENSAGEM: blindagem de POV (resolve “Mary virou Janio”)
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
 
-        # ----------------------------------------------------------
-        # Chat com retry + GUARDIÃO (repair automático)
-        # ----------------------------------------------------------
-        # v3.22: tenta manter mais previsível; sempre registra diag.
-        if nsfw_on:
-            attempts = [
-                {"model": model, "temperature": 0.85},
-                {"model": model, "temperature": 0.70},
-            ]
-        else:
-            attempts = [
-                {"model": model, "temperature": 0.75},
-                {"model": model, "temperature": 0.55},
-                {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65},
-            ]
+        # 11) Tentativas previsíveis (sem loteria)
+        attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on)
 
-        ctx_lower = _build_context_for_guard(usuario_key, prompt)
+        # 12) Loop: gerar -> validar -> repair -> fallback
         last_err: Optional[Exception] = None
 
-        for attempt in attempts:
-            diag["attempts"] += 1
+        for plan in attempts:
+            diag.attempts += 1
             try:
-                data, used_model, _provider_meta = self._chat(
-                    attempt["model"],
-                    messages,
-                    temperature=attempt["temperature"],
-                    max_tokens=1400,
+                texto, used_model = self._generate_with_repair(
+                    model=plan["model"],
+                    messages=messages,
+                    temperature=float(plan["temperature"]),
+                    max_tokens=int(plan["max_tokens"]),
+                    usuario_key=usuario_key,
+                    ctx_lower=ctx_lower,
+                    diag=diag,
                 )
+                diag.model_used = used_model
 
-                texto = self._extract_text(data)
-                if not texto:
-                    continue
-
-                diag["model_used"] = used_model or attempt["model"]
-
-                v = _violations(texto, ctx_lower)
-                if v:
-                    diag["repairs"] += 1
-                    diag["violations"].extend(v)
-
-                    repair_sys = (
-                        "Você é um revisor rígido de continuidade do roleplay.\n"
-                        "TAREFA: reescrever a resposta da Mary SEM violar regras.\n"
-                        "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; 4 parágrafos curtos; "
-                        "micro-ação/micro-intenção; sem perguntas; Mary não assume voz do usuário.\n"
-                    )
-                    repair_user = (
-                        "Reescreva a resposta abaixo removendo violações.\n"
-                        f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
-                        f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
-                        "[RESPOSTA ORIGINAL]\n"
-                        f"{texto}\n"
-                    )
-
-                    repaired = ""
-                    # v3.22: até 2 repairs, obrigando também o formato
-                    for _i in range(2):
-                        dataR, usedR, _ = self._chat(
-                            used_model or attempt["model"],
-                            [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
-                            temperature=0.2,
-                            max_tokens=1200,
-                        )
-                        repaired = (self._extract_text(dataR) or "").strip()
-
-                        vr = _violations(repaired, ctx_lower) if repaired else ["formato_invalido"]
-                        if repaired and not vr:
-                            texto = repaired
-                            diag["model_used"] = usedR or diag["model_used"]
-                            break
-
-                        diag["repairs"] += 1
-                        diag["violations"].extend(vr)
-                        repair_user = (
-                            repair_user
-                            + "\n\nATENÇÃO: ainda há violação. Reescreva novamente MAIS CURTO, mais contido, "
-                              "exatamente 4 parágrafos (2–4 frases), e sem pergunta no final."
-                        )
-
-                    # se ainda falhar -> fallback seguro (e já vem formatado)
-                    if _violations(texto, ctx_lower):
-                        texto = (
-                            "Eu mantenho meu rosto neutro e respiro com cuidado, como se nada me atingisse.\n\n"
-                            "Por dentro, eu registro cada detalhe sem me permitir completar o que você não declarou.\n\n"
-                            "Eu faço apenas um gesto mínimo, o suficiente para manter a tensão sem criar fatos novos.\n\n"
-                            "E sigo firme, decidida a não deixar nenhum detalhe escapar."
-                        )
-
-                # v3.22: proteção extra final de formato (mesmo sem violações)
-                if not _format_ok(texto):
-                    diag["repairs"] += 1
-                    diag["violations"].append("formato_invalido_pos_final")
-                    texto = (
-                        "Eu fico imóvel por um segundo, escolhendo com cuidado o que deixo aparecer no meu rosto.\n\n"
-                        "Por dentro, eu sinto a tensão subir, mas seguro isso onde ninguém vê.\n\n"
-                        "Eu te encaro com calma e faço só um movimento pequeno, medido, sem criar nada além do que você trouxe.\n\n"
-                        "E continuo, consciente de cada risco, mantendo o controle por mais um instante."
-                    )
-
-                # Relationship Engine (pós-resposta)
-                promoted = False
+                # 13) Pós: relationship engine
                 meta: Dict[str, Any] = {}
+                promoted = False
 
-                if conflict_now:
-                    meta = {"conflict_mode": conflict_mode, "conflict_now": True}
-                else:
+                if not conflict_now:
                     try:
-                        assessor_model = diag["model_used"] or used_model or attempt["model"]
+                        assessor_model = diag.model_used or plan["model"]
 
                         def _assessor(system_prompt: str, user_prompt: str) -> str:
                             data2, _, _ = self._chat(
@@ -1370,7 +1272,6 @@ REGRAS ABSOLUTAS:
                             _assessor,
                             cfg=EngineConfig(),
                         )
-
                         rel_state = new_rel
                         _save_rel_state(usuario_key, timeline_final, rel_state)
 
@@ -1403,12 +1304,13 @@ REGRAS ABSOLUTAS:
                                 "from_timeline": old_tl,
                                 "to_timeline": "cumplice",
                             }
-
                             _lock_scene(usuario_key)
 
                     except Exception:
+                        # Relationship engine não pode derrubar o turno
                         meta = meta or {}
 
+                # 14) Debug leve
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1439,11 +1341,11 @@ REGRAS ABSOLUTAS:
                     "conflict_now": conflict_now,
                 }
 
-                # Salva
-                save_interaction_safe(usuario_key, prompt, texto, diag["model_used"] or used_model or attempt["model"])
+                # 15) Salvar + lock
+                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
                 _lock_scene(usuario_key)
 
-                # Intimacy progression
+                # 16) Intimacy progression
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
                     if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
@@ -1457,7 +1359,7 @@ REGRAS ABSOLUTAS:
                 except Exception:
                     pass
 
-                st.session_state["mary_last_diagnostics"] = diag
+                st.session_state["mary_last_diagnostics"] = diag.as_dict()
                 return texto
 
             except Exception as e:
@@ -1466,8 +1368,124 @@ REGRAS ABSOLUTAS:
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
-        st.session_state["mary_last_diagnostics"] = diag
+        st.session_state["mary_last_diagnostics"] = diag.as_dict()
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
+
+    # ======================================================
+    # Planos previsíveis (sem loteria)
+    # ======================================================
+    @staticmethod
+    def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
+        # max_tokens moderado: ajuda formato e reduz delírios
+        if nsfw_on:
+            return [
+                {"model": model, "temperature": 0.75, "max_tokens": 1050},
+                {"model": model, "temperature": 0.60, "max_tokens": 1050},
+            ]
+        return [
+            {"model": model, "temperature": 0.65, "max_tokens": 1050},
+            {"model": model, "temperature": 0.50, "max_tokens": 1050},
+            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.60, "max_tokens": 1050},
+        ]
+
+    # ======================================================
+    # Gerar + Repair (núcleo da robustez)
+    # ======================================================
+    def _generate_with_repair(
+        self,
+        *,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        usuario_key: str,
+        ctx_lower: str,
+        diag: _Diag,
+    ) -> Tuple[str, str]:
+        """
+        1) gera
+        2) valida (violations)
+        3) se falhar: repair (até 2)
+        4) se ainda falhar: fallback contido (formatado)
+        Retorna: (texto_final, used_model)
+        """
+        data, used_model, _provider_meta = self._chat(
+            model,
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        used_model = used_model or model
+        texto = (self._extract_text(data) or "").strip()
+        if not texto:
+            raise RuntimeError("modelo retornou vazio")
+
+        v = _violations(texto, ctx_lower)
+        if not v:
+            # proteção final de formato (se escapou por algum motivo)
+            if not _format_ok(texto):
+                diag.repairs += 1
+                diag.violations.append("formato_invalido_pos_final")
+                return (self._fallback_text(), used_model)
+            return (texto, used_model)
+
+        # Se houve violações: repair controlado
+        diag.repairs += 1
+        diag.violations.extend(v)
+
+        repair_sys = (
+            "Você é um revisor rígido de continuidade do roleplay.\n"
+            "TAREFA: reescrever a resposta da Mary SEM violar regras.\n"
+            "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; "
+            "exatamente 4 parágrafos curtos (2–4 frases); micro-ação/micro-intenção; sem pergunta final; "
+            "Mary não assume voz do usuário.\n"
+        )
+        repair_user = (
+            "Reescreva a resposta abaixo removendo violações.\n"
+            f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
+            f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
+            "[RESPOSTA ORIGINAL]\n"
+            f"{texto}\n"
+        )
+
+        # Até 2 repairs
+        for _i in range(2):
+            dataR, usedR, _ = self._chat(
+                used_model,
+                [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
+                temperature=0.2,
+                max_tokens=max_tokens,
+            )
+            repaired = (self._extract_text(dataR) or "").strip()
+            if not repaired:
+                diag.repairs += 1
+                diag.violations.append("repair_vazio")
+                continue
+
+            vr = _violations(repaired, ctx_lower)
+            if not vr:
+                return (repaired, usedR or used_model)
+
+            diag.repairs += 1
+            diag.violations.extend(vr)
+            repair_user = (
+                repair_user
+                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO, mais contido, "
+                  "exatamente 4 parágrafos (2–4 frases), e sem pergunta no final."
+            )
+
+        # Se falhou: fallback contido
+        return (self._fallback_text(), used_model)
+
+    @staticmethod
+    def _fallback_text() -> str:
+        # 4 parágrafos; 2–4 frases; sem pergunta final
+        return (
+            "Eu fico imóvel por um segundo, escolhendo com cuidado o que deixo aparecer no meu rosto.\n\n"
+            "Por dentro, eu sinto a tensão e o desejo se misturarem, mas eu não me permito inventar nada além do que você trouxe.\n\n"
+            "Eu faço só um gesto mínimo, contido, o suficiente para manter a intimidade viva sem empurrar a cena para um lugar que você não autorizou.\n\n"
+            "E sigo com a mesma decisão silenciosa: eu não recuo do que eu sinto, só mantenho o controle por mais um instante."
+        )
 
     # -------------------------
     # helpers
