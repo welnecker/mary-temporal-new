@@ -383,6 +383,70 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
     except Exception:
         pass
 
+def delete_last_long_memory(usuario: str) -> bool:
+    """
+    Apaga a última memória longa (mais recente) do usuário.
+    Retorna True se apagou algo.
+    """
+    last = _longmem().find_one({"usuario": usuario}, sort=[("ts", -1), ("_id", -1)])
+    if not last:
+        last = _longmem().find_one({"usuario": usuario}, sort=[("_id", -1)])
+    if not last:
+        return False
+
+    r = _longmem().delete_one({"_id": last["_id"]})
+
+    if isinstance(r, int):
+        ok = int(r) > 0
+    elif isinstance(r, dict):
+        ok = int(r.get("deleted_count", 0) or 0) > 0
+    else:
+        ok = int(getattr(r, "deleted_count", 0) or 0) > 0
+
+    _invalidate_cache_for_user(usuario)
+    return ok
+
+
+def delete_all_long_memory(usuario: str) -> int:
+    """
+    Apaga todas as memórias longas do usuário.
+    Retorna a quantidade apagada.
+    """
+    r = _longmem().delete_many({"usuario": usuario})
+
+    if isinstance(r, int):
+        deleted = int(r)
+    elif isinstance(r, dict):
+        deleted = int(r.get("deleted_count", 0) or 0)
+    else:
+        deleted = int(getattr(r, "deleted_count", 0) or 0)
+
+    _invalidate_cache_for_user(usuario)
+    return deleted
+
+
+def delete_long_memory_by_id(usuario: str, mem_id: str) -> bool:
+    """
+    Apaga uma memória longa específica (campo 'id' = 'lm_xxx') do usuário.
+    Retorna True se apagou.
+    """
+    mid = str(mem_id or "").strip()
+    if not mid:
+        return False
+
+    r = _longmem().delete_one({"usuario": usuario, "id": mid})
+
+    if isinstance(r, int):
+        ok = int(r) > 0
+    elif isinstance(r, dict):
+        ok = int(r.get("deleted_count", 0) or 0) > 0
+    else:
+        ok = int(getattr(r, "deleted_count", 0) or 0) > 0
+
+    _invalidate_cache_for_user(usuario)
+    return ok
+
+
     # fallback lexical simples (caso backend mude / wrapper limite)
     rows = list_long_memory(usuario, limit=2000)
     qq = q.lower()
