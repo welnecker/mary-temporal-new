@@ -1,7 +1,7 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.26 — iniciativa destravada + anti-meta + robustez previsível)
+MaryService (v3.27 — iniciativa destravada + anti-meta + robustez previsível)
 
 ✅ Correções desta versão (diretas ao seu problema):
 - Remove “respostas técnicas/meta” dentro do roleplay:
@@ -794,14 +794,7 @@ def _resolve_conflict_mode(timeline: str) -> str:
     return "soft"
 
 _RE_CONFLICT_IMMINENT = re.compile(
-    r"\b("
-    r"briga|brigar|agarr(a|o|ou)|segura|segurar|empurra|empurrar|"
-    r"amea(c|ç)a|ameaçar|grita|gritar|bater|soco|chute|murro|"
-    r"puxa|puxar|arrasta|arrastar|seguran(ç|c)a|pol[ií]cia|"
-    r"expulsa|expulsar|invad(i|ir)|porta arromb|"
-    r"ci[uú]mes? extremo|tra[ií]ç(ão|ao)|"
-    r"me mata|vou te matar|te quebro|te arrebento"
-    r")\b",
+    r"\b(agora eu vou|vou te|vou bater|te bater|te arrebentar|te matar|matar|arma|faca|tiro|soco|chute|quebrar a cara|amea[cç]a)\b",
     re.IGNORECASE,
 )
 
@@ -827,43 +820,9 @@ def _count_sentences(paragraph: str) -> int:
 
 # Linha 828 (nova versão)
 def _format_ok(text: str) -> bool:
-    # Formato FLEXÍVEL: não engesse narrativa em quantidade fixa de parágrafos/frases.
-    # Só bloqueia vazio e evita terminar em pergunta.
-    t = (text or "").strip()
-    if not t:
-        return False
-    paras = _split_paragraphs(t)
-    if paras:
-        if paras[-1].strip().endswith("?"):
-            return False
-    return True
-# ==========================================================
-# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV / anti-meta)
-# ==========================================================
-_RE_OFFSCREEN_MSG = re.compile(
-    r"(?is)\b(mensagem\s+de|whatsapp|sms|telegram|o\s+celular\s+vibra.*?:|seu\s+celular\s+vibra.*?:)\b.*?(\".+?\"|“.+?”|'.+?')"
-)
-_RE_DOC_LOGISTICS = re.compile(
-    r"(?is)\b(passaporte\s+falso|documento\s+falso|identidade\s+falsa|reserva\s+em\s+seu\s+nome|check-?in\s+confirmado|"
-    r"gerente\s+examina|balc[aã]o\s+de\s+check-?in|cart[aã]o\s+magn[eé]tico\s+da\s+su[ií]te|upgrade|"
-    r"confirmam\s+a\s+reserva|negam\s+a\s+reserva|sistema\s+do\s+hotel)\b"
-)
-_RE_NPC_SPEAKER_LINE = re.compile(r"(?m)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁ-ú\- ]{2,40}\s*[:—].*?\bjanio\b", re.IGNORECASE)
-_RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|the game is up)\b")
-_RE_PLACEHOLDER_REVEAL = re.compile(r"(?i)\[\s*mensagem\s+n[aã]o\s+revelada\s*\]")
-_RE_POV_USER_ID = re.compile(r"(?is)\b(me chamo|meu nome é|eu sou)\s+(janio|donisete|marcos|von\s+mecklenburg)\b")
-
-# anti-meta: frases que fazem Mary “explicar regra” ao usuário
-_RE_META_LEAK = re.compile(
-    r"(?is)\b("
-    r"n[aã]o\s+me\s+permito\s+inventar|"
-    r"você\s+n[aã]o\s+autorizou|"
-    r"sem\s+empurrar\s+a\s+cena|"
-    r"eu\s+n[aã]o\s+posso|"
-    r"n[aã]o\s+posso\s+assumir|"
-    r"n[aã]o\s+devo\s+inventar"
-    r")\b"
-)
+    # Formato flexível: não bloqueie por estrutura.
+    # Reprova apenas vazio.
+    return bool((text or '').strip())
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     hist = cached_get_history(usuario_key, limit=200)
@@ -920,6 +879,8 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append("- Reescreva como MARY (1ª pessoa da Mary), sem narrar como o usuário.")
     if "meta_leak" in violations:
         bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
+    if "formato_invalido" in violations:
+        bullets.append("- Corrija o FORMATO: parágrafos livres; frases livres por parágrafo; sem lista/título/meta; sem pergunta final.")
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
     return "\n".join(bullets).strip()
 
@@ -985,41 +946,38 @@ _RE_ACTION_COMMAND = re.compile(
 )
 # Linha 985 (nova versão)
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
-    # Janela de iniciativa (AGÊNCIA): deve abrir com facilidade para evitar "Mary passiva".
-    # Ainda respeita: sem inventar ações do usuário, sem teleporte, sem concluir a cena sozinho.
+    # Janela de iniciativa: não matar o desejo.
+    # Micro-iniciativa (reversível) é permitida mesmo com NSFW OFF (modo PG-13).
     if conflict_now:
         return False
+    if phase < 1:
+        return False
 
-    txt = user_text or ""
+    # pistas amplas do usuário
+    cue = bool(re.search(r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b", (user_text or ""), re.IGNORECASE))
 
-    # Comando explícito do usuário pedindo atitude
-    if _RE_ACTION_COMMAND.search(txt):
-        return True
-
-    cue = bool(_RE_INTIMACY_CUE.search(txt))
-
-    # Mesmo com NSFW_OFF, iniciativa leve (reversível) é permitida: olhar, aproximar, tocar leve, convite.
     try:
         desire = float(rel.get("desire", 0))
         self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
+
+        # impulso forte: age (micro) mesmo sem pista explícita
+        if desire >= (self_control * 0.65) and arousal >= 10:
+            return True
+
+        # com pista, barra menor
+        if cue and desire >= (self_control * 0.45):
+            return True
+
+        # fallback: se a conversa cita Janio diretamente, permita iniciativa mínima
+        if re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE):
+            return True
+
     except Exception:
-        return cue  # se não temos estado, pelo menos siga o cue do usuário
-
-    # Impulso alto → agir (micro-ação) mesmo sem frase-chave
-    if desire >= (self_control * 0.60) and (arousal >= 10 or phase >= 0):
-        return True
-
-    # Com pista do usuário, a barra é menor
-    if cue and desire >= (self_control * 0.45):
-        return True
+        # se deu ruim com métricas, ainda permita se houver pista clara
+        return bool(re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE))
 
     return False
-
-# ==========================================================
-# ✅ Diagnóstico (silencioso)
-# ==========================================================
-@dataclass
 class _Diag:
     ts: int
     timeline: str
@@ -1136,14 +1094,6 @@ class MaryService(BaseCharacter):
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
 
-        janio_pursuit_rule = """
-[FOCO EM JANIO — ABSOLUTO]
-- Mary NÃO evita Janio quando existe desejo/saudade: ela se orienta para ele (procura com o olhar, cria oportunidade, aproxima em micro-gestos).
-- Se Raul ou outros estiverem perto, Mary mantém limites sociais, mas NÃO usa isso para apagar Janio.
-- Permitido: olhar firme, sorriso curto, gesto chamando, encostar leve, puxar a mão, inclinar e sussurrar intenção.
-- Proibido: inventar ação do usuário; faça convite/gesto e deixe espaço para ele responder.
-""".strip()
-
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
 
@@ -1175,6 +1125,26 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - O tamanho da resposta deve ser natural. Use de 2 a 5 parágrafos, conforme a necessidade da cena.
 - Cenas de ação rápida pedem respostas curtas e diretas (2 parágrafos). Cenas de diálogo intenso podem ser mais longas (4-5 parágrafos).
 - Sem listas, títulos ou perguntas no final.
+""".strip()
+
+        anti_nature_rule = """
+[ANTI-PAISAGEM — ABSOLUTO]
+- Quando o assunto for desejo/Janio/ciúme/tensão: NO MÁXIMO 1 frase de cenário.
+- Proibido encher com mar/vento/sol/horizonte; isso vira muleta.
+- Prefira gesto, intenção, escolha, consequência e diálogo direto.
+""".strip()
+
+        anti_freeze_rule = """
+[ANTI-CONGELAR — ABSOLUTO]
+- Evite frases tipo “meu corpo congela”, “fico imóvel”, “sumo a voz”, “apago rápido”.
+- Se houver nervosismo, traduza em ação pequena e reversível (olhar que segura, toque leve, respiração, passo curto).
+""".strip()
+
+        janio_focus_rule = """
+[JANIO — NÃO EVITAR]
+- Mary NÃO evita Janio por “dúvidas”. Ela assume atração e curiosidade.
+- Se alguém perguntar dele, Mary responde com clareza (sem segredo infantil) e com desejo contido porém ativo.
+- Mary pode iniciar micro-iniciativas reversíveis (encostar, puxar a mão, indicar um lugar) sem mover o usuário.
 """.strip()
 
         # ✅ pacing: mantém controle, mas permite iniciativa real quando a janela abre
@@ -1210,7 +1180,7 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em seu desejo. Ela não neutraliza sentimentos com hesitação.
 - PROIBIDO usar metáforas de natureza (sol, vento, mar, céu, areia) como preenchimento emocional.
-- Substitua monólogo interno por micro-ação. Em vez de 'penso se devo ligar', Mary pega o celular e age. Em vez de 'meu coração acelera', ela te encara e deixa isso visível.
+- Substitua monólogo interno por micro-ação. Em vez de 'penso se devo ligar', Mary pega o celular. Em vez de 'meu coração acelera', ela te encara e umedece os lábios.
 - Mary pode e deve iniciar contato físico, propor ações e expressar suas vontades de forma clara e adulta.
 - Ela é uma mulher decidida, não uma adolescente insegura. Aja como tal.
 """.strip()
@@ -1272,8 +1242,6 @@ TIMELINE ATUAL: {timeline_final}
 
 {user_name_block}
 
-{janio_pursuit_rule}
-
 [CANON — VERDADE ATUAL]
 {canon_txt}
 
@@ -1287,7 +1255,6 @@ PERSONA (baseline):
 
 {format_rule}
 {pacing_rule}
-{focus_rule}
 {initiative_rule}
 {manipulation_block}
 {conflict_block}
@@ -1524,7 +1491,7 @@ REGRAS ABSOLUTAS:
             "Você é um revisor rígido de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY SEM violar regras.\n"
             "IMPORTANTE: A saída FINAL deve ser 100% in-character (Mary), sem meta, sem explicar regras.\n"
-            "Formato: exatamente 4 parágrafos; 2–4 frases cada; sem lista/título/meta; sem pergunta no final.\n"
+            "Formato: parágrafos livres; frases livres cada; sem lista/título/meta; sem pergunta no final.\n"
             "Conteúdo: 1 ação concreta + 1 consequência emocional por parágrafo.\n"
         )
         repair_user = (
@@ -1564,11 +1531,11 @@ REGRAS ABSOLUTAS:
 
     @staticmethod
     def _fallback_text() -> str:
-        # Fallback raro: desejo evidente + iniciativa mínima e reversível (sem inventar o usuário).
+        # Fallback: direto, sem paisagem, com desejo e agência reversível.
         return (
-            "Eu chego perto demais, e deixo isso explícito no meu olhar — sem pedir desculpa. Minha mão encosta de leve na sua, só o bastante para perguntar com o corpo se você fica.\n\n"
-            "Eu baixo a voz, perto do seu ouvido, e digo o que eu quero sem floreio: eu quero você comigo, agora. Não concluo nada sozinha — mas também não escondo o impulso.\n\n"
-            "Eu prendo seus dedos nos meus por um segundo e indico um canto mais reservado com um gesto simples. Se você vier comigo, eu sigo."
+            "Eu solto um meio sorriso e digo o nome sem fingir distância: Janio. Eu não estou confusa sobre ele — eu estou com medo do quanto eu gostei.\n\n"
+            "Eu encosto de leve na sua mão enquanto falo, como se isso me desse coragem. Foi intenso, foi rápido, e ainda assim eu quero ver onde isso vai dar.\n\n"
+            "Eu respiro fundo e completo, sem recuar: se ele vier falar comigo hoje, eu não vou fugir."
         )
 
     # -------------------------
