@@ -1006,6 +1006,23 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
             return False
 
     return False
+    cue = bool(_RE_INTIMACY_CUE.search(user_text or ""))
+    try:
+        desire = float(rel.get("desire", 0))
+        self_control = float(rel.get("self_control", 50))
+        arousal = float(rel.get("arousal", 0))
+
+        # forte impulso: pode agir mesmo sem frase-chave do usuário
+        if desire >= (self_control * 0.70) and arousal >= 15:
+            return True
+
+        # com pista do usuário, a barra é menor
+        if cue and desire >= (self_control * 0.55) and arousal >= 10:
+            return True
+    except Exception:
+        return False
+
+    return False
 
 # ==========================================================
 # ✅ Diagnóstico (silencioso)
