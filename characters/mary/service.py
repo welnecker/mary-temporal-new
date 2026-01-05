@@ -825,10 +825,17 @@ def _count_sentences(paragraph: str) -> int:
     parts = [x.strip() for x in parts if x.strip()]
     return len(parts)
 
+# Linha 828 (nova versão)
 def _format_ok(text: str) -> bool:
-    # Formato propositalmente FLEXÍVEL: não bloqueie por estrutura.
-    # Só recusa vazio (sanity-check).
-    return bool((text or '').strip())
+    paras = _split_paragraphs(text)
+    # Permite de 2 a 5 parágrafos, dando flexibilidade
+    if len(paras) < 2 or len(paras) > 5:
+        return False
+    # Mantém a validação de não terminar com pergunta
+    last = paras[-1].strip()
+    if last.endswith("?"):
+        return False
+    return True
 
 # ==========================================================
 # ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV / anti-meta)
@@ -971,16 +978,34 @@ _RE_INTIMACY_CUE = re.compile(
     r")\b"
 )
 
+# Adicionar após a linha 983
+_RE_ACTION_COMMAND = re.compile(
+    r"(?is)\b("
+    r"liga\s+pra\s+ele|fala\s+com\s+ele|o\s+que\s+voc[eê]\s+vai\s+fazer|"
+    r"decide|se\s+decide|toma\s+uma\s+atitude|reage|fa[cç]a\s+alguma\s+coisa"
+    r")\b"
+)
+# Linha 985 (nova versão)
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
-    # Janela de iniciativa: ampla o suficiente para não matar o desejo.
-    # Ainda respeita: sem teleporte, sem inventar o usuário, sem concluir cenas.
     if conflict_now:
         return False
-    if not nsfw_on:
-        return False
-    if phase < 1:
-        return False
 
+    # Gatilho 1: Usuário deu um comando de ação explícito
+    if _RE_ACTION_COMMAND.search(user_text or ""):
+        return True
+
+    # Gatilho 2: Cenário de intimidade física (lógica original)
+    if nsfw_on and phase >= 1 and _RE_TENDER_PRESENCE.search(user_text or ""):
+        try:
+            desire = float(rel.get("desire", 0))
+            self_control = float(rel.get("self_control", 50))
+            arousal = float(rel.get("arousal", 0))
+            if desire >= (self_control * 0.75) and arousal >= 20:
+                return True
+        except Exception:
+            return False
+
+    return False
     cue = bool(_RE_INTIMACY_CUE.search(user_text or ""))
     try:
         desire = float(rel.get("desire", 0))
@@ -1144,11 +1169,12 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
             else ""
         )
 
-        format_rule = """
-[FORMATO — LIVRE]
-- Sem listas, sem títulos, sem meta-comentários.
-- Parágrafos e ritmo livres conforme o modelo; priorize clareza e tensão.
-- Evite terminar com pergunta.
+        # Linha 1150 (nova versão)
+format_rule = """
+[FORMATO — FLEXÍVEL]
+- O tamanho da resposta deve ser natural. Use de 2 a 5 parágrafos, conforme a necessidade da cena.
+- Cenas de ação rápida pedem respostas curtas e diretas (2 parágrafos). Cenas de diálogo intenso podem ser mais longas (4-5 parágrafos).
+- Sem listas, títulos ou perguntas no final.
 """.strip()
 
         # ✅ pacing: mantém controle, mas permite iniciativa real quando a janela abre
