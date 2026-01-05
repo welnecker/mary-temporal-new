@@ -1006,23 +1006,6 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
             return False
 
     return False
-    cue = bool(_RE_INTIMACY_CUE.search(user_text or ""))
-    try:
-        desire = float(rel.get("desire", 0))
-        self_control = float(rel.get("self_control", 50))
-        arousal = float(rel.get("arousal", 0))
-
-        # forte impulso: pode agir mesmo sem frase-chave do usuário
-        if desire >= (self_control * 0.70) and arousal >= 15:
-            return True
-
-        # com pista do usuário, a barra é menor
-        if cue and desire >= (self_control * 0.55) and arousal >= 10:
-            return True
-    except Exception:
-        return False
-
-    return False
 
 # ==========================================================
 # ✅ Diagnóstico (silencioso)
@@ -1170,7 +1153,7 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         )
 
         # Linha 1150 (nova versão)
-format_rule = """
+        format_rule = """
 [FORMATO — FLEXÍVEL]
 - O tamanho da resposta deve ser natural. Use de 2 a 5 parágrafos, conforme a necessidade da cena.
 - Cenas de ação rápida pedem respostas curtas e diretas (2 parágrafos). Cenas de diálogo intenso podem ser mais longas (4-5 parágrafos).
@@ -1206,7 +1189,7 @@ format_rule = """
         )
 
         # Linha 1178 (nova versão)
-manipulation_block = """
+        manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em seu desejo. Ela não neutraliza sentimentos com hesitação.
 - PROIBIDO usar metáforas de natureza (sol, vento, mar, céu, areia) como preenchimento emocional.
