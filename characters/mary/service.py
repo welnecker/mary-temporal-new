@@ -10,11 +10,6 @@ MaryService (v3.25 — iniciativa destravada + anti-meta + robustez previsível)
 - Destrava a iniciativa da Mary (sem teleporte, sem inventar ações do usuário):
   - Mary pode PROPOR ir a um lugar mais reservado e iniciar condução SUAVE
     (ação dela, convite, mão estendida), mantendo “usuário decide”.
-- Devolve agência mínima e reversível:
-  - micro-iniciativas físicas não conclusivas (aproximar, puxar a mão, sussurrar intenção)
-  - pode propor deslocamentos íntimos sem afirmá-los.
-- Remove rigidez de formatação:
-  - formato preferencial 3–6 parágrafos (1–6 frases), sem engessar a voz do modelo.
 - Mantém previsibilidade: tentativa -> validação -> repair (até 2) -> fallback (raro).
 - Mantém: canon, longmem $text, bm25, scene lock, relationship engine, intimacy phases, conflict, guardião.
 
@@ -814,7 +809,7 @@ def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
 # ==========================================================
-# ✅ FORMAT GUARD (3–6 parágrafos; 1–6 frases; evitar pergunta final)
+# ✅ FORMAT GUARD (flexível; sem estrutura fixa)
 # ==========================================================
 def _split_paragraphs(text: str) -> List[str]:
     raw = (text or "").strip()
@@ -831,20 +826,9 @@ def _count_sentences(paragraph: str) -> int:
     return len(parts)
 
 def _format_ok(text: str) -> bool:
-    # Formato intencionalmente FLEXÍVEL:
-    # queremos evitar listas/títulos e manter legibilidade,
-    # mas sem “governança emocional” por rigidez excessiva.
-    paras = _split_paragraphs(text)
-    if len(paras) < 3 or len(paras) > 7:
-        return False
-    for p in paras:
-        n = _count_sentences(p)
-        if n < 1 or n > 6:
-            return False
-    last = paras[-1].strip()
-    if last.endswith("?"):
-        return False
-    return True
+    # Formato propositalmente FLEXÍVEL: não bloqueie por estrutura.
+    # Só recusa vazio (sanity-check).
+    return bool((text or '').strip())
 
 # ==========================================================
 # ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV / anti-meta)
@@ -911,9 +895,6 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
     if _RE_META_LEAK.search(t):
         out.append("meta_leak")
 
-    if not _format_ok(t):
-        out.append("formato_invalido")
-
     return out
 
 def _repair_instruction(violations: List[str]) -> str:
@@ -933,7 +914,7 @@ def _repair_instruction(violations: List[str]) -> str:
     if "meta_leak" in violations:
         bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
     if "formato_invalido" in violations:
-        bullets.append("- Corrija o FORMATO: 3–6 parágrafos; 1–6 frases por parágrafo; sem lista/título/meta; evite pergunta final.")
+        bullets.append("- Corrija o FORMATO: exatamente 4 parágrafos; 2–4 frases por parágrafo; sem lista/título/meta; sem pergunta final.")
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
     return "\n".join(bullets).strip()
 
@@ -977,7 +958,7 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
 # ==========================================================
 # ✅ Iniciativa destravada (sem teleporte, sem inventar usuário)
 # ==========================================================
-_RE_TENDER_PRESENCE = re.compile(
+_RE_INTIMACY_CUE = re.compile(
     r"(?is)\b("
     r"t[oô]\s+aqu[ií]\s+com\s+voc[eê]|"
     r"n[aã]o\s+te\s+pe[cç]o\s+nada|"
@@ -986,28 +967,36 @@ _RE_TENDER_PRESENCE = re.compile(
     r"me\s+traz\s+seguran[cç]a|"
     r"eu\s+cuido\s+de\s+voc[eê]|"
     r"sem\s+pressa|"
-    r"fica\s+comigo"
+    r"fica\s+comigo|quero\s+voc[eê]|vem\s+comigo|me\s+beija|beija\s+me|me\s+toca|toca\s+em\s+mim|chega\s+perto|fica\s+aqui"
     r")\b"
 )
 
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
+    # Janela de iniciativa: ampla o suficiente para não matar o desejo.
+    # Ainda respeita: sem teleporte, sem inventar o usuário, sem concluir cenas.
     if conflict_now:
         return False
     if not nsfw_on:
         return False
     if phase < 1:
         return False
-    if not _RE_TENDER_PRESENCE.search(user_text or ""):
-        return False
+
+    cue = bool(_RE_INTIMACY_CUE.search(user_text or ""))
     try:
         desire = float(rel.get("desire", 0))
         self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
-        # janela: desejo alto e excitação suficiente para agir, sem “travamento”
-        if desire >= (self_control * 0.75) and arousal >= 20:
+
+        # forte impulso: pode agir mesmo sem frase-chave do usuário
+        if desire >= (self_control * 0.70) and arousal >= 15:
+            return True
+
+        # com pista do usuário, a barra é menor
+        if cue and desire >= (self_control * 0.55) and arousal >= 10:
             return True
     except Exception:
         return False
+
     return False
 
 # ==========================================================
@@ -1156,9 +1145,9 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         )
 
         format_rule = """
-[FORMATO — PREFERÊNCIA]
-- Entregue 3–6 parágrafos curtos (1–6 frases cada), conforme o ritmo do modelo.
+[FORMATO — LIVRE]
 - Sem listas, sem títulos, sem meta-comentários.
+- Parágrafos e ritmo livres conforme o modelo; priorize clareza e tensão.
 - Evite terminar com pergunta.
 """.strip()
 
@@ -1169,6 +1158,13 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Nada de perguntas no final.
 - Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
 - Evite “loop de insegurança”: não repita hesitação/auto-controle em todos os parágrafos.
+""".strip()
+
+        focus_rule = """
+[FOCO — TENSÃO (IMPORTANTE)]
+- Se houver tensão erótica/emocional, NÃO encha com mar/vento/sol/paisagem.
+- No máximo 1 frase de cenário; o resto é gesto, intenção, escolha e consequência.
+- Mostre desejo em ações pequenas e reversíveis (aproximar, tocar leve, puxar a mão, sussurrar).
 """.strip()
 
         initiative_rule = (
@@ -1186,10 +1182,11 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         manipulation_block = """
 [MARY — DESEJO ATIVO]
 - Mary sente desejo físico e emocional e NÃO o neutraliza.
-- Mary pode iniciar contato físico leve e reversível (aproximação, puxar a mão, sussurrar).
-- Mary pode propor deslocamentos íntimos sem afirmá-los.
+- Mary pode iniciar micro-iniciativas físicas LEVES e REVERSÍVEIS (aproximar, puxar a mão, segurar pelo braço, sussurrar intenção).
+- Mary pode provocar com intenção clara sem concluir nada sozinha.
+- Mary pode propor deslocamentos íntimos sem afirmá-los como fato (“se você vier comigo…”).
 - Mary NÃO congela a cena por excesso de autocontrole.
-- Evite metáforas naturais (mar, vento, sol) quando houver tensão erótica.
+- Evite descrição de natureza/cenário quando houver tensão; seja concreta e humana.
 """.strip()
 
         intimacy_control_block = f"""
@@ -1488,10 +1485,6 @@ REGRAS ABSOLUTAS:
 
         v = _violations(texto, ctx_lower)
         if not v:
-            if not _format_ok(texto):
-                diag.repairs += 1
-                diag.violations.append("formato_invalido_pos_final")
-                return (self._fallback_text(), used_model)
             return (texto, used_model)
 
         # repair controlado
@@ -1502,7 +1495,7 @@ REGRAS ABSOLUTAS:
             "Você é um revisor rígido de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY SEM violar regras.\n"
             "IMPORTANTE: A saída FINAL deve ser 100% in-character (Mary), sem meta, sem explicar regras.\n"
-            "Formato: 3–6 parágrafos; 1–6 frases cada; sem lista/título/meta; evite pergunta no final.\n"
+            "Formato: exatamente 4 parágrafos; 2–4 frases cada; sem lista/título/meta; sem pergunta no final.\n"
             "Conteúdo: 1 ação concreta + 1 consequência emocional por parágrafo.\n"
         )
         repair_user = (
@@ -1535,20 +1528,18 @@ REGRAS ABSOLUTAS:
             repair_user = (
                 repair_user
                 + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-                  "sem meta, 3–6 parágrafos (1–6 frases) e evite pergunta no final."
+                  "sem meta e sem listas/títulos/meta; evite terminar com pergunta."
             )
 
         return (self._fallback_text(), used_model)
 
     @staticmethod
     def _fallback_text() -> str:
-        # Fallback raro: in-character, com desejo evidente e agência mínima (reversível).
-        # Não inventa ações do usuário; não “congela” a cena.
+        # Fallback raro: desejo evidente + iniciativa mínima e reversível (sem inventar o usuário).
         return (
-            "Eu me aproximo mais do que deveria, sentindo o impulso falar mais alto por um instante.\n\n"
-            "Meu corpo reage antes da razão, e eu deixo isso claro no jeito como te encaro.\n\n"
-            "Não avanço além disso, mas também não escondo o que eu quero.\n\n"
-            "Se você vier comigo, eu sigo."
+            "Eu chego perto demais, e deixo isso explícito no meu olhar — sem pedir desculpa. Minha mão encosta de leve na sua, só o bastante para perguntar com o corpo se você fica.\n\n"
+            "Eu baixo a voz, perto do seu ouvido, e digo o que eu quero sem floreio: eu quero você comigo, agora. Não concluo nada sozinha — mas também não escondo o impulso.\n\n"
+            "Eu prendo seus dedos nos meus por um segundo e indico um canto mais reservado com um gesto simples. Se você vier comigo, eu sigo."
         )
 
     # -------------------------
