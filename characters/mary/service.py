@@ -1,20 +1,22 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.23 — refactor de robustez REAL, sem “muletas”)
+MaryService (v3.24 — iniciativa destravada + anti-meta + robustez previsível)
 
-✅ Objetivo deste refactor:
-- Parar de “inflar” o código com try/except genéricos.
-- Tornar o comportamento previsível: tentativa -> validação -> repair (até 2) -> fallback (quase nunca).
-- Reduzir “loteria”: mesmas entradas tendem a produzir saídas estáveis e no formato certo.
-- Corrigir a sensação de “Mary fria / sem Janio”:
-  - Mary pode chamar o usuário de **Janio** quando o usuário for Janio (ou quando já houver permissão no contexto),
-    mas NPCs continuam sem revelar o nome.
-- Manter: canon, longmem $text, bm25, scene lock, relationship engine, intimacy phases, conflict, guardião/repair.
+✅ Correções desta versão (diretas ao seu problema):
+- Remove “respostas técnicas/meta” dentro do roleplay:
+  - fallback e repair não podem falar “não me permito inventar…” / “não autorizado” etc.
+  - nenhum texto do guard/repair aparece como meta na fala da Mary.
+- Destrava a iniciativa da Mary (sem teleporte, sem inventar ações do usuário):
+  - Mary pode PROPOR ir a um lugar mais reservado e iniciar condução SUAVE
+    (ação dela, convite, mão estendida), mantendo “usuário decide”.
+- Mantém previsibilidade: tentativa -> validação -> repair (até 2) -> fallback (raro).
+- Mantém: canon, longmem $text, bm25, scene lock, relationship engine, intimacy phases, conflict, guardião.
 
-⚠️ Nota importante:
-- A regra “usuário decide fatos/ações/logística” continua valendo.
-- “CENA PARALELA”: se o usuário narra outro lugar/tempo sem comando explícito, Mary não teleporta.
+⚠️ Regras mantidas:
+- Usuário decide ações/fatos/logística.
+- Sem teleporte: mudar local só com comando explícito do usuário ("corta para", "vamos para").
+- NPCs não podem saber nomes/segredos sem usuário narrar.
 """
 
 import logging
@@ -115,7 +117,7 @@ NSFW_TOGGLE_STYLE = """
 [NSFW_ON]
 - Linguagem adulta é permitida conforme o contexto.
 - Preserve coerência, consentimento e continuidade.
-- Não suavize o tom por padrão; apenas siga as regras do sistema e do modo.
+- Mantenha naturalidade e intenção; sem “travamento romântico”.
 """.strip()
 
 # ==========================================================
@@ -268,7 +270,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
 
-    # Se o usuário explicitou comando de corte/transição, não é violação (é autorização)
     if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
         return False
     if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
@@ -838,7 +839,7 @@ def _format_ok(text: str) -> bool:
     return True
 
 # ==========================================================
-# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV)
+# ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV / anti-meta)
 # ==========================================================
 _RE_OFFSCREEN_MSG = re.compile(
     r"(?is)\b(mensagem\s+de|whatsapp|sms|telegram|o\s+celular\s+vibra.*?:|seu\s+celular\s+vibra.*?:)\b.*?(\".+?\"|“.+?”|'.+?')"
@@ -852,6 +853,18 @@ _RE_NPC_SPEAKER_LINE = re.compile(r"(?m)^\s*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\wÁ-ú\
 _RE_ENGLISH_LEAK = re.compile(r"(?i)\b(raises an eyebrow|meanwhile|she murmurs|knowing glint|bellhop|the game is up)\b")
 _RE_PLACEHOLDER_REVEAL = re.compile(r"(?i)\[\s*mensagem\s+n[aã]o\s+revelada\s*\]")
 _RE_POV_USER_ID = re.compile(r"(?is)\b(me chamo|meu nome é|eu sou)\s+(janio|donisete|marcos|von\s+mecklenburg)\b")
+
+# anti-meta: frases que fazem Mary “explicar regra” ao usuário
+_RE_META_LEAK = re.compile(
+    r"(?is)\b("
+    r"n[aã]o\s+me\s+permito\s+inventar|"
+    r"você\s+n[aã]o\s+autorizou|"
+    r"sem\s+empurrar\s+a\s+cena|"
+    r"eu\s+n[aã]o\s+posso|"
+    r"n[aã]o\s+posso\s+assumir|"
+    r"n[aã]o\s+devo\s+inventar"
+    r")\b"
+)
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     hist = cached_get_history(usuario_key, limit=200)
@@ -877,7 +890,6 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
     if _RE_DOC_LOGISTICS.search(t):
         out.append("logistica_inventada")
 
-    # NPC falando Janio só se usuário autorizou explicitamente ter contado o nome
     allow = ("contei" in ctx_lower and "janio" in ctx_lower) or ("revelei" in ctx_lower and "janio" in ctx_lower) or ("disse o nome" in ctx_lower and "janio" in ctx_lower)
     if (not allow) and _RE_NPC_SPEAKER_LINE.search(t):
         out.append("npc_quebrou_segredo_janio")
@@ -888,6 +900,9 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
     if _RE_POV_USER_ID.search(t):
         out.append("pov_usuario_assumido")
 
+    if _RE_META_LEAK.search(t):
+        out.append("meta_leak")
+
     if not _format_ok(t):
         out.append("formato_invalido")
 
@@ -896,20 +911,22 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
 def _repair_instruction(violations: List[str]) -> str:
     bullets = []
     if "placeholder_mensagem_nao_revelada" in violations:
-        bullets.append("- Remova QUALQUER placeholder tipo '[mensagem não revelada]'. Não substitua por nada.")
+        bullets.append("- Remova QUALQUER placeholder tipo '[mensagem não revelada]'.")
     if "offscreen_message_inventada" in violations:
-        bullets.append("- Remova qualquer conteúdo inventado de mensagens/telefonemas. Se houver celular, deixe só 'vibra' sem texto.")
+        bullets.append("- Remova conteúdo inventado de mensagens/telefonemas. No máximo: 'o celular vibra'.")
     if "logistica_inventada" in violations:
-        bullets.append("- Remova qualquer logística/documento/reserva/check-in que não foi narrado explicitamente pelo usuário.")
+        bullets.append("- Remova logística/documento/reserva/check-in que não foi narrado pelo usuário.")
     if "npc_quebrou_segredo_janio" in violations:
-        bullets.append("- Remova qualquer NPC citando 'Janio'. NPCs só podem suspeitar genericamente, sem nomes/planos.")
+        bullets.append("- Remova NPC citando 'Janio'. NPCs só suspeitam sem nomes/planos.")
     if "ingles_vazou" in violations:
         bullets.append("- Reescreva 100% em PT-BR.")
     if "pov_usuario_assumido" in violations:
-        bullets.append("- Reescreva como MARY (1ª pessoa da Mary). Não assuma 'eu sou Janio/Marcos' nem narre como o usuário.")
+        bullets.append("- Reescreva como MARY (1ª pessoa da Mary), sem narrar como o usuário.")
+    if "meta_leak" in violations:
+        bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
     if "formato_invalido" in violations:
-        bullets.append("- Corrija o FORMATO: exatamente 4 parágrafos curtos; 2–4 frases por parágrafo; sem lista; sem títulos; sem meta; sem pergunta no final.")
-    bullets.append("- NÃO adicione fatos novos. Preserve a cena e o tom. 1 micro-ação + 1 micro-intenção. Sem perguntas.")
+        bullets.append("- Corrija o FORMATO: exatamente 4 parágrafos; 2–4 frases por parágrafo; sem lista/título/meta; sem pergunta final.")
+    bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
     return "\n".join(bullets).strip()
 
 # ==========================================================
@@ -928,13 +945,6 @@ def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
 # ✅ Janio: permitir Mary chamar o usuário de Janio sem “NPC vazar”
 # ==========================================================
 def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
-    """
-    Mary pode chamar o usuário de Janio quando:
-    - o user_id é Janio/Janio Donisete (seu app já usa isso),
-    OU
-    - o próprio usuário já se nomeou como Janio no contexto.
-    Isso NÃO autoriza NPC a falar Janio.
-    """
     uid = (user_id or "").strip().lower()
     if uid.startswith("janio"):
         return True
@@ -957,6 +967,42 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
     ).strip()
 
 # ==========================================================
+# ✅ Iniciativa destravada (sem teleporte, sem inventar usuário)
+# ==========================================================
+_RE_TENDER_PRESENCE = re.compile(
+    r"(?is)\b("
+    r"t[oô]\s+aqu[ií]\s+com\s+voc[eê]|"
+    r"n[aã]o\s+te\s+pe[cç]o\s+nada|"
+    r"s[oó]\s+sua\s+presen[cç]a|"
+    r"me\s+conforta|"
+    r"me\s+traz\s+seguran[cç]a|"
+    r"eu\s+cuido\s+de\s+voc[eê]|"
+    r"sem\s+pressa|"
+    r"fica\s+comigo"
+    r")\b"
+)
+
+def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
+    if conflict_now:
+        return False
+    if not nsfw_on:
+        return False
+    if phase < 1:
+        return False
+    if not _RE_TENDER_PRESENCE.search(user_text or ""):
+        return False
+    try:
+        desire = float(rel.get("desire", 0))
+        self_control = float(rel.get("self_control", 50))
+        arousal = float(rel.get("arousal", 0))
+        # janela: desejo alto e excitação suficiente para agir, sem “travamento”
+        if desire >= (self_control * 0.75) and arousal >= 20:
+            return True
+    except Exception:
+        return False
+    return False
+
+# ==========================================================
 # ✅ Diagnóstico (silencioso)
 # ==========================================================
 @dataclass
@@ -971,6 +1017,7 @@ class _Diag:
     nsfw_on: Optional[bool] = None
     conflict_now: Optional[bool] = None
     intimacy_phase_pre: Optional[int] = None
+    initiative_window: Optional[bool] = None
 
     def as_dict(self) -> Dict[str, Any]:
         return {
@@ -984,6 +1031,7 @@ class _Diag:
             "nsfw_on": self.nsfw_on,
             "conflict_now": self.conflict_now,
             "intimacy_phase_pre": self.intimacy_phase_pre,
+            "initiative_window": self.initiative_window,
         }
 
 # ==========================================================
@@ -1036,7 +1084,7 @@ class MaryService(BaseCharacter):
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0 = cached_get_facts(usuario_key)
 
-        # 4) Mudança explícita de local/tempo
+        # 4) Mudança explícita de local/tempo (comando do usuário)
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
@@ -1074,6 +1122,13 @@ class MaryService(BaseCharacter):
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
 
+        intimacy_phase = self._get_intimacy_phase(facts)
+        diag.intimacy_phase_pre = int(intimacy_phase)
+
+        # ✅ janela de iniciativa (Mary pode agir/convidar sem virar “meta”)
+        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
+        diag.initiative_window = bool(initiative)
+
         # 7) Regras (enxutas, firmes)
         scene_lock_rule = """
 [CONTINUIDADE — ABSOLUTO]
@@ -1099,23 +1154,33 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - O último parágrafo NÃO termina em pergunta.
 """.strip()
 
+        # ✅ pacing: mantém controle, mas permite iniciativa real quando a janela abre
         pacing_rule = """
 [PACING — ABSOLUTO]
-- Em cada parágrafo: no máximo 1 micro-ação + 1 micro-intenção.
-- PROIBIDO concluir “toda a história” em um turno.
-- PROIBIDO terminar com pergunta ao usuário.
-- Termine com um gancho interno (sensação/decisão imediata).
+- Não conclua “toda a história” em um turno.
+- Nada de perguntas no final.
+- Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
+- Evite “loop de insegurança”: não repita hesitação/auto-controle em todos os parágrafos.
 """.strip()
+
+        initiative_rule = (
+            """
+[JANELA DE INICIATIVA — ATIVA]
+- O usuário ofereceu acolhimento/segurança. Mary pode tomar iniciativa SUAVE.
+- Permitido: Mary se aproxima, conduz com a mão estendida, propõe privacidade, aprofunda o beijo.
+- Proibido: inventar ação do usuário. Use convite/gesto e deixe o usuário aceitar/recusar.
+- NÃO teleporte: é proposta e condução, não mudança confirmada de local.
+""".strip()
+            if initiative
+            else ""
+        )
 
         manipulation_block = """
-[MARY — DISCRETA / DECIDIDA]
-- Mary é emocionalmente viva e intencional, sem ficar “mecânica”.
-- Ela pode desejar, escolher, recuar, insistir — mas sem inventar ações do usuário.
-- Sem teatralidade; intensidade com naturalidade.
+[MARY — VIVA / INTENCIONAL]
+- Mary é emocionalmente viva e decide com naturalidade.
+- Sem meta-explicação de regra (não diga “não posso”, “não me permito inventar”, “você não autorizou”).
+- Intensidade com clareza e iniciativa, sem teatralidade.
 """.strip()
-
-        intimacy_phase = self._get_intimacy_phase(facts)
-        diag.intimacy_phase_pre = int(intimacy_phase)
 
         intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
@@ -1129,8 +1194,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
 - Mary NÃO inventa falas internas do usuário.
 - Mary NÃO descreve ações do usuário que ele NÃO declarou.
-- Se o usuário DECLARAR explicitamente uma ação/estado/intenção, Mary pode tratar como fato e reagir,
-  sem acrescentar novos detalhes sobre o corpo/mente do usuário.
+- Mary pode convidar/induzir/estender a mão, e esperar a resposta do usuário sem perguntar no final.
 """.strip()
 
         pov_rule = """
@@ -1144,7 +1208,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Mary NÃO inventa logística: reserva, check-in, documentos, pagamentos, horários, chaves, compras, etc.
 - Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra" / "há uma notificação".
 - NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou.
-- NPCs podem apenas DESCONFIAR de forma genérica, sem confirmar e sem citar nomes/planos como fato.
 """.strip()
 
         language_rule = """
@@ -1189,6 +1252,7 @@ PERSONA (baseline):
 
 {format_rule}
 {pacing_rule}
+{initiative_rule}
 {manipulation_block}
 {conflict_block}
 
@@ -1227,7 +1291,6 @@ REGRAS ABSOLUTAS:
         # 11) Tentativas previsíveis (sem loteria)
         attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on)
 
-        # 12) Loop: gerar -> validar -> repair -> fallback
         last_err: Optional[Exception] = None
 
         for plan in attempts:
@@ -1244,7 +1307,7 @@ REGRAS ABSOLUTAS:
                 )
                 diag.model_used = used_model
 
-                # 13) Pós: relationship engine
+                # 13) Pós: relationship engine (não derruba turno)
                 meta: Dict[str, Any] = {}
                 promoted = False
 
@@ -1307,10 +1370,9 @@ REGRAS ABSOLUTAS:
                             _lock_scene(usuario_key)
 
                     except Exception:
-                        # Relationship engine não pode derrubar o turno
                         meta = meta or {}
 
-                # 14) Debug leve
+                # 14) Debug leve (silencioso)
                 debug_tl = "cumplice" if promoted else timeline_final
                 st.session_state["mary_rel_meta_last"] = {
                     "timeline": debug_tl,
@@ -1330,6 +1392,7 @@ REGRAS ABSOLUTAS:
                     "nsfw_on": nsfw_on,
                     "conflict_mode": conflict_mode,
                     "conflict_now": conflict_now,
+                    "initiative_window": initiative,
                 }
 
                 st.session_state["mary_debug_nsfw"] = {
@@ -1339,6 +1402,7 @@ REGRAS ABSOLUTAS:
                     "intimacy_phase": intimacy_phase,
                     "conflict_mode": conflict_mode,
                     "conflict_now": conflict_now,
+                    "initiative_window": initiative,
                 }
 
                 # 15) Salvar + lock
@@ -1376,7 +1440,6 @@ REGRAS ABSOLUTAS:
     # ======================================================
     @staticmethod
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
-        # max_tokens moderado: ajuda formato e reduz delírios
         if nsfw_on:
             return [
                 {"model": model, "temperature": 0.75, "max_tokens": 1050},
@@ -1402,13 +1465,6 @@ REGRAS ABSOLUTAS:
         ctx_lower: str,
         diag: _Diag,
     ) -> Tuple[str, str]:
-        """
-        1) gera
-        2) valida (violations)
-        3) se falhar: repair (até 2)
-        4) se ainda falhar: fallback contido (formatado)
-        Retorna: (texto_final, used_model)
-        """
         data, used_model, _provider_meta = self._chat(
             model,
             messages,
@@ -1422,23 +1478,22 @@ REGRAS ABSOLUTAS:
 
         v = _violations(texto, ctx_lower)
         if not v:
-            # proteção final de formato (se escapou por algum motivo)
             if not _format_ok(texto):
                 diag.repairs += 1
                 diag.violations.append("formato_invalido_pos_final")
                 return (self._fallback_text(), used_model)
             return (texto, used_model)
 
-        # Se houve violações: repair controlado
+        # repair controlado
         diag.repairs += 1
         diag.violations.extend(v)
 
         repair_sys = (
             "Você é um revisor rígido de continuidade do roleplay.\n"
-            "TAREFA: reescrever a resposta da Mary SEM violar regras.\n"
-            "REGRAS: não inventar fatos/logística/mensagens; NPC não sabe segredos; PT-BR; "
-            "exatamente 4 parágrafos curtos (2–4 frases); micro-ação/micro-intenção; sem pergunta final; "
-            "Mary não assume voz do usuário.\n"
+            "TAREFA: reescrever a resposta da MARY SEM violar regras.\n"
+            "IMPORTANTE: A saída FINAL deve ser 100% in-character (Mary), sem meta, sem explicar regras.\n"
+            "Formato: exatamente 4 parágrafos; 2–4 frases cada; sem lista/título/meta; sem pergunta no final.\n"
+            "Conteúdo: 1 ação concreta + 1 consequência emocional por parágrafo.\n"
         )
         repair_user = (
             "Reescreva a resposta abaixo removendo violações.\n"
@@ -1448,7 +1503,6 @@ REGRAS ABSOLUTAS:
             f"{texto}\n"
         )
 
-        # Até 2 repairs
         for _i in range(2):
             dataR, usedR, _ = self._chat(
                 used_model,
@@ -1470,21 +1524,20 @@ REGRAS ABSOLUTAS:
             diag.violations.extend(vr)
             repair_user = (
                 repair_user
-                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO, mais contido, "
-                  "exatamente 4 parágrafos (2–4 frases), e sem pergunta no final."
+                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
+                  "sem meta, exatamente 4 parágrafos (2–4 frases) e sem pergunta no final."
             )
 
-        # Se falhou: fallback contido
         return (self._fallback_text(), used_model)
 
     @staticmethod
     def _fallback_text() -> str:
-        # 4 parágrafos; 2–4 frases; sem pergunta final
+        # 4 parágrafos; 2–4 frases; zero meta; ação concreta + consequência emocional
         return (
-            "Eu fico imóvel por um segundo, escolhendo com cuidado o que deixo aparecer no meu rosto.\n\n"
-            "Por dentro, eu sinto a tensão e o desejo se misturarem, mas eu não me permito inventar nada além do que você trouxe.\n\n"
-            "Eu faço só um gesto mínimo, contido, o suficiente para manter a intimidade viva sem empurrar a cena para um lugar que você não autorizou.\n\n"
-            "E sigo com a mesma decisão silenciosa: eu não recuo do que eu sinto, só mantenho o controle por mais um instante."
+            "Eu encosto a testa na sua por um instante, deixando o meu corpo ceder ao calor do seu sem pressa.\n\n"
+            "Minha mão sobe e segura firme a sua, como se isso fosse a única coisa que importa agora.\n\n"
+            "Eu me aproximo do seu ouvido e digo baixo, com uma calma que é mais desejo do que timidez, que eu quero você perto.\n\n"
+            "Eu estendo a mão na sua direção, pronta para te conduzir alguns passos para fora do barulho, sem romper esse laço que acabou de se acender."
         )
 
     # -------------------------
