@@ -1,7 +1,7 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.25 — iniciativa destravada + anti-meta + robustez previsível)
+MaryService (v3.26 — iniciativa destravada + anti-meta + robustez previsível)
 
 ✅ Correções desta versão (diretas ao seu problema):
 - Remove “respostas técnicas/meta” dentro do roleplay:
@@ -827,16 +827,16 @@ def _count_sentences(paragraph: str) -> int:
 
 # Linha 828 (nova versão)
 def _format_ok(text: str) -> bool:
-    paras = _split_paragraphs(text)
-    # Permite de 2 a 5 parágrafos, dando flexibilidade
-    if len(paras) < 2 or len(paras) > 5:
+    # Formato FLEXÍVEL: não engesse narrativa em quantidade fixa de parágrafos/frases.
+    # Só bloqueia vazio e evita terminar em pergunta.
+    t = (text or "").strip()
+    if not t:
         return False
-    # Mantém a validação de não terminar com pergunta
-    last = paras[-1].strip()
-    if last.endswith("?"):
-        return False
+    paras = _split_paragraphs(t)
+    if paras:
+        if paras[-1].strip().endswith("?"):
+            return False
     return True
-
 # ==========================================================
 # ✅ GUARDIÃO (anti-vazamento / anti-offscreen / PT-BR / POV / anti-meta)
 # ==========================================================
@@ -920,8 +920,6 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append("- Reescreva como MARY (1ª pessoa da Mary), sem narrar como o usuário.")
     if "meta_leak" in violations:
         bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
-    if "formato_invalido" in violations:
-        bullets.append("- Corrija o FORMATO: exatamente 4 parágrafos; 2–4 frases por parágrafo; sem lista/título/meta; sem pergunta final.")
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
     return "\n".join(bullets).strip()
 
@@ -987,40 +985,34 @@ _RE_ACTION_COMMAND = re.compile(
 )
 # Linha 985 (nova versão)
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
+    # Janela de iniciativa (AGÊNCIA): deve abrir com facilidade para evitar "Mary passiva".
+    # Ainda respeita: sem inventar ações do usuário, sem teleporte, sem concluir a cena sozinho.
     if conflict_now:
         return False
 
-    # Gatilho 1: Usuário deu um comando de ação explícito
-    if _RE_ACTION_COMMAND.search(user_text or ""):
+    txt = user_text or ""
+
+    # Comando explícito do usuário pedindo atitude
+    if _RE_ACTION_COMMAND.search(txt):
         return True
 
-    # Gatilho 2: Cenário de intimidade física (lógica original)
-    if nsfw_on and phase >= 1 and _RE_TENDER_PRESENCE.search(user_text or ""):
-        try:
-            desire = float(rel.get("desire", 0))
-            self_control = float(rel.get("self_control", 50))
-            arousal = float(rel.get("arousal", 0))
-            if desire >= (self_control * 0.75) and arousal >= 20:
-                return True
-        except Exception:
-            return False
+    cue = bool(_RE_INTIMACY_CUE.search(txt))
 
-    return False
-    cue = bool(_RE_INTIMACY_CUE.search(user_text or ""))
+    # Mesmo com NSFW_OFF, iniciativa leve (reversível) é permitida: olhar, aproximar, tocar leve, convite.
     try:
         desire = float(rel.get("desire", 0))
         self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
-
-        # forte impulso: pode agir mesmo sem frase-chave do usuário
-        if desire >= (self_control * 0.70) and arousal >= 15:
-            return True
-
-        # com pista do usuário, a barra é menor
-        if cue and desire >= (self_control * 0.55) and arousal >= 10:
-            return True
     except Exception:
-        return False
+        return cue  # se não temos estado, pelo menos siga o cue do usuário
+
+    # Impulso alto → agir (micro-ação) mesmo sem frase-chave
+    if desire >= (self_control * 0.60) and (arousal >= 10 or phase >= 0):
+        return True
+
+    # Com pista do usuário, a barra é menor
+    if cue and desire >= (self_control * 0.45):
+        return True
 
     return False
 
@@ -1144,6 +1136,14 @@ class MaryService(BaseCharacter):
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
 
+        janio_pursuit_rule = """
+[FOCO EM JANIO — ABSOLUTO]
+- Mary NÃO evita Janio quando existe desejo/saudade: ela se orienta para ele (procura com o olhar, cria oportunidade, aproxima em micro-gestos).
+- Se Raul ou outros estiverem perto, Mary mantém limites sociais, mas NÃO usa isso para apagar Janio.
+- Permitido: olhar firme, sorriso curto, gesto chamando, encostar leve, puxar a mão, inclinar e sussurrar intenção.
+- Proibido: inventar ação do usuário; faça convite/gesto e deixe espaço para ele responder.
+""".strip()
+
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
 
@@ -1210,7 +1210,7 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em seu desejo. Ela não neutraliza sentimentos com hesitação.
 - PROIBIDO usar metáforas de natureza (sol, vento, mar, céu, areia) como preenchimento emocional.
-- Substitua monólogo interno por micro-ação. Em vez de 'penso se devo ligar', Mary pega o celular. Em vez de 'meu coração acelera', ela te encara e umedece os lábios.
+- Substitua monólogo interno por micro-ação. Em vez de 'penso se devo ligar', Mary pega o celular e age. Em vez de 'meu coração acelera', ela te encara e deixa isso visível.
 - Mary pode e deve iniciar contato físico, propor ações e expressar suas vontades de forma clara e adulta.
 - Ela é uma mulher decidida, não uma adolescente insegura. Aja como tal.
 """.strip()
@@ -1272,6 +1272,8 @@ TIMELINE ATUAL: {timeline_final}
 
 {user_name_block}
 
+{janio_pursuit_rule}
+
 [CANON — VERDADE ATUAL]
 {canon_txt}
 
@@ -1285,6 +1287,7 @@ PERSONA (baseline):
 
 {format_rule}
 {pacing_rule}
+{focus_rule}
 {initiative_rule}
 {manipulation_block}
 {conflict_block}
