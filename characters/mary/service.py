@@ -1,7 +1,7 @@
 # characters/mary/service.py
 from __future__ import annotations
 """
-MaryService (v3.24 — iniciativa destravada + anti-meta + robustez previsível)
+MaryService (v3.25 — iniciativa destravada + anti-meta + robustez previsível)
 
 ✅ Correções desta versão (diretas ao seu problema):
 - Remove “respostas técnicas/meta” dentro do roleplay:
@@ -10,6 +10,11 @@ MaryService (v3.24 — iniciativa destravada + anti-meta + robustez previsível)
 - Destrava a iniciativa da Mary (sem teleporte, sem inventar ações do usuário):
   - Mary pode PROPOR ir a um lugar mais reservado e iniciar condução SUAVE
     (ação dela, convite, mão estendida), mantendo “usuário decide”.
+- Devolve agência mínima e reversível:
+  - micro-iniciativas físicas não conclusivas (aproximar, puxar a mão, sussurrar intenção)
+  - pode propor deslocamentos íntimos sem afirmá-los.
+- Remove rigidez de formatação:
+  - formato preferencial 3–6 parágrafos (1–6 frases), sem engessar a voz do modelo.
 - Mantém previsibilidade: tentativa -> validação -> repair (até 2) -> fallback (raro).
 - Mantém: canon, longmem $text, bm25, scene lock, relationship engine, intimacy phases, conflict, guardião.
 
@@ -809,7 +814,7 @@ def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
 # ==========================================================
-# ✅ FORMAT GUARD (4 parágrafos; 2–4 frases; sem pergunta final)
+# ✅ FORMAT GUARD (3–6 parágrafos; 1–6 frases; evitar pergunta final)
 # ==========================================================
 def _split_paragraphs(text: str) -> List[str]:
     raw = (text or "").strip()
@@ -826,12 +831,15 @@ def _count_sentences(paragraph: str) -> int:
     return len(parts)
 
 def _format_ok(text: str) -> bool:
+    # Formato intencionalmente FLEXÍVEL:
+    # queremos evitar listas/títulos e manter legibilidade,
+    # mas sem “governança emocional” por rigidez excessiva.
     paras = _split_paragraphs(text)
-    if len(paras) != 4:
+    if len(paras) < 3 or len(paras) > 7:
         return False
     for p in paras:
         n = _count_sentences(p)
-        if n < 2 or n > 4:
+        if n < 1 or n > 6:
             return False
     last = paras[-1].strip()
     if last.endswith("?"):
@@ -925,7 +933,7 @@ def _repair_instruction(violations: List[str]) -> str:
     if "meta_leak" in violations:
         bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
     if "formato_invalido" in violations:
-        bullets.append("- Corrija o FORMATO: exatamente 4 parágrafos; 2–4 frases por parágrafo; sem lista/título/meta; sem pergunta final.")
+        bullets.append("- Corrija o FORMATO: 3–6 parágrafos; 1–6 frases por parágrafo; sem lista/título/meta; evite pergunta final.")
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
     return "\n".join(bullets).strip()
 
@@ -1148,10 +1156,10 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         )
 
         format_rule = """
-[FORMATO — ABSOLUTO]
-- Entregue SEMPRE 4 parágrafos curtos (2–4 frases cada).
+[FORMATO — PREFERÊNCIA]
+- Entregue 3–6 parágrafos curtos (1–6 frases cada), conforme o ritmo do modelo.
 - Sem listas, sem títulos, sem meta-comentários.
-- O último parágrafo NÃO termina em pergunta.
+- Evite terminar com pergunta.
 """.strip()
 
         # ✅ pacing: mantém controle, mas permite iniciativa real quando a janela abre
@@ -1176,10 +1184,12 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         )
 
         manipulation_block = """
-[MARY — VIVA / INTENCIONAL]
-- Mary é emocionalmente viva e decide com naturalidade.
-- Sem meta-explicação de regra (não diga “não posso”, “não me permito inventar”, “você não autorizou”).
-- Intensidade com clareza e iniciativa, sem teatralidade.
+[MARY — DESEJO ATIVO]
+- Mary sente desejo físico e emocional e NÃO o neutraliza.
+- Mary pode iniciar contato físico leve e reversível (aproximação, puxar a mão, sussurrar).
+- Mary pode propor deslocamentos íntimos sem afirmá-los.
+- Mary NÃO congela a cena por excesso de autocontrole.
+- Evite metáforas naturais (mar, vento, sol) quando houver tensão erótica.
 """.strip()
 
         intimacy_control_block = f"""
@@ -1492,7 +1502,7 @@ REGRAS ABSOLUTAS:
             "Você é um revisor rígido de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY SEM violar regras.\n"
             "IMPORTANTE: A saída FINAL deve ser 100% in-character (Mary), sem meta, sem explicar regras.\n"
-            "Formato: exatamente 4 parágrafos; 2–4 frases cada; sem lista/título/meta; sem pergunta no final.\n"
+            "Formato: 3–6 parágrafos; 1–6 frases cada; sem lista/título/meta; evite pergunta no final.\n"
             "Conteúdo: 1 ação concreta + 1 consequência emocional por parágrafo.\n"
         )
         repair_user = (
@@ -1525,19 +1535,20 @@ REGRAS ABSOLUTAS:
             repair_user = (
                 repair_user
                 + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-                  "sem meta, exatamente 4 parágrafos (2–4 frases) e sem pergunta no final."
+                  "sem meta, 3–6 parágrafos (1–6 frases) e evite pergunta no final."
             )
 
         return (self._fallback_text(), used_model)
 
     @staticmethod
     def _fallback_text() -> str:
-        # 4 parágrafos; 2–4 frases; zero meta; ação concreta + consequência emocional
+        # Fallback raro: in-character, com desejo evidente e agência mínima (reversível).
+        # Não inventa ações do usuário; não “congela” a cena.
         return (
-            "Eu encosto a testa na sua por um instante, deixando o meu corpo ceder ao calor do seu sem pressa.\n\n"
-            "Minha mão sobe e segura firme a sua, como se isso fosse a única coisa que importa agora.\n\n"
-            "Eu me aproximo do seu ouvido e digo baixo, com uma calma que é mais desejo do que timidez, que eu quero você perto.\n\n"
-            "Eu estendo a mão na sua direção, pronta para te conduzir alguns passos para fora do barulho, sem romper esse laço que acabou de se acender."
+            "Eu me aproximo mais do que deveria, sentindo o impulso falar mais alto por um instante.\n\n"
+            "Meu corpo reage antes da razão, e eu deixo isso claro no jeito como te encaro.\n\n"
+            "Não avanço além disso, mas também não escondo o que eu quero.\n\n"
+            "Se você vier comigo, eu sigo."
         )
 
     # -------------------------
