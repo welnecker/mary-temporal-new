@@ -1022,6 +1022,7 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
         return bool(re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE))
 
     return False
+@dataclass
 class _Diag:
     ts: int
     timeline: str
@@ -1029,7 +1030,7 @@ class _Diag:
     model_used: Optional[str] = None
     attempts: int = 0
     repairs: int = 0
-    violations: List[str] = None
+    violations: List[str] = field(default_factory=list)
     nsfw_on: Optional[bool] = None
     conflict_now: Optional[bool] = None
     intimacy_phase_pre: Optional[int] = None
