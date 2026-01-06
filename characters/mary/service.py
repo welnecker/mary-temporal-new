@@ -1409,7 +1409,10 @@ REGRAS ABSOLUTAS:
                                 temperature=0.0,
                                 max_tokens=280,
                             )
-                            return self._extract_text(data2)
+                            txt = self._extract_text(data2)
+                            if not (txt or '').strip():
+                                raise RuntimeError('modelo retornou vazio')
+                            return txt
 
                         new_rel, _assessment, meta = evolve_relationship(
                             rel_state,
@@ -1624,9 +1627,93 @@ REGRAS ABSOLUTAS:
     # -------------------------
     @staticmethod
     def _extract_text(resp: Any) -> str:
+        """Extrai texto do payload de resposta do provider.
+
+        Suporta formatos comuns:
+        - OpenAI Chat Completions: choices[0].message.content (str ou lista de blocos)
+        - OpenAI Responses API: output[].content[].text / output_text
+        - Wrappers: reply / text / content
+        - Anthropic: content (lista de blocos com 'text')
+        """
         try:
             if resp is None:
                 return ""
+
+            # já é texto
+            if isinstance(resp, str):
+                return resp
+
+            def _blocks_to_text(blocks: Any) -> str:
+                if blocks is None:
+                    return ""
+                if isinstance(blocks, str):
+                    return blocks
+                if isinstance(blocks, dict):
+                    # alguns providers usam {"text": "..."} ou {"content": "..."}
+                    t = blocks.get("text")
+                    if isinstance(t, str) and t.strip():
+                        return t
+                    c = blocks.get("content")
+                    if isinstance(c, str) and c.strip():
+                        return c
+                    # conteúdo aninhado
+                    return _blocks_to_text(c) if c is not None else ""
+                if isinstance(blocks, list):
+                    parts: list[str] = []
+                    for b in blocks:
+                        t = _blocks_to_text(b)
+                        if isinstance(t, str) and t.strip():
+                            parts.append(t.strip())
+                    return "\n".join(parts).strip()
+                return ""
+
+            # wrappers simples
+            if isinstance(resp, dict):
+                for k in ("reply", "text", "output_text", "content"):
+                    v = resp.get(k)
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+
+                # OpenAI Responses API: resp["output"] -> [{ "content": [{ "type": "output_text", "text": "..."}]}]
+                out = resp.get("output")
+                if isinstance(out, list):
+                    parts: list[str] = []
+                    for item in out:
+                        if not isinstance(item, dict):
+                            continue
+                        c = item.get("content")
+                        t = _blocks_to_text(c)
+                        if t:
+                            parts.append(t)
+                    if parts:
+                        return "\n".join(parts).strip()
+
+                # Chat Completions: choices[0].message.content
+                choices = resp.get("choices") or []
+                if isinstance(choices, list) and choices:
+                    c0 = choices[0] or {}
+                    if isinstance(c0, dict):
+                        msg = c0.get("message") or {}
+                        if isinstance(msg, dict):
+                            content = msg.get("content")
+                            t = _blocks_to_text(content)
+                            if t:
+                                return t
+                        # fallback antigo: {"text": "..."}
+                        t2 = c0.get("text")
+                        if isinstance(t2, str) and t2.strip():
+                            return t2.strip()
+
+                # Anthropic-like: {"content": [{"type":"text","text":"..."}]}
+                content = resp.get("content")
+                t3 = _blocks_to_text(content)
+                if t3:
+                    return t3
+
+            return ""
+        except Exception:
+            return ""
+
             if isinstance(resp, str):
                 return resp.strip()
 
