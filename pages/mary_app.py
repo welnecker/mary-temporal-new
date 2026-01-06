@@ -404,7 +404,7 @@ def _choose_default_model(available: list[str]) -> str:
         return DEFAULT_MODEL
     if available:
         non_grok = [m for m in available if "grok" not in (m or "").lower()]
-        return non_grok[0] if non_grok else available[0]
+        return Noneon_grok[0] if non_grok else available[0]
     return FALLBACK_MODEL
 
 
@@ -678,44 +678,55 @@ def _reset_chapter_current_timeline() -> int:
     _invalidate_backend_cache()
     _clear_mary_caches_all_related()
     st.session_state["mary_timeline_locked"] = False
-    return n
+    return None
 
 
 def _on_timeline_change() -> None:
     """
-    ✅ Anti-vazamento + anti-NameError:
-    - Limpa caches do backend + service + visual.
-    - Persiste NSFW inline (sem depender de helper externo no callback).
-    - MATA services isolados por usuario_key (para garantir troca limpa).
+    Troca de timeline/persona (Universitária vs Esposa Cúmplice).
+
+    Objetivos:
+    - Atualizar st.session_state["mary_timeline"] de acordo com o selectbox.
+    - Limpar caches/serviços para impedir vazamento entre timelines.
+    - Preservar NSFW por timeline (se o app estiver usando esse recurso).
+    - Recarregar histórico/visual do novo contexto.
     """
+    try:
+        label = str(st.session_state.get("persona_label") or "").strip()
+        new_tl = "universitaria" if label.startswith("Mary – Universitária") else "cumplice"
 
-    personas = {
-        "Mary – Esposa Cúmplice": "cumplice",
-        "Mary – Universitária (linha alternativa)": "universitaria",
-    }
+        old_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
 
-    old_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
-    new_tl = personas.get(st.session_state.get("persona_label") or "", "cumplice")
+        # Persistência do NSFW por timeline (se existir no app)
+        try:
+            nsfw_map = st.session_state.setdefault("nsfw_by_timeline", {})
+            nsfw_map[old_tl] = bool(st.session_state.get("nsfw_active", False))
+        except Exception:
+            pass
 
-    # troca timeline
-    st.session_state["mary_timeline"] = new_tl
+        st.session_state["mary_timeline"] = new_tl
 
-    # default NSFW por timeline
-    st.session_state["mary_nsfw_on"] = (new_tl != "universitaria")
+        # Restaura NSFW do novo contexto (se existir)
+        try:
+            nsfw_map = st.session_state.setdefault("nsfw_by_timeline", {})
+            if new_tl in nsfw_map:
+                st.session_state["nsfw_active"] = bool(nsfw_map[new_tl])
+        except Exception:
+            pass
 
-    # ✅ Persistência NSFW (inline)
-    _persist_nsfw_for_current_timeline_if_needed_inline()
+        # Impede vazamento entre timelines
+        _clear_mary_service_cache()
+        _clear_mary_caches_all_related()
 
-    # limpa visual + caches (inclui timeline antiga para matar vazamento)
-    st.session_state["chat_history"] = []
-    st.session_state["mary_intro_done"] = False
-    _invalidate_backend_cache()
-    _clear_mary_caches_all_related(also_clear_other_timeline=True)
-    _clear_service_caches_for_keys([_usuario_key_for_timeline(old_tl), _usuario_key_for_timeline(new_tl)])
+        # (Opcional) destravar - a troca de timeline já é um novo contexto
+        st.session_state["mary_timeline_locked"] = False
 
-    # 🔥 ponto crítico: matar instâncias de service para não reaproveitar estado
-    _kill_all_mary_services()
+        # Zera visual e força reload coerente do histórico do novo contexto
+        st.session_state["chat_history"] = []
+        st.session_state["last_model_error"] = ""
 
+    except Exception as e:
+        st.session_state["last_model_error"] = f"Erro ao trocar timeline: {e}"
 
 def _get_intro_persona_text(timeline: str) -> str:
     """
