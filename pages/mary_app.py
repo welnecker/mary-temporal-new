@@ -688,8 +688,6 @@ def _on_timeline_change() -> None:
     - Persiste NSFW inline (sem depender de helper externo no callback).
     - MATA services isolados por usuario_key (para garantir troca limpa).
     """
-    if st.session_state.get("mary_timeline_locked"):
-        return
 
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
@@ -914,7 +912,7 @@ def main() -> None:
         "🎭 Linha temporal da Mary",
         list(personas.keys()),
         index=list(personas.keys()).index(label_atual),
-        disabled=st.session_state["mary_timeline_locked"],
+        disabled=False,
         key="persona_label",
         on_change=_on_timeline_change,
     )
