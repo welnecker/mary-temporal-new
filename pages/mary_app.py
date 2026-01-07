@@ -41,8 +41,6 @@ def _hard_reset_on_boot_if_needed() -> None:
 
         # ✅ evita ficar travado ao reabrir
         st.session_state.pop("mary_timeline_locked", None)
-        # ✅ Destrava a timeline no boot (evita entrar travado em cúmplice)
-        st.session_state.pop("mary_timeline_locked", None)
         # também remove a seleção visual (será recalculada pela timeline)
         st.session_state.pop("persona_label", None)
 
@@ -76,8 +74,13 @@ from core.repositories import (
     delete_all_long_memory,
 )
 
-import characters.mary.persona as mary_persona
-from characters.mary.service import MaryService
+# ✅ NOVO: personas/services por variante
+import characters.mary.persona_universitaria as persona_univ
+import characters.mary.persona_cumplice as persona_cump
+
+from characters.mary.service_universitaria import MaryUniversitariaService
+from characters.mary.service_cumplice import MaryCumpliceService
+
 import core.repositories as crep
 import core.service_router as service_router
 from core.database import db_status, ping_db, get_backend
@@ -275,6 +278,17 @@ def _keys_para_mary() -> list[str]:
 
 
 # ==========================================================
+# ✅ RESOLUÇÃO DE VARIANTE (service/persona)
+# ==========================================================
+def _svc_class_for_timeline(tl: str):
+    return MaryUniversitariaService if (tl or "").strip() == "universitaria" else MaryCumpliceService
+
+
+def _persona_mod_for_timeline(tl: str):
+    return persona_univ if (tl or "").strip() == "universitaria" else persona_cump
+
+
+# ==========================================================
 # ✅ CANON BUTTON HELPERS (Virgem -> Consumado)
 # ==========================================================
 def _today_iso() -> str:
@@ -333,15 +347,18 @@ def _service_key_for_userkey(userkey: str) -> str:
     return f"_mary_service::{userkey}"
 
 
-def _instantiate_mary_service(*, userkey: str, timeline: str) -> MaryService:
+def _instantiate_mary_service(*, userkey: str, timeline: str) -> Any:
     """
-    Cria MaryService de forma compatível com diferentes assinaturas.
-    - Se MaryService aceitar (usuario_key, timeline), usamos.
-    - Se aceitar só (usuario_key) ou só (timeline), usamos o que existir.
+    Cria service da variante correta de forma compatível com diferentes assinaturas.
+    - Resolve ServiceCls pela timeline.
+    - Se aceitar (usuario_key, timeline), usa.
+    - Se aceitar só (usuario_key) ou só (timeline), usa o que existir.
     - Caso não aceite nada, instancia vazio.
     """
+    ServiceCls = _svc_class_for_timeline(timeline)
+
     try:
-        sig = inspect.signature(MaryService.__init__)
+        sig = inspect.signature(ServiceCls.__init__)
         params = set(sig.parameters.keys())  # inclui "self"
     except Exception:
         params = set()
@@ -351,22 +368,26 @@ def _instantiate_mary_service(*, userkey: str, timeline: str) -> MaryService:
         kwargs["usuario_key"] = userkey
     if "user_key" in params:
         kwargs["user_key"] = userkey
+    if "userkey" in params:
+        kwargs["userkey"] = userkey
     if "timeline" in params:
         kwargs["timeline"] = timeline
 
+    # tentativa principal: kwargs
     try:
-        return MaryService(**kwargs) if kwargs else MaryService()
+        return ServiceCls(**kwargs) if kwargs else ServiceCls()
     except TypeError:
+        # fallback: 1 arg posicional (userkey)
         try:
-            return MaryService()
+            return ServiceCls(userkey)  # type: ignore
         except Exception:
             try:
-                return MaryService(userkey)  # type: ignore
+                return ServiceCls()  # type: ignore
             except Exception:
-                return MaryService()  # type: ignore
+                return ServiceCls  # último recurso (não deve acontecer)
 
 
-def _get_service() -> MaryService:
+def _get_service() -> Any:
     """
     ✅ FIX DO VAZAMENTO:
     Service é isolado por usuario_key (que inclui timeline).
@@ -428,8 +449,8 @@ def _garantir_estado_inicial() -> None:
 
     # ✅ se a timeline ficou travada por reidratação do Streamlit, mas NÃO há mensagens,
     # destrava para permitir escolher a persona (ex: Mary Universitária)
-    if st.session_state.get('mary_timeline_locked') and not st.session_state.get('chat_history'):
-        st.session_state['mary_timeline_locked'] = False
+    if st.session_state.get("mary_timeline_locked") and not st.session_state.get("chat_history"):
+        st.session_state["mary_timeline_locked"] = False
 
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
@@ -698,7 +719,6 @@ def _on_timeline_change() -> None:
     - Persiste NSFW inline (sem depender de helper externo no callback).
     - MATA services isolados por usuario_key (para garantir troca limpa).
     """
-
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
@@ -732,8 +752,17 @@ def _get_intro_persona_text(timeline: str) -> str:
     Busca a primeira mensagem 'assistant' da persona para a timeline.
     Retorna fallback se não achar.
     """
+    mod = _persona_mod_for_timeline(timeline)
+
     try:
-        _, boot = mary_persona.get_persona(timeline)
+        # wrappers novos: get_persona() sem args
+        _, boot = mod.get_persona()
+    except TypeError:
+        # fallback: assinatura antiga get_persona(timeline)
+        try:
+            _, boot = mod.get_persona(timeline)
+        except Exception:
+            boot = None
     except Exception:
         boot = None
 
@@ -833,7 +862,7 @@ def main() -> None:
     _garantir_estado_inicial()
     _auto_unlock_if_sem_interacao()
 
-    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
+    st.caption("🧩 mary_app.py v3.14 (service+persona por variante + anti-vazamento hard + CANON virgem)")
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -854,12 +883,12 @@ def main() -> None:
             show_env = st.checkbox("Mostrar config (mascarada)", value=False, key="chk_show_db_env")
 
         if run_ping or auto_ping:
-            backend, ok, info = ping_db()
+            backend_ping, ok, info = ping_db()
             st.write("**ping_db():**")
             if ok:
-                st.success(f"{backend} ✅ {info}")
+                st.success(f"{backend_ping} ✅ {info}")
             else:
-                st.error(f"{backend} ❌ {info}")
+                st.error(f"{backend_ping} ❌ {info}")
 
         if show_env:
             try:
@@ -1187,8 +1216,20 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("🎭 Persona")
-        st.caption("Arquivo ativo:")
-        st.code(inspect.getfile(mary_persona.get_persona))
+        st.caption("Arquivo ativo (persona atual):")
+        try:
+            _pmod = _persona_mod_for_timeline(_timeline())
+            st.code(inspect.getfile(_pmod.get_persona))
+        except Exception:
+            st.code("Falha ao identificar arquivo da persona atual.")
+
+        st.caption("Service ativo (classe por timeline):")
+        try:
+            _svc_cls = _svc_class_for_timeline(_timeline())
+            st.code(f"{_svc_cls.__module__}.{_svc_cls.__name__}")
+        except Exception:
+            st.code("Falha ao identificar service atual.")
+
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
 
@@ -1201,9 +1242,24 @@ def main() -> None:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
 
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
-            importlib.reload(mary_persona)
-            import characters.mary.service as mary_service
-            importlib.reload(mary_service)
+            # ✅ recarrega núcleo + wrappers
+            try:
+                import characters.mary.persona_core as pcore
+                import characters.mary.service_core as score
+                import characters.mary.service_universitaria as suniv
+                import characters.mary.service_cumplice as scump
+                import characters.mary.persona_universitaria as puniv
+                import characters.mary.persona_cumplice as pcump
+
+                importlib.reload(pcore)
+                importlib.reload(score)
+                importlib.reload(suniv)
+                importlib.reload(scump)
+                importlib.reload(puniv)
+                importlib.reload(pcump)
+            except Exception:
+                # se algum import falhar, ainda assim tenta limpar estado
+                pass
 
             _kill_all_mary_services()
             st.session_state["mary_intro_done"] = False
@@ -1212,7 +1268,7 @@ def main() -> None:
             _clear_mary_caches_all_related()
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
-            st.success("Persona + Service recarregados. Contexto reinjetado.")
+            st.success("Persona + Services recarregados. Contexto reinjetado.")
             st.rerun()
 
         # ======================================================
