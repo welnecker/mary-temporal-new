@@ -990,6 +990,126 @@ def _capture_used_model_provider_from_service(svc: Any) -> None:
     st.session_state["mary_last_used_model"] = model
     st.session_state["mary_last_used_provider"] = provider
 
+def _extract_router_text(resp: Any) -> str:
+    """Tenta extrair texto de uma resposta estilo OpenAI/ChatCompletions."""
+    if resp is None:
+        return ""
+    if isinstance(resp, str):
+        return resp.strip()
+
+    if isinstance(resp, dict):
+        try:
+            c0 = (resp.get("choices") or [])[0] or {}
+            msg = c0.get("message") or {}
+            txt = msg.get("content")
+            if isinstance(txt, str):
+                return txt.strip()
+            txt2 = c0.get("text")
+            return txt2.strip() if isinstance(txt2, str) else ""
+        except Exception:
+            return ""
+
+    return str(resp).strip()
+
+
+def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | None]:
+    """
+    Tenta achar provider/model usados no payload do router.
+    Suporta vários formatos (porque providers variam).
+    """
+    if not isinstance(resp, dict):
+        return (None, None)
+
+    # candidatos diretos
+    provider_keys = ["provider", "used_provider", "provider_used", "last_used_provider"]
+    model_keys = ["model", "used_model", "resolved_model", "model_used", "last_used_model"]
+
+    provider = None
+    model = None
+
+    for k in provider_keys:
+        v = resp.get(k)
+        if isinstance(v, str) and v.strip():
+            provider = v.strip()
+            break
+
+    for k in model_keys:
+        v = resp.get(k)
+        if isinstance(v, str) and v.strip():
+            model = v.strip()
+            break
+
+    # meta / debug
+    meta = resp.get("meta")
+    if isinstance(meta, dict):
+        if provider is None:
+            v = meta.get("provider") or meta.get("used_provider")
+            if isinstance(v, str) and v.strip():
+                provider = v.strip()
+        if model is None:
+            v = meta.get("model") or meta.get("used_model") or meta.get("resolved_model")
+            if isinstance(v, str) and v.strip():
+                model = v.strip()
+
+    # alguns routers colocam em "debug"
+    dbg = resp.get("debug")
+    if isinstance(dbg, dict):
+        if provider is None:
+            v = dbg.get("provider") or dbg.get("used_provider")
+            if isinstance(v, str) and v.strip():
+                provider = v.strip()
+        if model is None:
+            v = dbg.get("model") or dbg.get("used_model") or dbg.get("resolved_model")
+            if isinstance(v, str) and v.strip():
+                model = v.strip()
+
+    return (provider, model)
+
+
+def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
+    """
+    Faz um ping no core.service_router.chat() SEM passar pelo service da Mary (não grava history).
+    Guarda resultado em session_state para você ver no sidebar.
+    """
+    fn = getattr(service_router, "chat", None)
+    if not callable(fn):
+        return {"ok": False, "error": "service_router.chat não existe neste projeto."}
+
+    prompt = "Responda APENAS com a palavra: PONG"
+
+    # tenta montar kwargs compatível com a assinatura real do router
+    kwargs: dict[str, Any] = {
+        "user": user,
+        "user_id": user,
+        "message": prompt,
+        "prompt": prompt,
+        "model": model,
+    }
+
+    try:
+        sig = inspect.signature(fn)
+        params = set(sig.parameters.keys())
+        call_kwargs = {k: v for k, v in kwargs.items() if k in params}
+    except Exception:
+        call_kwargs = {"user": user, "model": model, "prompt": prompt}
+
+    try:
+        raw = fn(**call_kwargs)  # type: ignore[arg-type]
+        txt = _extract_router_text(raw)
+        prov, used_model = _extract_router_used_model_provider(raw)
+
+        return {
+            "ok": True,
+            "ui_model": model,
+            "used_provider": prov,
+            "used_model": used_model,
+            "text": txt[:2000],
+            "raw_type": type(raw).__name__,
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
 
 def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, timeline: str, nsfw: bool) -> str:
     """
@@ -1252,6 +1372,35 @@ def main() -> None:
             index=idx,
             key="model",
         )
+
+                st.markdown("---")
+        st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
+
+        if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
+            res = _router_ping_once(
+                user=str(st.session_state.get("user_id", "Janio Donisete")),
+                model=str(st.session_state.get("model") or DEFAULT_MODEL),
+            )
+            st.session_state["mary_ping_result"] = res
+
+        ping = st.session_state.get("mary_ping_result")
+        if isinstance(ping, dict):
+            if ping.get("ok"):
+                st.success("✅ Ping executado.")
+                st.write("Modelo (UI):", ping.get("ui_model") or "—")
+                st.write("Usado (router):", f"{ping.get('used_provider') or '—'} / {ping.get('used_model') or '—'}")
+                st.caption("PONG (trecho retornado):")
+                st.code(ping.get("text") or "")
+                if not ping.get("used_model"):
+                    st.warning(
+                        "⚠️ O router NÃO retornou o modelo usado no payload. "
+                        "Nesse caso, a confirmação só vale pelo 'PONG' + modelo(UI). "
+                        "Se quiser 100% garantido, a gente ajusta o service_router.chat para incluir used_model/used_provider."
+                    )
+            else:
+                st.error("❌ Falha no ping.")
+                st.code(ping.get("error") or "erro desconhecido")
+
 
         st.markdown("---")
         # ✅ NSFW: persiste no facts quando muda (INLINE)
