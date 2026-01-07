@@ -1,5 +1,6 @@
 # characters/registry.py
 from __future__ import annotations
+from characters.mary.persona_core import _norm_timeline
 
 from importlib import import_module
 from typing import Dict, Tuple, List, Type
@@ -117,7 +118,10 @@ def _resolve_by_convention(name_lc: str) -> BaseCharacter:
         base = (base or "").strip().lower()
         variant = (variant or "").strip().lower()
 
-        if base == "mary" and variant in ("universitaria", "cumplice"):
+        if base == "mary":
+            variant = _norm_timeline(variant)
+            if variant in ("universitaria", "cumplice"):
+
             module_name = f"characters.mary.service_{variant}"
             class_name = f"MaryService{variant.capitalize()}"
             cls = _load_class(module_name, class_name)
