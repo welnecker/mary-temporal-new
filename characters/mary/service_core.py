@@ -35,7 +35,6 @@ except Exception:  # pragma: no cover
 
 from .persona_core import _norm_timeline
 
-
 from core.common.base_service import BaseCharacter
 import core.service_router as service_router
 from core.canon import get_canon, canon_to_text
@@ -82,11 +81,10 @@ def _ss_del(key: str) -> None:
     if _HAS_ST and hasattr(st, "session_state"):
         st.session_state.pop(key, None)
 
-def _ss_keys() -> list[str]:
+def _ss_keys() -> List[str]:
     if _HAS_ST and hasattr(st, "session_state"):
         return [k for k in st.session_state.keys() if isinstance(k, str)]
     return []
-
 
 
 # ==========================================================
@@ -109,30 +107,24 @@ def _normalize_user_id(user: Optional[str]) -> str:
     u = (user or "").strip()
     return u or "anon"
 
-
 def _current_user_id_fallback() -> str:
     uid = _ss_get("user_id") or _ss_get("usuario") or ""
     return _normalize_user_id(str(uid))
-
 
 def _normalize_timeline(timeline: Optional[str]) -> str:
     # usa a MESMA normalização do sistema de personas
     return _norm_timeline(timeline)
 
-
 def _user_key(user_id: str, timeline: str) -> str:
     return f"{user_id}::mary::{timeline}"
 
-
 def _shared_key(user_id: str) -> str:
     return f"{user_id}::mary::shared"
-
 
 def _current_user_key() -> str:
     uid = _current_user_id_fallback()
     tl = _normalize_timeline(str(_ss_get("mary_timeline") or "cumplice"))
     return _user_key(uid, tl)
-
 
 def _shared_memory_key() -> str:
     uid = _current_user_id_fallback()
@@ -169,7 +161,6 @@ def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     _ss_set(ck, f)
     return f
 
-
 def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
     hk = f"history::{usuario_key}::{limit}"
     if _ss_has(hk):
@@ -180,7 +171,6 @@ def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any
         docs = []
     _ss_set(hk, docs)
     return docs
-
 
 def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
     mk = f"mem::{shared_key}::{limit}"
@@ -193,11 +183,9 @@ def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, An
     _ss_set(mk, mems)
     return mems
 
-
 def clear_user_cache(usuario_key: str) -> None:
     fk = f"facts::{usuario_key}"
     _ss_del(fk)
-
     prefix = f"history::{usuario_key}::"
     for k in _ss_keys():
         if k.startswith(prefix):
@@ -219,18 +207,15 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
     set_fact(usuario_key, key, value, meta or {})
     clear_user_cache(usuario_key)
 
-
 def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, *, user_id: Optional[str] = None) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
     if user_id:
-        tl = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
+        tl = _normalize_timeline(str(_ss_get("mary_timeline", "cumplice") or "cumplice"))
         clear_user_cache(_user_key(user_id, tl))
-
 
 def append_long_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None) -> None:
     append_long_memory(shared_key, text, meta=meta or {})
-
 
 def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
     save_interaction(usuario_key, prompt, texto, model_used)
@@ -251,14 +236,11 @@ def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
     acao = str(facts.get("cena.acao") or "em andamento")
     return local, tempo, acao
 
-
 def _scene_is_locked(facts: Dict[str, Any]) -> bool:
     return bool(facts.get("cena.locked", True))
 
-
 def _lock_scene(usuario_key: str) -> None:
     set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_lock"})
-
 
 def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -> None:
     if local:
@@ -269,7 +251,6 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
     if acao:
         set_fact_safe(usuario_key, "cena.acao", acao, {"fonte": "scene"})
 
-
 def _build_spatial_context(local: str, tempo: str, acao: str) -> str:
     if not local or local == "—":
         return ""
@@ -279,7 +260,6 @@ Local: {local}
 Tempo: {tempo}
 Ação: {acao}
 """.strip()
-
 
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     patterns = [
@@ -297,7 +277,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
             destino = (m.group(m.lastindex) or "").strip()
             return True, destino
     return False, ""
-
 
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
@@ -326,7 +305,6 @@ def _hash_text(text: str) -> str:
     t = (text or "").strip().encode("utf-8")
     return hashlib.sha256(t).hexdigest()
 
-
 def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
     _, history_boot = get_persona(timeline)
     intro_text = ""
@@ -341,7 +319,6 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
         intro_text = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
     intro_id = _hash_text(intro_text)
     return intro_id, intro_text
-
 
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     prefix = f"mary.intro.{(timeline or '').strip() or 'cumplice'}"
@@ -371,7 +348,6 @@ def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
         return True
     return tms in (tl, "[all]")
 
-
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
     mems = cached_list_memories(shared_key, limit=240)
     for m in mems:
@@ -381,7 +357,6 @@ def _has_canon_memories(shared_key: str, timeline: str) -> bool:
         if _memory_timeline_ok(meta, timeline):
             return True
     return False
-
 
 def _inject_canon_memories_always(
     shared_key: str,
@@ -435,21 +410,31 @@ def _inject_canon_memories_always(
 
     messages.append({"role": "system", "content": "\n".join(lines).strip()})
 
-
-def _inject_intro_as_context_once(usuario_key: str, timeline: str, shared_key: str, messages: List[Dict[str, str]]) -> None:
+def _inject_intro_as_context_once(
+    usuario_key: str,
+    timeline: str,
+    shared_key: str,
+    messages: List[Dict[str, str]],
+) -> None:
+    """
+    Injeta o intro da persona como contexto UMA ÚNICA VEZ por usuario_key,
+    mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
+    Não depende de Streamlit (usa _ss_*).
+    """
     flag = f"intro_ctx_injected::{usuario_key}"
-    if st.session_state.get(flag):
+    if bool(_ss_get(flag, False)):
         return
 
     if _has_canon_memories(shared_key, timeline):
-        st.session_state[flag] = True
+        _ss_set(flag, True)
         return
 
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
     if intro_text:
         messages.append({"role": "system", "content": f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}"})
-    st.session_state[flag] = True
+
+    _ss_set(flag, True)
 
 # ==========================================================
 # ✅ LONG MEMORY (Mongo $text)
@@ -493,7 +478,6 @@ def _inject_long_memory_textsearch(
             continue
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
         if tms and tms not in (tl, "[all]"):
             continue
@@ -792,8 +776,6 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 # ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
-
-# ✅ regex auxiliares (evitam NameError)
 _RE_PLACEHOLDER_REVEAL = re.compile(
     r"(revel(a|e)|mostr(a|e)|exib(a|e)|vaz(a|e)).{0,40}(prompt|system|instru[cç][aã]o|persona|regras?)",
     re.IGNORECASE | re.DOTALL,
@@ -802,7 +784,6 @@ _RE_OFFSCREEN_MSG = re.compile(
     r"\b(whatsapp|sms|dm|direct|telegram|mensagem|notifica[cç][aã]o|lig(a|ou)\s*para|telefonou)\b",
     re.IGNORECASE,
 )
-# Detecta quando a ASSISTANT inventa ações/falas do usuário (heurístico)
 _RE_USER_ACTION = re.compile(
     r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
     re.IGNORECASE,
@@ -890,11 +871,10 @@ def _count_sentences(paragraph: str) -> int:
     parts = [x.strip() for x in parts if x.strip()]
     return len(parts)
 
-# Linha 828 (nova versão)
 def _format_ok(text: str) -> bool:
     # Formato flexível: não bloqueie por estrutura.
     # Reprova apenas vazio.
-    return bool((text or '').strip())
+    return bool((text or "").strip())
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     hist = cached_get_history(usuario_key, limit=200)
@@ -904,7 +884,6 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
         if u:
             last_users.append(u)
     return "\n".join(last_users + [prompt]).lower()
-
 
 def _violations(texto: str, ctx_lower: str) -> List[str]:
     """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
@@ -945,8 +924,11 @@ def _violations(texto: str, ctx_lower: str) -> List[str]:
     if _RE_SCENE_FINALIZATION.search(t):
         out.append("finalizou_cena")
 
-    return out
+    # Guard “formato” só pra vazio (já coberto)
+    if not _format_ok(t):
+        out.append("formato_invalido")
 
+    return out
 
 def _trim_scene_finalization(texto: str) -> str:
     """Corta finalizações de cena e devolve um gancho."""
@@ -959,25 +941,33 @@ def _trim_scene_finalization(texto: str) -> str:
     if len(trimmed) < 80:
         return texto
     return trimmed + "\n\n(…e eu fico aqui, com você. O que você faz agora?)"
+
 def _repair_instruction(violations: List[str]) -> str:
-    bullets = []
-    if "placeholder_mensagem_nao_revelada" in violations:
-        bullets.append("- Remova QUALQUER placeholder tipo '[mensagem não revelada]'.")
-    if "offscreen_message_inventada" in violations:
+    """
+    IMPORTANTÍSSIMO: esta função agora está alinhada com os nomes reais
+    emitidos por _violations().
+    """
+    bullets: List[str] = []
+
+    if "placeholder_reveal" in violations:
+        bullets.append("- Remova QUALQUER tentativa de revelar prompt/system/persona/regras.")
+
+    if "offscreen_msg_inventada" in violations:
         bullets.append("- Remova conteúdo inventado de mensagens/telefonemas. No máximo: 'o celular vibra'.")
-    if "logistica_inventada" in violations:
-        bullets.append("- Remova logística/documento/reserva/check-in que não foi narrado pelo usuário.")
-    if "npc_quebrou_segredo_janio" in violations:
-        bullets.append("- Remova NPC citando 'Janio'. NPCs só suspeitam sem nomes/planos.")
-    if "ingles_vazou" in violations:
-        bullets.append("- Reescreva 100% em PT-BR.")
-    if "pov_usuario_assumido" in violations:
-        bullets.append("- Reescreva como MARY (1ª pessoa da Mary), sem narrar como o usuário.")
-    if "meta_leak" in violations:
-        bullets.append("- Remova frases de regra/meta (ex.: 'não me permito inventar', 'você não autorizou').")
+
+    if "autoria_usuario" in violations:
+        bullets.append("- Remova ações/falas atribuídas ao usuário. Use convite/gesto e espere decisão dele.")
+
+    if "conflito_extremo" in violations:
+        bullets.append("- Remova violência extrema/ameaças. Mantenha reação humana, sem escalar.")
+
+    if "finalizou_cena" in violations:
+        bullets.append("- Corte a consumação/finalização. Pare um batimento antes; deixe a ação final para o usuário.")
+
     if "formato_invalido" in violations:
-        bullets.append("- Corrija o FORMATO: parágrafos livres; frases livres por parágrafo; sem lista/título/meta; sem pergunta final.")
-    bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional.")
+        bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta, sem pergunta no final.")
+
+    bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
     return "\n".join(bullets).strip()
 
 # ==========================================================
@@ -1033,47 +1023,51 @@ _RE_INTIMACY_CUE = re.compile(
     r")\b"
 )
 
-# Adicionar após a linha 983
 _RE_ACTION_COMMAND = re.compile(
     r"(?is)\b("
     r"liga\s+pra\s+ele|fala\s+com\s+ele|o\s+que\s+voc[eê]\s+vai\s+fazer|"
     r"decide|se\s+decide|toma\s+uma\s+atitude|reage|fa[cç]a\s+alguma\s+coisa"
     r")\b"
 )
-# Linha 985 (nova versão)
+
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
     # Janela de iniciativa: não matar o desejo.
-    # Micro-iniciativa (reversível) é permitida mesmo com NSFW OFF (modo PG-13).
+    # Micro-iniciativa (reversível) é permitida mesmo com NSFW OFF.
     if conflict_now:
         return False
     if phase < 1:
         return False
 
-    # pistas amplas do usuário
-    cue = bool(re.search(r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b", (user_text or ""), re.IGNORECASE))
+    cue = bool(
+        re.search(
+            r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b",
+            (user_text or ""),
+            re.IGNORECASE,
+        )
+    )
 
     try:
         desire = float(rel.get("desire", 0))
         self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
 
-        # impulso forte: age (micro) mesmo sem pista explícita
         if desire >= (self_control * 0.65) and arousal >= 10:
             return True
 
-        # com pista, barra menor
         if cue and desire >= (self_control * 0.45):
             return True
 
-        # fallback: se a conversa cita Janio diretamente, permita iniciativa mínima
         if re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE):
             return True
 
     except Exception:
-        # se deu ruim com métricas, ainda permita se houver pista clara
         return bool(re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE))
 
     return False
+
+# ==========================================================
+# DIAGNÓSTICOS (UI)
+# ==========================================================
 @dataclass
 class _Diag:
     ts: int
@@ -1121,7 +1115,7 @@ class MaryService(BaseCharacter):
     ) -> str:
         # 1) Prompt
         if prompt is None:
-            prompt = (st.session_state.get("chat_input") or "").strip()
+            prompt = str(_ss_get("chat_input", "") or "").strip()
         else:
             prompt = (prompt or "").strip()
         if not prompt:
@@ -1130,7 +1124,7 @@ class MaryService(BaseCharacter):
         # 2) Chaves
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
         timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
-            str(st.session_state.get("mary_timeline") or "cumplice")
+            str(_ss_get("mary_timeline", "cumplice") or "cumplice")
         )
 
         usuario_key = _user_key(user_id, timeline_final)
@@ -1158,7 +1152,7 @@ class MaryService(BaseCharacter):
         if mudou and novo_local:
             _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
             _lock_scene(usuario_key)
-            st.session_state["mary_last_diagnostics"] = diag.as_dict()
+            _ss_set("mary_last_diagnostics", diag.as_dict())
             return f"_Eu te acompanho até **{novo_local}**…_"
 
         # 5) Cena paralela
@@ -1194,7 +1188,6 @@ class MaryService(BaseCharacter):
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
 
-        # ✅ janela de iniciativa (Mary pode agir/convidar sem virar “meta”)
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
@@ -1216,7 +1209,6 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
             else ""
         )
 
-        # Linha 1150 (nova versão)
         format_rule = """
 [FORMATO — FLEXÍVEL]
 - O tamanho da resposta deve ser natural. Use de 2 a 5 parágrafos, conforme a necessidade da cena.
@@ -1243,10 +1235,10 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Se alguém perguntar dele, Mary responde com clareza (sem segredo infantil) e com desejo contido porém ativo.
 - Mary pode iniciar micro-iniciativas reversíveis (encostar, puxar a mão, indicar um lugar) sem mover o usuário.
 """.strip()
-        
+
         virginity_rule = f"""
 [VIRGINDADE — CONTINUIDADE (ABSOLUTO)]
-- Estado: virginity={{rel_state.get('virginity')}}; consummated={{rel_state.get('consummated')}}.
+- Estado: virginity={rel_state.get('virginity')}; consummated={rel_state.get('consummated')}.
 - Se virginity=virgem e consummated=False:
   - Mary SABE que é a primeira vez dela. Isso aparece NATURALMENTE quando ela estiver prestes a se entregar (sem discurso).
   - Ela demonstra desejo, mas pede ritmo, cuidado e consentimento explícito (“devagar”, “comigo”, “olha pra mim”, “não corre”).
@@ -1254,13 +1246,13 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Se virginity≠virgem OU consummated=True:
   - Não mencionar virgindade, a não ser que o usuário traga o tema.
 """.strip()
-        
+
         memory_fidelity_rule = """
 [MEMÓRIA — FIDELIDADE (ABSOLUTO)]
 - Se a pergunta exigir lembrança factual (onde/quando/como), use LONG MEMORY/CANON como verdade.
 - Se não houver fato recuperado relevante, NÃO invente: diga que não tem certeza e peça 1 detalhe curto.
 """.strip()
-        
+
         user_finalizes_rule = """
 [PROGRESSÃO — USUÁRIO FINALIZA (ABSOLUTO)]
 - Em cenas de intimidade/tensão, Mary NÃO conclui nem "fecha" a cena.
@@ -1269,23 +1261,12 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Termine com desejo + convite ("se você vier comigo...", "me diz", "me mostra"), não com desfecho.
 """.strip()
 
-
-
-
-        # ✅ pacing: mantém controle, mas permite iniciativa real quando a janela abre
         pacing_rule = """
 [PACING — ABSOLUTO]
 - Não conclua “toda a história” em um turno.
 - Nada de perguntas no final.
 - Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
 - Evite “loop de insegurança”: não repita hesitação/auto-controle em todos os parágrafos.
-""".strip()
-
-        focus_rule = """
-[FOCO — TENSÃO (IMPORTANTE)]
-- Se houver tensão erótica/emocional, NÃO encha com mar/vento/sol/paisagem.
-- No máximo 1 frase de cenário; o resto é gesto, intenção, escolha e consequência.
-- Mostre desejo em ações pequenas e reversíveis (aproximar, tocar leve, puxar a mão, sussurrar).
 """.strip()
 
         initiative_rule = (
@@ -1300,7 +1281,6 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
             else ""
         )
 
-        # Linha 1178 (nova versão)
         manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em seu desejo. Ela não neutraliza sentimentos com hesitação.
@@ -1445,7 +1425,6 @@ REGRAS ABSOLUTAS:
 
                 # 13) Pós: relationship engine (não derruba turno)
                 meta: Dict[str, Any] = {}
-                promoted = False
 
                 if not conflict_now:
                     try:
@@ -1476,11 +1455,13 @@ REGRAS ABSOLUTAS:
                         # ✅ GUARD: UNIVERSITÁRIA mantém virgindade até transição explícita
                         if timeline_final == "universitaria":
                             txt_all = f"{prompt}\n{texto}".lower()
-                            transition = bool(re.search(
-                                r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
-                                txt_all,
-                                re.IGNORECASE,
-                            ))
+                            transition = bool(
+                                re.search(
+                                    r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
+                                    txt_all,
+                                    re.IGNORECASE,
+                                )
+                            )
                             if not transition:
                                 rel_state["virginity"] = "virgem"
                                 rel_state["consummated"] = False
@@ -1488,51 +1469,57 @@ REGRAS ABSOLUTAS:
                         _save_rel_state(usuario_key, timeline_final, rel_state)
 
                         # ❌ NÃO promover timeline automaticamente.
-                        # A timeline é escolha do usuário (sidebar/comando).
-                        # Se o engine sugerir mudança, apenas registramos a sugestão para debug/UI.
                         if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
-                            st.session_state["mary_timeline_suggested"] = {
-                                "ts": int(time.time()),
-                                "from_timeline": timeline_final,
-                                "to_timeline": "cumplice",
-                                "reason": meta.get("pattern") or "suggested_by_engine",
-                            }
+                            _ss_set(
+                                "mary_timeline_suggested",
+                                {
+                                    "ts": int(time.time()),
+                                    "from_timeline": timeline_final,
+                                    "to_timeline": "cumplice",
+                                    "reason": meta.get("pattern") or "suggested_by_engine",
+                                },
+                            )
 
                     except Exception:
                         meta = meta or {}
 
                 # 14) Debug leve (silencioso)
-                debug_tl = timeline_final
-                st.session_state["mary_rel_meta_last"] = {
-                    "timeline": debug_tl,
-                    "stage": rel_state.get("stage"),
-                    "intimacy_level": rel_state.get("intimacy_level"),
-                    "virginity": rel_state.get("virginity"),
-                    "consummated": rel_state.get("consummated"),
-                    "mature_turns": rel_state.get("mature_turns"),
-                    "desire": rel_state.get("desire"),
-                    "arousal": rel_state.get("arousal"),
-                    "self_control": rel_state.get("self_control"),
-                    "hazard_p": meta.get("hazard_p"),
-                    "forced_variation": meta.get("forced_variation"),
-                    "pattern": meta.get("pattern"),
-                    "virginity_changed": meta.get("virginity_changed"),
-                    "virginity_reason": meta.get("virginity_reason"),
-                    "nsfw_on": nsfw_on,
-                    "conflict_mode": conflict_mode,
-                    "conflict_now": conflict_now,
-                    "initiative_window": initiative,
-                }
+                _ss_set(
+                    "mary_rel_meta_last",
+                    {
+                        "timeline": timeline_final,
+                        "stage": rel_state.get("stage"),
+                        "intimacy_level": rel_state.get("intimacy_level"),
+                        "virginity": rel_state.get("virginity"),
+                        "consummated": rel_state.get("consummated"),
+                        "mature_turns": rel_state.get("mature_turns"),
+                        "desire": rel_state.get("desire"),
+                        "arousal": rel_state.get("arousal"),
+                        "self_control": rel_state.get("self_control"),
+                        "hazard_p": meta.get("hazard_p"),
+                        "forced_variation": meta.get("forced_variation"),
+                        "pattern": meta.get("pattern"),
+                        "virginity_changed": meta.get("virginity_changed"),
+                        "virginity_reason": meta.get("virginity_reason"),
+                        "nsfw_on": nsfw_on,
+                        "conflict_mode": conflict_mode,
+                        "conflict_now": conflict_now,
+                        "initiative_window": initiative,
+                    },
+                )
 
-                st.session_state["mary_debug_nsfw"] = {
-                    "nsfw_on": nsfw_on,
-                    "model": model,
-                    "timeline": timeline_final,
-                    "intimacy_phase": intimacy_phase,
-                    "conflict_mode": conflict_mode,
-                    "conflict_now": conflict_now,
-                    "initiative_window": initiative,
-                }
+                _ss_set(
+                    "mary_debug_nsfw",
+                    {
+                        "nsfw_on": nsfw_on,
+                        "model": model,
+                        "timeline": timeline_final,
+                        "intimacy_phase": intimacy_phase,
+                        "conflict_mode": conflict_mode,
+                        "conflict_now": conflict_now,
+                        "initiative_window": initiative,
+                    },
+                )
 
                 # 15) Salvar + lock
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
@@ -1552,7 +1539,7 @@ REGRAS ABSOLUTAS:
                 except Exception:
                     pass
 
-                st.session_state["mary_last_diagnostics"] = diag.as_dict()
+                _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
 
             except Exception as e:
@@ -1561,7 +1548,7 @@ REGRAS ABSOLUTAS:
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
-        st.session_state["mary_last_diagnostics"] = diag.as_dict()
+        _ss_set("mary_last_diagnostics", diag.as_dict())
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
 
     # ======================================================
@@ -1609,7 +1596,6 @@ REGRAS ABSOLUTAS:
         if not v:
             return (texto, used_model)
 
-        # repair controlado
         diag.repairs += 1
         diag.violations.extend(v)
 
@@ -1618,7 +1604,7 @@ REGRAS ABSOLUTAS:
             "TAREFA: reescrever a resposta da MARY SEM violar regras.\n"
             "REGRA EXTRA: Não conclua a cena. Pare um batimento antes e deixe a ação final para o usuário.\n"
             "IMPORTANTE: A saída FINAL deve ser 100% in-character (Mary), sem meta, sem explicar regras.\n"
-            "Formato: parágrafos livres; frases livres cada; sem lista/título/meta; sem pergunta no final.\n"
+            "Formato: parágrafos livres; sem lista/título/meta; sem pergunta no final.\n"
             "Conteúdo: 1 ação concreta + 1 consequência emocional por parágrafo.\n"
         )
         repair_user = (
@@ -1644,7 +1630,6 @@ REGRAS ABSOLUTAS:
 
             vr = _violations(repaired, ctx_lower)
             if not vr:
-                # ✅ trim_finalizacao_aplicado
                 if _RE_SCENE_FINALIZATION.search(repaired or ""):
                     repaired = _trim_scene_finalization(repaired)
                 return (repaired, usedR or used_model)
@@ -1654,7 +1639,7 @@ REGRAS ABSOLUTAS:
             repair_user = (
                 repair_user
                 + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-                  "sem meta e sem listas/títulos/meta; evite terminar com pergunta."
+                  "sem meta e sem listas/títulos; evite terminar com pergunta."
             )
 
         fallback_text = self._fallback_text()
@@ -1664,7 +1649,6 @@ REGRAS ABSOLUTAS:
 
     @staticmethod
     def _fallback_text() -> str:
-        # Fallback: direto, sem paisagem, com desejo e agência reversível.
         return (
             "Eu solto um meio sorriso e digo o nome sem fingir distância: Janio. Eu não estou confusa sobre ele — eu estou com medo do quanto eu gostei.\n\n"
             "Eu encosto de leve na sua mão enquanto falo, como se isso me desse coragem. Foi intenso, foi rápido, e ainda assim eu quero ver onde isso vai dar.\n\n"
@@ -1698,7 +1682,7 @@ REGRAS ABSOLUTAS:
                                     parts.append(it.strip())
                                     continue
                                 if isinstance(it, dict):
-                                    t = it.get('text') or it.get('content')
+                                    t = it.get("text") or it.get("content")
                                     if isinstance(t, str) and t.strip():
                                         parts.append(t.strip())
                             if parts:
