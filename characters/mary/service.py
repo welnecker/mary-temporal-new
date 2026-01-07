@@ -760,6 +760,22 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 # ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
+
+# ✅ regex auxiliares (evitam NameError)
+_RE_PLACEHOLDER_REVEAL = re.compile(
+    r"(revel(a|e)|mostr(a|e)|exib(a|e)|vaz(a|e)).{0,40}(prompt|system|instru[cç][aã]o|persona|regras?)",
+    re.IGNORECASE | re.DOTALL,
+)
+_RE_OFFSCREEN_MSG = re.compile(
+    r"\b(whatsapp|sms|dm|direct|telegram|mensagem|notifica[cç][aã]o|lig(a|ou)\s*para|telefonou)\b",
+    re.IGNORECASE,
+)
+# Detecta quando a ASSISTANT inventa ações/falas do usuário (heurístico)
+_RE_USER_ACTION = re.compile(
+    r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
+    re.IGNORECASE,
+)
+
 _RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando|gozar pra mim)\b", re.IGNORECASE)
 _RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|dormimos|banho|água|calma|respira|carinho)\b", re.IGNORECASE)
 _RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|aproximo)\b", re.IGNORECASE)
@@ -1643,6 +1659,18 @@ REGRAS ABSOLUTAS:
                         content = msg.get("content")
                         if isinstance(content, str) and content.strip():
                             return content.strip()
+                        if isinstance(content, list):
+                            parts = []
+                            for it in content:
+                                if isinstance(it, str) and it.strip():
+                                    parts.append(it.strip())
+                                    continue
+                                if isinstance(it, dict):
+                                    t = it.get('text') or it.get('content')
+                                    if isinstance(t, str) and t.strip():
+                                        parts.append(t.strip())
+                            if parts:
+                                return "\n".join(parts).strip()
                     txt = c0.get("text")
                     if isinstance(txt, str) and txt.strip():
                         return txt.strip()
