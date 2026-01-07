@@ -1,23 +1,6 @@
+from __future__ import annotations
+
 # pages/mary_app.py
-from __future__ import annotations
-
-# characters/mary/persona.py
-from __future__ import annotations
-
-from typing import List, Dict, Tuple, Optional
-
-
-def get_persona(timeline: Optional[str] = None) -> Tuple[str, List[Dict[str, str]]]:
-    tl = (timeline or "cumplice").strip().lower() or "cumplice"
-
-    if tl == "universitaria":
-        from .personas_universitaria import get_persona as _gp
-        return _gp(tl)
-
-    # default: cumplice
-    from .personas_cumplice import get_persona as _gp
-    return _gp(tl)
-
 
 # ==========================================================
 # IMPORTS PADRÃO
