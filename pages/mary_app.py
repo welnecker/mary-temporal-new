@@ -426,6 +426,11 @@ def _garantir_estado_inicial() -> None:
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
 
+    # ✅ se a timeline ficou travada por reidratação do Streamlit, mas NÃO há mensagens,
+    # destrava para permitir escolher a persona (ex: Mary Universitária)
+    if st.session_state.get('mary_timeline_locked') and not st.session_state.get('chat_history'):
+        st.session_state['mary_timeline_locked'] = False
+
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
 
