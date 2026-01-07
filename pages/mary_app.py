@@ -10,7 +10,6 @@ import traceback
 import importlib
 import inspect
 from typing import Any
-
 import streamlit as st
 
 # ==========================================================
@@ -22,7 +21,7 @@ def _hard_reset_on_boot_if_needed() -> None:
     Se a timeline mudou desde o último boot, limpamos TUDO
     antes de qualquer render.
     """
-    current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
+    current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
     last_tl = st.session_state.get("mary_last_boot_timeline")
 
     if last_tl != current_tl:
@@ -41,15 +40,14 @@ def _hard_reset_on_boot_if_needed() -> None:
             if k.startswith(("intro_ctx_injected::", "intro_injected::")):
                 st.session_state.pop(k, None)
 
-            # ✅ NSFW persist marker por usuario_key (limpa ao trocar timeline no boot)
-            if k.startswith("mary_nsfw_last_saved::"):
-                st.session_state.pop(k, None)
-
-        # ✅ destrava a timeline no boot (evita reabrir travado)
+        # ✅ evita ficar travado ao reabrir
         st.session_state.pop("mary_timeline_locked", None)
-
         # também remove a seleção visual (será recalculada pela timeline)
         st.session_state.pop("persona_label", None)
+
+        # limpa telemetria do modelo real (se existir)
+        st.session_state.pop("mary_last_used_model", None)
+        st.session_state.pop("mary_last_used_provider", None)
 
         st.session_state["mary_last_boot_timeline"] = current_tl
 
@@ -60,7 +58,7 @@ _hard_reset_on_boot_if_needed()
 # ==========================================================
 # IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
 # ==========================================================
-from core.repositories import (  # noqa: E402
+from core.repositories import (
     list_memories,
     delete_last_memory,
     delete_all_memories,
@@ -81,11 +79,11 @@ from core.repositories import (  # noqa: E402
     delete_all_long_memory,
 )
 
-import characters.mary.persona as mary_persona  # noqa: E402
-from characters.mary.service import get_service_class  # noqa: E402
-import core.repositories as crep  # noqa: E402
-import core.service_router as service_router  # noqa: E402
-from core.database import db_status, ping_db, get_backend  # noqa: E402
+import characters.mary.persona as mary_persona
+from characters.mary.service import get_service_class
+import core.repositories as crep
+import core.service_router as service_router
+from core.database import db_status, ping_db, get_backend
 
 
 # ==========================================================
@@ -208,7 +206,7 @@ def _format_paragraphs(text: str) -> str:
     if len(sentences) <= 3:
         return t
 
-    chunks: list[str] = []
+    chunks = []
     i = 0
     while i < len(sentences):
         size = 2 if (i % 6) != 4 else 3
@@ -279,11 +277,6 @@ def _keys_para_mary() -> list[str]:
     return [_usuario_key_atual()]
 
 
-def _nsfw_last_saved_key(usuario_key: str) -> str:
-    # ✅ evita “pular persistência” quando troca timeline
-    return f"mary_nsfw_last_saved::{usuario_key}"
-
-
 # ==========================================================
 # ✅ CANON BUTTON HELPERS (Virgem -> Consumado)
 # ==========================================================
@@ -334,6 +327,72 @@ def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, us
 
     set_fact(usuario_key, rel_key, rel, {"fonte": "ui_button_canon"})
     set_fact(usuario_key, "mary.virginity", "nao_virgem", {"fonte": "ui_button_canon"})
+
+
+# ==========================================================
+# ✅ PERSONA DEBUG + FALLBACK INJECTION (quando service não injeta)
+# ==========================================================
+def _flatten_boot_messages(boot: Any, timeline: str) -> str:
+    """
+    Converte boot list[dict] em texto curto.
+    Não explode se o formato vier diferente.
+    """
+    if not isinstance(boot, list):
+        return ""
+
+    parts: list[str] = []
+    for m in boot:
+        if not isinstance(m, dict):
+            continue
+        if (m.get("role") or "") not in ("system", "assistant", "user"):
+            continue
+        # respeita timeline quando existir no item
+        tl = str(m.get("timeline") or "").strip()
+        if tl and tl != str(timeline or "").strip():
+            continue
+        c = (m.get("content") or "").strip()
+        if not c:
+            continue
+        parts.append(c)
+
+    # limita tamanho pra não enlouquecer prompt
+    out = "\n\n".join(parts).strip()
+    if len(out) > 2400:
+        out = out[:2400].rstrip() + "\n\n[…boot truncado…]"
+    return out
+
+
+def _get_persona_bundle(timeline: str) -> tuple[str, Any]:
+    """
+    Retorna (system_text, boot_messages) da persona para a timeline.
+    """
+    try:
+        system_text, boot = mary_persona.get_persona(timeline)
+    except Exception:
+        system_text, boot = "", None
+    return (str(system_text or "").strip(), boot)
+
+
+def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
+    """
+    Fallback: injeta persona no prompt quando o service não faz isso.
+    (Útil pra provar se a persona está acessível e parar “invenção” de traços físicos.)
+    """
+    system_text, boot = _get_persona_bundle(timeline)
+    boot_txt = _flatten_boot_messages(boot, timeline)
+
+    # Se a persona estiver vazia, não inventa nada.
+    if not system_text and not boot_txt:
+        return prompt
+
+    return (
+        "### PERSONA (SYSTEM)\n"
+        f"{system_text}\n\n"
+        "### PERSONA (BOOT)\n"
+        f"{boot_txt}\n\n"
+        "### USER\n"
+        f"{prompt}"
+    )
 
 
 # ==========================================================
@@ -441,7 +500,7 @@ def _garantir_estado_inicial() -> None:
         st.session_state["chat_history"] = []
 
     # ✅ se a timeline ficou travada por reidratação do Streamlit, mas NÃO há mensagens,
-    # destrava para permitir escolher a persona
+    # destrava para permitir escolher a persona (ex: Mary Universitária)
     if st.session_state.get("mary_timeline_locked") and not st.session_state.get("chat_history"):
         st.session_state["mary_timeline_locked"] = False
 
@@ -470,6 +529,10 @@ def _garantir_estado_inicial() -> None:
     if "mary_nsfw_on" not in st.session_state:
         st.session_state["mary_nsfw_on"] = (_timeline() != "universitaria")
 
+    # para detectar mudança e persistir sem loop
+    if "mary_nsfw_last_saved" not in st.session_state:
+        st.session_state["mary_nsfw_last_saved"] = None
+
     if "mary_intro_done" not in st.session_state:
         st.session_state["mary_intro_done"] = False
     if "visual_limit" not in st.session_state:
@@ -488,6 +551,16 @@ def _garantir_estado_inicial() -> None:
     # view de memórias
     if "__mem_list" not in st.session_state:
         st.session_state["__mem_list"] = None
+
+    # fallback injection toggle (para provar persona)
+    if "mary_ui_persona_fallback" not in st.session_state:
+        st.session_state["mary_ui_persona_fallback"] = True
+
+    # telemetria do modelo real
+    if "mary_last_used_model" not in st.session_state:
+        st.session_state["mary_last_used_model"] = None
+    if "mary_last_used_provider" not in st.session_state:
+        st.session_state["mary_last_used_provider"] = None
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
@@ -538,19 +611,18 @@ def _clear_mary_caches_all_related(*, also_clear_other_timeline: bool = True) ->
 def _persist_nsfw_for_current_timeline_if_needed_inline() -> None:
     """
     Persistência NSFW INLINE (não depende de helper fora do callback).
-    ✅ Agora é por usuario_key (por timeline) para não “pular” persistência ao alternar.
+    Evita NameError em callback antigo preso na sessão.
     """
     uk = _usuario_key_atual()
     current = bool(st.session_state.get("mary_nsfw_on", False))
-    last_key = _nsfw_last_saved_key(uk)
-    last = st.session_state.get(last_key, None)
+    last = st.session_state.get("mary_nsfw_last_saved", None)
 
     if last is None or bool(last) != current:
         try:
             set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
         except Exception:
             pass
-        st.session_state[last_key] = current
+        st.session_state["mary_nsfw_last_saved"] = current
         _clear_service_caches_for_keys([uk])
 
 
@@ -699,6 +771,9 @@ def _reset_chapter_current_timeline() -> int:
     _invalidate_backend_cache()
     _clear_mary_caches_all_related()
     st.session_state["mary_timeline_locked"] = False
+
+    st.session_state["mary_last_used_model"] = None
+    st.session_state["mary_last_used_provider"] = None
     return n
 
 
@@ -709,6 +784,7 @@ def _on_timeline_change() -> None:
     - Persiste NSFW inline (sem depender de helper externo no callback).
     - MATA services isolados por usuario_key (para garantir troca limpa).
     """
+
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
@@ -723,7 +799,7 @@ def _on_timeline_change() -> None:
     # default NSFW por timeline
     st.session_state["mary_nsfw_on"] = (new_tl != "universitaria")
 
-    # ✅ Persistência NSFW (inline) — agora é por usuario_key
+    # ✅ Persistência NSFW (inline)
     _persist_nsfw_for_current_timeline_if_needed_inline()
 
     # limpa visual + caches (inclui timeline antiga para matar vazamento)
@@ -732,6 +808,10 @@ def _on_timeline_change() -> None:
     _invalidate_backend_cache()
     _clear_mary_caches_all_related(also_clear_other_timeline=True)
     _clear_service_caches_for_keys([_usuario_key_for_timeline(old_tl), _usuario_key_for_timeline(new_tl)])
+
+    # telemetria
+    st.session_state["mary_last_used_model"] = None
+    st.session_state["mary_last_used_provider"] = None
 
     # 🔥 ponto crítico: matar instâncias de service para não reaproveitar estado
     _kill_all_mary_services()
@@ -754,7 +834,9 @@ def _get_intro_persona_text(timeline: str) -> str:
                 continue
             if m.get("role") != "assistant":
                 continue
-            if str(m.get("timeline") or "").strip() != str(timeline or "").strip():
+            # respeita timeline quando existir
+            tl = str(m.get("timeline") or "").strip()
+            if tl and tl != str(timeline or "").strip():
                 continue
             c = (m.get("content") or "").strip()
             if c:
@@ -810,7 +892,7 @@ def _boot_visual_if_empty() -> None:
 
 def _auto_unlock_if_sem_interacao() -> None:
     """
-    ✅ Resolve o caso: menu já abre travado na 'cumplice'.
+    ✅ Resolve o teu caso: menu já abre travado na 'cumplice'.
     Se NÃO há nenhuma mensagem do usuário (nem no visual, nem no backend),
     destrava automaticamente para permitir escolher 'universitaria'.
     """
@@ -835,32 +917,70 @@ def _auto_unlock_if_sem_interacao() -> None:
     st.session_state["mary_timeline_locked"] = False
 
 
-def _infer_used_model_provider() -> tuple[str, str]:
+def _capture_used_model_provider_from_service(svc: Any) -> None:
     """
-    Mostra o “modelo/provedor realmente usados” se o service/router tiver gravado isso no session_state.
-    (Não quebra se não existir.)
+    Tenta capturar modelo/provedor REAL usado pelo service, se ele expõe isso.
+    Não quebra se não existir.
     """
-    # formatos comuns
-    model = (
-        st.session_state.get("mary_used_model")
-        or st.session_state.get("mary_last_used_model")
-        or st.session_state.get("last_used_model")
-        or ""
-    )
-    provider = (
-        st.session_state.get("mary_used_provider")
-        or st.session_state.get("mary_last_used_provider")
-        or st.session_state.get("last_used_provider")
-        or ""
-    )
+    model = None
+    provider = None
 
-    # fallback: tentar achar dentro de um dict “meta”
-    meta = st.session_state.get("mary_model_meta_last") or st.session_state.get("mary_router_meta_last") or None
-    if isinstance(meta, dict):
-        model = model or str(meta.get("used_model") or meta.get("model") or "")
-        provider = provider or str(meta.get("provider") or meta.get("used_provider") or "")
+    for attr in ("used_model", "last_used_model", "model_used", "resolved_model", "last_model"):
+        if hasattr(svc, attr):
+            try:
+                v = getattr(svc, attr)
+                if isinstance(v, str) and v.strip():
+                    model = v.strip()
+                    break
+            except Exception:
+                pass
 
-    return (str(model or "").strip(), str(provider or "").strip())
+    for attr in ("provider", "used_provider", "last_used_provider", "provider_used", "last_provider"):
+        if hasattr(svc, attr):
+            try:
+                v = getattr(svc, attr)
+                if isinstance(v, str) and v.strip():
+                    provider = v.strip()
+                    break
+            except Exception:
+                pass
+
+    st.session_state["mary_last_used_model"] = model
+    st.session_state["mary_last_used_provider"] = provider
+
+
+def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, timeline: str, nsfw: bool) -> str:
+    """
+    Chama svc.reply sem depender de assinatura fixa.
+    E, se o service NÃO injeta persona, permite fallback opcional via UI.
+    """
+    # fallback persona (opcional)
+    if bool(st.session_state.get("mary_ui_persona_fallback", True)):
+        prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
+    else:
+        prompt_to_send = prompt
+
+    kwargs = {
+        "user": user,
+        "model": model,
+        "prompt": prompt_to_send,
+        "timeline": timeline,
+        "nsfw": nsfw,
+    }
+
+    # filtra kwargs pela assinatura real
+    try:
+        sig = inspect.signature(svc.reply)
+        params = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+    except Exception:
+        # se não conseguir introspectar, tenta do jeito "normal"
+        pass
+
+    resp = svc.reply(**kwargs)  # type: ignore[arg-type]
+    # captura telemetria pós-call
+    _capture_used_model_provider_from_service(svc)
+    return str(resp or "")
 
 
 # ==========================================================
@@ -871,10 +991,16 @@ def main() -> None:
     _garantir_estado_inicial()
     _auto_unlock_if_sem_interacao()
 
-    st.caption(
-        "🧩 mary_app.py v3.14 (selectbox trava de verdade + NSFW persist por timeline + anti-vazamento hard + CANON virgem)"
-    )
+    # ===== Header técnico =====
     backend, detail = db_status()
+
+    used_model = st.session_state.get("mary_last_used_model")
+    used_provider = st.session_state.get("mary_last_used_provider")
+    used_str = ""
+    if used_model or used_provider:
+        used_str = f" • Usado: <b>{(used_provider or '—')}</b> / <b>{(used_model or '—')}</b>"
+
+    st.caption("🧩 mary_app.py v3.14 (debug persona + fallback persona UI + telemetria modelo/provedor)")
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
     # ==========================================================
@@ -934,20 +1060,15 @@ def main() -> None:
             except Exception as e:
                 st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
 
-    used_model, used_provider = _infer_used_model_provider()
-    used_line = ""
-    if used_model or used_provider:
-        used_line = f" • Usado: <b>{used_model or '—'}</b> / <b>{used_provider or '—'}</b>"
-
-    # ===== Header =====
+    # ===== Header visual =====
     st.markdown(
         f"""
         <div class="rp-card">
           <div class="rp-title">Mary 💍💍</div>
           <div class="rp-sub">
             Timeline: <b>{_timeline()}</b> •
-            Pedido: <b>{st.session_state.get('model','')}</b>
-            {used_line}
+            Modelo(UI): <b>{st.session_state.get('model','')}</b>
+            {used_str}
           </div>
         </div>
         """,
@@ -968,71 +1089,16 @@ def main() -> None:
         "🎭 Linha temporal da Mary",
         list(personas.keys()),
         index=list(personas.keys()).index(label_atual),
-        disabled=bool(st.session_state.get("mary_timeline_locked", False)),  # ✅ trava de verdade
+        disabled=False,
         key="persona_label",
         on_change=_on_timeline_change,
     )
 
-    if st.session_state.get("mary_timeline_locked", False):
+    if st.session_state["mary_timeline_locked"]:
         st.caption("🔒 Persona travada após a 1ª mensagem do usuário.")
         st.caption("👉 Se travou sem você ter falado nada, use: Sidebar → 'Destravar timeline'.")
 
     keys = _keys_para_mary()
-
-    # ==========================================================
-    # ✅ PAINEL DEBUG RELATIONSHIP (MAIN AREA) — READ-ONLY
-    # ==========================================================
-    with st.expander("🧠 Relationship Engine — Painel de diagnóstico (turno a turno)", expanded=False):
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-            enabled = bool(st.session_state.get("mary_debug_rel_panel", False))
-            st.caption(
-                "Ative em **Sidebar → Debug → Mostrar painel Relationship**  •  "
-                f"Status: **{'ON' if enabled else 'OFF'}**"
-            )
-            st.caption("Fonte: st.session_state['mary_rel_meta_last'] (gravado pelo service.py após cada resposta).")
-
-        with col2:
-            if st.button("Limpar diagnóstico (só visual)", key="btn_clear_rel_diag_main"):
-                st.session_state["mary_rel_meta_last"] = None
-                st.success("Diagnóstico limpo.")
-
-        last = st.session_state.get("mary_rel_meta_last")
-
-        if not enabled:
-            st.info("Painel desativado. Ative no sidebar para ver o diagnóstico a cada turno.")
-        else:
-            if not last:
-                st.warning("Ainda não há diagnóstico. Envie uma mensagem e depois volte aqui.")
-            else:
-                cA, cB, cC, cD = st.columns(4)
-                with cA:
-                    st.metric("Timeline", str(last.get("timeline") or "—"))
-                with cB:
-                    st.metric("Stage", str(last.get("stage") or "—"))
-                with cC:
-                    st.metric("Mature turns", str(last.get("mature_turns") or 0))
-                with cD:
-                    hp = last.get("hazard_p")
-                    st.metric("Hazard P", f"{hp:.2f}" if isinstance(hp, (int, float)) else "—")
-
-                st.markdown("---")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.metric("Virginity", str(last.get("virginity") or "—"))
-                with c2:
-                    st.metric("Consummated", "true" if last.get("consummated") else "false")
-                with c3:
-                    st.metric("Virginity changed", "true" if last.get("virginity_changed") else "false")
-
-                reason = (last.get("virginity_reason") or "").strip()
-                if reason:
-                    st.caption("Motivo (virginity_reason):")
-                    st.code(reason)
-
-                st.caption("Raw dump:")
-                st.json(last)
 
     # ==========================================================
     # BACKEND RESET / DIAGNÓSTICO
@@ -1085,6 +1151,8 @@ def main() -> None:
                     st.session_state["mary_intro_done"] = False
                     st.session_state["mary_timeline_locked"] = False
                     st.session_state["mary_rel_meta_last"] = None
+                    st.session_state["mary_last_used_model"] = None
+                    st.session_state["mary_last_used_provider"] = None
                     _invalidate_backend_cache()
                     _clear_mary_caches_all_related()
                     _kill_all_mary_services()
@@ -1113,6 +1181,8 @@ def main() -> None:
                 st.session_state["mary_timeline_locked"] = False
                 st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
+                st.session_state["mary_last_used_model"] = None
+                st.session_state["mary_last_used_provider"] = None
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
@@ -1133,16 +1203,11 @@ def main() -> None:
         idx = all_models.index(current) if current in all_models else 0
 
         st.selectbox(
-            "🧠 Modelo (pedido)",
+            "🧠 Modelo",
             all_models,
             index=idx,
             key="model",
         )
-
-        # mostra “usado” se existir
-        used_model2, used_provider2 = _infer_used_model_provider()
-        if used_model2 or used_provider2:
-            st.caption(f"✅ Último usado: {used_model2 or '—'} / {used_provider2 or '—'}")
 
         st.markdown("---")
         # ✅ NSFW: persiste no facts quando muda (INLINE)
@@ -1151,6 +1216,43 @@ def main() -> None:
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
+
+        # ======================================================
+        # ✅ PERSONA DEBUG + FALLBACK INJECTION
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🧬 Persona — Debug / Injeção")
+
+        sys_txt, boot = _get_persona_bundle(_timeline())
+        boot_txt = _flatten_boot_messages(boot, _timeline())
+
+        st.caption("Arquivo persona ativo:")
+        try:
+            st.code(inspect.getfile(mary_persona.get_persona))
+        except Exception:
+            st.code("(não consegui resolver path)")
+
+        st.write(
+            {
+                "system_len": len(sys_txt or ""),
+                "boot_len": len(boot_txt or ""),
+                "timeline": _timeline(),
+            }
+        )
+
+        if not sys_txt and not boot_txt:
+            st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
+        else:
+            with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
+                st.code((sys_txt or "")[:500])
+            with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
+                st.code((boot_txt or "")[:800])
+
+        st.checkbox(
+            "Fallback: injetar persona via UI no prompt (se service não injeta)",
+            key="mary_ui_persona_fallback",
+        )
+        st.caption("Dica: deixe ON até você confirmar que o service está montando messages com SYSTEM+BOOT.")
 
         # ======================================================
         # ✅ BOTÃO "VIRGEM" (CANON) — gravar consumado
@@ -1189,6 +1291,8 @@ def main() -> None:
 
                 st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
+                st.session_state["mary_last_used_model"] = None
+                st.session_state["mary_last_used_provider"] = None
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
@@ -1204,18 +1308,11 @@ def main() -> None:
         st.markdown("---")
         st.subheader("🔍 Debug")
 
-        st.checkbox(
+        st.session_state["mary_debug_rel_panel"] = st.checkbox(
             "Mostrar painel Relationship",
             value=bool(st.session_state.get("mary_debug_rel_panel", False)),
-            key="mary_debug_rel_panel",
+            key="mary_debug_rel_panel__ui",
         )
-
-        if st.button("Ver último diagnóstico (popup)", key="btn_show_rel_diag_popup"):
-            last = st.session_state.get("mary_rel_meta_last")
-            if last:
-                st.json(last)
-            else:
-                st.info("Ainda não existe mary_rel_meta_last.")
 
         st.markdown("---")
         st.subheader("Turnos")
@@ -1238,8 +1335,6 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("🎭 Persona")
-        st.caption("Arquivo ativo:")
-        st.code(inspect.getfile(mary_persona.get_persona))
         st.caption("repositories.py ativo:")
         st.code(inspect.getfile(crep.delete_last_interaction))
 
@@ -1266,10 +1361,12 @@ def main() -> None:
             _kill_all_mary_services()
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
-            _invalidate_backend_cache()
-            _clear_mary_caches_all_related()
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
+            st.session_state["mary_last_used_model"] = None
+            st.session_state["mary_last_used_provider"] = None
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related()
             st.success("Persona + Service recarregados. Contexto reinjetado.")
             st.rerun()
 
@@ -1360,12 +1457,7 @@ def main() -> None:
                 st.rerun()
 
         st.markdown("### ➕ Inserir memória (DB)")
-        lm_text = st.text_area(
-            "Texto da memória",
-            key="lm_text_area",
-            height=90,
-            placeholder="Ex: Mary odeia amendoim #500...",
-        )
+        lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
         lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory")
 
@@ -1429,7 +1521,7 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
     if prompt:
-        if not st.session_state.get("mary_timeline_locked", False):
+        if not st.session_state["mary_timeline_locked"]:
             st.session_state["mary_timeline_locked"] = True
 
         now = time.time()
@@ -1452,7 +1544,8 @@ def main() -> None:
         nsfw_active = bool(st.session_state.get("mary_nsfw_on", False))
 
         try:
-            resposta = svc.reply(
+            resposta = _call_service_reply_safe(
+                svc=svc,
                 user=st.session_state.get("user_id", "Janio Donisete"),
                 model=st.session_state.get("model") or DEFAULT_MODEL,
                 prompt=prompt,
