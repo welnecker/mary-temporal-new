@@ -1069,7 +1069,7 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
     """
     Faz um ping no core.service_router.chat() SEM passar pelo service da Mary (não grava history).
-    Guarda resultado em session_state para você ver no sidebar.
+    Monta args/kwargs respeitando parâmetros posicionais/positional-only.
     """
     fn = getattr(service_router, "chat", None)
     if not callable(fn):
@@ -1077,35 +1077,85 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
 
     prompt = "Responda APENAS com a palavra: PONG"
 
-    # tenta montar kwargs compatível com a assinatura real do router
-    kwargs: dict[str, Any] = {
-        "user": user,
-        "user_id": user,
-        "message": prompt,
-        "prompt": prompt,
-        "model": model,
-    }
+    # default provider (se o chat exigir)
+    provider_guess = (
+        str(st.session_state.get("provider") or st.session_state.get("backend") or "openrouter").strip()
+        or "openrouter"
+    )
 
     try:
         sig = inspect.signature(fn)
-        params = set(sig.parameters.keys())
-        call_kwargs = {k: v for k, v in kwargs.items() if k in params}
-    except Exception:
-        call_kwargs = {"user": user, "model": model, "prompt": prompt}
+        params = list(sig.parameters.values())
 
-    try:
-        raw = fn(**call_kwargs)  # type: ignore[arg-type]
+        args: list[Any] = []
+        kwargs: dict[str, Any] = {}
+
+        def _value_for(name: str) -> Any | None:
+            n = (name or "").lower()
+
+            # mensagem
+            if n in ("message", "prompt", "text", "content", "input"):
+                return prompt
+
+            # usuário
+            if n in ("user", "user_id", "usuario", "uid", "username"):
+                return user
+
+            # modelo
+            if n in ("model", "model_id", "modelo"):
+                return model
+
+            # provider/back-end (se existir)
+            if n in ("provider", "backend", "router", "source"):
+                return provider_guess
+
+            return None
+
+        # monta args/kwargs respeitando positional-only
+        for p in params:
+            if p.name in ("self",):
+                continue
+
+            val = _value_for(p.name)
+
+            if p.kind == inspect.Parameter.POSITIONAL_ONLY:
+                # tem que ir em args
+                if val is None:
+                    # se for opcional, passa o default; se for obrigatório, vai falhar abaixo
+                    if p.default is not inspect._empty:
+                        val = p.default
+                args.append(val)
+                continue
+
+            if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
+                if val is not None:
+                    kwargs[p.name] = val
+
+        # valida se faltou algum obrigatório posicional-only (None + sem default)
+        for p in params:
+            if p.name == "self":
+                continue
+            if p.kind == inspect.Parameter.POSITIONAL_ONLY:
+                # encontra índice correspondente
+                idx = [pp for pp in params if pp.kind == inspect.Parameter.POSITIONAL_ONLY and pp.name != "self"].index(p)
+                if args[idx] is None and p.default is inspect._empty:
+                    raise TypeError(f"Não consegui preencher parâmetro posicional obrigatório: {p.name}")
+
+        raw = fn(*args, **kwargs)
+
         txt = _extract_router_text(raw)
         prov, used_model = _extract_router_used_model_provider(raw)
 
         return {
             "ok": True,
             "ui_model": model,
-            "used_provider": prov,
+            "used_provider": prov or provider_guess,
             "used_model": used_model,
             "text": txt[:2000],
             "raw_type": type(raw).__name__,
+            "called_with": {"args": args, "kwargs": kwargs},
         }
+
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
