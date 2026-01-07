@@ -1,3 +1,4 @@
+# characters/mary/service.py
 from __future__ import annotations
 
 from typing import Optional, Type
@@ -13,6 +14,15 @@ def get_service_class(timeline: Optional[str]) -> Type[BaseCharacter]:
     if tl == "universitaria":
         return MaryServiceUniversitaria
     return MaryServiceCumplice
+
+
+def get_service(timeline: Optional[str] = None) -> BaseCharacter:
+    """
+    Cria uma instância do service correto para a timeline.
+    Útil para uso fora do mary_app (ex.: registry, testes, scripts).
+    """
+    cls = get_service_class(timeline)
+    return cls()
 
 
 # compat (default = cúmplice)
