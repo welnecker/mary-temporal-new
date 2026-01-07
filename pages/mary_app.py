@@ -41,6 +41,9 @@ def _hard_reset_on_boot_if_needed() -> None:
 
         # ✅ evita ficar travado ao reabrir
         st.session_state.pop("mary_timeline_locked", None)
+        st.session_state.pop('mary_timeline_locked', None)
+        st.session_state.pop('mary_session_has_user_turn', None)
+        st.session_state.pop('persona_label', None)
         st.session_state["mary_last_boot_timeline"] = current_tl
 
 
@@ -412,8 +415,12 @@ def _garantir_estado_inicial() -> None:
     # timeline precisa existir ANTES de qualquer key
     if "mary_timeline" not in st.session_state:
         st.session_state["mary_timeline"] = "cumplice"
-    if "mary_timeline_locked" not in st.session_state:
-        st.session_state["mary_timeline_locked"] = False
+    # ✅ lock apenas na sessão atual (não persiste entre boots)
+    if "mary_session_has_user_turn" not in st.session_state:
+        st.session_state["mary_session_has_user_turn"] = False
+
+    # compatibilidade com a flag antiga
+    st.session_state["mary_timeline_locked"] = bool(st.session_state.get("mary_session_has_user_turn", False))
 
     if "user_id" not in st.session_state or not st.session_state["user_id"]:
         st.session_state["user_id"] = "Janio Donisete"
@@ -677,6 +684,7 @@ def _reset_chapter_current_timeline() -> int:
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
     _clear_mary_caches_all_related()
+    st.session_state["mary_session_has_user_turn"] = False
     st.session_state["mary_timeline_locked"] = False
     return n
 
@@ -821,6 +829,7 @@ def _auto_unlock_if_sem_interacao() -> None:
         if (d.get("mensagem_usuario") or "").strip():
             return
 
+    st.session_state["mary_session_has_user_turn"] = False
     st.session_state["mary_timeline_locked"] = False
 
 
@@ -1036,6 +1045,7 @@ def main() -> None:
 
                     st.session_state["chat_history"] = []
                     st.session_state["mary_intro_done"] = False
+                    st.session_state["mary_session_has_user_turn"] = False
                     st.session_state["mary_timeline_locked"] = False
                     st.session_state["mary_rel_meta_last"] = None
                     _invalidate_backend_cache()
@@ -1063,6 +1073,7 @@ def main() -> None:
         # ✅ botão para resolver travamento sem apagar BD
         if st.session_state.get("mary_timeline_locked", False):
             if st.button("🔓 Destravar timeline (visual)", key="btn_unlock_timeline_visual"):
+                st.session_state["mary_session_has_user_turn"] = False
                 st.session_state["mary_timeline_locked"] = False
                 st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
@@ -1209,6 +1220,7 @@ def main() -> None:
             st.session_state["chat_history"] = []
             _invalidate_backend_cache()
             _clear_mary_caches_all_related()
+            st.session_state["mary_session_has_user_turn"] = False
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
             st.success("Persona + Service recarregados. Contexto reinjetado.")
@@ -1366,6 +1378,7 @@ def main() -> None:
     prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
     if prompt:
         if not st.session_state["mary_timeline_locked"]:
+            st.session_state["mary_session_has_user_turn"] = True
             st.session_state["mary_timeline_locked"] = True
 
         now = time.time()
@@ -1418,6 +1431,20 @@ def main() -> None:
 
         with st.chat_message("assistant"):
             st.markdown(_format_paragraphs(resposta))
+
+        # 🔎 se o service devolveu aviso de resposta vazia, mostrar detalhes técnicos
+        if (resposta or "").strip().startswith("⚠️ O modelo retornou vazio"):
+            with st.expander("🧯 Detalhes do erro do modelo", expanded=True):
+                err = st.session_state.get("mary_last_error")
+                tb = st.session_state.get("mary_last_error_tb")
+                if err:
+                    st.code(err)
+                else:
+                    st.write("(Sem detalhes em mary_last_error)")
+                if tb:
+                    st.code(tb)
+                b_kind, b_detail = db_status()
+                st.caption(f"Backend: {b_kind} — {b_detail}")
 
         st.session_state["chat_history"].append(("assistant", resposta))
         _invalidate_backend_cache()
