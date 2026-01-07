@@ -876,9 +876,20 @@ def _inject_intro_visual_if_needed() -> None:
 
 
 def _boot_visual_if_empty() -> None:
-    if st.session_state.get("chat_history"):
-        st.session_state["mary_intro_done"] = True
+    """
+    Boot visual do app.
+    IMPORTANTE: NÃO renderiza persona (SYSTEM/BOOT) na tela.
+    Persona deve ficar só no service (ou no fallback de UI), mas invisível pro usuário.
+    """
+    # Se já foi feito boot visual, não faz nada
+    if bool(st.session_state.get("mary_intro_done", False)):
         return
+
+    # Se você quiser que a Mary "comece" sem usuário digitar,
+    # isso deve ser uma resposta gerada (intro), não a persona.
+    # Por enquanto: apenas marca como feito e não imprime nada.
+    st.session_state["mary_intro_done"] = True
+
 
     backend_hist = _carregar_chat_visual_do_backend(force=False)
     if backend_hist:
