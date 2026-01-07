@@ -1,4 +1,3 @@
-#service_universitaria.py
 from __future__ import annotations
 
 from typing import Optional
@@ -8,7 +7,9 @@ from .service_core import MaryService as _MaryServiceCore
 
 class MaryServiceUniversitaria(_MaryServiceCore):
     """
-    Wrapper: força timeline = 'universitaria'
+    Wrapper: timeline fixa = 'universitaria'
+    - Ignora qualquer timeline passada pelo caller.
+    - Se nsfw vier None, aplica default seguro (False).
     """
 
     def reply(
@@ -17,10 +18,12 @@ class MaryServiceUniversitaria(_MaryServiceCore):
         model: str,
         *,
         prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
+        timeline: Optional[str] = None,  # ignorado
         nsfw: Optional[bool] = None,
     ) -> str:
-        # força timeline
+        if nsfw is None:
+            nsfw = False
+
         return super().reply(
             user=user,
             model=model,
@@ -28,4 +31,3 @@ class MaryServiceUniversitaria(_MaryServiceCore):
             timeline="universitaria",
             nsfw=nsfw,
         )
-
