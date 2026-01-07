@@ -345,6 +345,53 @@ def list_long_memory(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
     )
     return list(cur)
 
+def delete_last_long_memory(usuario: str) -> bool:
+    """
+    Apaga a memória mais recente (1 doc) da coleção long_memory para esse usuario.
+    Retorna True se apagou, False se não havia nada.
+    """
+    try:
+        col = _longmem()
+        last = col.find_one({"usuario": usuario}, sort=[("ts", -1), ("_id", -1)])
+        if not last:
+            last = col.find_one({"usuario": usuario}, sort=[("_id", -1)])
+        if not last:
+            return False
+
+        r = col.delete_one({"_id": last.get("_id")})
+        if isinstance(r, dict):
+            ok = int(r.get("deleted_count", 0) or 0) > 0
+        else:
+            ok = int(getattr(r, "deleted_count", 0) or 0) > 0
+
+        _invalidate_cache_for_user(usuario)
+        return ok
+    except Exception:
+        return False
+
+
+def delete_all_long_memory(usuario: str) -> int:
+    """
+    Apaga TODAS as memórias (docs) da coleção long_memory para esse usuario.
+    Retorna quantas foram apagadas.
+    """
+    try:
+        col = _longmem()
+        r = col.delete_many({"usuario": usuario})
+
+        if isinstance(r, int):
+            deleted = int(r)
+        elif isinstance(r, dict):
+            deleted = int(r.get("deleted_count", 0) or 0)
+        else:
+            deleted = int(getattr(r, "deleted_count", 0) or 0)
+
+        _invalidate_cache_for_user(usuario)
+        return deleted
+    except Exception:
+        return 0
+
+
 
 def search_long_memory_text(usuario, query, limit=20):
     """
