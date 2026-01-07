@@ -10,6 +10,7 @@ import traceback
 import importlib
 import inspect
 from typing import Any
+
 import streamlit as st
 
 # ==========================================================
@@ -21,7 +22,7 @@ def _hard_reset_on_boot_if_needed() -> None:
     Se a timeline mudou desde o último boot, limpamos TUDO
     antes de qualquer render.
     """
-    current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
+    current_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
     last_tl = st.session_state.get("mary_last_boot_timeline")
 
     if last_tl != current_tl:
@@ -40,10 +41,13 @@ def _hard_reset_on_boot_if_needed() -> None:
             if k.startswith(("intro_ctx_injected::", "intro_injected::")):
                 st.session_state.pop(k, None)
 
-        # ✅ evita ficar travado ao reabrir
+            # ✅ NSFW persist marker por usuario_key (limpa ao trocar timeline no boot)
+            if k.startswith("mary_nsfw_last_saved::"):
+                st.session_state.pop(k, None)
+
+        # ✅ destrava a timeline no boot (evita reabrir travado)
         st.session_state.pop("mary_timeline_locked", None)
-        # ✅ Destrava a timeline no boot (evita entrar travado em cúmplice)
-        st.session_state.pop("mary_timeline_locked", None)
+
         # também remove a seleção visual (será recalculada pela timeline)
         st.session_state.pop("persona_label", None)
 
@@ -56,7 +60,7 @@ _hard_reset_on_boot_if_needed()
 # ==========================================================
 # IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
 # ==========================================================
-from core.repositories import (
+from core.repositories import (  # noqa: E402
     list_memories,
     delete_last_memory,
     delete_all_memories,
@@ -77,11 +81,11 @@ from core.repositories import (
     delete_all_long_memory,
 )
 
-import characters.mary.persona as mary_persona
-from characters.mary.service import get_service_class
-import core.repositories as crep
-import core.service_router as service_router
-from core.database import db_status, ping_db, get_backend
+import characters.mary.persona as mary_persona  # noqa: E402
+from characters.mary.service import get_service_class  # noqa: E402
+import core.repositories as crep  # noqa: E402
+import core.service_router as service_router  # noqa: E402
+from core.database import db_status, ping_db, get_backend  # noqa: E402
 
 
 # ==========================================================
@@ -204,7 +208,7 @@ def _format_paragraphs(text: str) -> str:
     if len(sentences) <= 3:
         return t
 
-    chunks = []
+    chunks: list[str] = []
     i = 0
     while i < len(sentences):
         size = 2 if (i % 6) != 4 else 3
@@ -273,6 +277,11 @@ def _shared_key_atual() -> str:
 def _keys_para_mary() -> list[str]:
     # ✅ SEMPRE somente a timeline ativa
     return [_usuario_key_atual()]
+
+
+def _nsfw_last_saved_key(usuario_key: str) -> str:
+    # ✅ evita “pular persistência” quando troca timeline
+    return f"mary_nsfw_last_saved::{usuario_key}"
 
 
 # ==========================================================
@@ -371,7 +380,6 @@ def _instantiate_mary_service(*, userkey: str, timeline: str):
                 return cls()  # type: ignore[misc]
 
 
-
 def _get_service():
     """
     ✅ FIX DO VAZAMENTO:
@@ -433,9 +441,9 @@ def _garantir_estado_inicial() -> None:
         st.session_state["chat_history"] = []
 
     # ✅ se a timeline ficou travada por reidratação do Streamlit, mas NÃO há mensagens,
-    # destrava para permitir escolher a persona (ex: Mary Universitária)
-    if st.session_state.get('mary_timeline_locked') and not st.session_state.get('chat_history'):
-        st.session_state['mary_timeline_locked'] = False
+    # destrava para permitir escolher a persona
+    if st.session_state.get("mary_timeline_locked") and not st.session_state.get("chat_history"):
+        st.session_state["mary_timeline_locked"] = False
 
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
@@ -461,10 +469,6 @@ def _garantir_estado_inicial() -> None:
     # NSFW default por timeline
     if "mary_nsfw_on" not in st.session_state:
         st.session_state["mary_nsfw_on"] = (_timeline() != "universitaria")
-
-    # para detectar mudança e persistir sem loop
-    if "mary_nsfw_last_saved" not in st.session_state:
-        st.session_state["mary_nsfw_last_saved"] = None
 
     if "mary_intro_done" not in st.session_state:
         st.session_state["mary_intro_done"] = False
@@ -534,18 +538,19 @@ def _clear_mary_caches_all_related(*, also_clear_other_timeline: bool = True) ->
 def _persist_nsfw_for_current_timeline_if_needed_inline() -> None:
     """
     Persistência NSFW INLINE (não depende de helper fora do callback).
-    Evita NameError em callback antigo preso na sessão.
+    ✅ Agora é por usuario_key (por timeline) para não “pular” persistência ao alternar.
     """
     uk = _usuario_key_atual()
     current = bool(st.session_state.get("mary_nsfw_on", False))
-    last = st.session_state.get("mary_nsfw_last_saved", None)
+    last_key = _nsfw_last_saved_key(uk)
+    last = st.session_state.get(last_key, None)
 
     if last is None or bool(last) != current:
         try:
             set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
         except Exception:
             pass
-        st.session_state["mary_nsfw_last_saved"] = current
+        st.session_state[last_key] = current
         _clear_service_caches_for_keys([uk])
 
 
@@ -704,7 +709,6 @@ def _on_timeline_change() -> None:
     - Persiste NSFW inline (sem depender de helper externo no callback).
     - MATA services isolados por usuario_key (para garantir troca limpa).
     """
-
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
@@ -719,7 +723,7 @@ def _on_timeline_change() -> None:
     # default NSFW por timeline
     st.session_state["mary_nsfw_on"] = (new_tl != "universitaria")
 
-    # ✅ Persistência NSFW (inline)
+    # ✅ Persistência NSFW (inline) — agora é por usuario_key
     _persist_nsfw_for_current_timeline_if_needed_inline()
 
     # limpa visual + caches (inclui timeline antiga para matar vazamento)
@@ -806,7 +810,7 @@ def _boot_visual_if_empty() -> None:
 
 def _auto_unlock_if_sem_interacao() -> None:
     """
-    ✅ Resolve o teu caso: menu já abre travado na 'cumplice'.
+    ✅ Resolve o caso: menu já abre travado na 'cumplice'.
     Se NÃO há nenhuma mensagem do usuário (nem no visual, nem no backend),
     destrava automaticamente para permitir escolher 'universitaria'.
     """
@@ -831,6 +835,34 @@ def _auto_unlock_if_sem_interacao() -> None:
     st.session_state["mary_timeline_locked"] = False
 
 
+def _infer_used_model_provider() -> tuple[str, str]:
+    """
+    Mostra o “modelo/provedor realmente usados” se o service/router tiver gravado isso no session_state.
+    (Não quebra se não existir.)
+    """
+    # formatos comuns
+    model = (
+        st.session_state.get("mary_used_model")
+        or st.session_state.get("mary_last_used_model")
+        or st.session_state.get("last_used_model")
+        or ""
+    )
+    provider = (
+        st.session_state.get("mary_used_provider")
+        or st.session_state.get("mary_last_used_provider")
+        or st.session_state.get("last_used_provider")
+        or ""
+    )
+
+    # fallback: tentar achar dentro de um dict “meta”
+    meta = st.session_state.get("mary_model_meta_last") or st.session_state.get("mary_router_meta_last") or None
+    if isinstance(meta, dict):
+        model = model or str(meta.get("used_model") or meta.get("model") or "")
+        provider = provider or str(meta.get("provider") or meta.get("used_provider") or "")
+
+    return (str(model or "").strip(), str(provider or "").strip())
+
+
 # ==========================================================
 # APP
 # ==========================================================
@@ -839,7 +871,9 @@ def main() -> None:
     _garantir_estado_inicial()
     _auto_unlock_if_sem_interacao()
 
-    st.caption("🧩 mary_app.py v3.13 (service isolado por timeline + anti-vazamento hard + botão CANON virgem)")
+    st.caption(
+        "🧩 mary_app.py v3.14 (selectbox trava de verdade + NSFW persist por timeline + anti-vazamento hard + CANON virgem)"
+    )
     backend, detail = db_status()
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
@@ -860,12 +894,12 @@ def main() -> None:
             show_env = st.checkbox("Mostrar config (mascarada)", value=False, key="chk_show_db_env")
 
         if run_ping or auto_ping:
-            backend, ok, info = ping_db()
+            backend2, ok, info = ping_db()
             st.write("**ping_db():**")
             if ok:
-                st.success(f"{backend} ✅ {info}")
+                st.success(f"{backend2} ✅ {info}")
             else:
-                st.error(f"{backend} ❌ {info}")
+                st.error(f"{backend2} ❌ {info}")
 
         if show_env:
             try:
@@ -900,6 +934,11 @@ def main() -> None:
             except Exception as e:
                 st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
 
+    used_model, used_provider = _infer_used_model_provider()
+    used_line = ""
+    if used_model or used_provider:
+        used_line = f" • Usado: <b>{used_model or '—'}</b> / <b>{used_provider or '—'}</b>"
+
     # ===== Header =====
     st.markdown(
         f"""
@@ -907,7 +946,8 @@ def main() -> None:
           <div class="rp-title">Mary 💍💍</div>
           <div class="rp-sub">
             Timeline: <b>{_timeline()}</b> •
-            Modelo: <b>{st.session_state.get('model','')}</b>
+            Pedido: <b>{st.session_state.get('model','')}</b>
+            {used_line}
           </div>
         </div>
         """,
@@ -928,12 +968,12 @@ def main() -> None:
         "🎭 Linha temporal da Mary",
         list(personas.keys()),
         index=list(personas.keys()).index(label_atual),
-        disabled=False,
+        disabled=bool(st.session_state.get("mary_timeline_locked", False)),  # ✅ trava de verdade
         key="persona_label",
         on_change=_on_timeline_change,
     )
 
-    if st.session_state["mary_timeline_locked"]:
+    if st.session_state.get("mary_timeline_locked", False):
         st.caption("🔒 Persona travada após a 1ª mensagem do usuário.")
         st.caption("👉 Se travou sem você ter falado nada, use: Sidebar → 'Destravar timeline'.")
 
@@ -1093,11 +1133,16 @@ def main() -> None:
         idx = all_models.index(current) if current in all_models else 0
 
         st.selectbox(
-            "🧠 Modelo",
+            "🧠 Modelo (pedido)",
             all_models,
             index=idx,
             key="model",
         )
+
+        # mostra “usado” se existir
+        used_model2, used_provider2 = _infer_used_model_provider()
+        if used_model2 or used_provider2:
+            st.caption(f"✅ Último usado: {used_model2 or '—'} / {used_provider2 or '—'}")
 
         st.markdown("---")
         # ✅ NSFW: persiste no facts quando muda (INLINE)
@@ -1159,10 +1204,10 @@ def main() -> None:
         st.markdown("---")
         st.subheader("🔍 Debug")
 
-        st.session_state["mary_debug_rel_panel"] = st.checkbox(
+        st.checkbox(
             "Mostrar painel Relationship",
             value=bool(st.session_state.get("mary_debug_rel_panel", False)),
-            key="mary_debug_rel_panel__ui",
+            key="mary_debug_rel_panel",
         )
 
         if st.button("Ver último diagnóstico (popup)", key="btn_show_rel_diag_popup"):
@@ -1315,7 +1360,12 @@ def main() -> None:
                 st.rerun()
 
         st.markdown("### ➕ Inserir memória (DB)")
-        lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
+        lm_text = st.text_area(
+            "Texto da memória",
+            key="lm_text_area",
+            height=90,
+            placeholder="Ex: Mary odeia amendoim #500...",
+        )
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
         lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory")
 
@@ -1379,7 +1429,7 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
     if prompt:
-        if not st.session_state["mary_timeline_locked"]:
+        if not st.session_state.get("mary_timeline_locked", False):
             st.session_state["mary_timeline_locked"] = True
 
         now = time.time()
