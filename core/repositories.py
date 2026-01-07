@@ -346,24 +346,25 @@ def list_long_memory(usuario: str, limit: int = 200) -> List[Dict[str, Any]]:
     return list(cur)
 
 
-def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+def search_long_memory_text(usuario, query, limit=20):
     """
     Busca lexical em long_memory.
-    - Mongo: usa $text + ordena por relevância (textScore) e ts.
-    - Fallback: contains simples (quando não houver $text / não for mongo).
+    - Se existir _longmem() e for Mongo: tenta $text (com sort por score).
+    - Senão: fallback com contains simples em list_long_memory().
     """
     q = str(query or "").strip()
     if not q:
         return []
 
-    # tenta Mongo $text primeiro
+    lim = int(limit or 20)
+
+    # ===== tenta Mongo $text se o projeto tiver _longmem() =====
     try:
-        from .database import get_backend
+        col_factory = globals().get("_longmem")
+        col = col_factory() if callable(col_factory) else None
 
-        if get_backend() == "mongo":
-            lim = int(limit or 20)
-
-            cur = _longmem().find(
+        if col is not None and hasattr(col, "find"):
+            cur = col.find(
                 {"usuario": usuario, "$text": {"$search": q}},
                 {
                     "score": {"$meta": "textScore"},
@@ -385,20 +386,27 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
     except Exception:
         pass
 
-    # fallback lexical simples
-    rows = list_long_memory(usuario, limit=2000)
+    # ===== fallback simples (sem mongo) =====
+    try:
+        rows = list_long_memory(usuario, limit=2000) or []
+    except Exception:
+        rows = []
+
     qq = q.lower()
-    out: List[Dict[str, Any]] = []
+    out = []
 
     for d in rows:
-        t = str(d.get("text") or "").lower()
-        m = d.get("meta") or {}
-        title = str(m.get("title") or "").lower() if isinstance(m, dict) else ""
-        hay = f"{title} {t}".strip()
-        if qq in hay:
-            out.append(d)
-        if len(out) >= int(limit or 20):
-            break
+        try:
+            text = str(d.get("text") or "")
+            meta = d.get("meta") or {}
+            title = str(meta.get("title") or "") if isinstance(meta, dict) else ""
+            hay = (title + "\n" + text).lower()
+            if qq in hay:
+                out.append(d)
+                if len(out) >= lim:
+                    break
+        except Exception:
+            continue
 
     return out
 
