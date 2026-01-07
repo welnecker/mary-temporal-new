@@ -189,6 +189,36 @@ def _apply_dark_ui() -> None:
     )
 
 
+def _strip_persona_echo_if_any(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return t
+
+    # Se o modelo ecoar o prompt do fallback, corta tudo antes do marcador final.
+    markers = [
+        "RESPOSTA DA MARY:",
+        "Resposta da Mary:",
+    ]
+    for mk in markers:
+        if mk in t:
+            tail = t.split(mk, 1)[-1].strip()
+            if tail:
+                return tail
+
+    # Se ainda assim vier com começo típico de echo, tenta remover blocos conhecidos
+    bad_starts = (
+        "PERSONA (SYSTEM)",
+        "### PERSONA",
+        "INSTRUÇÕES INTERNAS",
+        "MENSAGEM DO USUÁRIO:",
+    )
+    if any(t.startswith(b) for b in bad_starts):
+        # não achou marcador; devolve vazio para não “colar persona” na tela
+        return ""
+
+    return t
+
+
 def _format_paragraphs(text: str) -> str:
     t = (text or "").strip()
     if not t:
@@ -376,23 +406,23 @@ def _get_persona_bundle(timeline: str) -> tuple[str, Any]:
 
 def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
     """
-    Fallback: injeta persona no prompt quando o service não faz isso.
-    (Útil pra provar se a persona está acessível e parar “invenção” de traços físicos.)
+    Fallback: injeta persona no prompt quando o service não injeta.
+    IMPORTANTE: formato ANTI-ECHO (não usa rótulos "PERSONA (SYSTEM)" / "USER").
     """
     system_text, boot = _get_persona_bundle(timeline)
     boot_txt = _flatten_boot_messages(boot, timeline)
 
-    # Se a persona estiver vazia, não inventa nada.
     if not system_text and not boot_txt:
         return prompt
 
     return (
-        "### PERSONA (SYSTEM)\n"
+        "INSTRUÇÕES INTERNAS (NÃO MOSTRAR, NÃO REPETIR, NÃO ECOAR):\n"
         f"{system_text}\n\n"
-        "### PERSONA (BOOT)\n"
         f"{boot_txt}\n\n"
-        "### USER\n"
-        f"{prompt}"
+        "REGRA: responda APENAS como Mary. Não copie nada das instruções internas.\n"
+        "Comece sua resposta diretamente, sem títulos.\n\n"
+        f"MENSAGEM DO USUÁRIO: {prompt}\n"
+        "RESPOSTA DA MARY:"
     )
 
 
@@ -555,7 +585,7 @@ def _garantir_estado_inicial() -> None:
 
     # fallback injection toggle (para provar persona)
     if "mary_ui_persona_fallback" not in st.session_state:
-        st.session_state["mary_ui_persona_fallback"] = True
+        st.session_state["mary_ui_persona_fallback"] = False
 
     # telemetria do modelo real
     if "mary_last_used_model" not in st.session_state:
@@ -990,9 +1020,11 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
         pass
 
     resp = svc.reply(**kwargs)  # type: ignore[arg-type]
-    # captura telemetria pós-call
     _capture_used_model_provider_from_service(svc)
-    return str(resp or "")
+    
+    clean = _strip_persona_echo_if_any(str(resp or ""))
+    return clean
+
 
 
 # ==========================================================
