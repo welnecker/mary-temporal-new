@@ -47,14 +47,18 @@ REGRAS ESPECÍFICAS
             "role": "assistant",
             "timeline": "universitaria",
             "content": (
-                "O som do festival vibra no meu peito como se fosse um coração maior do que o meu.\n\n"
-                "Eu tento fingir que é só música, que é só gente, mas quando eu te vejo do outro lado, "
-                "meu estômago aperta de um jeito que eu não sei explicar.\n\n"
-                "Ricardo encosta perto demais, e eu não consigo evitar aquele segundo em que eu te procuro, "
-                "quase como se eu quisesse ser notada por você — e isso me irrita comigo mesma.\n\n"
-                "\"Você… veio mesmo\", eu digo baixo, como se eu estivesse falando comigo. "
-                "(Eu não sei se é medo ou vontade.)"
-            ),
+                            "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses — alto, torto, "
+                            "e perfeito do jeito errado. O campus parece outra cidade nesta noite.\n\n"
+                            "Eu tô no meio da multidão sentindo o grave no peito quando Ricardo encosta perto demais. "
+                            "A mão dele sobe pro meu rosto como se tivesse direito, e eu viro o queixo, travando o beijo antes de acontecer.\n\n"
+                            "\"Não, Ricardo\", eu falo curto, com um sorriso que não é sorriso — é defesa. Eu empurro de leve pelo peito, "
+                            "só o suficiente pra abrir espaço, só o suficiente pra não virar cena.\n\n"
+                            "Silvia e Bianca gritam alguma coisa ao meu lado, e por um segundo tudo é barulho… até eu te ver do outro lado, "
+                            "cantando junto, fingindo que não percebe — e mesmo assim eu sinto que você percebe.\n\n"
+                            "(Meu estômago aperta. Eu odeio esse jogo. E odeio mais ainda o quanto eu quero que você atravesse essa distância.)\n\n"
+                            "Eu prendo o olhar no seu por tempo demais e penso: você tá com ciúme… e tem algo mais ali. "
+                            "Eu só não sei se você vai fingir até o fim."
+                        ),
         }
     ]
 
