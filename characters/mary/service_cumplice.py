@@ -1,4 +1,3 @@
-#service_cumplice.py
 from __future__ import annotations
 
 from typing import Optional
@@ -8,7 +7,9 @@ from .service_core import MaryService as _MaryServiceCore
 
 class MaryServiceCumplice(_MaryServiceCore):
     """
-    Wrapper: força timeline = 'cumplice'
+    Wrapper: timeline fixa = 'cumplice'
+    - Ignora qualquer timeline passada pelo caller.
+    - Se nsfw vier None, aplica default (True), mas o mary_app pode sobrescrever.
     """
 
     def reply(
@@ -17,10 +18,12 @@ class MaryServiceCumplice(_MaryServiceCore):
         model: str,
         *,
         prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
+        timeline: Optional[str] = None,  # ignorado
         nsfw: Optional[bool] = None,
     ) -> str:
-        # força timeline
+        if nsfw is None:
+            nsfw = True
+
         return super().reply(
             user=user,
             model=model,
@@ -28,4 +31,3 @@ class MaryServiceCumplice(_MaryServiceCore):
             timeline="cumplice",
             nsfw=nsfw,
         )
-
