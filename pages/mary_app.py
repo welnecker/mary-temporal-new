@@ -1068,88 +1068,74 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 
 def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
     """
-    Faz um ping no core.service_router.chat() SEM passar pelo service da Mary (não grava history).
-    Monta args/kwargs respeitando parâmetros posicionais/positional-only.
+    Ping/Pong direto no core.service_router.chat() (sem passar pelo MaryService).
+    Faz várias tentativas de assinatura para garantir que OpenRouter receba
+    'prompt' ou 'messages'. Retorna também qual tentativa funcionou.
     """
     fn = getattr(service_router, "chat", None)
     if not callable(fn):
-        return {"ok": False, "error": "service_router.chat não existe neste projeto."}
+        return {"ok": False, "error": "service_router.chat não existe."}
 
-    prompt = "Responda APENAS com a palavra: PONG"
+    prompt = 'Responda APENAS com a palavra: PONG'
+    messages = [{"role": "user", "content": prompt}]
 
     provider_guess = (
         str(st.session_state.get("provider") or st.session_state.get("backend") or "openrouter").strip()
         or "openrouter"
     )
 
-    try:
-        sig = inspect.signature(fn)
-        params = list(sig.parameters.values())
+    attempts: list[tuple[str, Any]] = []
 
-        args: list[Any] = []
-        kwargs: dict[str, Any] = {}
+    # 1) Assinatura mais comum no teu projeto: chat(provider, model, mess, user)
+    attempts.append(("pos(provider, model, messages, user)", lambda: fn(provider_guess, model, messages, user)))
+    attempts.append(("pos(provider, model, prompt, user)",    lambda: fn(provider_guess, model, prompt, user)))
 
-        def _value_for(name: str) -> Any | None:
-            n = (name or "").lower().strip()
+    # 2) Assinaturas keyword (variam entre projetos)
+    attempts.append(("kw(provider, model, messages, user)",   lambda: fn(provider=provider_guess, model=model, messages=messages, user=user)))
+    attempts.append(("kw(provider, model, prompt, user)",     lambda: fn(provider=provider_guess, model=model, prompt=prompt, user=user)))
+    attempts.append(("kw(provider, model, message, user)",    lambda: fn(provider=provider_guess, model=model, message=prompt, user=user)))
+    attempts.append(("kw(provider, model, mess, user)",       lambda: fn(provider=provider_guess, model=model, mess=prompt, user=user)))
+    attempts.append(("kw(provider, model, mess=list, user)",  lambda: fn(provider=provider_guess, model=model, mess=messages, user=user)))
 
-            # ✅ mensagem: cobre "message", "mess", "mensagem", "msg", etc
-            if (
-                n in ("message", "prompt", "text", "content", "input", "mensagem", "mensagem_usuario", "msg")
-                or n.startswith("mess")
-                or n.startswith("mens")
-                or n.startswith("msg")
-            ):
-                return prompt
+    # 3) Variantes com 'user_id' / 'usuario'
+    attempts.append(("kw(provider, model, messages, user_id)", lambda: fn(provider=provider_guess, model=model, messages=messages, user_id=user)))
+    attempts.append(("kw(provider, model, prompt, user_id)",   lambda: fn(provider=provider_guess, model=model, prompt=prompt, user_id=user)))
+    attempts.append(("kw(provider, model, mess, user_id)",     lambda: fn(provider=provider_guess, model=model, mess=prompt, user_id=user)))
+    attempts.append(("kw(provider, model, messages, usuario)", lambda: fn(provider=provider_guess, model=model, messages=messages, usuario=user)))
 
-            # usuário
-            if n in ("user", "user_id", "usuario", "uid", "username"):
-                return user
+    # 4) Se teu router não exige provider/user, tenta minimalista
+    attempts.append(("kw(model, messages)", lambda: fn(model=model, messages=messages)))
+    attempts.append(("kw(model, prompt)",   lambda: fn(model=model, prompt=prompt)))
+    attempts.append(("pos(model, messages)", lambda: fn(model, messages)))
+    attempts.append(("pos(model, prompt)",   lambda: fn(model, prompt)))
 
-            # modelo
-            if n in ("model", "model_id", "modelo"):
-                return model
+    last_err = None
 
-            # provider/back-end
-            if n in ("provider", "backend", "router", "source"):
-                return provider_guess
+    for tag, call in attempts:
+        try:
+            raw = call()
 
-            return None
+            txt = _extract_router_text(raw) or ""
+            prov, used_model = _extract_router_used_model_provider(raw)
 
-        # monta args/kwargs respeitando positional-only
-        for p in params:
-            if p.name in ("self",):
-                continue
+            ok = bool(txt.strip())
+            # exige "PONG" pra ser ping válido
+            pong_ok = "PONG" in txt.upper()
 
-            val = _value_for(p.name)
+            return {
+                "ok": ok and pong_ok,
+                "attempt": tag,
+                "ui_model": model,
+                "used_provider": prov or provider_guess,
+                "used_model": used_model,
+                "text": txt[:2000],
+                "raw_type": type(raw).__name__,
+            }
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            continue
 
-            if p.kind == inspect.Parameter.POSITIONAL_ONLY:
-                # tem que ir em args
-                if val is None and p.default is not inspect._empty:
-                    val = p.default
-                args.append(val)
-                continue
-
-            if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
-                if val is not None:
-                    kwargs[p.name] = val
-
-        raw = fn(*args, **kwargs)
-
-        txt = _extract_router_text(raw)
-        prov, used_model = _extract_router_used_model_provider(raw)
-
-        return {
-            "ok": True,
-            "ui_model": model,
-            "used_provider": prov or provider_guess,
-            "used_model": used_model,
-            "text": (txt or "")[:2000],
-            "raw_type": type(raw).__name__,
-            "called_with": {"args": args, "kwargs": kwargs},
-        }
-
-    except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    return {"ok": False, "error": last_err or "Falhou em todas as tentativas."}
 
 
 
