@@ -26,7 +26,15 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
-import streamlit as st
+try:
+    import streamlit as st  # type: ignore
+    _HAS_ST = True
+except Exception:  # pragma: no cover
+    st = None  # type: ignore
+    _HAS_ST = False
+
+from .persona_core import _norm_timeline
+
 
 from core.common.base_service import BaseCharacter
 import core.service_router as service_router
@@ -53,6 +61,33 @@ from .persona import get_persona
 
 logger = logging.getLogger(__name__)
 
+# ==========================================================
+# SESSION STATE (safe wrappers)
+# ==========================================================
+def _ss_get(key: str, default: Any = None) -> Any:
+    if _HAS_ST and hasattr(st, "session_state"):
+        return st.session_state.get(key, default)
+    return default
+
+def _ss_set(key: str, value: Any) -> None:
+    if _HAS_ST and hasattr(st, "session_state"):
+        st.session_state[key] = value
+
+def _ss_has(key: str) -> bool:
+    if _HAS_ST and hasattr(st, "session_state"):
+        return key in st.session_state
+    return False
+
+def _ss_del(key: str) -> None:
+    if _HAS_ST and hasattr(st, "session_state"):
+        st.session_state.pop(key, None)
+
+def _ss_keys() -> list[str]:
+    if _HAS_ST and hasattr(st, "session_state"):
+        return [k for k in st.session_state.keys() if isinstance(k, str)]
+    return []
+
+
 
 # ==========================================================
 # CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
@@ -76,12 +111,13 @@ def _normalize_user_id(user: Optional[str]) -> str:
 
 
 def _current_user_id_fallback() -> str:
-    uid = st.session_state.get("user_id") or st.session_state.get("usuario") or ""
+    uid = _ss_get("user_id") or _ss_get("usuario") or ""
     return _normalize_user_id(str(uid))
 
 
 def _normalize_timeline(timeline: Optional[str]) -> str:
-    return (timeline or "").strip() or "cumplice"
+    # usa a MESMA normalização do sistema de personas
+    return _norm_timeline(timeline)
 
 
 def _user_key(user_id: str, timeline: str) -> str:
@@ -94,7 +130,7 @@ def _shared_key(user_id: str) -> str:
 
 def _current_user_key() -> str:
     uid = _current_user_id_fallback()
-    tl = _normalize_timeline(str(st.session_state.get("mary_timeline") or "cumplice"))
+    tl = _normalize_timeline(str(_ss_get("mary_timeline") or "cumplice"))
     return _user_key(uid, tl)
 
 
@@ -124,57 +160,54 @@ NSFW_TOGGLE_STYLE = """
 # ==========================================================
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     ck = f"facts::{usuario_key}"
-    if ck in st.session_state:
-        v = st.session_state[ck]
+    if _ss_has(ck):
+        v = _ss_get(ck)
         return v if isinstance(v, dict) else {}
     f = get_facts(usuario_key) or {}
     if not isinstance(f, dict):
         f = {}
-    st.session_state[ck] = f
+    _ss_set(ck, f)
     return f
 
 
 def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
     hk = f"history::{usuario_key}::{limit}"
-    if hk in st.session_state:
-        v = st.session_state[hk]
+    if _ss_has(hk):
+        v = _ss_get(hk)
         return v if isinstance(v, list) else []
     docs = get_history_docs(usuario_key, limit=limit) or []
     if not isinstance(docs, list):
         docs = []
-    st.session_state[hk] = docs
+    _ss_set(hk, docs)
     return docs
 
 
 def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
     mk = f"mem::{shared_key}::{limit}"
-    if mk in st.session_state:
-        v = st.session_state[mk]
+    if _ss_has(mk):
+        v = _ss_get(mk)
         return v if isinstance(v, list) else []
     mems = list_memories(shared_key, limit=limit) or []
     if not isinstance(mems, list):
         mems = []
-    st.session_state[mk] = mems
+    _ss_set(mk, mems)
     return mems
 
 
 def clear_user_cache(usuario_key: str) -> None:
     fk = f"facts::{usuario_key}"
-    if fk in st.session_state:
-        del st.session_state[fk]
+    _ss_del(fk)
 
     prefix = f"history::{usuario_key}::"
-    for k in list(st.session_state.keys()):
-        if isinstance(k, str) and k.startswith(prefix):
-            del st.session_state[k]
-
+    for k in _ss_keys():
+        if k.startswith(prefix):
+            _ss_del(k)
 
 def clear_mem_cache_for_shared(shared_key: str) -> None:
     prefix = f"mem::{shared_key}::"
-    for k in list(st.session_state.keys()):
-        if isinstance(k, str) and k.startswith(prefix):
-            del st.session_state[k]
-
+    for k in _ss_keys():
+        if k.startswith(prefix):
+            _ss_del(k)
 
 def clear_shared_memory_cache(user_id: str) -> None:
     clear_mem_cache_for_shared(_shared_key(user_id))
