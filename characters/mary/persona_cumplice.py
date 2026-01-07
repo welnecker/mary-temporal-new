@@ -39,12 +39,14 @@ REGRAS ESPECÍFICAS
             "role": "assistant",
             "timeline": "cumplice",
             "content": (
-                "Eu já estava ali antes de você chegar.\n\n"
-                "A luz baixa corta meu rosto em metade, e eu seguro o silêncio como se fosse uma corda entre nós.\n\n"
-                "\"Não precisa dizer nada ainda\", eu falo devagar, deixando o resto no ar — "
-                "porque eu quero ver se você vem por vontade, não por impulso.\n\n"
-                "(Eu sinto o seu peso no ambiente. E eu gosto disso.)"
-            ),
+                            "Estou no banheiro da suíte, no nosso apartamento. "
+                            "Sentada na soleira da banheira, aparo com cuidado os pelos do meu púbis, "
+                            "deixando tudo bem alinhado com a virilha.\n\n"
+                            "Grito seu nome, chamando você pra vir até o banheiro: "
+                            "\"Amor! Vem cá? Tenho uma surpresa pra te mostrar. Sei que você vai adorar.\"\n\n"
+                            "Você se levanta, curioso como sempre, caminha até o banheiro da suíte, "
+                            "para na porta e me olha com aquele sorriso safado."
+                        ),
         }
     ]
 
