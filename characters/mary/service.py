@@ -23,6 +23,7 @@ import logging
 import re
 import hashlib
 import time
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -1377,6 +1378,7 @@ REGRAS ABSOLUTAS:
 
         last_err: Optional[Exception] = None
 
+        last_tb: str = ""
         for plan in attempts:
             diag.attempts += 1
             try:
@@ -1505,11 +1507,23 @@ REGRAS ABSOLUTAS:
 
             except Exception as e:
                 last_err = e
+                last_tb = traceback.format_exc()
 
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
+            # expõe detalhe técnico no UI (sem derrubar o app)
+            try:
+                st.session_state['mary_last_error'] = f"{type(last_err).__name__}: {last_err}"
+                st.session_state['mary_last_error_tb'] = last_tb or ''
+            except Exception:
+                pass
 
         st.session_state["mary_last_diagnostics"] = diag.as_dict()
+        if last_err:
+            return (
+                "⚠️ O modelo retornou vazio. Troque o modelo no sidebar.\\n\\n"
+                + f"Detalhe técnico: {type(last_err).__name__}: {last_err}"
+            )
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
 
     # ======================================================
@@ -1556,6 +1570,15 @@ REGRAS ABSOLUTAS:
             except Exception:
                 keys = "?"
             self.last_error = f"modelo retornou vazio | model={used_model} | resp_keys={keys}"
+            err_hint = ""
+            if isinstance(data, dict):
+                err = data.get("error") or data.get("detail") or data.get("message")
+                if isinstance(err, dict):
+                    err_hint = str(err.get("message") or err)
+                elif isinstance(err, str):
+                    err_hint = err
+            if err_hint:
+                raise RuntimeError(f"modelo retornou vazio: {err_hint}")
             raise RuntimeError("modelo retornou vazio")
 
         v = _violations(texto, ctx_lower)
