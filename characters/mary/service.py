@@ -23,7 +23,6 @@ import logging
 import re
 import hashlib
 import time
-import traceback
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -858,56 +857,60 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
             last_users.append(u)
     return "\n".join(last_users + [prompt]).lower()
 
+
 def _violations(texto: str, ctx_lower: str) -> List[str]:
-    t = texto or ""
+    """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
+    t = (texto or "").strip()
     out: List[str] = []
 
+    if not t:
+        out.append("vazio")
+        return out
+
     if _RE_PLACEHOLDER_REVEAL.search(t):
-        out.append("placeholder_mensagem_nao_revelada")
+        out.append("placeholder_reveal")
+
+    # Offscreen: só se o usuário colou algo explicitamente
+    if _RE_OFFSCREEN_MSG.search(t):
+        user_pasted = any(
+            kw in (ctx_lower or "")
+            for kw in (
+                "mensagem:",
+                "whatsapp:",
+                "sms:",
+                "print",
+                "segue a mensagem",
+                "segue o texto",
+                "transcrevendo",
+            )
+        )
+        if not user_pasted:
+            out.append("offscreen_msg_inventada")
+
+    # Regra de autoria: não inventar ações/falas do usuário
+    if _RE_USER_ACTION.search(t):
+        out.append("autoria_usuario")
+
+    if _RE_CONFLICT_IMMINENT.search(t):
+        out.append("conflito_extremo")
+
+    if _RE_SCENE_FINALIZATION.search(t):
+        out.append("finalizou_cena")
+
+    return out
 
 
 def _trim_scene_finalization(texto: str) -> str:
-    """Corta qualquer 'conclusão' e termina em convite (usuário finaliza)."""
-    t = (texto or "").strip()
-    if not t:
-        return t
-    parts = _split_paragraphs(t)
-    kept = []
-    for p in parts:
-        if _RE_SCENE_FINALIZATION.search(p):
-            break
-        kept.append(p)
-    out = "\n\n".join(kept).strip() if kept else t
-    if out:
-        out = out.rstrip()
-        out += "\n\nEu paro um instante, com a respiração curta, e deixo claro o que eu quero — sem concluir por você. Se você quiser continuar, me guia."
-    if _RE_SCENE_FINALIZATION.search(texto or ""):
-        out.append("finalizou_cena")
-    return out
-
-    if _RE_OFFSCREEN_MSG.search(t):
-        user_pasted = ("mensagem:" in ctx_lower) or ("texto:" in ctx_lower) or ("print" in ctx_lower) or ("segue a mensagem" in ctx_lower)
-        if not user_pasted:
-            out.append("offscreen_message_inventada")
-
-    if _RE_DOC_LOGISTICS.search(t):
-        out.append("logistica_inventada")
-
-    allow = ("contei" in ctx_lower and "janio" in ctx_lower) or ("revelei" in ctx_lower and "janio" in ctx_lower) or ("disse o nome" in ctx_lower and "janio" in ctx_lower)
-    if (not allow) and _RE_NPC_SPEAKER_LINE.search(t):
-        out.append("npc_quebrou_segredo_janio")
-
-    if _RE_ENGLISH_LEAK.search(t):
-        out.append("ingles_vazou")
-
-    if _RE_POV_USER_ID.search(t):
-        out.append("pov_usuario_assumido")
-
-    if _RE_META_LEAK.search(t):
-        out.append("meta_leak")
-
-    return out
-
+    """Corta finalizações de cena e devolve um gancho."""
+    if not texto:
+        return ""
+    m = _RE_SCENE_FINALIZATION.search(texto)
+    if not m:
+        return texto
+    trimmed = texto[: m.start()].rstrip()
+    if len(trimmed) < 80:
+        return texto
+    return trimmed + "\n\n(…e eu fico aqui, com você. O que você faz agora?)"
 def _repair_instruction(violations: List[str]) -> str:
     bullets = []
     if "placeholder_mensagem_nao_revelada" in violations:
@@ -1378,7 +1381,6 @@ REGRAS ABSOLUTAS:
 
         last_err: Optional[Exception] = None
 
-        last_tb: str = ""
         for plan in attempts:
             diag.attempts += 1
             try:
@@ -1507,23 +1509,11 @@ REGRAS ABSOLUTAS:
 
             except Exception as e:
                 last_err = e
-                last_tb = traceback.format_exc()
 
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-            # expõe detalhe técnico no UI (sem derrubar o app)
-            try:
-                st.session_state['mary_last_error'] = f"{type(last_err).__name__}: {last_err}"
-                st.session_state['mary_last_error_tb'] = last_tb or ''
-            except Exception:
-                pass
 
         st.session_state["mary_last_diagnostics"] = diag.as_dict()
-        if last_err:
-            return (
-                "⚠️ O modelo retornou vazio. Troque o modelo no sidebar.\\n\\n"
-                + f"Detalhe técnico: {type(last_err).__name__}: {last_err}"
-            )
         return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
 
     # ======================================================
@@ -1565,20 +1555,6 @@ REGRAS ABSOLUTAS:
         used_model = used_model or model
         texto = (self._extract_text(data) or "").strip()
         if not texto:
-            try:
-                keys = list(data.keys()) if isinstance(data, dict) else type(data).__name__
-            except Exception:
-                keys = "?"
-            self.last_error = f"modelo retornou vazio | model={used_model} | resp_keys={keys}"
-            err_hint = ""
-            if isinstance(data, dict):
-                err = data.get("error") or data.get("detail") or data.get("message")
-                if isinstance(err, dict):
-                    err_hint = str(err.get("message") or err)
-                elif isinstance(err, str):
-                    err_hint = err
-            if err_hint:
-                raise RuntimeError(f"modelo retornou vazio: {err_hint}")
             raise RuntimeError("modelo retornou vazio")
 
         v = _violations(texto, ctx_lower)
@@ -1667,17 +1643,6 @@ REGRAS ABSOLUTAS:
                         content = msg.get("content")
                         if isinstance(content, str) and content.strip():
                             return content.strip()
-                        if isinstance(content, list):
-                            parts: list[str] = []
-                            for it in content:
-                                if isinstance(it, str) and it.strip():
-                                    parts.append(it.strip())
-                                elif isinstance(it, dict):
-                                    t = it.get("text") or it.get("content")
-                                    if isinstance(t, str) and t.strip():
-                                        parts.append(t.strip())
-                            if parts:
-                                return "\n".join(parts).strip()
                     txt = c0.get("text")
                     if isinstance(txt, str) and txt.strip():
                         return txt.strip()
