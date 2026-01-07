@@ -1077,7 +1077,6 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
 
     prompt = "Responda APENAS com a palavra: PONG"
 
-    # default provider (se o chat exigir)
     provider_guess = (
         str(st.session_state.get("provider") or st.session_state.get("backend") or "openrouter").strip()
         or "openrouter"
@@ -1091,10 +1090,15 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
 
         def _value_for(name: str) -> Any | None:
-            n = (name or "").lower()
+            n = (name or "").lower().strip()
 
-            # mensagem
-            if n in ("message", "prompt", "text", "content", "input"):
+            # ✅ mensagem: cobre "message", "mess", "mensagem", "msg", etc
+            if (
+                n in ("message", "prompt", "text", "content", "input", "mensagem", "mensagem_usuario", "msg")
+                or n.startswith("mess")
+                or n.startswith("mens")
+                or n.startswith("msg")
+            ):
                 return prompt
 
             # usuário
@@ -1105,7 +1109,7 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
             if n in ("model", "model_id", "modelo"):
                 return model
 
-            # provider/back-end (se existir)
+            # provider/back-end
             if n in ("provider", "backend", "router", "source"):
                 return provider_guess
 
@@ -1120,26 +1124,14 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
 
             if p.kind == inspect.Parameter.POSITIONAL_ONLY:
                 # tem que ir em args
-                if val is None:
-                    # se for opcional, passa o default; se for obrigatório, vai falhar abaixo
-                    if p.default is not inspect._empty:
-                        val = p.default
+                if val is None and p.default is not inspect._empty:
+                    val = p.default
                 args.append(val)
                 continue
 
             if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
                 if val is not None:
                     kwargs[p.name] = val
-
-        # valida se faltou algum obrigatório posicional-only (None + sem default)
-        for p in params:
-            if p.name == "self":
-                continue
-            if p.kind == inspect.Parameter.POSITIONAL_ONLY:
-                # encontra índice correspondente
-                idx = [pp for pp in params if pp.kind == inspect.Parameter.POSITIONAL_ONLY and pp.name != "self"].index(p)
-                if args[idx] is None and p.default is inspect._empty:
-                    raise TypeError(f"Não consegui preencher parâmetro posicional obrigatório: {p.name}")
 
         raw = fn(*args, **kwargs)
 
@@ -1151,7 +1143,7 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
             "ui_model": model,
             "used_provider": prov or provider_guess,
             "used_model": used_model,
-            "text": txt[:2000],
+            "text": (txt or "")[:2000],
             "raw_type": type(raw).__name__,
             "called_with": {"args": args, "kwargs": kwargs},
         }
