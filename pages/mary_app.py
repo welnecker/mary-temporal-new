@@ -1373,7 +1373,7 @@ def main() -> None:
             key="model",
         )
 
-                st.markdown("---")
+        st.markdown("---")
         st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
 
         if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
