@@ -1,4 +1,4 @@
-# characters/mary/service.py
+# characters/mary/service_core.py
 from __future__ import annotations
 """
 MaryService (v3.32 — iniciativa destravada + anti-meta + robustez previsível)
@@ -49,11 +49,10 @@ from core.repositories import (
     search_long_memory_text,
 )
 from core.nsfw import nsfw_enabled as nsfw_enabled_unified
-#from characters.registry import _SERVICE_CACHE
 from .persona import get_persona
 
 logger = logging.getLogger(__name__)
-#_SERVICE_CACHE.clear()
+
 
 # ==========================================================
 # CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
