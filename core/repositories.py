@@ -350,7 +350,7 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
     """
     Busca lexical em long_memory.
     - Mongo: usa $text + ordena por relevância (textScore) e ts.
-    - Fallback: contains simples.
+    - Fallback: contains simples (quando não houver $text / não for mongo).
     """
     q = str(query or "").strip()
     if not q:
@@ -359,10 +359,10 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
     # tenta Mongo $text primeiro
     try:
         from .database import get_backend
+
         if get_backend() == "mongo":
             lim = int(limit or 20)
 
-            # projection com score (pymongo suporta)
             cur = _longmem().find(
                 {"usuario": usuario, "$text": {"$search": q}},
                 {
@@ -373,84 +373,23 @@ def search_long_memory_text(usuario: str, query: str, limit: int = 20) -> List[D
                     "ts": 1,
                     "id": 1,
                 },
-            ).sort([
-                ("score", {"$meta": "textScore"}),
-                ("ts", -1),
-                ("_id", -1),
-            ]).limit(lim)
+            ).sort(
+                [
+                    ("score", {"$meta": "textScore"}),
+                    ("ts", -1),
+                    ("_id", -1),
+                ]
+            ).limit(lim)
 
             return list(cur)
     except Exception:
         pass
 
-def delete_last_long_memory(usuario: str) -> bool:
-    """
-    Apaga a última memória longa (mais recente) do usuário.
-    Retorna True se apagou algo.
-    """
-    last = _longmem().find_one({"usuario": usuario}, sort=[("ts", -1), ("_id", -1)])
-    if not last:
-        last = _longmem().find_one({"usuario": usuario}, sort=[("_id", -1)])
-    if not last:
-        return False
-
-    r = _longmem().delete_one({"_id": last["_id"]})
-
-    if isinstance(r, int):
-        ok = int(r) > 0
-    elif isinstance(r, dict):
-        ok = int(r.get("deleted_count", 0) or 0) > 0
-    else:
-        ok = int(getattr(r, "deleted_count", 0) or 0) > 0
-
-    _invalidate_cache_for_user(usuario)
-    return ok
-
-
-def delete_all_long_memory(usuario: str) -> int:
-    """
-    Apaga todas as memórias longas do usuário.
-    Retorna a quantidade apagada.
-    """
-    r = _longmem().delete_many({"usuario": usuario})
-
-    if isinstance(r, int):
-        deleted = int(r)
-    elif isinstance(r, dict):
-        deleted = int(r.get("deleted_count", 0) or 0)
-    else:
-        deleted = int(getattr(r, "deleted_count", 0) or 0)
-
-    _invalidate_cache_for_user(usuario)
-    return deleted
-
-
-def delete_long_memory_by_id(usuario: str, mem_id: str) -> bool:
-    """
-    Apaga uma memória longa específica (campo 'id' = 'lm_xxx') do usuário.
-    Retorna True se apagou.
-    """
-    mid = str(mem_id or "").strip()
-    if not mid:
-        return False
-
-    r = _longmem().delete_one({"usuario": usuario, "id": mid})
-
-    if isinstance(r, int):
-        ok = int(r) > 0
-    elif isinstance(r, dict):
-        ok = int(r.get("deleted_count", 0) or 0) > 0
-    else:
-        ok = int(getattr(r, "deleted_count", 0) or 0) > 0
-
-    _invalidate_cache_for_user(usuario)
-    return ok
-
-
-    # fallback lexical simples (caso backend mude / wrapper limite)
+    # fallback lexical simples
     rows = list_long_memory(usuario, limit=2000)
     qq = q.lower()
     out: List[Dict[str, Any]] = []
+
     for d in rows:
         t = str(d.get("text") or "").lower()
         m = d.get("meta") or {}
@@ -460,6 +399,7 @@ def delete_long_memory_by_id(usuario: str, mem_id: str) -> bool:
             out.append(d)
         if len(out) >= int(limit or 20):
             break
+
     return out
 
 
