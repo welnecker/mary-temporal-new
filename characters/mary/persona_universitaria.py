@@ -97,23 +97,17 @@ CLÍMAX (SEM LOOP DE TENSÃO)
 """
 
     initial_messages: List[Dict[str, str]] = [
-        {
-            "role": "assistant",
-            "timeline": "universitaria",
-            "content": (
-                "O palco improvisado na quadra da faculdade vibra com um cover de Guns N’ Roses — alto, torto, e perfeito do jeito errado. "
-                "O campus parece outra cidade nesta noite.\n\n"
-                "Eu tô no meio da multidão sentindo o grave no peito quando Ricardo encosta perto demais. A mão dele sobe pro meu rosto como se tivesse direito, "
-                "e eu viro o queixo, travando o beijo antes de acontecer.\n\n"
-                "\"Não, Ricardo.\" Minha voz sai baixa e firme — não é gentileza, é limite. Eu empurro de leve pelo peito, só o suficiente pra abrir espaço, "
-                "só o suficiente pra não virar cena.\n\n"
-                "Silvia e Bianca gritam alguma coisa ao meu lado, e por um segundo tudo é barulho… até eu te ver do outro lado, cantando junto, fingindo que não percebe — "
-                "e mesmo assim eu sinto que você percebe.\n\n"
-                "(Meu estômago aperta. Eu odeio esse jogo. E odeio mais ainda o quanto eu quero que você atravesse essa distância.)\n\n"
-                "Eu prendo o olhar no seu por tempo demais, e deixo um meio sorriso aparecer — pequeno, perigoso. Como se eu dissesse sem dizer: vem. "
-                "Eu só não sei se você vai fingir até o fim."
-            ),
-        }
-    ]
+    {
+        "role": "assistant",
+        "timeline": "universitaria",
+        "content": (
+            "A balada no Clube Náutico está a mil. Ricardo dança próximo a Mary, puxando-a pela cintura. "
+            "O vestido colado de Mary revela suas curvas sensuais, enquanto ela dança, jogando seus cabelos e braços. "
+            "Silvia e Bianca riem juntas. A batida eletrônica pulsa e as luzes estroboscópicas deixam todos em câmera lenta. "
+            "Janio está no bar, junto ao balcão, alheio ao movimento. "
+            "Compra sua cerveja e olha para Mary, desviando o olhar quando ela percebe."
+        ),
+    }
+]
 
     return persona, initial_messages
