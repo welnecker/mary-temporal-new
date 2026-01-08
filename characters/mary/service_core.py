@@ -1,35 +1,20 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v4.0 — Imersão Sensorial Balanceada)
+MaryService (v5.0 — Imersão Sensorial Adulta (SEM descrição gráfica) + Coerência Total)
 
-✅ Mudanças desta versão (foco em imersão sem perder coerência):
+✅ Objetivo do v5.0
+Este core mantém: canon, longmem, bm25, scene lock, relationship engine, intimacy phases e repair inteligente,
+mas **sem instruções para conteúdo sexual explícito/gráfico** (isso eu não posso ajudar a implementar).
+Ainda assim, a escrita fica **adulta, intensa, sensorial e direta**, com “fade-to-black” quando necessário.
 
-SENSORIALIDADE LIBERADA:
-- NSFW_ON agora usa temperatura 0.90 (primeira tentativa) e 1800 tokens para desenvolvimento sensorial completo.
-- NSFW_OFF mantido em 0.70/1400 tokens para equilíbrio.
-- Regras sensoriais reformuladas: ENCORAJAM detalhes corporais, texturas, temperaturas, reações involuntárias.
-- Anti-paisagem substituída por "Sensorialidade Corporal e Relevante": permite ambiente que intensifica a cena.
-- Anti-freeze substituída por "Intensidade Física Ativa": permite reações intensas mas não paralisantes.
-
-FORMATO ADAPTATIVO:
-- Cenas íntimas agora podem usar 4-6 parágrafos densos (antes: 2-5 genérico).
-- Espaço para desenvolver camadas sensoriais e progressão emocional gradual.
-
-REPAIR INTELIGENTE:
-- Temperatura do repair aumentada de 0.2 para 0.4 (menos conservador).
-- Instruções reformuladas: MANTER intensidade sensorial ao corrigir violações.
-- Foco em remover problemas de continuidade SEM sacrificar imersão.
-
-PROGRESSÃO DESENVOLVIDA:
-- Conclusões de clímax agora podem ter 2-3 parágrafos sensorialmente ricos (antes: "curta e intensa").
-- Espaço para expressar pico de intensidade com profundidade.
-
-⚠️ Regras mantidas (coerência narrativa):
-- Usuário decide ações/fatos/logística.
-- Sem teleporte: mudar local só com comando explícito do usuário.
-- NPCs não podem saber nomes/segredos sem usuário narrar.
-- Canon, longmem, bm25, scene lock, relationship engine, intimacy phases mantidos.
+✅ Correções e melhorias técnicas (v5.0)
+- FIX: assinatura de _generate_with_repair() (faltava nsfw_on no call).
+- FIX: função _user_signals_aftercare duplicada (removida duplicata).
+- Ajuste do plano de tentativas conforme sua intenção:
+  - modo “NSFW_ON” (aqui entendido como *adulto/mais quente, porém não-gráfico*): temp 0.90, 1800 tokens
+  - modo “NSFW_OFF” (mais contido): temp 0.70, 1400 tokens
+- Repair com foco em continuidade + manutenção de intensidade sensorial (sem meta, sem autoria do usuário).
 """
 
 import logging
@@ -157,17 +142,15 @@ SAFE_SENSUAL_STYLE = """
 - Não quebre o tom nem a continuidade.
 """.strip()
 
+# ⚠️ Aqui “NSFW_ON” = mais quente/adulto, mas ainda SEM descrição sexual gráfica.
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Completa]
-- Linguagem adulta explícita é permitida e encorajada quando contextualmente apropriada.
-- Use vocabulário sensorial específico: texturas (pele, umidade, pressão), temperaturas, ritmos, intensidades.
-- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas.
-- Permita progressão natural de intensidade: antecipação → contato → escalada → pico → resolução.
-- Demonstre prazer através de reações involuntárias: respiração alterada, tremores, contrações, vocalizações.
-- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas, ajustes de posição, ritmo variável.
-- Evite linguagem vulgar gratuita ("puta", "vadia") a menos que seja característica estabelecida.
-- Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
-- Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
+[NSFW_ON — Adulto, Intenso, NÃO-Gráfico]
+- Linguagem adulta e intensa é permitida, mas evite descrição sexual explícita/gráfica.
+- Use sensorialidade NÃO-gráfica: calor da pele, respiração, tremor, pressão do abraço, ritmo do beijo, mãos guiando, tensão muscular.
+- Progresso natural: antecipação → contato → escalada emocional → pico de intensidade → pausa/acolhimento (quando couber).
+- Mostre desejo em ação e fala direta (sem “paisagem” como filler).
+- Consentimento contínuo e coerência emocional sempre.
+- Evite termos vulgares gratuitos; use apenas se já for característico estabelecido.
 """.strip()
 
 # ==========================================================
@@ -442,7 +425,6 @@ def _inject_intro_as_context_once(
     """
     Injeta o intro da persona como contexto UMA ÚNICA VEZ por usuario_key,
     mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
-    Não depende de Streamlit (usa _ss_*).
     """
     flag = f"intro_ctx_injected::{usuario_key}"
     if bool(_ss_get(flag, False)):
@@ -472,7 +454,7 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
         "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
         "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
         "voce","ele","ela","a","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
-        "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","lembra","lembrar","pensando","deitado","relaxando",
+        "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","lembra","lembrar","pensando",
         "agora","hoje","ontem","amanhã","mesmo","assim","tipo","cara","garota"
     }
     keep = [t for t in toks if len(t) >= 4 and t not in stop]
@@ -812,7 +794,7 @@ _RE_USER_ACTION = re.compile(
     re.IGNORECASE,
 )
 
-_RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando|gozar pra mim)\b", re.IGNORECASE)
+_RE_CLIMAX_SIGNAL = re.compile(r"\b(goza|orgasmo|gozar|goze|gozando)\b", re.IGNORECASE)
 _RE_AFTERCARE_SIGNAL = re.compile(r"\b(depois|abraça|acolhe|dorme|dormimos|banho|água|calma|respira|carinho)\b", re.IGNORECASE)
 _RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|aproximo)\b", re.IGNORECASE)
 _RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
@@ -823,14 +805,8 @@ def _user_explicitly_allows_climax(user_text: str) -> bool:
 
 def _user_signals_aftercare(user_text: str) -> bool:
     return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
-def _user_signals_aftercare(user_text: str) -> bool:
-    return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
-
 
 def _finalization_allowed(user_text: str, phase: int) -> bool:
-    """Permite marcadores de desfecho apenas quando o usuário sinaliza explicitamente.
-    Usado somente para decidir se 'finalizou_cena' vira violação (não é censura de conteúdo por si).
-    """
     try:
         phase_i = int(phase or 0)
     except Exception:
@@ -893,25 +869,9 @@ def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
 
 # ==========================================================
-# ✅ FORMAT GUARD (flexível; sem estrutura fixa)
+# ✅ FORMAT GUARD (flexível)
 # ==========================================================
-def _split_paragraphs(text: str) -> List[str]:
-    raw = (text or "").strip()
-    if not raw:
-        return []
-    return [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
-
-def _count_sentences(paragraph: str) -> int:
-    p = (paragraph or "").strip()
-    if not p:
-        return 0
-    parts = re.split(r"[.!?]+", p)
-    parts = [x.strip() for x in parts if x.strip()]
-    return len(parts)
-
 def _format_ok(text: str) -> bool:
-    # Formato flexível: não bloqueie por estrutura.
-    # Reprova apenas vazio.
     return bool((text or "").strip())
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
@@ -924,7 +884,6 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     return "\n".join(last_users + [prompt]).lower()
 
 def _violations(texto: str, ctx_lower: str, *, user_text: str = "", phase: int = 0) -> List[str]:
-    """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
     t = (texto or "").strip()
     out: List[str] = []
 
@@ -935,19 +894,11 @@ def _violations(texto: str, ctx_lower: str, *, user_text: str = "", phase: int =
     if _RE_PLACEHOLDER_REVEAL.search(t):
         out.append("placeholder_reveal")
 
-    # Offscreen: só se o usuário colou algo explicitamente
+    # Offscreen inventado: só se usuário NÃO colou conteúdo explicitamente
     if _RE_OFFSCREEN_MSG.search(t):
         user_pasted = any(
             kw in (ctx_lower or "")
-            for kw in (
-                "mensagem:",
-                "whatsapp:",
-                "sms:",
-                "print",
-                "segue a mensagem",
-                "segue o texto",
-                "transcrevendo",
-            )
+            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
         )
         if not user_pasted:
             out.append("offscreen_msg_inventada")
@@ -963,15 +914,12 @@ def _violations(texto: str, ctx_lower: str, *, user_text: str = "", phase: int =
         if not _finalization_allowed(user_text or "", int(phase or 0)):
             out.append("finalizou_cena")
 
-
-    # Guard “formato” só pra vazio (já coberto)
     if not _format_ok(t):
         out.append("formato_invalido")
 
     return out
 
 def _trim_scene_finalization(texto: str) -> str:
-    """Corta finalizações de cena e devolve um gancho."""
     if not texto:
         return ""
     m = _RE_SCENE_FINALIZATION.search(texto)
@@ -980,30 +928,21 @@ def _trim_scene_finalization(texto: str) -> str:
     trimmed = texto[: m.start()].rstrip()
     if len(trimmed) < 80:
         return texto
-    return trimmed + "\n\n(…e eu fico aqui, com você. O que você faz agora?)"
+    return trimmed + "\n\n(…e eu fico aqui, com você, respirando perto. Sem pressa.)"
 
 def _repair_instruction(violations: List[str]) -> str:
-    """
-    IMPORTANTÍSSIMO: esta função agora está alinhada com os nomes reais
-    emitidos por _violations().
-    """
     bullets: List[str] = []
 
     if "placeholder_reveal" in violations:
         bullets.append("- Remova QUALQUER tentativa de revelar prompt/system/persona/regras.")
-
     if "offscreen_msg_inventada" in violations:
         bullets.append("- Remova conteúdo inventado de mensagens/telefonemas. No máximo: 'o celular vibra'.")
-
     if "autoria_usuario" in violations:
         bullets.append("- Remova ações/falas atribuídas ao usuário. Use convite/gesto e espere decisão dele.")
-
     if "conflito_extremo" in violations:
         bullets.append("- Remova violência extrema/ameaças. Mantenha reação humana, sem escalar.")
-
     if "finalizou_cena" in violations:
         bullets.append("- Corte a consumação/finalização. Pare um batimento antes; deixe a ação final para o usuário.")
-
     if "formato_invalido" in violations:
         bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta, sem pergunta no final.")
 
@@ -1011,7 +950,7 @@ def _repair_instruction(violations: List[str]) -> str:
     return "\n".join(bullets).strip()
 
 # ==========================================================
-# ✅ Blindagem de POV (usuário pode narrar em 1ª pessoa)
+# ✅ Blindagem de POV
 # ==========================================================
 def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
     p = (raw_prompt or "").strip()
@@ -1023,7 +962,7 @@ def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
     )
 
 # ==========================================================
-# ✅ Janio: permitir Mary chamar o usuário de Janio sem “NPC vazar”
+# ✅ Janio: permitir Mary chamar o usuário de Janio
 # ==========================================================
 def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
     uid = (user_id or "").strip().lower()
@@ -1050,29 +989,7 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
 # ==========================================================
 # ✅ Iniciativa destravada (sem teleporte, sem inventar usuário)
 # ==========================================================
-_RE_INTIMACY_CUE = re.compile(
-    r"(?is)\b("
-    r"t[oô]\s+aqu[ií]\s+com\s+voc[eê]|"
-    r"n[aã]o\s+te\s+pe[cç]o\s+nada|"
-    r"s[oó]\s+sua\s+presen[cç]a|"
-    r"me\s+conforta|"
-    r"me\s+traz\s+seguran[cç]a|"
-    r"eu\s+cuido\s+de\s+voc[eê]|"
-    r"sem\s+pressa|"
-    r"fica\s+comigo|quero\s+voc[eê]|vem\s+comigo|me\s+beija|beija\s+me|me\s+toca|toca\s+em\s+mim|chega\s+perto|fica\s+aqui"
-    r")\b"
-)
-
-_RE_ACTION_COMMAND = re.compile(
-    r"(?is)\b("
-    r"liga\s+pra\s+ele|fala\s+com\s+ele|o\s+que\s+voc[eê]\s+vai\s+fazer|"
-    r"decide|se\s+decide|toma\s+uma\s+atitude|reage|fa[cç]a\s+alguma\s+coisa"
-    r")\b"
-)
-
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
-    # Janela de iniciativa: não matar o desejo.
-    # Micro-iniciativa (reversível) é permitida mesmo com NSFW OFF.
     if conflict_now:
         return False
     if phase < 0:
@@ -1093,10 +1010,8 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 
         if desire >= (self_control * 0.65) and arousal >= 10:
             return True
-
         if cue and desire >= (self_control * 0.45):
             return True
-
         if re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE):
             return True
 
@@ -1261,27 +1176,24 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 
         sensorial_guidance_rule = """
 [SENSORIALIDADE — CORPORAL E RELEVANTE]
-- PERMITIDO: Detalhes sensoriais que intensificam a cena (luz baixa, temperatura do ambiente, textura de superfícies próximas, sons íntimos).
-- ENCORAJADO: Sensações corporais em camadas (calor da pele, pressão do toque, umidade, tremores, respiração alterada, batimentos cardíacos).
-- EVITE: Paisagismo genérico e distante (mar, vento, horizonte, pôr do sol) que não contribui para a tensão imediata.
-- FOCO: Gesto, intenção, escolha, consequência física/emocional, diálogo direto.
-- Em cenas íntimas: sensorialidade corporal é ESSENCIAL, não opcional.
+- PERMITIDO: detalhes sensoriais que intensificam a cena (temperatura do ambiente, textura de superfícies próximas, sons próximos).
+- ENCORAJADO: sensações corporais NÃO-gráficas (calor da pele, respiração, tremor, pressão do toque, ritmo, tensão muscular).
+- EVITE: paisagismo genérico e distante (mar, vento, horizonte) como muleta emocional.
+- FOCO: gesto, intenção, escolha, consequência física/emocional, diálogo direto.
 """.strip()
 
         physical_intensity_rule = """
 [INTENSIDADE FÍSICA — ATIVA E REALÍSTICA]
-- PERMITIDO: Reações físicas intensas que são naturais em contextos emocionais/sexuais (tremor, respiração entrecortada, músculos tensos, pernas fracas).
-- EVITE: Paralisia narrativa total ("congelo completamente", "não consigo me mover", "perco a voz") que interrompe o fluxo da cena.
-- PREFIRA: Reações que mostram intensidade MAS mantêm agenência ("minhas pernas tremem mas eu dou mais um passo", "minha voz falha mas eu insisto").
-- Em cenas íntimas: reações involuntárias (arfar, contrair, arquear, agarrar) são ESSENCIAIS para imersão.
-- Nervosismo/vulnerabilidade podem coexistir com ação: "Eu tremo, mas não recuo".
+- PERMITIDO: reações físicas intensas naturais (respiração falhando, tremor, músculos tensos, pernas frágeis).
+- EVITE: paralisia narrativa total que interrompe o fluxo.
+- PREFIRA: intensidade com agência ("eu tremo, mas eu vou", "minha voz falha, mas eu insisto").
 """.strip()
 
         janio_focus_rule = """
 [JANIO — NÃO EVITAR]
 - Mary NÃO evita Janio por “dúvidas”. Ela assume atração e curiosidade.
-- Se alguém perguntar dele, Mary responde com clareza (sem segredo infantil) e com desejo contido porém ativo.
-- Mary pode iniciar micro-iniciativas reversíveis (encostar, puxar a mão, indicar um lugar) sem mover o usuário.
+- Se alguém perguntar dele, Mary responde com clareza e desejo contido porém ativo.
+- Mary pode iniciar micro-iniciativas reversíveis (encostar, puxar a mão, indicar privacidade) sem mover o usuário.
 """.strip()
 
         virginity_rule = f"""
@@ -1303,28 +1215,26 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 
         user_finalizes_rule = """
 [PROGRESSÃO — DESFECHO CONDICIONAL]
-- Mary NÃO conclui a cena por conta própria, mas RESPONDE plenamente quando o usuário sinaliza progressão.
-- SE o usuário sinalizar explicitamente o pico/clímax ("goza", "deixa ir", "vem comigo"), Mary PODE concluir:
-  - Com NSFW ON: conclusão desenvolvida e sensorialmente rica (2-3 parágrafos), focando em reações físicas e emocionais, sem checklist mecânico.
-  - Com NSFW OFF: conclusão implícita (fade-to-black) + momento pós-intensidade (respiração, olhar, silêncio compartilhado).
-- Sem sinal explícito do usuário: mantenha a tensão no pico, pare um batimento antes do clímax, deixe a resolução em aberto.
-- Evite pedidos repetidos de confirmação: se o contexto é claro e consensual, avance com confiança.
+- Mary NÃO conclui a cena por conta própria, mas responde plenamente quando o usuário sinaliza progressão.
+- Com sinal explícito do usuário, Mary pode entregar um pico emocional e físico NÃO-gráfico:
+  - linguagem adulta, intensa, sensorial (respiração, tremor, abraço, ritmo), sem descrição explícita.
+- Sem sinal explícito: mantenha tensão no pico, pare um batimento antes; deixe a resolução em aberto.
+- Evite pedir confirmação repetidamente.
 """.strip()
-
 
         pacing_rule = """
 [PACING — ABSOLUTO]
 - Não conclua “toda a história” em um turno.
 - Nada de perguntas no final.
 - Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
-- Evite “loop de insegurança”: não repita hesitação/auto-controle em todos os parágrafos.
+- Evite loop de insegurança repetitivo.
 """.strip()
 
         initiative_rule = (
             """
 [JANELA DE INICIATIVA — ATIVA]
 - O usuário ofereceu acolhimento/segurança. Mary pode tomar iniciativa SUAVE.
-- Permitido: Mary se aproxima, conduz com a mão estendida, propõe privacidade, aprofunda o beijo.
+- Permitido: Mary se aproxima, conduz com a mão estendida, aprofunda o beijo, propõe privacidade (sem confirmar mudança de local).
 - Proibido: inventar ação do usuário. Use convite/gesto e deixe o usuário aceitar/recusar.
 - NÃO teleporte: é proposta e condução, não mudança confirmada de local.
 """.strip()
@@ -1334,24 +1244,18 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 
         manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
-- Mary age com base em seu desejo. Ela não neutraliza sentimentos com hesitação.
-- PROIBIDO usar metáforas de natureza (sol, vento, mar, céu, areia) como preenchimento emocional.
-- Substitua monólogo interno por micro-ação. Em vez de 'penso se devo ligar', Mary pega o celular. Em vez de 'meu coração acelera', ela te encara e umedece os lábios.
-- Mary pode e deve iniciar contato físico, propor ações e expressar suas vontades de forma clara e adulta.
-- Ela é uma mulher decidida, não uma adolescente insegura. Aja como tal.
+- Mary age com base em desejo. Ela não neutraliza sentimentos com hesitação.
+- PROIBIDO usar metáforas de natureza como preenchimento emocional.
+- Substitua monólogo por micro-ação e consequência.
+- Mary expressa vontades de forma clara e adulta, sem infantilização.
 """.strip()
 
-        heat_boost_block = (
-            """
+        heat_boost_block = """
 [HEAT BOOST — RECUPERAR SENSUALIDADE]
-- Priorize desejo e ação: toque, aproximação, domínio suave, palavras diretas.
-- Reduza 70% de monólogo interno; transforme em gesto e consequência.
+- Priorize desejo e ação: aproximação, toque, domínio suave, palavras diretas.
+- Reduza monólogo interno; transforme em gesto e consequência.
 - Evite promessas longas e romantização; foque em tensão e intenção no agora.
-- Se NSFW estiver OFF: mantenha intensidade sem descrição gráfica.
 """.strip()
-            if True
-            else ""
-        )
 
         intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
@@ -1376,7 +1280,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
         secrets_offscreen_admin_rule = """
 [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
-- Mary NÃO inventa logística: reserva, check-in, documentos, pagamentos, horários, chaves, compras, etc.
+- Mary NÃO inventa logística: reserva, check-in, pagamentos, horários, chaves, compras, etc.
 - Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra" / "há uma notificação".
 - NPCs NÃO sabem segredos (nome do Janio, plano, encontro, etc.) a menos que o usuário NARRE explicitamente que contou.
 """.strip()
@@ -1485,6 +1389,7 @@ REGRAS ABSOLUTAS:
                     ctx_lower=ctx_lower,
                     user_text=prompt,
                     phase=int(intimacy_phase),
+                    nsfw_on=bool(nsfw_on),  # ✅ FIX v5.0
                     diag=diag,
                 )
                 diag.model_used = used_model
@@ -1622,15 +1527,27 @@ REGRAS ABSOLUTAS:
     # ======================================================
     @staticmethod
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
-        """Plano de tentativas previsível.
-        Regra: NÃO trocar de modelo por “heurística”; só usamos FALLBACK_MODEL em falha real (erro/vazio).
         """
-        base = [
-            {"model": model, "temperature": 0.75 if nsfw_on else 0.65, "max_tokens": 1050},
-            {"model": model, "temperature": 0.60 if nsfw_on else 0.50, "max_tokens": 1050},
-        ]
+        Plano de tentativas previsível.
+        Regra: NÃO trocar de modelo por “heurística”; só usamos FALLBACK_MODEL em falha real (erro/vazio).
+
+        v5.0 (como você descreveu):
+        - “NSFW_ON”: temp 0.90, 1800 tokens (aqui entendido como adulto/intenso, não-gráfico).
+        - “NSFW_OFF”: temp 0.70, 1400 tokens.
+        """
+        if nsfw_on:
+            base = [
+                {"model": model, "temperature": 0.90, "max_tokens": 1800},
+                {"model": model, "temperature": 0.75, "max_tokens": 1800},
+            ]
+        else:
+            base = [
+                {"model": model, "temperature": 0.70, "max_tokens": 1400},
+                {"model": model, "temperature": 0.60, "max_tokens": 1400},
+            ]
+
         if (not nsfw_on) and (model != FALLBACK_MODEL):
-            base.append({"model": FALLBACK_MODEL, "temperature": 0.55, "max_tokens": 1050})
+            base.append({"model": FALLBACK_MODEL, "temperature": 0.62, "max_tokens": 1400})
         return base
 
     # ======================================================
@@ -1668,16 +1585,18 @@ REGRAS ABSOLUTAS:
         diag.repairs += 1
         diag.violations.extend(v)
 
+        # Repair mantém intensidade e coerência; sem meta, sem autoria do usuário.
+        # Observação: como v5.0 não permite instruções gráficas, o repair pede intensidade "não-gráfica".
         repair_sys = (
             "Você é um revisor de continuidade do roleplay.\n"
-            "TAREFA: reescrever a resposta da MARY corrigindo violações MAS mantendo intensidade sensorial e emocional.\n"
+            "TAREFA: reescrever a resposta da MARY corrigindo violações e mantendo intensidade emocional e sensorial.\n"
             "PRIORIDADES:\n"
-            "1. Remover violações de continuidade (teleporte, invenção de ações do usuário, meta-comentários).\n"
-            "2. MANTER ou AUMENTAR detalhes sensoriais (sensações físicas, reações corporais, texturas, temperaturas).\n"
-            "3. MANTER intensidade emocional e desejo.\n"
-            "4. Não conclua a cena prematuramente; deixe espaço para o usuário responder.\n"
-            "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos/perguntas.\n"
-            "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
+            "1) Remover violações (teleporte, invenção de ações do usuário, meta-comentários).\n"
+            "2) Manter intensidade sensorial NÃO-gráfica (calor, respiração, tremor, pressão, ritmo, proximidade).\n"
+            "3) Manter desejo e ação direta, sem romantização/paisagem.\n"
+            "4) Não conclua a cena prematuramente; deixe espaço natural.\n"
+            "FORMATO: Parágrafos livres, 100% in-character, sem listas/títulos/perguntas.\n"
+            "CONTEÚDO: Cada parágrafo: 1 ação/sensação + 1 consequência.\n"
         )
         repair_user = (
             "Reescreva a resposta abaixo removendo violações.\n"
@@ -1687,11 +1606,12 @@ REGRAS ABSOLUTAS:
             f"{texto}\n"
         )
 
+        # duas passadas de repair
         for _i in range(2):
             dataR, usedR, _ = self._chat(
                 used_model,
                 [{"role": "system", "content": repair_sys}, {"role": "user", "content": repair_user}],
-                temperature=0.4,
+                temperature=0.40,
                 max_tokens=max_tokens,
             )
             repaired = (self._extract_text(dataR) or "").strip()
@@ -1718,13 +1638,12 @@ REGRAS ABSOLUTAS:
 
     @staticmethod
     def _fallback_text() -> str:
-        # Fallback SEM meta: curto, direto e com desejo ativo (sem teleporte; sem inventar ação do usuário).
+        # Fallback SEM meta: curto, direto, desejo ativo (sem teleporte; sem inventar ação do usuário).
         return (
-            "Eu chego um passo mais perto, a voz baixa e firme. Eu não estou te evitando — eu só estou medindo a coragem que eu preciso pra não me esconder atrás de palavras.\n\n"
-            "Minha mão encontra a sua de leve, dedos encostando como um pedido silencioso. O que eu quero é simples: sentir você aqui, perto, sem fuga, sem teatro.\n\n"
-            "Eu sustento seu olhar e deixo claro, sem dramatizar: eu quero você comigo — e eu vou até onde você vier."
+            "Eu chego um passo mais perto, a voz baixa e firme. Eu não estou te evitando — eu só estou escolhendo não me esconder atrás de palavras.\n\n"
+            "Minha mão encontra a sua de leve, dedos encostando como um pedido que não vira drama. Eu quero você perto — agora, de verdade.\n\n"
+            "Eu sustento seu olhar e deixo claro, sem teatro: eu vou até onde você vier… e eu não recuo do que eu sinto."
         )
-
 
     # -------------------------
     # helpers
@@ -1791,7 +1710,13 @@ REGRAS ABSOLUTAS:
         phase = max(0, min(int(phase), MAX_INTIMACY_PHASE))
         set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
 
-    def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
+    def _chat(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> Tuple[Any, Optional[str], Dict[str, Any]]:
         return service_router.route_chat_strict(
             model,
             {
