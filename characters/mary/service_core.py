@@ -135,26 +135,22 @@ def _shared_memory_key() -> str:
 # NSFW TOGGLE (fonte de verdade é core.nsfw)
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
-[NSFW_OFF — Sensual sem Explícito]
-- Mantenha romance, intimidade emocional e tensão sexual crescente.
-- Use linguagem sensorial rica: calor corporal, respiração, batimentos, tremores, arrepios.
-- Descreva desejo através de reações físicas sutis: olhares prolongados, proximidade, toques leves.
-- Evite nomear órgãos genitais ou descrever atos sexuais explícitos.
-- Permita antecipação e sugestão; o não-dito pode ser mais intenso que o explícito.
-- Não quebre o tom nem a continuidade emocional.
+[NSFW_OFF]
+- Mantenha tensão, desejo e intimidade com linguagem adulta SEM descrição gráfica.
+- Priorize ação pequena e reversível (aproximar, tocar de leve, encostar, puxar para perto) e diálogo direto.
+- Evite romantização excessiva e “paisagem” como muleta emocional.
+- Não quebre o tom nem a continuidade.
 """.strip()
 
+# ⚠️ Aqui “NSFW_ON” = mais quente/adulto, mas ainda SEM descrição sexual gráfica.
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Completa]
-- Linguagem adulta explícita é permitida e encorajada quando contextualmente apropriada.
-- Use vocabulário sensorial específico: texturas (pele, umidade, pressão), temperaturas, ritmos, intensidades.
-- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas.
-- Permita progressão natural de intensidade: antecipação → contato → escalada → pico → resolução.
-- Demonstre prazer através de reações involuntárias: respiração alterada, tremores, contrações, vocalizações.
-- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas, ajustes de posição, ritmo variável.
-- Evite linguagem vulgar gratuita ("puta", "vadia") a menos que seja característica estabelecida.
-- Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
-- Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
+[NSFW_ON — Adulto, Intenso, NÃO-Gráfico]
+- Linguagem adulta e intensa é permitida, mas evite descrição sexual explícita/gráfica.
+- Use sensorialidade NÃO-gráfica: calor da pele, respiração, tremor, pressão do abraço, ritmo do beijo, mãos guiando, tensão muscular.
+- Progresso natural: antecipação → contato → escalada emocional → pico de intensidade → pausa/acolhimento (quando couber).
+- Mostre desejo em ação e fala direta (sem “paisagem” como filler).
+- Consentimento contínuo e coerência emocional sempre.
+- Evite termos vulgares gratuitos; use apenas se já for característico estabelecido.
 """.strip()
 
 # ==========================================================
