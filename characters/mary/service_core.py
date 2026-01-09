@@ -1456,6 +1456,7 @@ REGRAS ABSOLUTAS:
                     ctx_lower=ctx_lower,
                     user_text=prompt,
                     phase=int(intimacy_phase),
+                    nsfw_on=bool(nsfw_on),
                     diag=diag,
                 )
                 diag.model_used = used_model
@@ -1616,6 +1617,9 @@ REGRAS ABSOLUTAS:
         max_tokens: int,
         usuario_key: str,
         ctx_lower: str,
+        user_text: str,
+        phase: int,
+        nsfw_on: bool,
         diag: _Diag,
     ) -> Tuple[str, str]:
         data, used_model, _provider_meta = self._chat(
@@ -1629,7 +1633,7 @@ REGRAS ABSOLUTAS:
         if not texto:
             raise RuntimeError("modelo retornou vazio")
 
-        v = _violations(texto, ctx_lower, user_text="", phase=0)
+        v = _violations(texto, ctx_lower, user_text=user_text, phase=phase)
         if not v:
             return (texto, used_model)
 
@@ -1668,7 +1672,7 @@ REGRAS ABSOLUTAS:
                 diag.violations.append("repair_vazio")
                 continue
 
-            vr = _violations(repaired, ctx_lower, user_text="", phase=0)
+            vr = _violations(repaired, ctx_lower, user_text=user_text, phase=phase)
             if not vr:
                 if _RE_SCENE_FINALIZATION.search(repaired or ""):
                     repaired = _trim_scene_finalization(repaired)
@@ -1682,10 +1686,7 @@ REGRAS ABSOLUTAS:
                   "sem meta e sem listas/títulos; evite terminar com pergunta."
             )
 
-        fallback_text = self._fallback_text()
-        if _RE_SCENE_FINALIZATION.search(fallback_text or ""):
-            fallback_text = _trim_scene_finalization(fallback_text)
-        return (fallback_text, used_model)
+        raise RuntimeError("repair_failed")
 
     @staticmethod
     def _fallback_text() -> str:
