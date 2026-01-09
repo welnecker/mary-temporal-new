@@ -1,7 +1,7 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v4.4 — Imersão Sensorial Balanceada)
+MaryService (v4.0 — Imersão Sensorial Balanceada)
 
 ✅ Mudanças desta versão (foco em imersão sem perder coerência):
 
@@ -821,7 +821,7 @@ _RE_OFFSCREEN_MSG = re.compile(
     re.IGNORECASE,
 )
 _RE_USER_ACTION = re.compile(
-    r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
+    r"(?<![quando|enquanto|se|caso|depois que|antes que]\s)\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
     re.IGNORECASE,
 )
 
