@@ -945,7 +945,7 @@ def _violations(texto: str, ctx_lower: str, *, user_text: str = "", phase: int =
 
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
-         out.append("finalizou_cena")
+            out.append("finalizou_cena")
 
 
     # Guard “formato” só pra vazio (já coberto)
@@ -1629,7 +1629,7 @@ REGRAS ABSOLUTAS:
         if not texto:
             raise RuntimeError("modelo retornou vazio")
 
-        v = _violations(texto, ctx_lower)
+        v = _violations(texto, ctx_lower, user_text="", phase=0)
         if not v:
             return (texto, used_model)
 
@@ -1668,7 +1668,7 @@ REGRAS ABSOLUTAS:
                 diag.violations.append("repair_vazio")
                 continue
 
-            vr = _violations(repaired, ctx_lower)
+            vr = _violations(repaired, ctx_lower, user_text="", phase=0)
             if not vr:
                 if _RE_SCENE_FINALIZATION.search(repaired or ""):
                     repaired = _trim_scene_finalization(repaired)
