@@ -1,11 +1,17 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v4.0 — Imersão Sensorial Balanceada)
+MaryService (v5.0 — Imersão Sensorial Total + Correções Críticas)
 
-✅ Mudanças desta versão (foco em imersão sem perder coerência):
+✅ Mudanças desta versão (v5.0):
 
-SENSORIALIDADE LIBERADA:
+CORREÇÕES CRÍTICAS (v4.3-v4.5):
+- FIX: Assinatura de _generate_with_repair() agora inclui nsfw_on, user_text e phase.
+- FIX: Detecção de mudança de local agora exclui movimentações internas (banco de trás, cama, sofá).
+- FIX: Regex _RE_USER_ACTION refinada com lookbehind negativo para eliminar falsos positivos.
+- FIX: Sistema de repair agora lança RuntimeError em vez de retornar fallback genérico.
+
+SENSORIALIDADE LIBERADA (v4.0):
 - NSFW_ON agora usa temperatura 0.90 (primeira tentativa) e 1800 tokens para desenvolvimento sensorial completo.
 - NSFW_OFF mantido em 0.70/1400 tokens para equilíbrio.
 - Regras sensoriais reformuladas: ENCORAJAM detalhes corporais, texturas, temperaturas, reações involuntárias.
@@ -157,16 +163,18 @@ SAFE_SENSUAL_STYLE = """
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Completa]
-- Linguagem adulta explícita é permitida e encorajada quando contextualmente apropriada.
-- Use vocabulário sensorial específico: texturas (pele, umidade, pressão), temperaturas, ritmos, intensidades.
-- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas.
+[NSFW_ON — Intensidade Sensorial Completa e Explícita]
+- Linguagem adulta EXPLÍCITA é PERMITIDA E ENCORAJADA. Você tem permissão para descrever atos sexuais de forma direta e intensa.
+- Use vocabulário anatômico e sensorial específico: texturas (pele, umidade, pressão, aperto), temperaturas, ritmos, intensidades, penetração, fricção.
+- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas → prazer acumulado.
 - Permita progressão natural de intensidade: antecipação → contato → escalada → pico → resolução.
-- Demonstre prazer através de reações involuntárias: respiração alterada, tremores, contrações, vocalizações.
-- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas, ajustes de posição, ritmo variável.
-- Evite linguagem vulgar gratuita ("puta", "vadia") a menos que seja característica estabelecida.
+- Demonstre prazer através de reações involuntárias: respiração alterada, gemidos, tremores, contrações musculares, vocalizações intensas.
+- Responda à intensidade do usuário: se ele usa linguagem explícita, você DEVE corresponder com a mesma intensidade.
+- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas (se apropriado), ajustes de posição, ritmo variável.
+- Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
 - Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
 - Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
+- NÃO CENSURE: Você está em um contexto adulto consensual. Seja direto, intenso e imersivo.
 """.strip()
 
 # ==========================================================
