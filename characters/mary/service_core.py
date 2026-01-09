@@ -1062,6 +1062,7 @@ def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
         return True
     return False
 
+
 def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
     if _mary_can_name_user_as_janio(user_id, ctx_lower):
         return (
@@ -1075,6 +1076,54 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
         "Mary se refere ao usuário como 'você' e, quando cabível, como 'ele' em pensamento.\n"
         "NPCs NÃO podem saber nomes/segredos a menos que o usuário narre que contou.\n"
     ).strip()
+
+
+# ==========================================================
+# ✅ Estado Atual (4 fixas + 2 opcionais) — bloco enxuto para continuidade
+# Chaves esperadas em facts:
+# - state.local
+# - state.roupa
+# - state.cabelo
+# - state.desculpa
+# - state.horario        (opcional)
+# - state.pendencias     (opcional)
+# ==========================================================
+def _fact_str(facts: Dict[str, Any], key: str) -> str:
+    try:
+        v = (facts or {}).get(key, "")
+        if v is None:
+            return ""
+        if isinstance(v, (list, tuple)):
+            v = ", ".join(str(x).strip() for x in v if str(x).strip())
+        return str(v).strip()
+    except Exception:
+        return ""
+
+
+def _render_state_block(facts: Dict[str, Any]) -> str:
+    local = _fact_str(facts, "state.local")
+    roupa = _fact_str(facts, "state.roupa")
+    cabelo = _fact_str(facts, "state.cabelo")
+    desculpa = _fact_str(facts, "state.desculpa")
+    horario = _fact_str(facts, "state.horario")
+    pend = _fact_str(facts, "state.pendencias")
+
+    # 4 fixas — se estiverem vazias, põe "—" para não poluir nem quebrar
+    l1 = f"1) Local: {local or '—'}"
+    l2 = f"2) Roupa: {roupa or '—'}"
+    l3 = f"3) Cabelo: {cabelo or '—'}"
+    l4 = f"4) Desculpa oficial: {desculpa or '—'}"
+
+    lines = [l1, l2, l3, l4]
+
+    # 2 opcionais (só aparecem se existirem)
+    if horario:
+        lines.append(f"(+) Horário: {horario}")
+    if pend:
+        lines.append(f"(+) Pendências: {pend}")
+
+    return "\n".join(lines).strip()
+
 
 # ==========================================================
 # ✅ Iniciativa destravada (sem teleporte, sem inventar usuário)
@@ -1253,6 +1302,10 @@ class MaryService(BaseCharacter):
 
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
+        state_block = _render_state_block(facts)
+        if not isinstance(state_block, str) or not state_block.strip():
+            state_block = "—"
+
 
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
@@ -1412,7 +1465,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 """.strip()
 
         # 8) System prompt final
-        system = f"""
+system = f"""
 {spatial_context}
 
 VOCÊ É MARY.
@@ -1429,6 +1482,9 @@ TIMELINE ATUAL: {timeline_final}
 
 [CANON — VERDADE ATUAL]
 {canon_txt}
+
+[ESTADO ATUAL]
+{state_block}
 
 PERSONA (baseline):
 {persona_text}
