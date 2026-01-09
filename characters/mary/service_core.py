@@ -1,7 +1,7 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v4.0 — Imersão Sensorial Balanceada)
+MaryService (v4.4 — Imersão Sensorial Balanceada)
 
 ✅ Mudanças desta versão (foco em imersão sem perder coerência):
 
@@ -284,6 +284,17 @@ Ação: {acao}
 """.strip()
 
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
+    # Exceções: movimentações internas que NÃO são mudanças de local
+    internal_movements = [
+        r"\bbanco\s+(de\s+)?tr[aá]s\b",
+        r"\bbanco\s+traseiro\b",
+        r"\bcama\b",
+        r"\bsof[aá]\b",
+        r"\bchão\b",
+        r"\bmesa\b",
+        r"\bbalc[aã]o\b",
+    ]
+    
     patterns = [
         r"\bcorta\s+para\s+([^\n\r]+)$",
         r"\bhoras\s+depois\s*(?:,\s*)?([^\n\r]*)$",
@@ -297,7 +308,10 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         m = re.search(p, msg)
         if m:
             destino = (m.group(m.lastindex) or "").strip()
-            return True, destino
+            # Verifica se é uma movimentação interna, não uma mudança de local
+            is_internal = any(re.search(exc, destino) for exc in internal_movements)
+            if not is_internal:
+                return True, destino
     return False, ""
 
 def _detect_scene_violation(user_text: str) -> bool:
