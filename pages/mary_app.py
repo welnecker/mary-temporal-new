@@ -183,10 +183,33 @@ def _apply_dark_ui() -> None:
             color: #f2f2f2 !important;
             border: 1px solid rgba(255,255,255,0.14) !important;
         }
+
+        /* ==========================================================
+           FIX MOBILE: botão "Manage app" (Streamlit Cloud) sobrepondo input
+           ========================================================== */
+        @media (max-width: 768px) {
+
+            /* Sobe a barra inteira do chat_input (libera o canto inferior direito) */
+            .stChatInput, div[data-testid="stChatInput"] {
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
+            }
+
+            /* Garante espaço extra no final para as mensagens não ficarem “atrás” da barra */
+            .block-container {
+                padding-bottom: 13rem !important;
+            }
+
+            /* Evita digitação sob overlays no canto direito */
+            .stChatInput textarea, div[data-testid="stChatInput"] textarea {
+                padding-right: 96px !important;
+            }
+        }
+
         </style>
         """,
         unsafe_allow_html=True,
     )
+
 
 
 def _strip_persona_echo_if_any(text: str) -> str:
