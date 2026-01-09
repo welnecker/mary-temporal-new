@@ -1,9 +1,12 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v5.0 — Imersão Sensorial Total + Correções Críticas)
+MaryService (v5.1 — Imersão Sensorial Total + Correções Críticas)
 
-✅ Mudanças desta versão (v5.0):
+✅ Mudanças desta versão (v5.1):
+
+CORREÇÃO CRÍTICA (v5.1):
+- FIX: Função _finalization_allowed() agora está implementada, permitindo respostas a clímax quando o usuário descreve o orgasmo.
 
 CORREÇÕES CRÍTICAS (v4.3-v4.5):
 - FIX: Assinatura de _generate_with_repair() agora inclui nsfw_on, user_text e phase.
@@ -894,6 +897,26 @@ _RE_SCENE_FINALIZATION = re.compile(
     r"\b(orgasmo|orgasmei|goza|gozar|gozei|cl[ií]max|explod\w*|finalmente\s+explode|dentro\s+de\s+mim|chegar\s+ao\s+cl[ií]max)\b",
     re.IGNORECASE,
 )
+
+def _finalization_allowed(user_text: str, phase: int) -> bool:
+    """
+    Determina se a IA pode finalizar a cena (clímax/orgasmo).
+    
+    REGRAS:
+    - Se o usuário já descreveu o clímax na entrada dele, a IA PODE responder ao clímax.
+    - Se a fase é 3 (pre_climax) ou 4 (climax), a IA PODE responder ao clímax.
+    - Caso contrário, a IA NÃO pode finalizar a cena por conta própria.
+    """
+    # Se o usuário já descreveu o clímax, a IA pode responder
+    if _RE_SCENE_FINALIZATION.search(user_text or ""):
+        return True
+    
+    # Se estamos na fase de pre_climax ou climax, permitir
+    if phase >= 3:
+        return True
+    
+    # Caso contrário, não permitir
+    return False
 
 def _conflict_imminent(user_text: str) -> bool:
     return bool(_RE_CONFLICT_IMMINENT.search(user_text or ""))
