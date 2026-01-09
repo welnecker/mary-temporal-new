@@ -945,7 +945,7 @@ def _violations(texto: str, ctx_lower: str, *, user_text: str = "", phase: int =
 
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
-        out.append("finalizou_cena")
+         out.append("finalizou_cena")
 
 
     # Guard “formato” só pra vazio (já coberto)
