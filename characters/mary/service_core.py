@@ -1105,8 +1105,9 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
     roupa = _fact_str(facts, "state.roupa")
     cabelo = _fact_str(facts, "state.cabelo")
     desculpa = _fact_str(facts, "state.desculpa")
-    horario = _fact_str(facts, "state.horarios")   # <-- plural
+    horarios = _fact_str(facts, "state.horarios") or _fact_str(facts, "state.horario")  # ✅ plural + compat
     pend = _fact_str(facts, "state.pendencias")
+
 
     # ✅ Se o usuário não configurou nada no sidebar, não injeta bloco nenhum
     if not any([local, roupa, cabelo, desculpa, horario, pend]):
@@ -1118,8 +1119,8 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
         f"3) Cabelo: {cabelo or '—'}",
         f"4) Desculpa oficial: {desculpa or '—'}",
     ]
-    if horario:
-        lines.append(f"(+) Horários: {horario}")
+    if horarios:
+        lines.append(f"(+) Horários: {horarios}")
     if pend:
         lines.append(f"(+) Pendências: {pend}")
 
