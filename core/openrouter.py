@@ -9,6 +9,7 @@ import httpx
 DEFAULT_MODELS = [
     "x-ai/grok-4.1-fast",          # Grok como sugestão principal
     "tngtech/tng-r1t-chimera:free",     # Chimera de apoio
+    "xiaomi/mimo-v2-flash:free",
     "deepseek/deepseek-chat-v3-0324",
     "anthropic/claude-3.5-haiku",
     "qwen/qwen3-max",
