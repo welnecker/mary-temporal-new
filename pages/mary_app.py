@@ -1461,6 +1461,90 @@ def main() -> None:
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
 
+                st.markdown("---")
+        st.subheader("🧾 Estado Atual (facts → service_core)")
+
+        # Lê facts atuais do usuario_key para preencher defaults
+        try:
+            _uk = _usuario_key_atual()
+            _facts_now = get_facts(_uk) or {}
+            if not isinstance(_facts_now, dict):
+                _facts_now = {}
+        except Exception:
+            _uk = _usuario_key_atual()
+            _facts_now = {}
+
+        def _f(k: str) -> str:
+            v = _facts_now.get(k, "")
+            return "" if v is None else str(v).strip()
+
+        # ✅ compat: se existir o legado state.horario, mostra como fallback
+        _horarios_default = _f("state.horarios") or _f("state.horario")
+
+        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+            st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
+            st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
+            st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
+            st.text_input("4) Desculpa oficial", value=_f("state.desculpa"), key="sb_state_desculpa")
+
+            st.markdown("**Opcionais**")
+            st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")  # ✅ plural
+            st.text_area("(+) Pendências", value=_f("state.pendencias"), key="sb_state_pendencias", height=90)
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
+                    updates = {
+                        "state.local": st.session_state.get("sb_state_local", "").strip(),
+                        "state.roupa": st.session_state.get("sb_state_roupa", "").strip(),
+                        "state.cabelo": st.session_state.get("sb_state_cabelo", "").strip(),
+                        "state.desculpa": st.session_state.get("sb_state_desculpa", "").strip(),
+                        "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),  # ✅ plural
+                        "state.pendencias": st.session_state.get("sb_state_pendencias", "").strip(),
+                    }
+
+                    for k, v in updates.items():
+                        if v:
+                            set_fact(_uk, k, v, {"fonte": "sidebar_state"})
+                        else:
+                            set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
+
+                    # ✅ apaga legado para não duplicar no prompt (opcional, mas recomendado)
+                    try:
+                        set_fact(_uk, "state.horario", "", {"fonte": "sidebar_state_migrate"})
+                    except Exception:
+                        pass
+
+                    _invalidate_backend_cache()
+                    _clear_mary_caches_all_related(also_clear_other_timeline=False)
+                    _kill_all_mary_services()
+                    st.success("✅ Estado aplicado no facts.")
+                    st.rerun()
+
+            with c2:
+                if st.button("🧹 Limpar Estado", key="btn_clear_state"):
+                    for k in (
+                        "state.local",
+                        "state.roupa",
+                        "state.cabelo",
+                        "state.desculpa",
+                        "state.horarios",     # ✅ plural
+                        "state.pendencias",
+                        "state.horario",      # ✅ legado (limpa junto)
+                    ):
+                        try:
+                            set_fact(_uk, k, "", {"fonte": "sidebar_state_clear_all"})
+                        except Exception:
+                            pass
+
+                    _invalidate_backend_cache()
+                    _clear_mary_caches_all_related(also_clear_other_timeline=False)
+                    _kill_all_mary_services()
+                    st.success("✅ Estado limpo.")
+                    st.rerun()
+
+
         # ======================================================
         # ✅ PERSONA DEBUG + FALLBACK INJECTION
         # ======================================================
