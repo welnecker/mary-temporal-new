@@ -1014,15 +1014,17 @@ def _capture_used_model_provider_from_service(svc: Any) -> None:
     st.session_state["mary_last_used_provider"] = provider
 
 def _extract_router_text(resp: Any) -> str:
-    """Extrai texto de respostas: str | dict(OpenAI-like) | tuple(data, used_model, provider)."""
+    """
+    Extrai texto de:
+      - tuple(data, used_model, provider)   ✅ seu caso
+      - dict (OpenAI-like)
+      - str
+    """
     if resp is None:
         return ""
 
-    # ✅ Se vier tuple do router: (data, used_model, provider)
-    if isinstance(resp, tuple):
-        if not resp:
-            return ""
-        # primeiro item normalmente é o JSON/dict
+    # ✅ tuple: (data, used_model, provider)
+    if isinstance(resp, tuple) and resp:
         return _extract_router_text(resp[0])
 
     if isinstance(resp, str):
@@ -1035,7 +1037,7 @@ def _extract_router_text(resp: Any) -> str:
             txt = msg.get("content")
             if isinstance(txt, str):
                 return txt.strip()
-            # fallback (providers antigos)
+            # fallback: alguns providers usam "text"
             txt2 = c0.get("text")
             return txt2.strip() if isinstance(txt2, str) else ""
         except Exception:
@@ -1044,31 +1046,23 @@ def _extract_router_text(resp: Any) -> str:
     return str(resp).strip()
 
 
-
 def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | None]:
     """
-    Retorna (provider, used_model) quando possível.
-    Suporta:
-      - tuple(data, used_model, provider)  ✅ seu caso
-      - dict com chaves diretas/meta/debug
+    Retorna (provider, used_model).
+    ✅ Suporta tuple(data, used_model, provider) (OpenRouter/Together/HF no seu projeto)
     """
-    # ✅ tuple do teu openrouter.py: (data, used_model, "openrouter")
     if isinstance(resp, tuple):
         used_model = None
         provider = None
 
         if len(resp) >= 3:
-            # padrão: (data, used_model, provider)
-            if isinstance(resp[1], str) and resp[1].strip():
-                used_model = resp[1].strip()
-            if isinstance(resp[2], str) and resp[2].strip():
-                provider = resp[2].strip()
+            used_model = resp[1].strip() if isinstance(resp[1], str) and resp[1].strip() else None
+            provider = resp[2].strip() if isinstance(resp[2], str) and resp[2].strip() else None
             return (provider, used_model)
 
-        # fallback: se vier tuple diferente, tenta achar strings
+        # fallback defensivo
         for item in resp:
             if isinstance(item, str) and item.strip():
-                # heurística: provider costuma ser "openrouter"/"together"/"huggingface"
                 low = item.strip().lower()
                 if low in ("openrouter", "together", "huggingface"):
                     provider = item.strip()
@@ -1078,6 +1072,12 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 
     if not isinstance(resp, dict):
         return (None, None)
+
+    # (quase nunca será usado no seu caso, mas deixo como fallback)
+    provider = resp.get("provider") if isinstance(resp.get("provider"), str) else None
+    model = resp.get("model") if isinstance(resp.get("model"), str) else None
+    return (provider, model)
+
 
     provider_keys = ["provider", "used_provider", "provider_used", "last_used_provider"]
     model_keys = ["model", "used_model", "resolved_model", "model_used", "last_used_model"]
@@ -1123,10 +1123,6 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 
 
 def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
-    """
-    Ping/Pong direto no core.service_router.chat().
-    ✅ No teu projeto, chat(model, messages, **kwargs) retorna tuple(data, used_model, provider).
-    """
     fn = getattr(service_router, "chat", None)
     if not callable(fn):
         return {"ok": False, "error": "service_router.chat não existe."}
@@ -1137,14 +1133,14 @@ def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
     try:
         raw = fn(model, messages, max_tokens=16, temperature=0.0, top_p=1.0)
 
-        txt = _extract_router_text(raw) or ""
+        txt = _extract_router_text(raw)
         prov, used_model = _extract_router_used_model_provider(raw)
 
-        pong_ok = "PONG" in txt.upper()
+        pong_ok = "PONG" in (txt or "").upper()
 
         return {
             "ok": bool(txt.strip()) and pong_ok,
-            "attempt": "service_router.chat(model, messages, ...)",
+            "attempt": "service_router.chat(model, messages)",
             "ui_model": model,
             "used_provider": prov,
             "used_model": used_model,
@@ -1246,12 +1242,12 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
         # se não conseguir introspectar, tenta do jeito "normal"
         pass
 
-    resp = svc.reply(**kwargs)  # type: ignore[arg-type]
+    resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do teu service
 
-    # ✅ se vier tuple/dict, extrai texto certo
+    # ✅ pega texto mesmo se vier tuple
     txt = _extract_router_text(resp)
 
-    # ✅ tenta capturar do retorno (mais confiável que introspecionar attrs)
+    # ✅ telemetria pelo retorno (mais confiável)
     prov, used_model = _extract_router_used_model_provider(resp)
     if used_model or prov:
         st.session_state["mary_last_used_model"] = used_model
@@ -1261,6 +1257,7 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
 
     clean = _strip_persona_echo_if_any(txt)
     return clean
+
 
 
 
