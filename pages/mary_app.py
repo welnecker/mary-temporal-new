@@ -1461,7 +1461,7 @@ def main() -> None:
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
 
-                st.markdown("---")
+        st.markdown("---")
         st.subheader("🧾 Estado Atual (facts → service_core)")
 
         # Lê facts atuais do usuario_key para preencher defaults
