@@ -59,8 +59,9 @@ def _provider_for(model_id: str) -> str:
         return "Together"
 
     # 2) OpenRouter explícito (IMPORTANTE: OpenRouter usa sufixos como ':free')
-    if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/")):
+    if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
         return "OpenRouter"
+
     if low.endswith(":free"):
         return "OpenRouter"
 
