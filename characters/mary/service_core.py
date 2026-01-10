@@ -1105,24 +1105,26 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
     roupa = _fact_str(facts, "state.roupa")
     cabelo = _fact_str(facts, "state.cabelo")
     desculpa = _fact_str(facts, "state.desculpa")
-    horario = _fact_str(facts, "state.horario")
+    horario = _fact_str(facts, "state.horarios")   # <-- plural
     pend = _fact_str(facts, "state.pendencias")
 
-    # 4 fixas — se estiverem vazias, põe "—" para não poluir nem quebrar
-    l1 = f"1) Local: {local or '—'}"
-    l2 = f"2) Roupa: {roupa or '—'}"
-    l3 = f"3) Cabelo: {cabelo or '—'}"
-    l4 = f"4) Desculpa oficial: {desculpa or '—'}"
+    # ✅ Se o usuário não configurou nada no sidebar, não injeta bloco nenhum
+    if not any([local, roupa, cabelo, desculpa, horario, pend]):
+        return ""
 
-    lines = [l1, l2, l3, l4]
-
-    # 2 opcionais (só aparecem se existirem)
+    lines = [
+        f"1) Local: {local or '—'}",
+        f"2) Roupa: {roupa or '—'}",
+        f"3) Cabelo: {cabelo or '—'}",
+        f"4) Desculpa oficial: {desculpa or '—'}",
+    ]
     if horario:
-        lines.append(f"(+) Horário: {horario}")
+        lines.append(f"(+) Horários: {horario}")
     if pend:
         lines.append(f"(+) Pendências: {pend}")
 
     return "\n".join(lines).strip()
+
 
 
 # ==========================================================
@@ -1303,8 +1305,10 @@ class MaryService(BaseCharacter):
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
         state_block = _render_state_block(facts)
-        if not isinstance(state_block, str) or not state_block.strip():
-            state_block = "—"
+        state_section = ""
+        if state_block.strip():
+            state_section = f"\n[ESTADO ATUAL]\n{state_block}\n"
+
 
 
         intimacy_phase = self._get_intimacy_phase(facts)
@@ -1464,8 +1468,14 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
-        # 8) System prompt final
-system = f"""
+                # 8) System prompt final (corrigido: ESTADO só entra se existir)
+        state_block = _render_state_block(facts)
+
+        state_section = ""
+        if isinstance(state_block, str) and state_block.strip():
+            state_section = f"\n[ESTADO ATUAL]\n{state_block}\n"
+
+        system = f"""
 {spatial_context}
 
 VOCÊ É MARY.
@@ -1482,10 +1492,7 @@ TIMELINE ATUAL: {timeline_final}
 
 [CANON — VERDADE ATUAL]
 {canon_txt}
-
-[ESTADO ATUAL]
-{state_block}
-
+{state_section}
 PERSONA (baseline):
 {persona_text}
 
@@ -1515,6 +1522,7 @@ REGRAS ABSOLUTAS:
 
 {nsfw_block}
 """.strip()
+
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
