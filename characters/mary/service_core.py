@@ -1110,7 +1110,7 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
 
 
     # ✅ Se o usuário não configurou nada no sidebar, não injeta bloco nenhum
-    if not any([local, roupa, cabelo, desculpa, horario, pend]):
+    if not any([local, roupa, cabelo, desculpa, horarios, pend]):
         return ""
 
     lines = [
