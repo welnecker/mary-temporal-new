@@ -7,9 +7,9 @@ import httpx
 
 # Lista de modelos “sugeridos” para a UI (pode ampliar à vontade)
 DEFAULT_MODELS = [
-    "x-ai/grok-4.1-fast",              # Grok como sugestão principal
-    "tngtech/tng-r1t-chimera:free",     # Chimera de apoio
-    "xiaomi/mimo-v2-flash:free",        # Xiaomi MiMo
+    "x-ai/grok-4.1-fast",               # Grok como sugestão principal
+    "tngtech/tng-r1t-chimera:free",      # Chimera de apoio
+    "xiaomi/mimo-v2-flash:free",
     "deepseek/deepseek-chat-v3-0324",
     "anthropic/claude-3.5-haiku",
     "qwen/qwen3-max",
@@ -21,6 +21,12 @@ OPENROUTER_BASE_URL = os.getenv(
     "https://openrouter.ai/api/v1/chat/completions",
 )
 
+# Timeout HTTP padrão (segundos)
+DEFAULT_TIMEOUT = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
+
+# =========================================
+# HEADERS
+# =========================================
 def _headers() -> Dict[str, str]:
     token = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN") or ""
     if not token:
@@ -29,7 +35,7 @@ def _headers() -> Dict[str, str]:
             "Defina nas secrets/env para usar OpenRouter."
         )
 
-    # Referer e X-Title ajudam em rate-limit / identificação no OpenRouter
+    # Referer e X-Title ajudam no rate-limit do OpenRouter
     referer = os.getenv("APP_PUBLIC_URL", "") or "https://streamlit.app"
     x_title = os.getenv("APP_NAME", "") or "PERSONAGENS2025"
 
@@ -40,42 +46,63 @@ def _headers() -> Dict[str, str]:
         "X-Title": x_title,
     }
 
-def _extract_content(data: Dict[str, Any]) -> str:
-    """
-    Tenta extrair o texto do assistant de forma robusta.
-    Cobre content como string e content como lista de partes.
-    """
+# =========================================
+# UTIL: parse de erro do OpenRouter
+# =========================================
+def _extract_error_payload(r: httpx.Response) -> str:
     try:
-        choices = data.get("choices") or []
-        if not choices:
-            return ""
-        c0 = choices[0] or {}
-        msg = c0.get("message") or {}
-        content = msg.get("content")
-
-        # Caso padrão (string)
-        if isinstance(content, str):
-            return content
-
-        # Alguns providers podem devolver lista de partes
-        if isinstance(content, list):
-            parts: List[str] = []
-            for p in content:
-                if isinstance(p, str):
-                    parts.append(p)
-                elif isinstance(p, dict):
-                    # padrões comuns: {"type":"text","text":"..."} ou {"text":"..."}
-                    t = p.get("text")
-                    if isinstance(t, str):
-                        parts.append(t)
-            return "".join(parts)
-
-        # fallback (providers antigos / compat)
-        txt2 = c0.get("text")
-        return txt2 if isinstance(txt2, str) else ""
+        j = r.json()
     except Exception:
-        return ""
+        return r.text[:2000]
 
+    # Formatos comuns:
+    # {"error": {"message": "...", ...}}
+    # {"error": "..."}
+    # {"message": "..."}
+    err = j.get("error")
+    if isinstance(err, dict):
+        msg = err.get("message") or err.get("error") or err.get("type") or str(err)
+        return str(msg)
+    if isinstance(err, str):
+        return err
+    if isinstance(j.get("message"), str):
+        return j["message"]
+    return str(j)[:2000]
+
+# =========================================
+# DEFAULTS: Reasoning para modelos específicos
+# =========================================
+def _default_reasoning_for_model(model: str) -> Optional[Dict[str, Any]]:
+    """
+    Para o roleplay, é comum querer o texto final "fluido".
+    Alguns modelos (incl. Xiaomi MiMo) podem gastar muito em reasoning.
+    Aqui aplicamos um default: desligar reasoning para xiaomi/*,
+    a não ser que o chamador já tenha passado 'reasoning' manualmente.
+    """
+    m = (model or "").strip().lower()
+    if m.startswith("xiaomi/"):
+        # "effort": "none" = desliga reasoning (menos custo, menos truncamento)
+        # Você pode trocar para {"exclude": True} se quiser reasoning interno
+        return {"reasoning": {"effort": "none"}}
+
+    return None
+
+def _merge_body_defaults(model: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    # Se o chamador já passou reasoning, respeite.
+    if "reasoning" in body or "include_reasoning" in body:
+        return body
+
+    defaults = _default_reasoning_for_model(model)
+    if defaults:
+        # Merge simples (sem sobrescrever campos já existentes)
+        for k, v in defaults.items():
+            if k not in body:
+                body[k] = v
+    return body
+
+# =========================================
+# SERVICE
+# =========================================
 def chat(
     model: str,
     messages: List[Dict[str, str]],
@@ -83,75 +110,60 @@ def chat(
     max_tokens: int = 1024,
     temperature: float = 0.7,
     top_p: float = 0.95,
-    stop: Optional[List[str] | str] = None,
     extra: Dict[str, Any] | None = None,
-) -> Tuple[Dict[str, Any], str, str, Dict[str, Any]]:
+) -> Tuple[Dict[str, Any], str, str]:
     """
     Chamador simples ao endpoint de chat do OpenRouter.
+    Retorna (json, used_model, "openrouter").
 
-    Retorna:
-      (data_json, used_model, "openrouter", meta)
-
-    meta inclui:
-      - finish_reason
-      - usage
-      - content_len
-      - content_preview (primeiros 200 chars)
+    - Mantém compatibilidade com seu service_router/MaryService (3-tuple).
+    - Injeta data["_or_meta"] com finish_reason/usage para debug (opcional).
     """
+    if not model or not str(model).strip():
+        raise RuntimeError("OpenRouter: model vazio")
+
     body: Dict[str, Any] = {
         "model": model,
         "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": top_p,
+        "max_tokens": int(max_tokens),
+        "temperature": float(temperature),
+        "top_p": float(top_p),
     }
 
-    # stop opcional (cuidado com </think>!)
-    if stop is not None:
-        body["stop"] = stop
-
-    # extra pode incluir: reasoning, response_format, etc.
+    # extra: campos adicionais no ROOT (ex: reasoning, tools, response_format, etc.)
     if extra:
-        # OBS: aqui você pode passar {"reasoning": {...}} direto
         body.update(extra)
 
-    timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
+    # aplica defaults por modelo (ex: xiaomi -> reasoning off)
+    body = _merge_body_defaults(model, body)
 
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
             r = client.post(OPENROUTER_BASE_URL, headers=_headers(), json=body)
 
             if r.status_code >= 400:
-                try:
-                    err = r.json()
-                except Exception:
-                    err = {"text": r.text}
-
-                # O OpenRouter costuma retornar {"error": {...}} ou {"message": "..."}
-                raise RuntimeError(
-                    f"OpenRouter {r.status_code}: {err.get('error') or err.get('message') or err}"
-                )
+                msg = _extract_error_payload(r)
+                raise RuntimeError(f"OpenRouter {r.status_code}: {msg}")
 
             data = r.json()
+
             used = data.get("model") or model
 
-            # meta p/ debug de truncamento
-            finish_reason = ""
+            # meta para debug (não quebra seu fluxo atual)
             try:
-                finish_reason = (data.get("choices") or [])[0].get("finish_reason") or ""
+                c0 = (data.get("choices") or [])[0] or {}
+                finish_reason = c0.get("finish_reason")
+                usage = data.get("usage") or {}
+                data["_or_meta"] = {
+                    "finish_reason": finish_reason,
+                    "usage": usage,
+                    "requested_model": model,
+                    "used_model": used,
+                }
             except Exception:
-                finish_reason = ""
+                pass
 
-            usage = data.get("usage") or {}
-            content = _extract_content(data)
-            meta = {
-                "finish_reason": finish_reason,
-                "usage": usage,
-                "content_len": len(content or ""),
-                "content_preview": (content or "")[:200],
-            }
-
-            return data, used, "openrouter", meta
+            return data, used, "openrouter"
 
     except httpx.TimeoutException as e:
         raise RuntimeError("OpenRouter: timeout") from e
