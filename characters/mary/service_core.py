@@ -1271,11 +1271,24 @@ class MaryService(BaseCharacter):
         # 4) Mudança explícita de local/tempo (comando do usuário)
         mudou, novo_local = _user_requested_location_change(prompt)
         if mudou and novo_local:
-            _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-            _lock_scene(usuario_key)
-            _ss_set("mary_last_diagnostics", diag.as_dict())
-            return f"_Eu te acompanho até **{novo_local}**…_"
-
+            novo_local = str(novo_local).strip()
+        
+            # Se já estamos nesse local, NÃO entra em modo "atalho" (evita loop)
+            loc0, _t0, _a0 = _get_scene_state(facts0)
+            loc0n = (loc0 or "").strip().lower()
+            loc1n = novo_local.lower()
+        
+            if loc1n and loc1n != loc0n:
+                _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
+                _lock_scene(usuario_key)
+        
+                # Só registra no diag — mas NÃO retorna.
+                try:
+                    diag.scene_transition = {"from": loc0, "to": novo_local}  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        
+           
         # 5) Cena paralela
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
