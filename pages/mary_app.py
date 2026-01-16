@@ -184,6 +184,26 @@ def _apply_dark_ui() -> None:
             border: 1px solid rgba(255,255,255,0.14) !important;
         }
 
+        /* =========================
+           FIX: chat_input 100% responsivo
+           (corrige o encolhimento do textarea)
+           ========================= */
+        div[data-testid="stChatInput"] { width: 100% !important; }
+        
+        div[data-testid="stChatInput"] form,
+        div[data-testid="stChatInput"] form > div,
+        div[data-testid="stChatInput"] form > div > div,
+        div[data-testid="stChatInput"] form > div > div > div {
+          width: 100% !important;
+          max-width: 100% !important;
+        }
+        
+        div[data-testid="stChatInput"] textarea {
+          width: 100% !important;
+          box-sizing: border-box !important;
+        }
+
+
         /* ==========================================================
            FIX MOBILE: botão "Manage app" (Streamlit Cloud) sobrepondo input
            ========================================================== */
