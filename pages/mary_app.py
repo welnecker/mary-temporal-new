@@ -156,53 +156,63 @@ def _apply_dark_ui() -> None:
             color: #f2f2f2 !important;
         }
 
-        /* INPUT FIXO */
-        .stChatInput, div[data-testid="stChatInput"] {
-            position: fixed !important;
-            left: 0 !important;
-            right: 0 !important;
-            bottom: 0 !important;
-            z-index: 9999 !important;
-            background: rgba(11,11,11,0.88) !important;
-            backdrop-filter: blur(10px) !important;
-            border-top: 1px solid rgba(255,255,255,0.10) !important;
-            padding: 10px 0 !important;
-        }
-
-        .stChatInput > div, div[data-testid="stChatInput"] > div {
-            max-width: 980px !important;
-            margin: 0 auto !important;
-            padding: 0 1rem !important;
-        }
-
-        .stChatInput textarea, div[data-testid="stChatInput"] textarea {
-            min-height: 96px !important;
-            max-height: 240px !important;
-            border-radius: 14px !important;
-            background: #101010 !important;
-            color: #f2f2f2 !important;
-            border: 1px solid rgba(255,255,255,0.14) !important;
-        }
-
-        /* =========================
-           FIX: chat_input 100% responsivo
-           (corrige o encolhimento do textarea)
-           ========================= */
-        div[data-testid="stChatInput"] { width: 100% !important; }
-        
-        div[data-testid="stChatInput"] form,
-        div[data-testid="stChatInput"] form > div,
-        div[data-testid="stChatInput"] form > div > div,
-        div[data-testid="stChatInput"] form > div > div > div {
+        /* ==========================================================
+           INPUT FIXO — RESPONSIVO (FIX DEFINITIVO)
+           ========================================================== */
+        div[data-testid="stChatInput"]{
+          position: fixed !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
+          z-index: 9999 !important;
+          background: rgba(11,11,11,0.88) !important;
+          backdrop-filter: blur(10px) !important;
+          border-top: 1px solid rgba(255,255,255,0.10) !important;
+          padding: 10px 0 !important;
           width: 100% !important;
-          max-width: 100% !important;
         }
-        
-        div[data-testid="stChatInput"] textarea {
+
+        /* container interno centralizado, mas sem encolher */
+        div[data-testid="stChatInput"] > div{
           width: 100% !important;
+          max-width: 980px !important;
+          margin: 0 auto !important;
+          padding: 0 1rem !important;
           box-sizing: border-box !important;
         }
 
+        /* o FORM era quem estava encolhendo */
+        div[data-testid="stChatInput"] form{
+          width: 100% !important;
+          display: flex !important;
+          gap: 10px !important;
+          align-items: flex-end !important;
+          box-sizing: border-box !important;
+        }
+
+        /* bloco do textarea deve expandir */
+        div[data-testid="stChatInput"] form > div{
+          flex: 1 1 auto !important;
+          width: 100% !important;
+          min-width: 0 !important;  /* crítico em flex */
+        }
+
+        /* textarea ocupa tudo */
+        div[data-testid="stChatInput"] textarea{
+          width: 100% !important;
+          min-height: 96px !important;
+          max-height: 240px !important;
+          border-radius: 14px !important;
+          background: #101010 !important;
+          color: #f2f2f2 !important;
+          border: 1px solid rgba(255,255,255,0.14) !important;
+          box-sizing: border-box !important;
+        }
+
+        /* botão não rouba largura do textarea */
+        div[data-testid="stChatInput"] button{
+          flex: 0 0 auto !important;
+        }
 
         /* ==========================================================
            FIX MOBILE: botão "Manage app" (Streamlit Cloud) sobrepondo input
@@ -210,7 +220,7 @@ def _apply_dark_ui() -> None:
         @media (max-width: 768px) {
 
             /* Sobe a barra inteira do chat_input (libera o canto inferior direito) */
-            .stChatInput, div[data-testid="stChatInput"] {
+            div[data-testid="stChatInput"] {
                 bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
             }
 
@@ -220,7 +230,7 @@ def _apply_dark_ui() -> None:
             }
 
             /* Evita digitação sob overlays no canto direito */
-            .stChatInput textarea, div[data-testid="stChatInput"] textarea {
+            div[data-testid="stChatInput"] textarea {
                 padding-right: 96px !important;
             }
         }
