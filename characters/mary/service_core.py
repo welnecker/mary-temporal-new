@@ -438,6 +438,10 @@ def _inject_canon_memories_always(
         return
 
     selected = canon[-max_items:] if len(canon) > max_items else canon
+    try:
+        _ss_set("mary_debug_canon_injected_count", len(selected))
+    except Exception:
+        pass
 
     lines: List[str] = []
     lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS]")
