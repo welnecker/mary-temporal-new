@@ -1151,6 +1151,62 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 
     return (provider, model)
 
+def _summarize_raw(resp: Any) -> dict[str, Any]:
+    info: dict[str, Any] = {"raw_type": type(resp).__name__}
+
+    # tuple (data, used_model, provider)
+    if isinstance(resp, tuple):
+        info["tuple_len"] = len(resp)
+        try:
+            info["tuple_1_type"] = type(resp[0]).__name__ if len(resp) > 0 else None
+            info["tuple_used_model"] = resp[1] if len(resp) > 1 else None
+            info["tuple_provider"] = resp[2] if len(resp) > 2 else None
+        except Exception:
+            pass
+        # tenta resumir o "data" do tuple
+        data = resp[0] if len(resp) > 0 else None
+        info["data_preview"] = _summarize_raw(data)
+        return info
+
+    # dict OpenAI-like
+    if isinstance(resp, dict):
+        info["keys"] = list(resp.keys())[:30]
+        choices = resp.get("choices")
+        info["choices_type"] = type(choices).__name__
+        try:
+            if isinstance(choices, list) and choices:
+                c0 = choices[0] or {}
+                msg = c0.get("message") or {}
+                info["c0_keys"] = list(c0.keys())[:30]
+                info["msg_keys"] = list(msg.keys())[:30] if isinstance(msg, dict) else None
+                info["content_type"] = type(msg.get("content")).__name__ if isinstance(msg, dict) else None
+                ct = msg.get("content") if isinstance(msg, dict) else None
+                if isinstance(ct, str):
+                    info["content_preview"] = ct[:400]
+                txt2 = c0.get("text")
+                if isinstance(txt2, str) and not info.get("content_preview"):
+                    info["text_preview"] = txt2[:400]
+            else:
+                info["choices_len"] = len(choices) if isinstance(choices, list) else None
+        except Exception as e:
+            info["parse_error"] = f"{type(e).__name__}: {e}"
+        return info
+
+    # str
+    if isinstance(resp, str):
+        info["text_preview"] = resp[:400]
+        info["text_len"] = len(resp)
+        return info
+
+    # fallback
+    try:
+        s = repr(resp)
+        info["repr_preview"] = s[:400]
+    except Exception:
+        pass
+    return info
+
+
 
 def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
     fn = getattr(service_router, "chat", None)
@@ -1274,6 +1330,14 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
 
     resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do teu service
 
+    st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
+
+    txt = _extract_router_text(resp)
+    
+    # DEBUG: antes de strip
+    st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
+
+
     # ✅ pega texto mesmo se vier tuple
     txt = _extract_router_text(resp)
 
@@ -1286,7 +1350,9 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
         _capture_used_model_provider_from_service(svc)
 
     clean = _strip_persona_echo_if_any(txt)
+    st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
     return clean
+
 
 
 
@@ -1980,8 +2046,25 @@ def main() -> None:
             st.stop()
 
         if not (resposta or "").strip():
-            st.warning("⚠️ O modelo retornou vazio.")
+            st.error("⚠️ Resposta vazia. Diagnóstico abaixo (NÃO é 'mistério', é pipeline).")
+        
+            with st.expander("🧪 Diagnóstico do retorno vazio", expanded=True):
+                st.write("Timeline:", tl_active)
+                st.write("NSFW:", nsfw_active)
+                st.write("Modelo (UI):", st.session_state.get("model"))
+                st.write("Usado (capturado):", f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}")
+        
+                st.write("Preview extracted (antes do strip):")
+                st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
+        
+                st.write("Preview clean (depois do strip):")
+                st.code(st.session_state.get("mary_last_clean_text_preview") or "")
+        
+                st.write("RAW summary:")
+                st.json(st.session_state.get("mary_last_raw_resp") or {})
+        
             st.stop()
+
 
         with st.chat_message("assistant"):
             st.markdown(_format_paragraphs(resposta))
