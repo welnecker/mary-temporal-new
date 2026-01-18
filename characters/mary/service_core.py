@@ -1497,7 +1497,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
-                # 8) System prompt final (corrigido: ESTADO só entra se existir)
+        # 8) System prompt final (corrigido: ESTADO só entra se existir)
         state_block = _render_state_block(facts)
 
         state_section = ""
@@ -1770,103 +1770,103 @@ REGRAS ABSOLUTAS:
     # Gerar + Repair (núcleo da robustez)
     # ======================================================
     def _generate_with_repair(
-    self,
-    *,
-    model: str,
-    messages: List[Dict[str, str]],
-    temperature: float,
-    max_tokens: int,
-    usuario_key: str,
-    ctx_lower: str,
-    user_text: str,
-    phase: int,
-    nsfw_on: bool,
-    diag: _Diag,
-) -> Tuple[str, str]:
-    data, used_model, _provider_meta = self._chat(
-        model,
-        messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    used_model = used_model or model
-
-    # ✅ salva um preview do raw para diagnóstico
-    try:
-        _ss_set(
-            "mary_last_raw_preview",
-            {
-                "used_model": used_model,
-                "raw_type": type(data).__name__,
-                "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
-                "raw_preview": (str(data)[:900] if data is not None else ""),
-            },
-        )
-    except Exception:
-        pass
-
-    texto = (self._extract_text(data) or "").strip()
-    if not texto:
-        raise RuntimeError("modelo retornou vazio")
-
-    v = _violations(texto, ctx_lower, user_text=user_text, phase=phase)
-    if not v:
-        return (texto, used_model)
-
-    diag.repairs += 1
-    diag.violations.extend(v)
-
-    repair_sys = (
-        "Você é um revisor de continuidade do roleplay.\n"
-        "TAREFA: reescrever a resposta da MARY corrigindo violações MAS mantendo intensidade sensorial e emocional.\n"
-        "PRIORIDADES:\n"
-        "1. Remover violações de continuidade (teleporte, invenção de ações do usuário, meta-comentários).\n"
-        "2. MANTER ou AUMENTAR detalhes sensoriais (sensações físicas, reações corporais, texturas, temperaturas).\n"
-        "3. MANTER intensidade emocional e desejo.\n"
-        "4. Não conclua a cena prematuramente; deixe espaço para o usuário responder.\n"
-        "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos/perguntas.\n"
-        "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
-    )
-    repair_user = (
-        "Reescreva a resposta abaixo removendo violações.\n"
-        f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
-        f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
-        "[RESPOSTA ORIGINAL]\n"
-        f"{texto}\n"
-    )
-
-    for _i in range(2):
-        dataR, usedR, _ = self._chat(
-            used_model,
-            [
-                {"role": "system", "content": repair_sys},
-                {"role": "user", "content": repair_user},
-            ],
-            temperature=0.4,
+        self,
+        *,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        usuario_key: str,
+        ctx_lower: str,
+        user_text: str,
+        phase: int,
+        nsfw_on: bool,
+        diag: _Diag,
+    ) -> Tuple[str, str]:
+        data, used_model, _provider_meta = self._chat(
+            model,
+            messages,
+            temperature=temperature,
             max_tokens=max_tokens,
         )
-        repaired = (self._extract_text(dataR) or "").strip()
-        if not repaired:
-            diag.repairs += 1
-            diag.violations.append("repair_vazio")
-            continue
+        used_model = used_model or model
 
-        vr = _violations(repaired, ctx_lower, user_text=user_text, phase=phase)
-        if not vr:
-            if _RE_SCENE_FINALIZATION.search(repaired or ""):
-                repaired = _trim_scene_finalization(repaired)
-            return (repaired, usedR or used_model)
+        # ✅ salva um preview do raw para diagnóstico
+        try:
+            _ss_set(
+                "mary_last_raw_preview",
+                {
+                    "used_model": used_model,
+                    "raw_type": type(data).__name__,
+                    "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
+                    "raw_preview": (str(data)[:900] if data is not None else ""),
+                },
+            )
+        except Exception:
+            pass
+
+        texto = (self._extract_text(data) or "").strip()
+        if not texto:
+            raise RuntimeError("modelo retornou vazio")
+
+        v = _violations(texto, ctx_lower, user_text=user_text, phase=phase)
+        if not v:
+            return (texto, used_model)
 
         diag.repairs += 1
-        diag.violations.extend(vr)
+        diag.violations.extend(v)
+
+        repair_sys = (
+            "Você é um revisor de continuidade do roleplay.\n"
+            "TAREFA: reescrever a resposta da MARY corrigindo violações MAS mantendo intensidade sensorial e emocional.\n"
+            "PRIORIDADES:\n"
+            "1. Remover violações de continuidade (teleporte, invenção de ações do usuário, meta-comentários).\n"
+            "2. MANTER ou AUMENTAR detalhes sensoriais (sensações físicas, reações corporais, texturas, temperaturas).\n"
+            "3. MANTER intensidade emocional e desejo.\n"
+            "4. Não conclua a cena prematuramente; deixe espaço para o usuário responder.\n"
+            "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos/perguntas.\n"
+            "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
+        )
         repair_user = (
-            repair_user
-            + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-            "sem meta e sem listas/títulos; evite terminar com pergunta."
+            "Reescreva a resposta abaixo removendo violações.\n"
+            f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
+            f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
+            "[RESPOSTA ORIGINAL]\n"
+            f"{texto}\n"
         )
 
-    raise RuntimeError("repair_failed")
-    
+        for _i in range(2):
+            dataR, usedR, _ = self._chat(
+                used_model,
+                [
+                    {"role": "system", "content": repair_sys},
+                    {"role": "user", "content": repair_user},
+                ],
+                temperature=0.4,
+                max_tokens=max_tokens,
+            )
+            repaired = (self._extract_text(dataR) or "").strip()
+            if not repaired:
+                diag.repairs += 1
+                diag.violations.append("repair_vazio")
+                continue
+
+            vr = _violations(repaired, ctx_lower, user_text=user_text, phase=phase)
+            if not vr:
+                if _RE_SCENE_FINALIZATION.search(repaired or ""):
+                    repaired = _trim_scene_finalization(repaired)
+                return (repaired, usedR or used_model)
+
+            diag.repairs += 1
+            diag.violations.extend(vr)
+            repair_user = (
+                repair_user
+                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
+                  "sem meta e sem listas/títulos; evite terminar com pergunta."
+            )
+
+        raise RuntimeError("repair_failed")
+
     @staticmethod
     def _fallback_text() -> str:
         return (
