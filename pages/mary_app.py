@@ -1250,7 +1250,7 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
     E, se o service NÃO injeta persona, permite fallback opcional via UI.
     """
     # fallback persona (opcional)
-    if bool(st.session_state.get("mary_ui_persona_fallback", True)):
+    if bool(st.session_state.get("mary_ui_persona_fallback", False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
     else:
         prompt_to_send = prompt
