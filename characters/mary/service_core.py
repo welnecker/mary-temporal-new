@@ -463,7 +463,14 @@ def _inject_canon_memories_always(
         if dedupe_bucket is not None and txt:
             dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
 
-    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+        block = "\n".join(lines).strip()
+
+        # ✅ injeta no PRIMEIRO system (evita múltiplos system messages)
+        if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+            messages[0]["content"] = (str(messages[0].get("content") or "").rstrip() + "\n\n" + block).strip()
+        else:
+            messages.append({"role": "system", "content": block})
+
 
 def _inject_intro_as_context_once(
     usuario_key: str,
