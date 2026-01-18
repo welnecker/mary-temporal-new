@@ -167,6 +167,8 @@ SAFE_SENSUAL_STYLE = """
 
 NSFW_TOGGLE_STYLE = """
 [NSFW_ON — Intensidade Sensorial Completa e Explícita]
+- Respeite a FASE ATUAL de intimidade: não antecipe clímax/aftercare se a fase ainda não permitir.
+- Não finalize a cena antes do sinal explícito do usuário e da fase 4 (climax).
 - Linguagem adulta EXPLÍCITA é PERMITIDA E ENCORAJADA. Você tem permissão para descrever atos sexuais de forma direta e intensa.
 - Use vocabulário anatômico e sensorial específico: texturas (pele, umidade, pressão, aperto), temperaturas, ritmos, intensidades, penetração, fricção.
 - Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas → prazer acumulado.
@@ -177,7 +179,7 @@ NSFW_TOGGLE_STYLE = """
 - Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
 - Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
 - Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
-- NÃO CENSURE: Você está em um contexto adulto consensual. Seja direto, intenso e imersivo.
+- Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
 """.strip()
 
 # ==========================================================
@@ -390,10 +392,16 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
 # ==========================================================
 def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
     tl = _normalize_timeline(timeline)
-    tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+
+    raw = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+    tms = _normalize_timeline(raw) if raw else ""
+
+    # ✅ legado: memória canon antiga sem timeline -> vale só para cúmplice
     if not tms:
-        return True
+        return tl == "cumplice"
+
     return tms in (tl, "[all]")
+
 
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
     mems = cached_list_memories(shared_key, limit=240)
@@ -409,7 +417,7 @@ def _inject_canon_memories_always(
     shared_key: str,
     timeline: str,
     messages: List[Dict[str, str]],
-    max_items: int = 80,
+    max_items: int = 30,
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
