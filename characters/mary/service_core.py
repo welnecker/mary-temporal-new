@@ -1726,9 +1726,29 @@ REGRAS ABSOLUTAS:
 
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-
+        
+            # ✅ guarda erro para o UI (expander / debug)
+            _ss_set(
+                "mary_last_error",
+                {
+                    "type": type(last_err).__name__,
+                    "msg": str(last_err),
+                    "model_requested": model,
+                    "timeline": timeline_final,
+                    "nsfw_on": bool(nsfw_on),
+                    "attempts": diag.attempts,
+                    "repairs": diag.repairs,
+                    "violations": diag.violations or [],
+                },
+            )
+        
+        # ✅ sempre salva diag
         _ss_set("mary_last_diagnostics", diag.as_dict())
-        return "⚠️ O modelo retornou vazio. Troque o modelo no sidebar."
+        
+        # ✅ não devolve mais “troque o modelo”
+        # devolve um fallback seguro (e você vê o erro real no debug)
+        return self._fallback_text()
+
 
     # ======================================================
     # Planos previsíveis (sem loteria)
@@ -1770,6 +1790,20 @@ REGRAS ABSOLUTAS:
             max_tokens=max_tokens,
         )
         used_model = used_model or model
+        # ✅ salva um preview do raw para diagnóstico
+    try:
+        _ss_set(
+            "mary_last_raw_preview",
+            {
+                "used_model": used_model,
+                "raw_type": type(data).__name__,
+                "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
+                "raw_preview": (str(data)[:900] if data is not None else ""),
+            },
+        )
+    except Exception:
+        pass
+
         texto = (self._extract_text(data) or "").strip()
         if not texto:
             raise RuntimeError("modelo retornou vazio")
