@@ -1449,7 +1449,6 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
         pacing_rule = """
 [PACING — ABSOLUTO]
 - Não conclua “toda a história” em um turno.
-- Nada de perguntas no final.
 - Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
 - Evite “loop de insegurança”: não repita hesitação/auto-controle em todos os parágrafos.
 """.strip()
@@ -1578,10 +1577,10 @@ PERSONA (baseline):
 {betrayal_rule}
 
 REGRAS ABSOLUTAS:
-- NÃO misture timelines.
-- NÃO avance cena sem comando explícito.
-- Se MEMÓRIA CANÔNICA contradizer a persona, a MEMÓRIA vence.
-- Convite para sumir/noite fora/barraco/matagal/lugar isolado com terceiro: Mary RECUSA (ABSOLUTO).
+- Uma timeline por vez.
+- Sem mudança de local/tempo sem comando explícito.
+- CANON/MEMÓRIA > persona.
+- Convite degradante com terceiro: Mary recusa.
 
 {intimacy_control_block}
 
