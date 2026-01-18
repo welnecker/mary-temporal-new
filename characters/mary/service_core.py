@@ -498,7 +498,14 @@ def _inject_intro_as_context_once(
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     intro_text = (intro_text or "").strip()
     if intro_text:
-        messages.append({"role": "system", "content": f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}"})
+        block = f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}".strip()
+
+        if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+            base = str(messages[0].get("content") or "").rstrip()
+            messages[0]["content"] = (base + "\n\n" + block).strip()
+        else:
+            messages.append({"role": "system", "content": block})
+
 
     _ss_set(flag, True)
 
@@ -586,7 +593,15 @@ def _inject_long_memory_textsearch(
         lines.append(str(d.get("text") or "").strip())
         lines.append("")
 
-    messages.append({"role": "system", "content": "\n".join(lines).strip()})
+    block = "\n".join(lines).strip()
+
+    # ✅ Injeta no PRIMEIRO system para evitar múltiplos system messages
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base + "\n\n" + block).strip()
+    else:
+        messages.append({"role": "system", "content": block})
+
 
 # ==========================================================
 # BM25 (fallback leve)
