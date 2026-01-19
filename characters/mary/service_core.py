@@ -307,7 +307,13 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         r"\bmesa\b",
         r"\bbalc[aã]o\b",
     ]
-    
+
+    msg_raw = (user_message or "").strip()
+    msg = msg_raw.lower().strip()
+    if not msg:
+        return False, ""
+
+    # 1) Comandos explícitos (os seus)
     patterns = [
         r"\bcorta\s+para\s+([^\n\r]+)$",
         r"\bhoras\s+depois\s*(?:,\s*)?([^\n\r]*)$",
@@ -316,16 +322,42 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         r"vamos para\s+([^\n\r,.!?]+)",
         r"ir para\s+([^\n\r,.!?]+)",
     ]
-    msg = (user_message or "").lower().strip()
+
     for p in patterns:
         m = re.search(p, msg)
         if m:
             destino = (m.group(m.lastindex) or "").strip()
-            # Verifica se é uma movimentação interna, não uma mudança de local
             is_internal = any(re.search(exc, destino) for exc in internal_movements)
-            if not is_internal:
+            if destino and not is_internal:
                 return True, destino
+
+    # 2) ✅ Mudança narrativa (sem "vamos para"): "já estamos...", "fora do clube", "na calçada", "entra no uber"
+    #    Regras: só aceita pistas claras e curtas, e não confunde com movimentos internos.
+    narrative_cues = [
+        (r"\b(fora\s+do\s+clube|do\s+lado\s+de\s+fora|na\s+cal[cç]ada)\b", "calçada do clube"),
+        (r"\b(entra(mos|ram)?\s+no\s+uber|entrando\s+no\s+uber|dentro\s+do\s+uber)\b", "dentro do uber"),
+        (r"\b(sa[ií]mos\s+do\s+clube|sa[ií]mos|saiu|saindo)\b", "saída do clube"),
+    ]
+    for pat, loc in narrative_cues:
+        if re.search(pat, msg):
+            # evita falsos positivos: se a frase contém só "cama/sofá/..." como destino, ignora
+            is_internal = any(re.search(exc, loc) for exc in internal_movements)
+            if not is_internal:
+                return True, loc
+
+    # 3) “Estamos em X / já estamos em X”
+    #    Pega frases como: "já estamos na calçada", "estamos no uber", "agora estamos na rua"
+    m2 = re.search(r"\b(j[aá]\s+estamos|agora\s+estamos|estamos)\s+(na|no|em)\s+([^\n\r,.!?]{3,80})", msg)
+    if m2:
+        destino = (m2.group(3) or "").strip()
+        # corta se pegar frase muito longa
+        destino = destino[:80].strip()
+        is_internal = any(re.search(exc, destino) for exc in internal_movements)
+        if destino and not is_internal:
+            return True, destino
+
     return False, ""
+
 
 def _detect_scene_violation(user_text: str) -> bool:
     txt = (user_text or "").lower()
@@ -1304,6 +1336,8 @@ class MaryService(BaseCharacter):
 
         # 4) Mudança explícita de local/tempo (comando do usuário)
         mudou, novo_local = _user_requested_location_change(prompt)
+        user_explicit_scene_change = bool(mudou and novo_local)
+        
         if mudou and novo_local:
             novo_local = str(novo_local).strip()
         
@@ -1316,17 +1350,15 @@ class MaryService(BaseCharacter):
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
                 _lock_scene(usuario_key)
         
-                # Só registra no diag — mas NÃO retorna.
                 try:
                     diag.scene_transition = {"from": loc0, "to": novo_local}  # type: ignore[attr-defined]
                 except Exception:
                     pass
         
-           
-        # 5) Cena paralela
+        # 5) Cena paralela (✅ NÃO se o usuário mudou a cena explicitamente)
         facts_pre = cached_get_facts(usuario_key)
         scene_locked = _scene_is_locked(facts_pre)
-        scene_parallel = bool(scene_locked and _detect_scene_violation(prompt))
+        scene_parallel = bool(scene_locked and _detect_scene_violation(prompt) and not user_explicit_scene_change)
 
         # 6) Contexto base
         persona_text, _ = get_persona(timeline_final)
