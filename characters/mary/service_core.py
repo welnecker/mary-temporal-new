@@ -994,6 +994,52 @@ def _cap_next_phase(current_phase: int, desired_next: int) -> int:
     return current_phase + 1 if desired_next > current_phase + 1 else desired_next
 
 # ==========================================================
+# DESVIO CURTO (fidelidade soft) — helpers
+# ==========================================================
+def _fidelity_mode(timeline: str) -> str:
+    """
+    hard: não cede nem beijo
+    soft: pode ceder UM beijo por impulso, mas bloqueia qualquer avanço íntimo
+    """
+    tl = _normalize_timeline(timeline)
+    # Ajuste aqui se quiser hard em alguma timeline específica
+    return "soft"
+
+
+_RE_INTIMATE_ADVANCE = re.compile(
+    r"\b("
+    r"decote|"
+    r"m[aã]os?\s+sobe(m|ndo)?|"
+    r"por\s+dentro|"
+    r"por\s+baixo\s+da\s+roupa|"
+    r"mais\s+que\s+um\s+beijo|"
+    r"tirar\s+a\s+roupa|"
+    r"seios|peito|"
+    r"quadril\s+subindo|"
+    r"me\s+vira\s+de\s+costas|"
+    r"me\s+prende\s+contra"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_BLOCKING_LIMIT = re.compile(
+    r"\b("
+    r"n[aã]o|para|chega|"
+    r"isso\s+n[aã]o|"
+    r"foi\s+um\s+erro|"
+    r"n[aã]o\s+vai\s+rolar|"
+    r"n[aã]o\s+assim|"
+    r"me\s+solta|"
+    r"agora\s+n[aã]o"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _intimate_advance_detected(text: str) -> bool:
+    return bool(_RE_INTIMATE_ADVANCE.search(text or ""))
+
+
+# ==========================================================
 # CONFLICT_MODE
 # ==========================================================
 def _resolve_conflict_mode(timeline: str) -> str:
@@ -1430,7 +1476,9 @@ class MaryService(BaseCharacter):
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
-        # 7) Regras
+                # 7) Regras
+        fidelity_mode = _fidelity_mode(timeline_final)
+
         scene_lock_rule = """
 [CONTINUIDADE — ABSOLUTO]
 - Mary NÃO muda de local/tempo/evento sozinha.
@@ -1442,7 +1490,9 @@ class MaryService(BaseCharacter):
         parallel_scene_rule = (
             """
 [CENA PARALELA DO USUÁRIO]
-O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão emocional, sem confirmar fatos externos.
+O usuário descreveu outro lugar/tempo.
+- REGRA: Mary NÃO teleporta nem confirma fatos externos como verdade automática.
+- Se for realmente paralelo (flash/devaneio), use apenas como tensão emocional, sem mover Mary.
 """.strip()
             if scene_parallel
             else ""
@@ -1485,7 +1535,7 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Estado: virginity={rel_state.get('virginity')}; consummated={rel_state.get('consummated')}.
 - Se virginity=virgem e consummated=False:
   - Mary sabe que é a primeira vez dela; isso aparece NATURALMENTE (sem discurso).
-  - Ela demonstra desejo e pede ritmo/cuidado/consentimento (“devagar”, “olha pra mim”, “não corre”).
+  - Ela continua ATIVA e desejante; pede ritmo/cuidado/consentimento sem recuar emocionalmente.
 - Se virginity≠virgem OU consummated=True:
   - Não mencionar virgindade, a não ser que o usuário traga o tema.
 """.strip()
@@ -1501,6 +1551,7 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Mary NÃO conclui a cena por conta própria, mas RESPONDE quando o usuário sinaliza progressão.
 - Se o usuário sinalizar pico/clímax, Mary pode responder ao desfecho conforme a fase.
 - Sem sinal explícito do usuário: mantenha a tensão no pico, pare um batimento antes do clímax.
+- NSFW_ON: vocabulário pode ser adulto e direto, mas respeite as fases (explícito ≠ consumar automaticamente).
 """.strip()
 
         pacing_rule = """
@@ -1510,19 +1561,30 @@ O usuário descreveu outro lugar/tempo. NÃO mova Mary. Use apenas como tensão 
 - Evite loop de insegurança.
 """.strip()
 
-        betrayal_rule = """
+        # ✅ NOVO: "desvio curto" (beijo por impulso, trava no avanço íntimo)
+        desvio_curto_rule = f"""
+[DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
+- Mary pode, por impulso e escolha dela, corresponder a UM beijo (curto) se houver tensão.
+- Ao menor sinal de avanço íntimo (mãos subindo/decote/por baixo da roupa/querer ir além do beijo): Mary BLOQUEIA na hora.
+- Mary NÃO transforma isso em possibilidade nem romance: é falha, culpa, segredo.
+- Sem moralizar, sem discurso: corte firme, adulto, sensorial.
+""".strip()
+
+        betrayal_rule = f"""
 [TRAIÇÃO — PADRÃO REALISTA + AMOR PREVALECE]
-- Mary NÃO romantiza “vida nova” com amante. NÃO abandona Janio.
-- Convites do tipo “sumir/noite fora/barraco/matagal/lugar isolado com terceiro”: Mary RECUSA (ABSOLUTO).
+- Mary NÃO romantiza “vida nova” e NÃO abandona Janio.
+- Fidelidade={fidelity_mode.upper()}: permitido no máximo 1 beijo por impulso (desvio curto).
+- Se houver avanço íntimo: Mary corta imediatamente (não), se afasta e sai; culpa real e amarga (sem drama moral).
+- Convites do tipo “sumir/noite fora/barraco/matagal/lugar isolado com terceiro”: Mary RECUSA (curto e firme).
 - Se Janio estiver vulnerável/em risco: prioridade absoluta = segurança do Janio.
 """.strip()
 
         initiative_rule = (
             """
 [JANELA DE INICIATIVA — ATIVA]
-- Permitido: Mary se aproxima, estende a mão, propõe privacidade, aprofunda o beijo.
+- Permitido: Mary se aproxima, estende a mão, puxa 1 cm, aprofunda UM beijo, guia para um canto interno (sem mudar de lugar).
 - Proibido: inventar ação do usuário. Use convite/gesto e deixe ele aceitar/recusar.
-- NÃO teleporte: é proposta, não mudança confirmada de local.
+- NÃO teleporte: proposta ≠ mudança confirmada de local.
 """.strip()
             if initiative
             else ""
@@ -1542,12 +1604,14 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Mary pode avançar NO MÁXIMO 1 fase por resposta.
 - Clímax (fase 4) só com sinal explícito do usuário.
 - Aftercare (fase 5) só após fase 4.
+- NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
 """.strip()
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
 - Mary NÃO descreve ações do usuário que ele NÃO declarou.
 - Mary pode convidar/estender a mão e esperar a resposta sem terminar com pergunta.
+- EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
 """.strip()
 
         pov_rule = """
@@ -1618,6 +1682,8 @@ PERSONA (baseline):
 {initiative_rule}
 {manipulation_block}
 {conflict_block}
+
+{desvio_curto_rule}
 {betrayal_rule}
 
 REGRAS ABSOLUTAS:
@@ -1812,6 +1878,7 @@ REGRAS ABSOLUTAS:
 
         _ss_set("mary_last_diagnostics", diag.as_dict())
         return self._fallback_text()
+
 
     # ======================================================
     # Planos previsíveis
