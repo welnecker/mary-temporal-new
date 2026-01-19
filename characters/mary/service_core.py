@@ -313,6 +313,43 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     if not msg:
         return False, ""
 
+    # ------------------------------------------------------
+    # Helper: extrair destino "real" (ex.: "Edifício Plaza, em Camburi")
+    # Só pega coisas após pro/pra/para e corta em "ou / ? / . / ! / ," etc.
+    # ------------------------------------------------------
+    def _extract_destination(raw: str) -> str:
+        low = raw.lower()
+
+        # ✅ Evita capturar quando é só pergunta "vai pro X?" (muito comum em fala de NPC)
+        # A gente ainda pode extrair, mas NÃO deve ser gatilho único de mudança.
+        # Aqui é só extractor — quem decide usar é o caller.
+        # Padrões: "pro edifício plaza, em camburi" / "pra república" / "para o plaza"
+        m = re.search(
+            r"(?i)\b(?:pro|pra|para)\s+(?:o|a)?\s*([^\n\r\?\!\.\;]{3,120})",
+            raw,
+        )
+        if not m:
+            return ""
+
+        dest = (m.group(1) or "").strip()
+
+        # corta em " ou " (alternativas), ":" (fala), e vírgulas finais longas
+        for cut in [" ou ", "\n", "\r"]:
+            if cut in dest.lower():
+                dest = dest.split(cut, 1)[0].strip()
+
+        # corta terminações comuns
+        dest = re.split(r"(?i)\b(?:ou|e aí|então)\b", dest, maxsplit=1)[0].strip()
+        dest = dest.strip(" ,:;\"'()[]{}")
+
+        # evita pegar movimentação interna por engano
+        if any(re.search(exc, dest.lower()) for exc in internal_movements):
+            return ""
+
+        # corta se ficar grande demais
+        dest = dest[:80].strip()
+        return dest
+
     # 1) Comandos explícitos (os seus)
     patterns = [
         r"\bcorta\s+para\s+([^\n\r]+)$",
@@ -322,7 +359,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         r"vamos para\s+([^\n\r,.!?]+)",
         r"ir para\s+([^\n\r,.!?]+)",
     ]
-
     for p in patterns:
         m = re.search(p, msg)
         if m:
@@ -331,8 +367,8 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
             if destino and not is_internal:
                 return True, destino
 
-    # 2) ✅ Mudança narrativa (sem "vamos para"): "já estamos...", "fora do clube", "na calçada", "entra no uber"
-    #    Regras: só aceita pistas claras e curtas, e não confunde com movimentos internos.
+    # 2) ✅ Mudança narrativa (sem "vamos para"): "fora do clube", "na calçada", "entra no uber"
+    #    Aqui a gente também tenta extrair um destino real quando for UBER.
     narrative_cues = [
         (r"\b(fora\s+do\s+clube|do\s+lado\s+de\s+fora|na\s+cal[cç]ada)\b", "calçada do clube"),
         (r"\b(entra(mos|ram)?\s+no\s+uber|entrando\s+no\s+uber|dentro\s+do\s+uber)\b", "dentro do uber"),
@@ -340,17 +376,20 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     ]
     for pat, loc in narrative_cues:
         if re.search(pat, msg):
-            # evita falsos positivos: se a frase contém só "cama/sofá/..." como destino, ignora
-            is_internal = any(re.search(exc, loc) for exc in internal_movements)
-            if not is_internal:
-                return True, loc
+            if loc == "dentro do uber":
+                dest_real = _extract_destination(msg_raw)
+                if dest_real:
+                    # ✅ mantém "uber" como local atual, e anexa o destino (sem teleporte)
+                    return True, f"{loc} — rumo a {dest_real}"
+            return True, loc
 
     # 3) “Estamos em X / já estamos em X”
-    #    Pega frases como: "já estamos na calçada", "estamos no uber", "agora estamos na rua"
-    m2 = re.search(r"\b(j[aá]\s+estamos|agora\s+estamos|estamos)\s+(na|no|em)\s+([^\n\r,.!?]{3,80})", msg)
+    m2 = re.search(
+        r"\b(j[aá]\s+estamos|agora\s+estamos|estamos)\s+(na|no|em)\s+([^\n\r,.!?]{3,80})",
+        msg,
+    )
     if m2:
         destino = (m2.group(3) or "").strip()
-        # corta se pegar frase muito longa
         destino = destino[:80].strip()
         is_internal = any(re.search(exc, destino) for exc in internal_movements)
         if destino and not is_internal:
