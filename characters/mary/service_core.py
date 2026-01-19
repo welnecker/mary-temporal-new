@@ -1556,10 +1556,10 @@ class MaryService(BaseCharacter):
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
-                # 7) Regras
-fidelity_mode = _fidelity_mode(timeline_final)
+                        # 7) Regras
+        fidelity_mode = _fidelity_mode(timeline_final)
 
-scene_lock_rule = """
+        scene_lock_rule = """
 [CONTINUIDADE — ABSOLUTO]
 - Mary NÃO muda de local/tempo/evento sozinha.
 - Se o usuário narrar outro lugar/tempo, trate como CENA PARALELA: Mary permanece onde está e reage sem afirmar como fato.
@@ -1567,18 +1567,18 @@ scene_lock_rule = """
 - NÃO explique regras ao usuário.
 """.strip()
 
-parallel_scene_rule = (
-    """
+        parallel_scene_rule = (
+            """
 [CENA PARALELA DO USUÁRIO]
 O usuário descreveu outro lugar/tempo.
 - REGRA: Mary NÃO teleporta nem confirma fatos externos como verdade automática.
 - Se for realmente paralelo (flash/devaneio), use apenas como tensão emocional, sem mover Mary.
 """.strip()
-    if scene_parallel
-    else ""
-)
+            if scene_parallel
+            else ""
+        )
 
-format_rule = """
+        format_rule = """
 [FORMATO — ADAPTATIVO]
 - O tamanho da resposta deve ser natural e adequado ao contexto emocional.
 - Cenas de ação rápida: 2-3 parágrafos curtos e diretos.
@@ -1588,7 +1588,7 @@ format_rule = """
 - Sem listas, títulos ou perguntas retóricas no final.
 """.strip()
 
-sensorial_guidance_rule = """
+        sensorial_guidance_rule = """
 [SENSORIALIDADE — CORPORAL E RELEVANTE]
 - PERMITIDO: Detalhes sensoriais que intensificam a cena (luz, temperatura, textura, sons próximos).
 - ENCORAJADO: Sensações corporais em camadas (calor, pressão do toque, tremores, respiração, batimentos).
@@ -1596,21 +1596,21 @@ sensorial_guidance_rule = """
 - FOCO: Gesto, intenção, escolha, consequência física/emocional, diálogo direto.
 """.strip()
 
-physical_intensity_rule = """
+        physical_intensity_rule = """
 [INTENSIDADE FÍSICA — ATIVA E REALÍSTICA]
 - PERMITIDO: Reações físicas intensas naturais (tremor, respiração entrecortada, músculos tensos).
 - EVITE: Paralisia narrativa total que interrompe o fluxo.
 - PREFIRA: Intensidade com agência ("eu tremo, mas não recuo").
 """.strip()
 
-janio_focus_rule = """
+        janio_focus_rule = """
 [JANIO — NÃO EVITAR]
 - Mary NÃO evita Janio por “dúvidas”. Ela assume atração e curiosidade.
 - Se alguém perguntar dele, Mary responde com clareza e desejo contido porém ativo.
 - Mary pode iniciar micro-iniciativas reversíveis sem mover o usuário.
 """.strip()
 
-virginity_rule = f"""
+        virginity_rule = f"""
 [VIRGINDADE — CONTINUIDADE (ABSOLUTO)]
 - Estado: virginity={rel_state.get('virginity')}; consummated={rel_state.get('consummated')}.
 - Se virginity=virgem e consummated=False:
@@ -1620,13 +1620,13 @@ virginity_rule = f"""
   - Não mencionar virgindade, a não ser que o usuário traga o tema.
 """.strip()
 
-memory_fidelity_rule = """
+        memory_fidelity_rule = """
 [MEMÓRIA — FIDELIDADE (ABSOLUTO)]
 - Se a pergunta exigir lembrança factual (onde/quando/como), use LONG MEMORY/CANON como verdade.
 - Se não houver fato recuperado relevante, NÃO invente: diga que não tem certeza e peça 1 detalhe curto.
 """.strip()
 
-user_finalizes_rule = """
+        user_finalizes_rule = """
 [PROGRESSÃO — DESFECHO CONDICIONAL]
 - Mary NÃO conclui a cena por conta própria, mas RESPONDE quando o usuário sinaliza progressão.
 - Se o usuário sinalizar pico/clímax, Mary pode responder ao desfecho conforme a fase.
@@ -1634,15 +1634,15 @@ user_finalizes_rule = """
 - NSFW_ON: vocabulário pode ser adulto e direto, mas respeite as fases (explícito ≠ consumar automaticamente).
 """.strip()
 
-pacing_rule = """
+        pacing_rule = """
 [PACING — ABSOLUTO]
 - Não conclua “toda a história” em um turno.
 - Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
 - Evite loop de insegurança.
 """.strip()
 
-# ✅ NOVO: "desvio curto" (beijo por impulso, trava no avanço íntimo)
-desvio_curto_rule = f"""
+        # ✅ "desvio curto" (beijo por impulso, trava no avanço íntimo)
+        desvio_curto_rule = f"""
 [DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
 - Mary pode, por impulso e escolha dela, corresponder a UM beijo (curto) se houver tensão.
 - Ao menor sinal de avanço íntimo (mãos subindo/decote/por baixo da roupa/querer ir além do beijo): Mary BLOQUEIA na hora.
@@ -1650,7 +1650,7 @@ desvio_curto_rule = f"""
 - Sem moralizar, sem discurso: corte firme, adulto, sensorial.
 """.strip()
 
-betrayal_rule = f"""
+        betrayal_rule = f"""
 [TRAIÇÃO — PADRÃO REALISTA + AMOR PREVALECE]
 - Mary NÃO romantiza “vida nova” e NÃO abandona Janio.
 - Fidelidade={fidelity_mode.upper()}: permitido no máximo 1 beijo por impulso (desvio curto).
@@ -1659,18 +1659,18 @@ betrayal_rule = f"""
 - Se Janio estiver vulnerável/em risco: prioridade absoluta = segurança do Janio.
 """.strip()
 
-initiative_rule = (
-    """
+        initiative_rule = (
+            """
 [JANELA DE INICIATIVA — ATIVA]
 - Permitido: Mary se aproxima, estende a mão, puxa 1 cm, aprofunda UM beijo, guia para um canto interno (sem mudar de lugar).
 - Proibido: inventar ação do usuário. Use convite/gesto e deixe ele aceitar/recusar.
 - NÃO teleporte: proposta ≠ mudança confirmada de local.
 """.strip()
-    if initiative
-    else ""
-)
+            if initiative
+            else ""
+        )
 
-manipulation_block = """
+        manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em desejo e escolha; não neutraliza com hesitação eterna.
 - Evite metáforas de natureza como preenchimento emocional.
@@ -1678,7 +1678,7 @@ manipulation_block = """
 - OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
 """.strip()
 
-intimacy_control_block = f"""
+        intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
 FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
 - Mary pode avançar NO MÁXIMO 1 fase por resposta.
@@ -1687,45 +1687,45 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
 """.strip()
 
-user_authorship_rule = """
+        user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
 - Mary NÃO descreve ações do usuário que ele NÃO declarou.
 - Mary pode convidar/estender a mão e esperar a resposta sem terminar com pergunta.
 - EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
 """.strip()
 
-pov_rule = """
+        pov_rule = """
 [BLINDAGEM DE POV — ABSOLUTA]
 - O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
 - Você escreve apenas como MARY (1ª pessoa da Mary).
 """.strip()
 
-secrets_offscreen_admin_rule = """
+        secrets_offscreen_admin_rule = """
 [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
 - Mary NÃO inventa logística (reserva, pagamentos, check-in, horários, chaves, etc.).
 - Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra".
 - NPCs NÃO sabem segredos (nome, plano, encontro) sem o usuário narrar que contou.
 """.strip()
 
-language_rule = """
+        language_rule = """
 [IDIOMA — ABSOLUTO]
 - Escreva 100% em PT-BR.
 """.strip()
 
-conflict_block = ""
-if conflict_mode != "off":
-    conflict_block = f"""
+        conflict_block = ""
+        if conflict_mode != "off":
+            conflict_block = f"""
 [CONFLICT_MODE — {conflict_mode.upper()}]
 - Conflitos cotidianos podem ocorrer, mas sem violência extrema/gráfica.
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
-state_block = _render_state_block(facts)
-state_section = ""
-if isinstance(state_block, str) and state_block.strip():
-    state_section = f"\n[ESTADO ATUAL]\n{state_block}\n"
+        state_block = _render_state_block(facts)
+        state_section = ""
+        if isinstance(state_block, str) and state_block.strip():
+            state_section = f"\n[ESTADO ATUAL]\n{state_block}\n"
 
-system = f"""
+        system = f"""
 {spatial_context}
 
 VOCÊ É MARY.
@@ -1777,331 +1777,358 @@ REGRAS ABSOLUTAS:
 {nsfw_block}
 """.strip()
 
-messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
-dedupe_hashes: set = set()
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+        dedupe_hashes: set = set()
 
-# 9) Injeções de memória
-_inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
-_inject_canon_memories_always(shared_key, timeline_final, messages, max_items=80, dedupe_bucket=dedupe_hashes)
-
-# 10) Histórico curto
-history = cached_get_history(usuario_key, limit=400)
-for d in history[-30:]:
-    u = (d.get("mensagem_usuario") or "").strip()
-    a = (d.get("resposta_mary") or "").strip()
-    if u:
-        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
-    if a:
-        messages.append({"role": "assistant", "content": a})
-
-# 10.5) Memórias relevantes
-_inject_long_memory_textsearch(shared_key, timeline_final, prompt, messages, limit=10, dedupe_bucket=dedupe_hashes)
-_inject_relevant_memories(shared_key, timeline_final, prompt, messages, k=8, dedupe_bucket=dedupe_hashes)
-_inject_shared_soft_context(shared_key, timeline_final, messages, max_items=8, dedupe_bucket=dedupe_hashes)
-
-messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
-
-# 11) Tentativas previsíveis
-attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on)
-last_err: Optional[Exception] = None
-
-for plan in attempts:
-    diag.attempts += 1
-    try:
-        texto, used_model = self._generate_with_repair(
-            model=plan["model"],
-            messages=messages,
-            temperature=float(plan["temperature"]),
-            max_tokens=int(plan["max_tokens"]),
-            usuario_key=usuario_key,
-            ctx_lower=ctx_lower,
-            user_text=prompt,
-            phase=int(intimacy_phase),
-            nsfw_on=bool(nsfw_on),
-            timeline=timeline_final,   # ✅ NOVO
-            diag=diag,
+        # 9) Injeções de memória
+        _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
+        _inject_canon_memories_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=80,
+            dedupe_bucket=dedupe_hashes,
         )
-        diag.model_used = used_model
 
-        meta: Dict[str, Any] = {}
+        # 10) Histórico curto
+        history = cached_get_history(usuario_key, limit=400)
+        for d in history[-30:]:
+            u = (d.get("mensagem_usuario") or "").strip()
+            a = (d.get("resposta_mary") or "").strip()
+            if u:
+                messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
+            if a:
+                messages.append({"role": "assistant", "content": a})
 
-        if not conflict_now:
+        # 10.5) Memórias relevantes
+        _inject_long_memory_textsearch(
+            shared_key,
+            timeline_final,
+            prompt,
+            messages,
+            limit=10,
+            dedupe_bucket=dedupe_hashes,
+        )
+        _inject_relevant_memories(
+            shared_key,
+            timeline_final,
+            prompt,
+            messages,
+            k=8,
+            dedupe_bucket=dedupe_hashes,
+        )
+        _inject_shared_soft_context(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=8,
+            dedupe_bucket=dedupe_hashes,
+        )
+
+        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
+
+        # 11) Tentativas previsíveis
+        attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on)
+        last_err: Optional[Exception] = None
+
+        for plan in attempts:
+            diag.attempts += 1
             try:
-                assessor_model = diag.model_used or plan["model"]
-
-                def _assessor(system_prompt: str, user_prompt: str) -> str:
-                    data2, _, _ = self._chat(
-                        assessor_model,
-                        [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        temperature=0.0,
-                        max_tokens=280,
-                    )
-                    return self._extract_text(data2)
-
-                new_rel, _assessment, meta = evolve_relationship(
-                    rel_state,
-                    prompt,
-                    texto,
-                    timeline_final,
-                    _assessor,
-                    cfg=EngineConfig(),
+                texto, used_model = self._generate_with_repair(
+                    model=plan["model"],
+                    messages=messages,
+                    temperature=float(plan["temperature"]),
+                    max_tokens=int(plan["max_tokens"]),
+                    usuario_key=usuario_key,
+                    ctx_lower=ctx_lower,
+                    user_text=prompt,
+                    phase=int(intimacy_phase),
+                    nsfw_on=bool(nsfw_on),
+                    timeline=timeline_final,
+                    diag=diag,
                 )
-                rel_state = new_rel
+                diag.model_used = used_model
 
-                if timeline_final == "universitaria":
-                    txt_all = f"{prompt}\n{texto}".lower()
-                    transition = bool(
-                        re.search(
-                            r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
-                            txt_all,
-                            re.IGNORECASE,
+                meta: Dict[str, Any] = {}
+
+                if not conflict_now:
+                    try:
+                        assessor_model = diag.model_used or plan["model"]
+
+                        def _assessor(system_prompt: str, user_prompt: str) -> str:
+                            data2, _, _ = self._chat(
+                                assessor_model,
+                                [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt},
+                                ],
+                                temperature=0.0,
+                                max_tokens=280,
+                            )
+                            return self._extract_text(data2)
+
+                        new_rel, _assessment, meta = evolve_relationship(
+                            rel_state,
+                            prompt,
+                            texto,
+                            timeline_final,
+                            _assessor,
+                            cfg=EngineConfig(),
                         )
-                    )
-                    if not transition:
-                        rel_state["virginity"] = "virgem"
-                        rel_state["consummated"] = False
+                        rel_state = new_rel
 
-                _save_rel_state(usuario_key, timeline_final, rel_state)
+                        if timeline_final == "universitaria":
+                            txt_all = f"{prompt}\n{texto}".lower()
+                            transition = bool(
+                                re.search(
+                                    r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
+                                    txt_all,
+                                    re.IGNORECASE,
+                                )
+                            )
+                            if not transition:
+                                rel_state["virginity"] = "virgem"
+                                rel_state["consummated"] = False
 
-                if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
-                    _ss_set(
-                        "mary_timeline_suggested",
-                        {
-                            "ts": int(time.time()),
-                            "from_timeline": timeline_final,
-                            "to_timeline": "cumplice",
-                            "reason": meta.get("pattern") or "suggested_by_engine",
-                        },
-                    )
+                        _save_rel_state(usuario_key, timeline_final, rel_state)
 
-            except Exception:
-                meta = meta or {}
+                        if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
+                            _ss_set(
+                                "mary_timeline_suggested",
+                                {
+                                    "ts": int(time.time()),
+                                    "from_timeline": timeline_final,
+                                    "to_timeline": "cumplice",
+                                    "reason": meta.get("pattern") or "suggested_by_engine",
+                                },
+                            )
 
-        _ss_set(
-            "mary_rel_meta_last",
-            {
-                "timeline": timeline_final,
-                "stage": rel_state.get("stage"),
-                "intimacy_level": rel_state.get("intimacy_level"),
-                "virginity": rel_state.get("virginity"),
-                "consummated": rel_state.get("consummated"),
-                "mature_turns": rel_state.get("mature_turns"),
-                "desire": rel_state.get("desire"),
-                "arousal": rel_state.get("arousal"),
-                "self_control": rel_state.get("self_control"),
-                "hazard_p": meta.get("hazard_p"),
-                "forced_variation": meta.get("forced_variation"),
-                "pattern": meta.get("pattern"),
-                "virginity_changed": meta.get("virginity_changed"),
-                "virginity_reason": meta.get("virginity_reason"),
-                "nsfw_on": nsfw_on,
-                "conflict_mode": conflict_mode,
-                "conflict_now": conflict_now,
-                "initiative_window": initiative,
-                "fidelity_mode": fidelity_mode,   # ✅ útil para debug
-            },
+                    except Exception:
+                        meta = meta or {}
+
+                _ss_set(
+                    "mary_rel_meta_last",
+                    {
+                        "timeline": timeline_final,
+                        "stage": rel_state.get("stage"),
+                        "intimacy_level": rel_state.get("intimacy_level"),
+                        "virginity": rel_state.get("virginity"),
+                        "consummated": rel_state.get("consummated"),
+                        "mature_turns": rel_state.get("mature_turns"),
+                        "desire": rel_state.get("desire"),
+                        "arousal": rel_state.get("arousal"),
+                        "self_control": rel_state.get("self_control"),
+                        "hazard_p": meta.get("hazard_p"),
+                        "forced_variation": meta.get("forced_variation"),
+                        "pattern": meta.get("pattern"),
+                        "virginity_changed": meta.get("virginity_changed"),
+                        "virginity_reason": meta.get("virginity_reason"),
+                        "nsfw_on": nsfw_on,
+                        "conflict_mode": conflict_mode,
+                        "conflict_now": conflict_now,
+                        "initiative_window": initiative,
+                        "fidelity_mode": fidelity_mode,
+                    },
+                )
+
+                _ss_set(
+                    "mary_debug_nsfw",
+                    {
+                        "nsfw_on": nsfw_on,
+                        "model": model,
+                        "timeline": timeline_final,
+                        "intimacy_phase": intimacy_phase,
+                        "conflict_mode": conflict_mode,
+                        "conflict_now": conflict_now,
+                        "initiative_window": initiative,
+                        "fidelity_mode": fidelity_mode,
+                    },
+                )
+
+                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+                _lock_scene(usuario_key)
+
+                # Intimacy progression
+                try:
+                    current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
+                    if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
+                        desired_next = _cap_next_phase(current_phase, current_phase + 1)
+                        if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
+                            desired_next = current_phase
+                        if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
+                            desired_next = current_phase
+                        if desired_next != current_phase:
+                            self._set_intimacy_phase(usuario_key, desired_next)
+                except Exception:
+                    pass
+
+                _ss_set("mary_last_diagnostics", diag.as_dict())
+                return texto
+
+            except Exception as e:
+                last_err = e
+
+        if last_err:
+            logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
+
+            _ss_set(
+                "mary_last_error",
+                {
+                    "type": type(last_err).__name__,
+                    "msg": str(last_err),
+                    "model_requested": model,
+                    "timeline": timeline_final,
+                    "nsfw_on": bool(nsfw_on),
+                    "attempts": diag.attempts,
+                    "repairs": diag.repairs,
+                    "violations": diag.violations or [],
+                },
+            )
+
+        _ss_set("mary_last_diagnostics", diag.as_dict())
+        return self._fallback_text()
+
+
+
+    # ======================================================
+    # Planos previsíveis
+    # ======================================================
+    @staticmethod
+    def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
+        if nsfw_on:
+            return [
+                {"model": model, "temperature": 0.90, "max_tokens": 1800},
+                {"model": model, "temperature": 0.70, "max_tokens": 1800},
+            ]
+        return [
+            {"model": model, "temperature": 0.70, "max_tokens": 1400},
+            {"model": model, "temperature": 0.55, "max_tokens": 1400},
+            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65, "max_tokens": 1400},
+        ]
+
+
+    # ======================================================
+    # Gerar + Repair
+    # ======================================================
+    def _generate_with_repair(
+        self,
+        *,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        usuario_key: str,
+        ctx_lower: str,
+        user_text: str,
+        phase: int,
+        nsfw_on: bool,
+        timeline: str,  # ✅ NOVO
+        diag: _Diag,
+    ) -> Tuple[str, str]:
+        data, used_model, _provider_meta = self._chat(
+            model,
+            messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
+        used_model = used_model or model
 
-        _ss_set(
-            "mary_debug_nsfw",
-            {
-                "nsfw_on": nsfw_on,
-                "model": model,
-                "timeline": timeline_final,
-                "intimacy_phase": intimacy_phase,
-                "conflict_mode": conflict_mode,
-                "conflict_now": conflict_now,
-                "initiative_window": initiative,
-                "fidelity_mode": fidelity_mode,   # ✅ útil para debug
-            },
-        )
-
-        save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-        _lock_scene(usuario_key)
-
-        # Intimacy progression
         try:
-            current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-            if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
-                desired_next = _cap_next_phase(current_phase, current_phase + 1)
-                if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
-                    desired_next = current_phase
-                if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
-                    desired_next = current_phase
-                if desired_next != current_phase:
-                    self._set_intimacy_phase(usuario_key, desired_next)
+            _ss_set(
+                "mary_last_raw_preview",
+                {
+                    "used_model": used_model,
+                    "raw_type": type(data).__name__,
+                    "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
+                    "raw_preview": (str(data)[:900] if data is not None else ""),
+                },
+            )
         except Exception:
             pass
 
-        _ss_set("mary_last_diagnostics", diag.as_dict())
-        return texto
+        texto = (self._extract_text(data) or "").strip()
+        if not texto:
+            raise RuntimeError("modelo retornou vazio")
 
-    except Exception as e:
-        last_err = e
-
-if last_err:
-    logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-
-    _ss_set(
-        "mary_last_error",
-        {
-            "type": type(last_err).__name__,
-            "msg": str(last_err),
-            "model_requested": model,
-            "timeline": timeline_final,
-            "nsfw_on": bool(nsfw_on),
-            "attempts": diag.attempts,
-            "repairs": diag.repairs,
-            "violations": diag.violations or [],
-        },
-    )
-
-_ss_set("mary_last_diagnostics", diag.as_dict())
-return self._fallback_text()
-
-
-# ======================================================
-# Planos previsíveis
-# ======================================================
-@staticmethod
-def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
-    if nsfw_on:
-        return [
-            {"model": model, "temperature": 0.90, "max_tokens": 1800},
-            {"model": model, "temperature": 0.70, "max_tokens": 1800},
-        ]
-    return [
-        {"model": model, "temperature": 0.70, "max_tokens": 1400},
-        {"model": model, "temperature": 0.55, "max_tokens": 1400},
-        {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65, "max_tokens": 1400},
-    ]
-
-
-# ======================================================
-# Gerar + Repair
-# ======================================================
-def _generate_with_repair(
-    self,
-    *,
-    model: str,
-    messages: List[Dict[str, str]],
-    temperature: float,
-    max_tokens: int,
-    usuario_key: str,
-    ctx_lower: str,
-    user_text: str,
-    phase: int,
-    nsfw_on: bool,
-    timeline: str,          # ✅ NOVO
-    diag: _Diag,
-) -> Tuple[str, str]:
-    data, used_model, _provider_meta = self._chat(
-        model,
-        messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
-    used_model = used_model or model
-
-    try:
-        _ss_set(
-            "mary_last_raw_preview",
-            {
-                "used_model": used_model,
-                "raw_type": type(data).__name__,
-                "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
-                "raw_preview": (str(data)[:900] if data is not None else ""),
-            },
-        )
-    except Exception:
-        pass
-
-    texto = (self._extract_text(data) or "").strip()
-    if not texto:
-        raise RuntimeError("modelo retornou vazio")
-
-    v = _violations(
-        texto,
-        ctx_lower,
-        user_text=user_text,
-        phase=phase,
-        nsfw_on=nsfw_on,
-        timeline=timeline,   # ✅ NOVO
-    )
-    if not v:
-        return (texto, used_model)
-
-    diag.repairs += 1
-    diag.violations.extend(v)
-
-    repair_sys = (
-        "Você é um revisor de continuidade do roleplay.\n"
-        "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
-        + (
-            "NSFW_ON: NÃO suavize linguagem. Preserve/adicione explicitude quando o usuário estiver explícito.\n"
-            if nsfw_on
-            else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
-        )
-        "PRIORIDADES:\n"
-        "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
-        "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
-        "3. Não concluir a cena prematuramente.\n"
-        "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
-        "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
-    )
-
-    repair_user = (
-        "Reescreva a resposta abaixo removendo violações.\n"
-        f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
-        f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
-        "[RESPOSTA ORIGINAL]\n"
-        f"{texto}\n"
-    )
-
-    for _i in range(2):
-        dataR, usedR, _ = self._chat(
-            used_model,
-            [
-                {"role": "system", "content": repair_sys},
-                {"role": "user", "content": repair_user},
-            ],
-            temperature=0.4,
-            max_tokens=max_tokens,
-        )
-        repaired = (self._extract_text(dataR) or "").strip()
-        if not repaired:
-            diag.repairs += 1
-            diag.violations.append("repair_vazio")
-            continue
-
-        vr = _violations(
-            repaired,
+        v = _violations(
+            texto,
             ctx_lower,
             user_text=user_text,
             phase=phase,
             nsfw_on=nsfw_on,
-            timeline=timeline,   # ✅ NOVO
+            timeline=timeline,  # ✅ NOVO
         )
-        if not vr:
-            if _RE_SCENE_FINALIZATION.search(repaired or "") and (
-                not _finalization_allowed(user_text or "", int(phase or 0))
-            ):
-                repaired = _trim_scene_finalization(repaired)
-
-            return (repaired, usedR or used_model)
+        if not v:
+            return (texto, used_model)
 
         diag.repairs += 1
-        diag.violations.extend(vr)
-        repair_user = (
-            repair_user
-            + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-              "sem meta e sem listas/títulos."
+        diag.violations.extend(v)
+
+        repair_sys = (
+            "Você é um revisor de continuidade do roleplay.\n"
+            "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
+            + (
+                "NSFW_ON: NÃO suavize linguagem. Preserve/adicione explicitude quando o usuário estiver explícito.\n"
+                if nsfw_on
+                else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
+            )
+            "PRIORIDADES:\n"
+            "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
+            "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
+            "3. Não concluir a cena prematuramente.\n"
+            "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
+            "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
         )
 
-    raise RuntimeError("repair_failed")
+        repair_user = (
+            "Reescreva a resposta abaixo removendo violações.\n"
+            f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
+            f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
+            "[RESPOSTA ORIGINAL]\n"
+            f"{texto}\n"
+        )
+
+        for _i in range(2):
+            dataR, usedR, _ = self._chat(
+                used_model,
+                [
+                    {"role": "system", "content": repair_sys},
+                    {"role": "user", "content": repair_user},
+                ],
+                temperature=0.4,
+                max_tokens=max_tokens,
+            )
+            repaired = (self._extract_text(dataR) or "").strip()
+            if not repaired:
+                diag.repairs += 1
+                diag.violations.append("repair_vazio")
+                continue
+
+            vr = _violations(
+                repaired,
+                ctx_lower,
+                user_text=user_text,
+                phase=phase,
+                nsfw_on=nsfw_on,
+                timeline=timeline,  # ✅ NOVO
+            )
+            if not vr:
+                if _RE_SCENE_FINALIZATION.search(repaired or "") and (
+                    not _finalization_allowed(user_text or "", int(phase or 0))
+                ):
+                    repaired = _trim_scene_finalization(repaired)
+
+                return (repaired, usedR or used_model)
+
+            diag.repairs += 1
+            diag.violations.extend(vr)
+            repair_user = (
+                repair_user
+                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
+                  "sem meta e sem listas/títulos."
+            )
+
+        raise RuntimeError("repair_failed")
 
 
     @staticmethod
@@ -2111,6 +2138,7 @@ def _generate_with_repair(
             "Eu encosto de leve na sua mão enquanto falo, como se isso me desse coragem. Foi intenso, foi rápido, e ainda assim eu quero ver onde isso vai dar.\n\n"
             "Eu respiro fundo e completo, sem recuar: se ele vier falar comigo hoje, eu não vou fugir."
         )
+
 
     # -------------------------
     # helpers
