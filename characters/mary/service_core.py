@@ -1556,7 +1556,7 @@ class MaryService(BaseCharacter):
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
-                        # 7) Regras
+        # 7) Regras
         fidelity_mode = _fidelity_mode(timeline_final)
 
         scene_lock_rule = """
@@ -2072,13 +2072,14 @@ REGRAS ABSOLUTAS:
                 if nsfw_on
                 else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
             )
-            "PRIORIDADES:\n"
-            "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
-            "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
-            "3. Não concluir a cena prematuramente.\n"
-            "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
-            "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
+            + "PRIORIDADES:\n"
+              "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
+              "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
+              "3. Não concluir a cena prematuramente.\n"
+              "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
+              "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
         )
+
 
         repair_user = (
             "Reescreva a resposta abaixo removendo violações.\n"
