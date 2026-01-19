@@ -1110,8 +1110,9 @@ def _violations(
         out.append("nsfw_off_explicito")
 
     # ✅ NSFW: se está ON e o usuário foi explícito, não aceitar resposta sanitizada
-    if nsfw_on and _is_explicit(user_text or "") and (not _is_explicit(t)):
+    if nsfw_on and (_user_explicitly_allows_climax(user_text or "") or _RE_EXPLICIT_SEX.search(user_text or "")) and (not _RE_EXPLICIT_SEX.search(t)):
         out.append("nsfw_on_suavizou")
+
 
     if not _format_ok(t):
         out.append("formato_invalido")
@@ -1915,8 +1916,9 @@ REGRAS ABSOLUTAS:
 
             vr = _violations(repaired, ctx_lower, user_text=user_text, phase=phase, nsfw_on=nsfw_on)
             if not vr:
-                if _RE_SCENE_FINALIZATION.search(repaired or ""):
+                if _RE_SCENE_FINALIZATION.search(repaired or "") and (not _finalization_allowed(user_text or "", int(phase or 0))):
                     repaired = _trim_scene_finalization(repaired)
+
                 return (repaired, usedR or used_model)
 
             diag.repairs += 1
