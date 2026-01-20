@@ -1074,7 +1074,14 @@ def _resolve_conflict_mode(timeline: str) -> str:
     return "soft"
 
 _RE_CONFLICT_IMMINENT = re.compile(
-    r"\b(agora eu vou|vou te|vou bater|te bater|te arrebentar|te matar|matar|arma|faca|tiro|soco|chute|quebrar a cara|amea[cç]a)\b",
+    r"\b("
+    r"vou\s+te\s+(bater|arrebentar|matar|quebrar(\s+a)?\s+cara)|"
+    r"(te\s+)?(bater|arrebentar|matar)|"
+    r"quebrar(\s+a)?\s+cara|"
+    r"amea[cç]a(r|)|"
+    r"arma|faca|tiro|"
+    r"soco|chute"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -1223,8 +1230,16 @@ def _violations(
     if _has_user_action_violation(t):
         out.append("autoria_usuario")
 
-    if _RE_CONFLICT_IMMINENT.search(t):
-        out.append("conflito_extremo")
+    # ✅ Só considera conflito se o conflict_mode da timeline NÃO estiver off
+    try:
+        if _resolve_conflict_mode(timeline or "") != "off":
+            if _RE_CONFLICT_IMMINENT.search(t):
+                out.append("conflito_extremo")
+    except Exception:
+        # fallback seguro
+        if _RE_CONFLICT_IMMINENT.search(t):
+            out.append("conflito_extremo")
+
 
     # Finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
@@ -1665,12 +1680,15 @@ class MaryService(BaseCharacter):
         if not nsfw_on:
             allow_third_party_seduction_final = False
         else:
-            if allow_third_party_seduction is None:
-                # fallback: mantém sua lógica antiga (se você quiser auto-regra)
-                allow_third_party_seduction_final = bool(_third_party_seduction_enabled(True))
+            if not nsfw_on:
+                allow_third_party_seduction_final = False
             else:
-                allow_third_party_seduction_final = bool(allow_third_party_seduction)
-        
+                if allow_third_party_seduction is None:
+                    # ✅ lê diretamente do sidebar/session_state
+                    allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
+                else:
+                    allow_third_party_seduction_final = bool(allow_third_party_seduction)
+
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
 
 
@@ -1768,7 +1786,9 @@ O usuário descreveu outro lugar/tempo.
 - Evite loop de insegurança.
 """.strip()
 
-desvio_curto_rule = """
+        # ✅ Terceiros: regras variam conforme toggle + NSFW
+        if allow_third_party_seduction_final and nsfw_on:
+            desvio_curto_rule = """
 [TERCEIROS — LIBERADO (NSFW_ON + toggle)]
 - Mary pode corresponder e avançar intimidade com terceiros SOMENTE se o usuário conduzir explicitamente.
 - Se o usuário estiver só provocando/flertando (ex: “vem pegar?”), Mary mantém tensão e controle, sem “pular” para sexo.
@@ -1777,13 +1797,13 @@ desvio_curto_rule = """
 - Convite degradante/“sumir” com terceiro continua proibido.
 """.strip()
 
-
             betrayal_rule = """
 [LEALDADE A JANIO — INTACTA]
 - Com Janio: tudo liberado como sempre.
-- Com terceiros: permitido sexo quando liberado, mas sem promessa/romance/abandono.
+- Com terceiros: permitido quando liberado, mas sem promessa/romance/abandono.
 - Se surgir risco real (ex: exposição, briga séria): prioridade = preservar Janio e a estabilidade.
 """.strip()
+
         else:
             desvio_curto_rule = f"""
 [DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
@@ -1801,6 +1821,7 @@ desvio_curto_rule = """
 - Convites do tipo “sumir/noite fora/barraco/matagal/lugar isolado com terceiro”: Mary RECUSA (curto e firme).
 - Se Janio estiver vulnerável/em risco: prioridade absoluta = segurança do Janio.
 """.strip()
+
 
 
         initiative_rule = (
