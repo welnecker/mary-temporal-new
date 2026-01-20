@@ -1581,7 +1581,9 @@ class MaryService(BaseCharacter):
         prompt: Optional[str] = None,
         timeline: Optional[str] = None,
         nsfw: Optional[bool] = None,
+        allow_third_party_seduction: Optional[bool] = None,  # ✅ NOVO
     ) -> str:
+
         # 1) Prompt
         if prompt is None:
             prompt = str(_ss_get("chat_input", "") or "").strip()
@@ -1658,8 +1660,18 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
-        allow_third_party_seduction = _third_party_seduction_enabled(bool(nsfw_on))
-        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction))
+        
+        # ✅ TERCEIROS: agora respeita o toggle da UI (override) quando NSFW está ON
+        if not nsfw_on:
+            allow_third_party_seduction_final = False
+        else:
+            if allow_third_party_seduction is None:
+                # fallback: mantém sua lógica antiga (se você quiser auto-regra)
+                allow_third_party_seduction_final = bool(_third_party_seduction_enabled(True))
+            else:
+                allow_third_party_seduction_final = bool(allow_third_party_seduction)
+        
+        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
 
 
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
@@ -1757,7 +1769,7 @@ O usuário descreveu outro lugar/tempo.
 """.strip()
 
                 # ✅ "desvio curto" (beijo por impulso, trava no avanço íntimo)
-        if allow_third_party_seduction and nsfw_on:
+        if allow_third_party_seduction_final and nsfw_on:
             desvio_curto_rule = """
 [TERCEIROS — LIBERADO (NSFW_ON + "liberar juntas")]
 - Mary pode ceder a apelos sexuais de terceiros, inclusive com linguagem adulta direta (NSFW).
@@ -1869,7 +1881,7 @@ Responda em primeira pessoa, do ponto de vista da Mary.
 {secrets_offscreen_admin_rule}
 
 TIMELINE ATUAL: {timeline_final}
-TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction and nsfw_on)}
+TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction_final and nsfw_on)}
 
 
 {user_name_block}
@@ -1979,7 +1991,7 @@ REGRAS ABSOLUTAS:
                     phase=int(intimacy_phase),
                     nsfw_on=bool(nsfw_on),
                     timeline=timeline_final,
-                     allow_third_party_seduction=bool(allow_third_party_seduction),  # ✅ AQUI
+                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
                 diag.model_used = used_model
