@@ -15,6 +15,51 @@ SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 # Alias opcionais (ex: {"chimera": "tngtech/tng-r1t-chimera:free"})
 MODEL_ALIASES: Dict[str, str] = {}
 
+def _normalize_reasoning_into_content(resp: Any) -> Any:
+    """
+    Alguns providers retornam a resposta em message.reasoning e deixam message.content vazio.
+    Este normalizador copia reasoning -> content quando content está vazio,
+    para evitar 'modelo retornou vazio' no service.
+    Suporta:
+      - dict OpenAI-like
+      - tuple(data, used_model, provider) (normaliza o data)
+    """
+    # tuple: (data, used_model, provider)
+    if isinstance(resp, tuple) and len(resp) >= 1:
+        data = _normalize_reasoning_into_content(resp[0])
+        # mantém metadados do tuple intactos
+        if len(resp) == 3:
+            return (data, resp[1], resp[2])
+        if len(resp) == 2:
+            return (data, resp[1])
+        return (data,)
+
+    if not isinstance(resp, dict):
+        return resp
+
+    try:
+        choices = resp.get("choices") or []
+        if not isinstance(choices, list) or not choices:
+            return resp
+
+        c0 = choices[0] or {}
+        msg = c0.get("message") or {}
+        if not isinstance(msg, dict):
+            return resp
+
+        content = msg.get("content")
+        reasoning = msg.get("reasoning")
+
+        # ✅ se content vazio e reasoning existe, usa reasoning como resposta final
+        if (not isinstance(content, str) or not content.strip()) and isinstance(reasoning, str) and reasoning.strip():
+            msg["content"] = reasoning
+            c0["message"] = msg
+            choices[0] = c0
+            resp["choices"] = choices
+
+        return resp
+    except Exception:
+        return resp
 
 # -------------------------
 # DETECÇÃO DE PROVIDER
@@ -117,16 +162,20 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     provider = _provider_for(norm_model)
 
     if provider == "HuggingFace":
-        return hf_chat(norm_model, messages, **kwargs)
+        resp = hf_chat(norm_model, messages, **kwargs)
+        return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
-        return together_chat(norm_model, messages, **kwargs)
+        resp = together_chat(norm_model, messages, **kwargs)
+        return _normalize_reasoning_into_content(resp)
 
     try:
-        return openrouter_chat(norm_model, messages, **kwargs)
+        resp = openrouter_chat(norm_model, messages, **kwargs)
+        return _normalize_reasoning_into_content(resp)
     except RuntimeError as e:
         if _should_fallback_openrouter(e):
-            return openrouter_chat(SAFE_FALLBACK_MODEL, messages, **kwargs)
+            resp = openrouter_chat(SAFE_FALLBACK_MODEL, messages, **kwargs)
+            return _normalize_reasoning_into_content(resp)
         raise
 
 
@@ -157,14 +206,18 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
         kwargs["extra"] = extra
 
     if provider == "HuggingFace":
-        return hf_chat(norm_model, msgs, **kwargs)
+        resp = hf_chat(norm_model, msgs, **kwargs)
+        return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
-        return together_chat(norm_model, msgs, **kwargs)
+        resp = together_chat(norm_model, msgs, **kwargs)
+        return _normalize_reasoning_into_content(resp)
 
     try:
-        return openrouter_chat(norm_model, msgs, **kwargs)
+        resp = openrouter_chat(norm_model, msgs, **kwargs)
+        return _normalize_reasoning_into_content(resp)
     except RuntimeError as e:
         if _should_fallback_openrouter(e):
-            return openrouter_chat(SAFE_FALLBACK_MODEL, msgs, **kwargs)
+            resp = openrouter_chat(SAFE_FALLBACK_MODEL, msgs, **kwargs)
+            return _normalize_reasoning_into_content(resp)
         raise
