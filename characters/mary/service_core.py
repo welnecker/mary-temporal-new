@@ -1141,6 +1141,32 @@ _RE_RUNAWAY_INVITE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+_RE_JANIO_ACTING = re.compile(
+    r"(?is)\bjanio\b.{0,60}\b("
+    r"beija|me\s+beija|"
+    r"toca|me\s+toca|"
+    r"agarra|me\s+agarra|"
+    r"puxa|me\s+puxa|"
+    r"leva|me\s+leva|"
+    r"encosta|me\s+encosta|"
+    r"transa|penetra|meter|foder|"
+    r"goza|orgasmo"
+    r")\b"
+)
+_RE_JANIO_ACTING = re.compile(
+    r"(?is)\bjanio\b.{0,60}\b("
+    r"beija|me\s+beija|"
+    r"toca|me\s+toca|"
+    r"agarra|me\s+agarra|"
+    r"puxa|me\s+puxa|"
+    r"leva|me\s+leva|"
+    r"encosta|me\s+encosta|"
+    r"transa|penetra|meter|foder|"
+    r"goza|orgasmo"
+    r")\b"
+)
+
+
 
 
 def _violations(
@@ -1151,6 +1177,7 @@ def _violations(
     phase: int = 0,
     nsfw_on: bool = False,
     timeline: str = "",  # ✅ NOVO (não quebra chamadas antigas; deixe default)
+    allow_third_party_seduction: bool = False,  # ✅ NOVO
 ) -> List[str]:
     """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
     t = (texto or "").strip()
