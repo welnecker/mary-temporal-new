@@ -70,21 +70,58 @@ def _extract_error_payload(r: httpx.Response) -> str:
     return str(j)[:2000]
 
 # =========================================
+# ✅ NORMALIZAÇÃO: providers que devolvem texto em "reasoning"
+# =========================================
+def _normalize_reasoning_into_content(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Alguns providers retornam:
+      choices[0].message.content = "" (vazio)
+      choices[0].message.reasoning = "texto final"
+    Isso quebra pipelines que extraem apenas "content".
+    Então: se content estiver vazio e reasoning for str não-vazio,
+    copiamos reasoning -> content.
+    """
+    try:
+        choices = data.get("choices") or []
+        if not isinstance(choices, list) or not choices:
+            return data
+
+        c0 = choices[0] or {}
+        msg = c0.get("message") or {}
+        if not isinstance(msg, dict):
+            return data
+
+        content = msg.get("content")
+        reasoning = msg.get("reasoning")
+
+        content_is_empty = (not isinstance(content, str)) or (not content.strip())
+        if content_is_empty and isinstance(reasoning, str) and reasoning.strip():
+            msg["content"] = reasoning
+            c0["message"] = msg
+            choices[0] = c0
+            data["choices"] = choices
+    except Exception:
+        pass
+
+    return data
+
+# =========================================
 # DEFAULTS: Reasoning para modelos específicos
 # =========================================
 def _default_reasoning_for_model(model: str) -> Optional[Dict[str, Any]]:
     """
     Para o roleplay, é comum querer o texto final "fluido".
-    Alguns modelos (incl. Xiaomi MiMo) podem gastar muito em reasoning.
+    Alguns modelos podem gastar muito em reasoning.
     Aqui aplicamos um default: desligar reasoning para xiaomi/*,
     a não ser que o chamador já tenha passado 'reasoning' manualmente.
+
+    OBS: Mesmo com effort="none", alguns providers ainda preenchem "reasoning".
+    Por isso existe _normalize_reasoning_into_content() acima.
     """
     m = (model or "").strip().lower()
     if m.startswith("xiaomi/"):
-        # "effort": "none" = desliga reasoning (menos custo, menos truncamento)
-        # Você pode trocar para {"exclude": True} se quiser reasoning interno
+        # effort none: tenta reduzir custo/latência; mas não depende disso para funcionar
         return {"reasoning": {"effort": "none"}}
-
     return None
 
 def _merge_body_defaults(model: str, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,7 +131,6 @@ def _merge_body_defaults(model: str, body: Dict[str, Any]) -> Dict[str, Any]:
 
     defaults = _default_reasoning_for_model(model)
     if defaults:
-        # Merge simples (sem sobrescrever campos já existentes)
         for k, v in defaults.items():
             if k not in body:
                 body[k] = v
@@ -146,6 +182,9 @@ def chat(
                 raise RuntimeError(f"OpenRouter {r.status_code}: {msg}")
 
             data = r.json()
+
+            # ✅ CORREÇÃO PRINCIPAL: se veio texto em reasoning, move pra content
+            data = _normalize_reasoning_into_content(data)
 
             used = data.get("model") or model
 
