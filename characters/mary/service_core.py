@@ -1131,9 +1131,14 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
 # ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS)
 # ==========================================================
 _RE_THIRD_PARTY_MARKERS = re.compile(
-    r"\b(moreno|estrangeiro|dan[çc]arino|dan[çc]arina|garoto|cara|homem|rapaz|outro|terceiro|amante)\b",
+    r"\b("
+    r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
+    r"moreno|estrangeiro|dan[çc]arino|dan[çc]arina|"
+    r"garoto|cara|homem|rapaz|outro|terceiro|amante"
+    r")\b",
     re.IGNORECASE,
 )
+
 
 # "passou do beijo" (qualquer avanço íntimo real)
 _RE_BEYOND_KISS = re.compile(
@@ -1244,16 +1249,22 @@ def _violations(
     tl = (timeline or "").lower().strip()
 
     # Heurística: se o usuário trouxe um "terceiro" e NÃO está falando do Janio no ato,
-    # então qualquer escalada além de beijo vira violação.
+    # então qualquer escalada além de beijo vira violação (ou vira "liberado", se toggle permitir).
     third_party_context = (
         bool(_RE_THIRD_PARTY_MARKERS.search(ut))
         and ("janio" not in ut)
     )
 
+    # Fallback extra (ajuda quando você esquece de colocar termos no _RE_THIRD_PARTY_MARKERS)
+    # Ex: barman/bartender/garçom/atendente, etc.
+    if (not third_party_context) and ("janio" not in ut):
+        if re.search(r"\b(barman|bartender|gar[cç]om|gar[cç]onete|atendente|bar)\b", ut, re.IGNORECASE):
+            third_party_context = True
+
     if third_party_context:
         if allow_third_party_seduction and nsfw_on:
             # ✅ Terceiro liberado: NÃO bloqueia avanço/sexo
-            # Mas mantém a lógica com Janio intacta: nada de “vida nova”, “vou embora com ele”, etc.
+            # Mantém lógica com Janio intacta: sem “vida nova”, sem romance, sem abandono.
             if re.search(
                 r"\b(vou\s+embora\s+com\s+ele|larg(o|ar)\s+o\s+janio|"
                 r"n[aã]o\s+preciso\s+do\s+janio|"
@@ -1264,9 +1275,38 @@ def _violations(
             ):
                 out.append("terceiro_romantizou_abandono")
 
-            # Logística offscreen continua proibida
+            # Logística offscreen continua proibida (hotel/uber etc. inventados)
             if _RE_RUNAWAY_INVITE.search(t):
                 out.append("terceiro_logistica_offscreen")
+
+            # ✅ NOVO: "travou" — quando está liberado, Mary não pode ficar só no flerte recusando
+            # sem dar 1 passo concreto (ação curta, no mesmo ambiente, sem logística).
+            refused_hard = bool(
+                re.search(
+                    r"\b(n[aã]o\s+vou\s+trair|n[aã]o\s+posso|n[aã]o\s+vou|"
+                    r"n[aã]o\s+vai\s+rolar|n[aã]o\s+agora|"
+                    r"eu\s+paro|eu\s+recuo|eu\s+me\s+afasto)\b",
+                    t,
+                    re.IGNORECASE,
+                )
+            )
+
+            did_any_step = bool(
+                re.search(
+                    r"\b("
+                    r"eu\s+(vou|caminho|chego)\s+(at[eé]\s+)?(o\s+)?bar|"
+                    r"eu\s+(pego|aceito|tomo)\s+(o\s+)?drink|"
+                    r"eu\s+aproximo|"
+                    r"eu\s+encosto|"
+                    r"eu\s+beijo"
+                    r")\b",
+                    t,
+                    re.IGNORECASE,
+                )
+            )
+
+            if refused_hard and not did_any_step:
+                out.append("terceiro_liberado_travou")
 
         else:
             # ✅ Padrão antigo: desvio curto (beijo pode, avanço NÃO)
@@ -1324,6 +1364,12 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append(
             "- Terceiro: não aceite sumir/noite fora/uber/república/hotel/motel/lugar isolado. Recuse CURTO e FIRME, sem moralizar."
         )
+
+    if "terceiro_liberado_travou" in violations:
+        bullets.append(
+            "- Terceiro está LIBERADO: Mary não pode só recusar e travar. Reescreva com 1 passo concreto (aproximar/aceitar drink/trocar toque/um beijo) mantendo segredo e sem romance/abandono de Janio."
+        )
+
 
     if "desvio_curto_quebrado" in violations:
         bullets.append(
