@@ -1327,12 +1327,15 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
         prompt_to_send = prompt
 
     kwargs = {
-        "user": user,
-        "model": model,
-        "prompt": prompt_to_send,
-        "timeline": timeline,
-        "nsfw": nsfw,
-    }
+    "user": user,
+    "model": model,
+    "prompt": prompt_to_send,
+    "timeline": timeline,
+    "nsfw": nsfw,
+    # ✅ NOVO: toggle de terceiros vai junto pro service (se ele aceitar)
+    "allow_third_party_seduction": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
+}
+
 
     # filtra kwargs pela assinatura real
     try:
@@ -2079,6 +2082,14 @@ def main() -> None:
         svc = _get_service()
         tl_active = _timeline()
         nsfw_active = bool(st.session_state.get("mary_nsfw_on", False))
+        third_active = bool(st.session_state.get("mary_allow_third_party_seduction", False))
+
+        # ✅ Persistir o toggle em facts (para o service conseguir ler mesmo se não receber argumento)
+        try:
+            set_fact(_usuario_key_atual(), "mary.allow_third_party_seduction", third_active, {"fonte": "ui_toggle"})
+        except Exception:
+            pass
+
 
         try:
             resposta = _call_service_reply_safe(
