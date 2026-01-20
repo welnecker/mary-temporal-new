@@ -1047,14 +1047,18 @@ def _capture_used_model_provider_from_service(svc: Any) -> None:
 def _extract_router_text(resp: Any) -> str:
     """
     Extrai texto de:
-      - tuple(data, used_model, provider)   ✅ seu caso
+      - tuple(data, used_model, provider)
       - dict (OpenAI-like)
       - str
+
+    FIX CRÍTICO:
+      Alguns providers/modelos retornam o texto em message.reasoning
+      e deixam message.content vazio. Nesse caso, usamos reasoning.
     """
     if resp is None:
         return ""
 
-    # ✅ tuple: (data, used_model, provider)
+    # tuple: (data, used_model, provider)
     if isinstance(resp, tuple) and resp:
         return _extract_router_text(resp[0])
 
@@ -1063,14 +1067,39 @@ def _extract_router_text(resp: Any) -> str:
 
     if isinstance(resp, dict):
         try:
-            c0 = (resp.get("choices") or [])[0] or {}
+            choices = resp.get("choices") or []
+            c0 = (choices[0] if isinstance(choices, list) and choices else {}) or {}
             msg = c0.get("message") or {}
+
+            # 1) content (normal)
             txt = msg.get("content")
-            if isinstance(txt, str):
+            if isinstance(txt, str) and txt.strip():
                 return txt.strip()
-            # fallback: alguns providers usam "text"
+
+            # 2) alguns retornam lista/partes
+            if isinstance(txt, list):
+                parts = []
+                for p in txt:
+                    if isinstance(p, dict):
+                        t = p.get("text")
+                        if isinstance(t, str) and t.strip():
+                            parts.append(t.strip())
+                    elif isinstance(p, str) and p.strip():
+                        parts.append(p.strip())
+                if parts:
+                    return "\n".join(parts).strip()
+
+            # 3) FIX: reasoning (quando content vem vazio)
+            r = msg.get("reasoning")
+            if isinstance(r, str) and r.strip():
+                return r.strip()
+
+            # 4) fallback antigo: text
             txt2 = c0.get("text")
-            return txt2.strip() if isinstance(txt2, str) else ""
+            if isinstance(txt2, str) and txt2.strip():
+                return txt2.strip()
+
+            return ""
         except Exception:
             return ""
 
