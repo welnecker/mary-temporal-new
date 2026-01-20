@@ -1558,6 +1558,7 @@ def main() -> None:
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
+                st.session_state["mary_allow_third_party_seduction"] = False  # ✅ NOVO
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
@@ -1618,8 +1619,27 @@ def main() -> None:
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
+        
+        # ✅ garante chave do toggle de terceiros
+        if "mary_allow_third_party_seduction" not in st.session_state:
+            st.session_state["mary_allow_third_party_seduction"] = False
+        
+        # ✅ ao desligar NSFW, força OFF no toggle de terceiros
+        if not nsfw_after:
+            st.session_state["mary_allow_third_party_seduction"] = False
+        
+        # ✅ persistir NSFW quando mudou
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
+        
+        # ✅ Toggle extra (somente quando NSFW está ON)
+        if nsfw_after:
+            st.checkbox(
+                "Permitir Mary ceder a terceiros (segredo)",
+                key="mary_allow_third_party_seduction",
+                help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
+            )
+            st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
 
         st.markdown("---")
         st.subheader("🧾 Estado Atual (facts → service_core)")
@@ -1795,6 +1815,11 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("🔍 Debug")
+        st.caption(
+            f"NSFW={bool(st.session_state.get('mary_nsfw_on', False))} | "
+            f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
+        )
+
 
         st.session_state["mary_debug_rel_panel"] = st.checkbox(
             "Mostrar painel Relationship",
