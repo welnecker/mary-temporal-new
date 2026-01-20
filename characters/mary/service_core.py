@@ -237,12 +237,18 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
     """
     Terceiros só liberam quando:
       - NSFW_ON estiver True
-      - e o sidebar estiver em "liberar juntas" (ou variações)
-    Aceita também um boolean direto (ex: mary_allow_third_party=True).
+      - e o sidebar estiver em "liberar" (qualquer variação)
+    Aceita também boolean direto em qualquer uma das chaves conhecidas.
     """
     if not nsfw_on:
         return False
 
+    # ✅ 1) checkbox atual do sidebar (você usa esta)
+    v_new = _ss_get("mary_allow_third_party_seduction", None)
+    if isinstance(v_new, bool):
+        return bool(v_new)
+
+    # ✅ 2) compat: antigas
     v = _ss_get("mary_third_party_mode", None)
     if isinstance(v, bool):
         return bool(v)
@@ -252,7 +258,7 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
         if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
             return True
 
-    # fallback: checkbox direto
+    # ✅ 3) compat: outra chave antiga
     return bool(_ss_get("mary_allow_third_party", False))
 
 
@@ -956,7 +962,12 @@ _RE_AFTERCARE_SIGNAL = re.compile(
     r"\b(depois|abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
     re.IGNORECASE
 )
-_RE_ESCALATE_0_TO_1 = re.compile(r"\b(beijo|beij[oa]|encosta|toque|abraço|aproxim\w*)\b", re.IGNORECASE)
+_RE_ESCALATE_0_TO_1 = re.compile(
+    r"\b(beijo|beij[oa]|encosta|toque|abraço|aproxim\w*|"
+    r"vem|chega\s+perto|vem\s+aqui|pega|bar|drink|dan[çc]a|cintura)\b",
+    re.IGNORECASE
+)
+
 _RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
 _RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|faz eu implorar)\b", re.IGNORECASE)
 # ==========================================================
@@ -1517,13 +1528,21 @@ _RE_ACTION_COMMAND = re.compile(
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
     if conflict_now:
         return False
+
+    ut = (user_text or "")
+
+    # ✅ NOVO: fase 0 também pode ter iniciativa quando o usuário dá convite claro
     if phase < 1:
+        if re.search(r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a|bar|drink)\b", ut, re.IGNORECASE):
+            return True
+        # sem convite, mantém fechado
         return False
 
+    # (resto do seu código continua)
     cue = bool(
         re.search(
             r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b",
-            (user_text or ""),
+            ut,
             re.IGNORECASE,
         )
     )
@@ -1539,14 +1558,13 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
         if cue and desire >= (self_control * 0.45):
             return True
 
-        if re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE):
+        if re.search(r"\bjanio\b", ut, re.IGNORECASE):
             return True
 
     except Exception:
-        return bool(re.search(r"\bjanio\b", (user_text or ""), re.IGNORECASE))
+        return bool(re.search(r"\bjanio\b", ut, re.IGNORECASE))
 
     return False
-
 # ==========================================================
 # DIAGNÓSTICOS (UI)
 # ==========================================================
