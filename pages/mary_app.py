@@ -1325,51 +1325,46 @@ def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, ti
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
     else:
         prompt_to_send = prompt
-
+        
+    nsfw = bool(st.session_state.get("mary_nsfw_on", False))
     kwargs = {
     "user": user,
     "model": model,
     "prompt": prompt_to_send,
     "timeline": timeline,
     "nsfw": nsfw,
-    # ✅ NOVO: toggle de terceiros vai junto pro service (se ele aceitar)
+    # ✅ toggle de terceiros vai junto pro service
     "allow_third_party_seduction": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
 }
 
+# ✅ filtra kwargs pela assinatura real do service (evita TypeError em services antigos)
+try:
+    sig = inspect.signature(svc.reply)
+    params = set(sig.parameters.keys())
+    kwargs = {k: v for k, v in kwargs.items() if k in params}
+except Exception:
+    pass
 
-    # filtra kwargs pela assinatura real
-    try:
-        sig = inspect.signature(svc.reply)
-        params = set(sig.parameters.keys())
-        kwargs = {k: v for k, v in kwargs.items() if k in params}
-    except Exception:
-        # se não conseguir introspectar, tenta do jeito "normal"
-        pass
+resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do service/router
 
-    resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do teu service
+# ✅ debug raw
+st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
 
-    st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
+# ✅ extrai texto UMA vez
+txt = _extract_router_text(resp)
+st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
 
-    txt = _extract_router_text(resp)
-    
-    # DEBUG: antes de strip
-    st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
+# ✅ telemetria (provider/model) — tenta do retorno; se não, tenta do service
+prov, used_model = _extract_router_used_model_provider(resp)
+if used_model or prov:
+    st.session_state["mary_last_used_model"] = used_model
+    st.session_state["mary_last_used_provider"] = prov
+else:
+    _capture_used_model_provider_from_service(svc)
 
-
-    # ✅ pega texto mesmo se vier tuple
-    txt = _extract_router_text(resp)
-
-    # ✅ telemetria pelo retorno (mais confiável)
-    prov, used_model = _extract_router_used_model_provider(resp)
-    if used_model or prov:
-        st.session_state["mary_last_used_model"] = used_model
-        st.session_state["mary_last_used_provider"] = prov
-    else:
-        _capture_used_model_provider_from_service(svc)
-
-    clean = _strip_persona_echo_if_any(txt)
-    st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
-    return clean
+clean = _strip_persona_echo_if_any(txt)
+st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
+return clean
 
 
 
