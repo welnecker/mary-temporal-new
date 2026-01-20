@@ -12,6 +12,7 @@ import importlib
 import inspect
 from typing import Any
 import streamlit as st
+import httpx
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
@@ -1207,34 +1208,48 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
     return info
 
 
-
-def _router_ping_once(*, user: str, model: str) -> dict[str, Any]:
-    fn = getattr(service_router, "chat", None)
-    if not callable(fn):
-        return {"ok": False, "error": "service_router.chat não existe."}
-
-    prompt = "Responda APENAS com a palavra: PONG"
-    messages = [{"role": "user", "content": prompt}]
+def _router_ping_once(user: str, model: str) -> dict:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 30,
+        "temperature": 0.0,
+    }
 
     try:
-        raw = fn(model, messages, max_tokens=16, temperature=0.0, top_p=1.0)
+        r = httpx.post(url, headers=headers, json=payload, timeout=30.0)
+        raw = r.text
+        if r.status_code >= 400:
+            return {"ok": False, "status": r.status_code, "error": raw, "ui_model": model}
 
-        txt = _extract_router_text(raw)
-        prov, used_model = _extract_router_used_model_provider(raw)
+        data = r.json()
+        txt = ""
+        try:
+            txt = (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content") or ""
+        except Exception:
+            txt = ""
 
-        pong_ok = "PONG" in (txt or "").upper()
+        # se o provider/model vier no body, ótimo (às vezes vem; às vezes não)
+        used_model = data.get("model")
+        used_provider = data.get("provider")
 
         return {
-            "ok": bool(txt.strip()) and pong_ok,
-            "attempt": "service_router.chat(model, messages)",
+            "ok": True,
+            "status": r.status_code,
             "ui_model": model,
-            "used_provider": prov,
             "used_model": used_model,
-            "text": txt[:2000],
-            "raw_type": type(raw).__name__,
+            "used_provider": used_provider,
+            "text": txt[:300],
+            "raw": raw[:1200],
         }
     except Exception as e:
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+        return {"ok": False, "status": None, "error": f"{type(e).__name__}: {e}", "ui_model": model}
+
 
 
     prompt = 'Responda APENAS com a palavra: PONG'
@@ -1612,6 +1627,15 @@ def main() -> None:
             else:
                 st.error("❌ Falha no ping.")
                 st.code(ping.get("error") or "erro desconhecido")
+
+        st.markdown("---")
+        st.subheader("🧨 Último erro (service)")
+        
+        if st.button("📌 Mostrar mary_last_error", key="btn_show_last_error"):
+            st.json(st.session_state.get("mary_last_error") or {})
+            st.json(st.session_state.get("mary_last_raw_preview") or {})
+            st.json(st.session_state.get("mary_last_diagnostics") or {})
+
 
 
         st.markdown("---")
