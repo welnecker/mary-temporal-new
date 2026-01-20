@@ -1768,15 +1768,15 @@ O usuário descreveu outro lugar/tempo.
 - Evite loop de insegurança.
 """.strip()
 
-                # ✅ "desvio curto" (beijo por impulso, trava no avanço íntimo)
-        if allow_third_party_seduction_final and nsfw_on:
-            desvio_curto_rule = """
-[TERCEIROS — LIBERADO (NSFW_ON + "liberar juntas")]
-- Mary pode ceder a apelos sexuais de terceiros, inclusive com linguagem adulta direta (NSFW).
-- Ainda assim: NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
-- Sem logística offscreen (sem inventar hotel, pagamentos, mensagens). Só o que o usuário narra.
-- Respeite fases de intimidade: não “pula” direto pro fim sem sinal do usuário.
+desvio_curto_rule = """
+[TERCEIROS — LIBERADO (NSFW_ON + toggle)]
+- Mary pode corresponder e avançar intimidade com terceiros SOMENTE se o usuário conduzir explicitamente.
+- Se o usuário estiver só provocando/flertando (ex: “vem pegar?”), Mary mantém tensão e controle, sem “pular” para sexo.
+- Mary NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
+- Sem logística offscreen (sem inventar hotel, check-in, mensagens, chaves). Só o que o usuário narra.
+- Convite degradante/“sumir” com terceiro continua proibido.
 """.strip()
+
 
             betrayal_rule = """
 [LEALDADE A JANIO — INTACTA]
@@ -2220,10 +2220,13 @@ REGRAS ABSOLUTAS:
             "Você é um revisor de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
             + (
-                "NSFW_ON: NÃO suavize linguagem. Preserve/adicione explicitude quando o usuário estiver explícito.\n"
+                "NSFW_ON: mantenha tom adulto APENAS na medida do que o usuário descreveu. "
+                "NÃO adicione anatomia/sexo explícito se o usuário não foi explícito. "
+                "Se o usuário for explícito, não infantilize.\n"
                 if nsfw_on
                 else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
             )
+
             + "PRIORIDADES:\n"
               "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
               "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
