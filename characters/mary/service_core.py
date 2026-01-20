@@ -233,6 +233,29 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
     return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
+def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
+    """
+    Terceiros só liberam quando:
+      - NSFW_ON estiver True
+      - e o sidebar estiver em "liberar juntas" (ou variações)
+    Aceita também um boolean direto (ex: mary_allow_third_party=True).
+    """
+    if not nsfw_on:
+        return False
+
+    v = _ss_get("mary_third_party_mode", None)
+    if isinstance(v, bool):
+        return bool(v)
+
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
+            return True
+
+    # fallback: checkbox direto
+    return bool(_ss_get("mary_allow_third_party", False))
+
+
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
@@ -1153,21 +1176,6 @@ _RE_JANIO_ACTING = re.compile(
     r"goza|orgasmo"
     r")\b"
 )
-_RE_JANIO_ACTING = re.compile(
-    r"(?is)\bjanio\b.{0,60}\b("
-    r"beija|me\s+beija|"
-    r"toca|me\s+toca|"
-    r"agarra|me\s+agarra|"
-    r"puxa|me\s+puxa|"
-    r"leva|me\s+leva|"
-    r"encosta|me\s+encosta|"
-    r"transa|penetra|meter|foder|"
-    r"goza|orgasmo"
-    r")\b"
-)
-
-
-
 
 def _violations(
     texto: str,
@@ -1243,19 +1251,39 @@ def _violations(
     )
 
     if third_party_context:
-        # 1) Aceitou "sumir / noite fora / lugar isolado / república / uber" com terceiro
-        if _RE_RUNAWAY_INVITE.search(t):
-            out.append("convite_degradante_aceito")
+        if allow_third_party_seduction and nsfw_on:
+            # ✅ Terceiro liberado: NÃO bloqueia avanço/sexo
+            # Mas mantém a lógica com Janio intacta: nada de “vida nova”, “vou embora com ele”, etc.
+            if re.search(
+                r"\b(vou\s+embora\s+com\s+ele|larg(o|ar)\s+o\s+janio|"
+                r"n[aã]o\s+preciso\s+do\s+janio|"
+                r"agora\s+sou\s+dele|"
+                r"quero\s+ficar\s+com\s+ele\s+de\s+verdade)\b",
+                t,
+                re.IGNORECASE,
+            ):
+                out.append("terceiro_romantizou_abandono")
 
-        # 2) Passou do beijo (mãos subindo / seios / por baixo da roupa / ato etc.)
-        if _RE_BEYOND_KISS.search(t):
-            out.append("desvio_curto_quebrado")
+            # Logística offscreen continua proibida
+            if _RE_RUNAWAY_INVITE.search(t):
+                out.append("terceiro_logistica_offscreen")
 
-        # 3) Extra: se a resposta romantiza/valida traição como “possibilidade real”
-        # (mantém simples pra não criar falso positivo)
-        if re.search(r"\b(vou\s+com\s+ele|quero\s+ele|n[aã]o\s+resisto|me\s+entrego\s+pra\s+ele)\b", t, re.IGNORECASE):
-            out.append("desvio_curto_quebrado")
+        else:
+            # ✅ Padrão antigo: desvio curto (beijo pode, avanço NÃO)
+            if _RE_RUNAWAY_INVITE.search(t):
+                out.append("convite_degradante_aceito")
 
+            if _RE_BEYOND_KISS.search(t):
+                out.append("desvio_curto_quebrado")
+
+            if re.search(
+                r"\b(vou\s+com\s+ele|quero\s+ele|n[aã]o\s+resisto|me\s+entrego\s+pra\s+ele)\b",
+                t,
+                re.IGNORECASE,
+            ):
+                out.append("desvio_curto_quebrado")
+
+        
     if not _format_ok(t):
         out.append("formato_invalido")
 
@@ -1301,6 +1329,17 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append(
             "- Terceiro: permitido no máximo 1 beijo curto por impulso. Se houver mãos subindo/decote/por baixo da roupa/querer ir além do beijo: Mary BLOQUEIA na hora, se afasta e SAI (culpa/segredo, sem romance)."
         )
+
+    if "terceiro_romantizou_abandono" in violations:
+        bullets.append(
+            "- Terceiro liberado NÃO significa abandonar Janio: remova qualquer frase de 'vida nova', 'agora sou dele', 'largar Janio'. Mantenha segredo e desejo carnal, sem romance."
+        )
+
+    if "terceiro_logistica_offscreen" in violations:
+        bullets.append(
+            "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, sem confirmar mudança de local."
+        )
+
 
     # ✅ NSFW OFF: tirar termos explícitos
     if "nsfw_off_explicito" in violations:
@@ -1573,6 +1612,9 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+        allow_third_party_seduction = _third_party_seduction_enabled(bool(nsfw_on))
+        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction))
+
 
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
@@ -1668,8 +1710,24 @@ O usuário descreveu outro lugar/tempo.
 - Evite loop de insegurança.
 """.strip()
 
-        # ✅ "desvio curto" (beijo por impulso, trava no avanço íntimo)
-        desvio_curto_rule = f"""
+                # ✅ "desvio curto" (beijo por impulso, trava no avanço íntimo)
+        if allow_third_party_seduction and nsfw_on:
+            desvio_curto_rule = """
+[TERCEIROS — LIBERADO (NSFW_ON + "liberar juntas")]
+- Mary pode ceder a apelos sexuais de terceiros, inclusive com linguagem adulta direta (NSFW).
+- Ainda assim: NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
+- Sem logística offscreen (sem inventar hotel, pagamentos, mensagens). Só o que o usuário narra.
+- Respeite fases de intimidade: não “pula” direto pro fim sem sinal do usuário.
+""".strip()
+
+            betrayal_rule = """
+[LEALDADE A JANIO — INTACTA]
+- Com Janio: tudo liberado como sempre.
+- Com terceiros: permitido sexo quando liberado, mas sem promessa/romance/abandono.
+- Se surgir risco real (ex: exposição, briga séria): prioridade = preservar Janio e a estabilidade.
+""".strip()
+        else:
+            desvio_curto_rule = f"""
 [DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
 - Mary pode, por impulso e escolha dela, corresponder a UM beijo (curto) se houver tensão.
 - Ao menor sinal de avanço íntimo (mãos subindo/decote/por baixo da roupa/querer ir além do beijo): Mary BLOQUEIA na hora.
@@ -1677,7 +1735,7 @@ O usuário descreveu outro lugar/tempo.
 - Sem moralizar, sem discurso: corte firme, adulto, sensorial.
 """.strip()
 
-        betrayal_rule = f"""
+            betrayal_rule = f"""
 [TRAIÇÃO — PADRÃO REALISTA + AMOR PREVALECE]
 - Mary NÃO romantiza “vida nova” e NÃO abandona Janio.
 - Fidelidade={fidelity_mode.upper()}: permitido no máximo 1 beijo por impulso (desvio curto).
@@ -1685,6 +1743,7 @@ O usuário descreveu outro lugar/tempo.
 - Convites do tipo “sumir/noite fora/barraco/matagal/lugar isolado com terceiro”: Mary RECUSA (curto e firme).
 - Se Janio estiver vulnerável/em risco: prioridade absoluta = segurança do Janio.
 """.strip()
+
 
         initiative_rule = (
             """
@@ -1764,6 +1823,8 @@ Responda em primeira pessoa, do ponto de vista da Mary.
 {secrets_offscreen_admin_rule}
 
 TIMELINE ATUAL: {timeline_final}
+TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction and nsfw_on)}
+
 
 {user_name_block}
 
@@ -1872,6 +1933,7 @@ REGRAS ABSOLUTAS:
                     phase=int(intimacy_phase),
                     nsfw_on=bool(nsfw_on),
                     timeline=timeline_final,
+                     allow_third_party_seduction=bool(allow_third_party_seduction),  # ✅ AQUI
                     diag=diag,
                 )
                 diag.model_used = used_model
@@ -2050,6 +2112,8 @@ REGRAS ABSOLUTAS:
         phase: int,
         nsfw_on: bool,
         timeline: str,  # ✅ NOVO
+        allow_third_party_seduction: bool,   # ✅ NOVO
+
         diag: _Diag,
     ) -> Tuple[str, str]:
         data, used_model, _provider_meta = self._chat(
@@ -2084,6 +2148,9 @@ REGRAS ABSOLUTAS:
             phase=phase,
             nsfw_on=nsfw_on,
             timeline=timeline,  # ✅ NOVO
+            allow_third_party_seduction=allow_third_party_seduction,
+
+
         )
         if not v:
             return (texto, used_model)
@@ -2139,6 +2206,9 @@ REGRAS ABSOLUTAS:
                 phase=phase,
                 nsfw_on=nsfw_on,
                 timeline=timeline,  # ✅ NOVO
+                allow_third_party_seduction=allow_third_party_seduction,
+
+
             )
             if not vr:
                 if _RE_SCENE_FINALIZATION.search(repaired or "") and (
