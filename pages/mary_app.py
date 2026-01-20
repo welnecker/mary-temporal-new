@@ -1315,60 +1315,73 @@ def _router_ping_once(user: str, model: str) -> dict:
 
 
 
-def _call_service_reply_safe(*, svc: Any, user: str, model: str, prompt: str, timeline: str, nsfw: bool) -> str:
+def _call_service_reply_safe(
+    *,
+    svc: Any,
+    user: str,
+    model: str,
+    prompt: str,
+    timeline: str,
+    nsfw: bool | None,
+) -> str:
     """
     Chama svc.reply sem depender de assinatura fixa.
     E, se o service NÃO injeta persona, permite fallback opcional via UI.
     """
+
     # fallback persona (opcional)
     if bool(st.session_state.get("mary_ui_persona_fallback", False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
     else:
         prompt_to_send = prompt
-        
-    nsfw = bool(st.session_state.get("mary_nsfw_on", False))
+
+    # ✅ fonte única de NSFW:
+    # - se veio parâmetro, respeita
+    # - senão, lê do sidebar
+    if nsfw is None:
+        nsfw_value = bool(st.session_state.get("mary_nsfw_on", False))
+    else:
+        nsfw_value = bool(nsfw)
+
     kwargs = {
-    "user": user,
-    "model": model,
-    "prompt": prompt_to_send,
-    "timeline": timeline,
-    "nsfw": nsfw,
-    # ✅ toggle de terceiros vai junto pro service
-    "allow_third_party_seduction": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
-}
+        "user": user,
+        "model": model,
+        "prompt": prompt_to_send,
+        "timeline": timeline,
+        "nsfw": nsfw_value,
+        "allow_third_party_seduction": bool(
+            st.session_state.get("mary_allow_third_party_seduction", False)
+        ),
+    }
 
-# ✅ filtra kwargs pela assinatura real do service (evita TypeError em services antigos)
-try:
-    sig = inspect.signature(svc.reply)
-    params = set(sig.parameters.keys())
-    kwargs = {k: v for k, v in kwargs.items() if k in params}
-except Exception:
-    pass
+    # ✅ filtra kwargs pela assinatura real do service (evita TypeError em services antigos)
+    try:
+        sig = inspect.signature(svc.reply)
+        params = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in kwargs.items() if k in params}
+    except Exception:
+        pass
 
-resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do service/router
+    resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do service/router
 
-# ✅ debug raw
-st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
+    # ✅ debug raw
+    st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
 
-# ✅ extrai texto UMA vez
-txt = _extract_router_text(resp)
-st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
+    # ✅ extrai texto UMA vez
+    txt = _extract_router_text(resp)
+    st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
 
-# ✅ telemetria (provider/model) — tenta do retorno; se não, tenta do service
-prov, used_model = _extract_router_used_model_provider(resp)
-if used_model or prov:
-    st.session_state["mary_last_used_model"] = used_model
-    st.session_state["mary_last_used_provider"] = prov
-else:
-    _capture_used_model_provider_from_service(svc)
+    # ✅ telemetria (provider/model) — tenta do retorno; se não, tenta do service
+    prov, used_model = _extract_router_used_model_provider(resp)
+    if used_model or prov:
+        st.session_state["mary_last_used_model"] = used_model
+        st.session_state["mary_last_used_provider"] = prov
+    else:
+        _capture_used_model_provider_from_service(svc)
 
-clean = _strip_persona_echo_if_any(txt)
-st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
-return clean
-
-
-
-
+    clean = _strip_persona_echo_if_any(txt)
+    st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
+    return clean
 
 
 # ==========================================================
