@@ -237,11 +237,28 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
     """
     Terceiros só liberam quando:
       - NSFW_ON estiver True
-      - e o sidebar estiver em "liberar" (qualquer variação)
-    Aceita também boolean direto em qualquer uma das chaves conhecidas.
+      - e algum dos toggles estiver ativo (compatível com UI antiga e nova)
     """
     if not nsfw_on:
         return False
+
+    # ✅ chave NOVA do seu sidebar
+    if bool(_ss_get("mary_allow_third_party_seduction", False)):
+        return True
+
+    # ✅ compat antigo (se algum lugar ainda usa)
+    if bool(_ss_get("mary_allow_third_party", False)):
+        return True
+
+    v = _ss_get("mary_third_party_mode", None)
+    if isinstance(v, bool):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
+            return True
+
+    return False
 
     # ✅ 1) checkbox atual do sidebar (você usa esta)
     v_new = _ss_get("mary_allow_third_party_seduction", None)
@@ -2244,11 +2261,14 @@ REGRAS ABSOLUTAS:
             user_text=user_text,
             phase=phase,
             nsfw_on=nsfw_on,
-            timeline=timeline,  # ✅ NOVO
+            timeline=timeline,
             allow_third_party_seduction=allow_third_party_seduction,
-
-
         )
+        
+        # ✅ TERCEIROS LIBERADO: "desvio_curto_quebrado" não deve travar o sistema
+        if nsfw_on and allow_third_party_seduction:
+            v = [x for x in v if x != "desvio_curto_quebrado"]
+        
         if not v:
             return (texto, used_model)
 
@@ -2326,7 +2346,13 @@ REGRAS ABSOLUTAS:
                   "sem meta e sem listas/títulos."
             )
 
+        # ✅ Se repair falhar, não derruba a resposta do modelo.
+        # Se terceiros estiver liberado, devolve o texto original.
+        if nsfw_on and allow_third_party_seduction:
+            return (texto, used_model)
+        
         raise RuntimeError("repair_failed")
+
 
 
     @staticmethod
