@@ -1070,13 +1070,20 @@ _RE_ROMANCEY = re.compile(
 
 _RE_SENSORY_SAFE = re.compile(
     r"\b("
+    # Sensações e reações
     r"respira|ofeg|trem|arrepi|pele|calor|press[aã]o|ritmo|"
+    r"contorce|contorcend|arquei|arqueand|estremec|puls|latej|"
+    r"umidade|molhad|úmid|escorr|"
+    # Ações físicas
     r"agarro|puxo|mordo|beijo|encosto|ro[cç]o|deslizo|"
-    r"voz\s+rouca|gemid|gemo"
+    r"enterr|cav|apert|esfrega|fricc|"
+    r"entr(a|o|am)\s+em|dentro|penetr|"
+    r"curv|dobr|"
+    # Vocalizações
+    r"voz\s+rouca|gemid|gemo|gemer|grito|sussurr"
     r")\b",
     re.IGNORECASE,
 )
-
 def _low_sensory_density(text: str) -> bool:
     if not text:
         return True
@@ -1084,7 +1091,7 @@ def _low_sensory_density(text: str) -> bool:
     if not paragraphs:
         return True
     total = len(_RE_SENSORY_SAFE.findall(text))
-    return (total / len(paragraphs)) < 2.5
+    return (total / len(paragraphs)) < 2.0
 
 
 def _user_is_intense(user_text: str) -> bool:
