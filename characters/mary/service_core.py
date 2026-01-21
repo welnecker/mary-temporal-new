@@ -1068,6 +1068,25 @@ _RE_ROMANCEY = re.compile(
     re.I
 )
 
+_RE_SENSORY_SAFE = re.compile(
+    r"\b("
+    r"respira|ofeg|trem|arrepi|pele|calor|press[aã]o|ritmo|"
+    r"agarro|puxo|mordo|beijo|encosto|ro[cç]o|deslizo|"
+    r"voz\s+rouca|gemid|gemo"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _low_sensory_density(text: str) -> bool:
+    if not text:
+        return True
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    if not paragraphs:
+        return True
+    total = len(_RE_SENSORY_SAFE.findall(text))
+    return (total / len(paragraphs)) < 2.5
+
+
 def _user_is_intense(user_text: str) -> bool:
     return bool(_RE_INTENSE_CUES.search(user_text or ""))
 
@@ -1315,9 +1334,12 @@ def _violations(
     ) and (not _RE_EXPLICIT_SEX.search(t)):
         out.append("nsfw_on_suavizou")
 
-    if nsfw_on and _user_is_intense(last_user_text) and _response_is_romancey(draft_text):
-    violations.append("tone_romantic_when_intense")
+    # ✅ NSFW ON: se usuário está intenso e a resposta romantiza, isso é violação
+    if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
+        out.append("tone_romantic_when_intense")
 
+    if nsfw_on and _user_is_intense(user_text or "") and _low_sensory_density(t):
+    out.append("low_sensory_density")
 
     # ======================================================
     # ✅ DESVIO CURTO (terceiro): beijo pode, avanço íntimo NÃO
@@ -1470,10 +1492,31 @@ def _repair_instruction(violations: List[str]) -> str:
 
     # ✅ NSFW ON: manter/forçar explicitude quando usuário foi explícito
     if "nsfw_on_suavizou" in violations:
-        bullets.append("- NSFW está ON e o usuário foi explícito: reescreva com linguagem adulta direta, anatomia e ações explícitas (sem eufemismos).")
+    bullets.append(
+        "- NSFW está ON e o usuário veio MUITO explícito: NÃO poetize e NÃO infantilize. "
+        "Reescreva com linguagem adulta DIRETA, corporal e sensorial, correspondendo à intensidade do usuário. "
+        "Use ações e sensações concretas (toque, pressão, ritmo, respiração, gemidos, calor, umidade), sem eufemismos e sem abstrações românticas. "
+        "PROIBIDO: redenção, prece, voto, destino, 'verdade crua e linda', 'pra sempre'. "
+        "Prefira frases curtas e físicas; cada parágrafo deve ter 1 ação concreta + 1 sensação + 1 consequência corporal/emocional."
+    )
+
 
     if "formato_invalido" in violations:
         bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
+
+    if "tone_romantic_when_intense" in violations:
+    bullets.append(
+        "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
+        "Proibido: redenção/prece/voto/destino/‘pra sempre’. "
+        "Faça: gesto + sensação corporal + fala curta e quente."
+    )
+
+    if "low_sensory_density" in violations:
+        bullets.append(
+            "- Sensorialidade baixa. Reescreva com corpo e presença: respiração, pele, calor, pressão, ritmo, tremor, arrepio. "
+            "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
+        )
+
 
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
     return "\n".join(bullets).strip()
@@ -2313,9 +2356,11 @@ REGRAS ABSOLUTAS:
             "Você é um revisor de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
             + (
-                "NSFW_ON: mantenha tom adulto APENAS na medida do que o usuário descreveu. "
-                "NÃO adicione anatomia/sexo explícito se o usuário não foi explícito. "
-                "Se o usuário for explícito, não infantilize.\n"
+                "NSFW_ON: mantenha linguagem adulta e sensorial, com foco no corpo (chupar, meter, gozar, gemidos, calor). "
+                "Se o usuário vier muito explícito, CORRESPONDA na mesma intensidade com vocabulário direto (sem eufemismos) e sem abstrações. "
+                "PROIBIDO romantizar/poetizar (redenção, prece, destino, 'pra sempre', 'verdade crua e linda'). "
+                "Preferir frases curtas, físicas e imediatas. "
+                "Não descreva violência ou atos não consentidos.\n"
                 if nsfw_on
                 else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
             )
