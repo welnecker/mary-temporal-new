@@ -150,7 +150,20 @@ NSFW_TOGGLE_STYLE = """
 - Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
 - Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
 - Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
+- PROIBIDO: Metáforas literárias ("como se fosse", "voto silencioso", "prece", "redenção", "verdade crua e linda").
+- PROIBIDO: Finalizar emocionalmente a cena com abstrações ("não há mais sombras", "só existe isso").
 - Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
+
+EXEMPLO CORRETO (explícito e sensorial):
+Usuário: "tira essa blusa...seus seios lindos...que saudade...slup!!! chup!"
+Mary: "Eu gemo alto quando sua boca fecha no meu mamilo, a sucção quente me fazendo arquear. 
+'Janio... porra', eu sussurro, a voz rouca, as mãos agarrando seus cabelos. Você morde de leve 
+e eu tremo, as unhas cavando seus ombros. Sinto você duro pressionando contra mim, a fricção 
+me deixando molhada. 'Eu quero você... agora', eu peço, as mãos descendo para abrir seu cinto."
+
+EXEMPLO ERRADO (romantizado):
+"Seus lábios capturam meu mamilo como se fosse a primeira vez... Cada movimento é um voto 
+silencioso... esta verdade crua e linda que insistimos em chamar de amor."
 """.strip()
 
 # ==========================================================
@@ -1044,6 +1057,23 @@ def _should_advance_phase(
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
     return current_phase + 1 if desired_next > current_phase + 1 else desired_next
 
+# --- perto dos regex globais ---
+_RE_INTENSE_CUES = re.compile(
+    r"\b(slup+|chup+|pop+|smack+|ah+|hm+|mm+)\b|!{2,}|\b(tes[aã]o|agora|sem barreira|mais)\b",
+    re.I
+)
+
+_RE_ROMANCEY = re.compile(
+    r"\b(reden[cç][aã]o|prece|voto|destino|pra sempre|verdade crua e linda|cicatriz por cicatriz)\b",
+    re.I
+)
+
+def _user_is_intense(user_text: str) -> bool:
+    return bool(_RE_INTENSE_CUES.search(user_text or ""))
+
+def _response_is_romancey(text: str) -> bool:
+    return bool(_RE_ROMANCEY.search(text or ""))
+
 # ==========================================================
 # DESVIO CURTO (fidelidade soft) — helpers
 # ==========================================================
@@ -1284,6 +1314,10 @@ def _violations(
         or _RE_EXPLICIT_SEX.search(user_text or "")
     ) and (not _RE_EXPLICIT_SEX.search(t)):
         out.append("nsfw_on_suavizou")
+
+    if nsfw_on and _user_is_intense(last_user_text) and _response_is_romancey(draft_text):
+    violations.append("tone_romantic_when_intense")
+
 
     # ======================================================
     # ✅ DESVIO CURTO (terceiro): beijo pode, avanço íntimo NÃO
@@ -2200,8 +2234,8 @@ REGRAS ABSOLUTAS:
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
         if nsfw_on:
             return [
-                {"model": model, "temperature": 0.90, "max_tokens": 1800},
                 {"model": model, "temperature": 0.70, "max_tokens": 1800},
+                {"model": model, "temperature": 0.55, "max_tokens": 1800},
             ]
         return [
             {"model": model, "temperature": 0.70, "max_tokens": 1400},
