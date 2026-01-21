@@ -1339,7 +1339,7 @@ def _violations(
         out.append("tone_romantic_when_intense")
 
     if nsfw_on and _user_is_intense(user_text or "") and _low_sensory_density(t):
-    out.append("low_sensory_density")
+        out.append("low_sensory_density")
 
     # ======================================================
     # ✅ DESVIO CURTO (terceiro): beijo pode, avanço íntimo NÃO
@@ -1492,24 +1492,24 @@ def _repair_instruction(violations: List[str]) -> str:
 
     # ✅ NSFW ON: manter/forçar explicitude quando usuário foi explícito
     if "nsfw_on_suavizou" in violations:
-    bullets.append(
-        "- NSFW está ON e o usuário veio MUITO explícito: NÃO poetize e NÃO infantilize. "
-        "Reescreva com linguagem adulta DIRETA, corporal e sensorial, correspondendo à intensidade do usuário. "
-        "Use ações e sensações concretas (toque, pressão, ritmo, respiração, gemidos, calor, umidade), sem eufemismos e sem abstrações românticas. "
-        "PROIBIDO: redenção, prece, voto, destino, 'verdade crua e linda', 'pra sempre'. "
-        "Prefira frases curtas e físicas; cada parágrafo deve ter 1 ação concreta + 1 sensação + 1 consequência corporal/emocional."
-    )
+        bullets.append(
+            "- NSFW está ON e o usuário veio MUITO explícito: NÃO poetize e NÃO infantilize. "
+            "Reescreva com linguagem adulta DIRETA, corporal e sensorial, correspondendo à intensidade do usuário. "
+            "Use ações e sensações concretas (toque, pressão, ritmo, respiração, gemidos, calor, umidade), sem eufemismos e sem abstrações românticas. "
+            "PROIBIDO: redenção, prece, voto, destino, 'verdade crua e linda', 'pra sempre'. "
+            "Prefira frases curtas e físicas; cada parágrafo deve ter 1 ação concreta + 1 sensação + 1 consequência corporal/emocional."
+        )
 
 
     if "formato_invalido" in violations:
         bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
 
     if "tone_romantic_when_intense" in violations:
-    bullets.append(
-        "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
-        "Proibido: redenção/prece/voto/destino/‘pra sempre’. "
-        "Faça: gesto + sensação corporal + fala curta e quente."
-    )
+        bullets.append(
+            "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
+            "Proibido: redenção/prece/voto/destino/‘pra sempre’. "
+            "Faça: gesto + sensação corporal + fala curta e quente."
+        )
 
     if "low_sensory_density" in violations:
         bullets.append(
