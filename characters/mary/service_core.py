@@ -1344,7 +1344,6 @@ def _violations(
     # ✅ NSFW ON: se usuário está intenso e a resposta romantiza, isso é violação
     if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
         out.append("tone_romantic_when_intense")
-
     if nsfw_on and _user_is_intense(user_text or "") and _low_sensory_density(t):
         out.append("low_sensory_density")
 
@@ -1500,11 +1499,10 @@ def _repair_instruction(violations: List[str]) -> str:
     # ✅ NSFW ON: manter/forçar explicitude quando usuário foi explícito
     if "nsfw_on_suavizou" in violations:
         bullets.append(
-            "- NSFW está ON e o usuário veio MUITO explícito: NÃO poetize e NÃO infantilize. "
-            "Reescreva com linguagem adulta DIRETA, corporal e sensorial, correspondendo à intensidade do usuário. "
-            "Use ações e sensações concretas (toque, pressão, ritmo, respiração, gemidos, calor, umidade), sem eufemismos e sem abstrações românticas. "
-            "PROIBIDO: redenção, prece, voto, destino, 'verdade crua e linda', 'pra sempre'. "
-            "Prefira frases curtas e físicas; cada parágrafo deve ter 1 ação concreta + 1 sensação + 1 consequência corporal/emocional."
+            "- NSFW está ON e o usuário veio intenso: NÃO poetize e NÃO infantilize. "
+            "Responda com linguagem adulta e sensorial, direta e física, sem metáforas românticas. "
+            "Mantenha urgência e corpo presente COM descrição gráfica do ato. "
+            "Respeite a fase: não conclua/clímax se não estiver permitido."
         )
 
 
@@ -2432,12 +2430,17 @@ REGRAS ABSOLUTAS:
                   "sem meta e sem listas/títulos."
             )
 
-        # ✅ Se repair falhar, não derruba a resposta do modelo.
-        # Se terceiros estiver liberado, devolve o texto original.
-        if nsfw_on and allow_third_party_seduction:
-            return (texto, used_model)
-        
-        raise RuntimeError("repair_failed")
+        # ✅ Se repair falhar, NÃO derruba o app (evita fallback).
+        # Retorna o melhor texto possível, aplicando corte de finalização se necessário.
+        safe = texto
+        try:
+            if _RE_SCENE_FINALIZATION.search(safe or "") and (
+                not _finalization_allowed(user_text or "", int(phase or 0))
+            ):
+                safe = _trim_scene_finalization(safe)
+        except Exception:
+            pass
+        return (safe, used_model)
 
 
 
