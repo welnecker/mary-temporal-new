@@ -2282,13 +2282,13 @@ REGRAS ABSOLUTAS:
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
         if nsfw_on:
             return [
-                {"model": model, "temperature": 0.70, "max_tokens": 1800},
-                {"model": model, "temperature": 0.55, "max_tokens": 1800},
+                {"model": model, "temperature": 0.70, "max_tokens": 2400},
+                {"model": model, "temperature": 0.55, "max_tokens": 2400},
             ]
         return [
-            {"model": model, "temperature": 0.70, "max_tokens": 1400},
-            {"model": model, "temperature": 0.55, "max_tokens": 1400},
-            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65, "max_tokens": 1400},
+            {"model": model, "temperature": 0.70, "max_tokens": 2000},
+            {"model": model, "temperature": 0.55, "max_tokens": 2000},
+            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65, "max_tokens": 2000},
         ]
 
 
