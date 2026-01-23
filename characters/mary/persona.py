@@ -8,18 +8,26 @@ from .persona_core import _norm_timeline
 _PERSONA_RESOLVER: dict[str, Callable[[str], Tuple[str, List[Dict[str, str]]]]] = {}
 
 
+import logging
+
 def _import_get_persona(modname: str) -> Optional[Callable[[str], Tuple[str, List[Dict[str, str]]]]]:
     try:
         mod = __import__(f"{__package__}.{modname}", fromlist=["get_persona"])
         fn = getattr(mod, "get_persona", None)
         return fn if callable(fn) else None
-    except Exception:
+    except Exception as e:
+        logging.exception("❌ Falha ao importar persona module: %s (%s)", modname, e)
         return None
 
 
 def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
+    # Se já existe no cache, mas era fallback, tenta reimportar
     if tl in _PERSONA_RESOLVER:
-        return _PERSONA_RESOLVER[tl]
+        fn_cached = _PERSONA_RESOLVER[tl]
+        if getattr(fn_cached, "_is_fallback", False):
+            _PERSONA_RESOLVER.pop(tl, None)
+        else:
+            return fn_cached
 
     # ✅ prioridade: módulos novos "personas_*"
     if tl == "universitaria":
@@ -27,8 +35,7 @@ def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
     else:
         fn = _import_get_persona("personas_cumplice") or _import_get_persona("persona_cumplice")
 
-    if fn is None:
-        # fallback seguro: nunca quebrar o app por import
+        if fn is None:
         def _fallback(_: str) -> Tuple[str, List[Dict[str, str]]]:
             from .persona_core import BASE_PERSONA
             return (
@@ -36,7 +43,8 @@ def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
                 [{"role": "assistant", "timeline": tl, "content": "Eu te vejo. Diz pra mim o que você quer agora."}],
             )
 
-        fn = _fallback
+        _fallback._is_fallback = True  # marca para retry
+        return _fallback
 
     _PERSONA_RESOLVER[tl] = fn
     return fn
