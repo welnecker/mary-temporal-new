@@ -127,12 +127,16 @@ def save_interaction(usuario: str, mensagem_usuario: str, resposta_mary: str, mo
 
 
 def get_history_docs(usuario: str, limit: int = 400) -> List[Dict[str, Any]]:
+    # Queremos os MAIS RECENTES, mas exibindo em ordem cronológica
     cur = _hist().find(
         {"usuario": usuario},
-        sort=[("ts", 1), ("_id", 1)],
+        sort=[("ts", -1), ("_id", -1)],
         limit=limit,
     )
-    return list(cur)
+    docs = list(cur)
+    docs.reverse()  # volta para ordem antiga→nova
+    return docs
+
 
 
 def get_history_docs_multi(
@@ -148,10 +152,13 @@ def get_history_docs_multi(
     for k in keys:
         cur = _hist().find(
             {"usuario": k},
-            sort=[("ts", 1), ("_id", 1)],
+            sort=[("ts", -1), ("_id", -1)],
             limit=limit_per_key,
         )
-        all_docs.extend(list(cur))
+        docs_k = list(cur)
+        docs_k.reverse()
+        all_docs.extend(docs_k)
+
 
     def _sort_key(d: Dict[str, Any]):
         ts = d.get("ts")
