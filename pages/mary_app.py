@@ -191,12 +191,20 @@ def _apply_dark_ui() -> None:
           box-sizing: border-box !important;
         }
 
-        /* bloco do textarea deve expandir */
-        div[data-testid="stChatInput"] form > div{
+        /* ✅ só o wrapper do textarea expande */
+        div[data-testid="stChatInput"] form > div:first-child{
           flex: 1 1 auto !important;
           width: 100% !important;
           min-width: 0 !important;  /* crítico em flex */
         }
+        
+        /* ✅ wrapper do botão NÃO expande */
+        div[data-testid="stChatInput"] form > div:last-child{
+          flex: 0 0 auto !important;
+          width: auto !important;
+          min-width: 0 !important;
+        }
+
 
         /* textarea ocupa tudo */
         div[data-testid="stChatInput"] textarea{
