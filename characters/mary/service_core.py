@@ -45,6 +45,7 @@ from core.repositories import (
     set_fact,
     append_memory,
     list_memories,
+    list_long_memory,
     append_long_memory,
     search_long_memory_text,
 )
@@ -590,56 +591,13 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     stop = {
         "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
         "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
-        "voce","ele","ela","a","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
+        "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
         "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","lembra","lembrar","pensando","deitado","relaxando",
         "agora","hoje","ontem","amanhã","mesmo","assim","tipo","cara","garota"
     }
     keep = [t for t in toks if len(t) >= 4 and t not in stop]
+    # query curta: melhora signal/noise no $text
     return " ".join(keep[:14]) or s
-
-def _inject_long_memory_textsearch(
-    shared_key: str,
-    timeline: str,
-    user_prompt: str,
-    messages: List[Dict[str, str]],
-    *,
-    limit: int = 10,
-    dedupe_bucket: Optional[set] = None,
-) -> None:
-    q = _lm_query_from_prompt(user_prompt)
-    rows = search_long_memory_text(shared_key, q, limit=max(1, int(limit or 10))) or []
-    if not rows:
-        return
-
-    picked: List[Dict[str, Any]] = []
-    tl = _normalize_timeline(timeline)
-
-    for d in rows:
-        txt = str(d.get("text") or "").strip()
-        if not txt:
-            continue
-
-        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-        if tms and tms not in (tl, "[all]"):
-            continue
-
-        kind = str(meta.get("kind") or "").strip().lower()
-        if kind == "canon":
-            continue
-
-        if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
-            if h in dedupe_bucket:
-                continue
-            dedupe_bucket.add(h)
-
-        picked.append(d)
-        if len(picked) >= int(limit or 10):
-            break
-
-    if not picked:
-        return
 
 
 def _inject_long_memory_pins_always(
@@ -651,7 +609,7 @@ def _inject_long_memory_pins_always(
     dedupe_bucket: Optional[set] = None,
 ) -> None:
     """
-    Injeta memórias FIXAS (pin/guide) da long_memory em TODAS as respostas.
+    ✅ Injeta memórias FIXAS (pin/guide/fixed) em TODAS as respostas.
     Use para 'fatos de mundo' (onde moram, rotina, faculdade, trabalho, etc).
     """
     try:
@@ -665,6 +623,9 @@ def _inject_long_memory_pins_always(
     tl = _normalize_timeline(timeline)
     picked: List[Dict[str, Any]] = []
 
+    # Preferir as mais recentes primeiro (assumindo rows ordenado por ts asc/desc dependendo do repo)
+    # Se seu list_long_memory já vem do mais novo pro mais antigo, ok.
+    # Se vier do mais antigo pro mais novo, você pode inverter aqui: rows = list(reversed(rows))
     for d in rows:
         txt = str(d.get("text") or "").strip()
         if not txt:
@@ -697,8 +658,8 @@ def _inject_long_memory_pins_always(
 
     lines = [
         "[MEMÓRIAS FIXAS — LONG MEMORY]",
-        "FATOS DE MUNDO (canon prático): use para orientar locais, rotina e coerência.",
-        "Não citar literalmente; incorporar naturalmente na narração.",
+        "FATOS DE MUNDO (guia prático): use para orientar locais, rotina e coerência.",
+        "Não citar literalmente; incorporar naturalmente.",
         "",
     ]
 
@@ -719,13 +680,67 @@ def _inject_long_memory_pins_always(
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
         messages.append({"role": "system", "content": block})
-    
+
+
+def _inject_long_memory_textsearch(
+    shared_key: str,
+    timeline: str,
+    user_prompt: str,
+    messages: List[Dict[str, str]],
+    *,
+    limit: int = 10,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    """
+    ✅ Recupera memórias relevantes via Mongo $text.
+    - Não injeta pins/guide/fixed (isso é função separada).
+    - Respeita timeline_at_save / [all]
+    """
+    q = _lm_query_from_prompt(user_prompt)
+    if not q:
+        return
+
+    rows = search_long_memory_text(shared_key, q, limit=max(1, int(limit or 10))) or []
+    if not rows:
+        return
+
+    picked: List[Dict[str, Any]] = []
+    tl = _normalize_timeline(timeline)
+
+    for d in rows:
+        txt = str(d.get("text") or "").strip()
+        if not txt:
+            continue
+
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+
+        # timeline
+        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+        if tms and tms not in (tl, "[all]"):
+            continue
+
+        # kinds: NÃO trazer pins/guide/fixed aqui
+        kind = str(meta.get("kind") or "").strip().lower()
+        if kind in ("canon", "pin", "guide", "fixed"):
+            continue
+
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
+            dedupe_bucket.add(h)
+
+        picked.append(d)
+        if len(picked) >= int(limit or 10):
+            break
+
+    if not picked:
+        return
 
     lines = [
         "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)]",
-        "FONTE DE VERDADE para fatos passados (onde/quando/como).",
-        "Se houver conflito com histórico, este bloco vence.",
-        "Não citar literalmente: recontar com suas palavras, mantendo os fatos.",
+        "Use como fonte de verdade para fatos passados (onde/quando/como).",
+        "Não citar literalmente: recontar com suas palavras mantendo os fatos.",
         "",
     ]
 
@@ -2138,6 +2153,15 @@ REGRAS ABSOLUTAS:
             max_items=80,
             dedupe_bucket=dedupe_hashes,
         )
+
+        _inject_pinned_long_memory_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=12,
+            dedupe_bucket=dedupe_hashes,
+        )
+
 
         # 10) Histórico curto
         history = cached_get_history(usuario_key, limit=400)
