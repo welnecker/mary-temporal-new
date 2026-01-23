@@ -1498,6 +1498,15 @@ def main() -> None:
             except Exception as e:
                 st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
 
+    with st.sidebar.expander("🧩 Debug Persona Import", expanded=True):
+    try:
+        import characters.mary.persona as mary_persona
+        st.write("persona import OK:", mary_persona._LAST_PERSONA_IMPORT.get("ok") or "—")
+        st.write("persona import ERR:", mary_persona._LAST_PERSONA_IMPORT.get("err") or "—")
+    except Exception as e:
+        st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
+
+
     # ===== Header visual =====
     st.markdown(
         f"""
