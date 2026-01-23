@@ -656,6 +656,86 @@ def _inject_long_memory_textsearch(
     if not picked:
         return
 
+
+def _inject_long_memory_pins_always(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    *,
+    max_items: int = 12,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    """
+    Injeta memórias FIXAS (pin/guide) da long_memory em TODAS as respostas.
+    Use para 'fatos de mundo' (onde moram, rotina, faculdade, trabalho, etc).
+    """
+    try:
+        rows = list_long_memory(shared_key, limit=400) or []
+    except Exception:
+        rows = []
+
+    if not rows:
+        return
+
+    tl = _normalize_timeline(timeline)
+    picked: List[Dict[str, Any]] = []
+
+    for d in rows:
+        txt = str(d.get("text") or "").strip()
+        if not txt:
+            continue
+
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+        kind = str(meta.get("kind") or "").strip().lower()
+
+        # ✅ só entra o que for "fixo"
+        if kind not in ("pin", "guide", "fixed"):
+            continue
+
+        # respeita timeline_at_save se existir (senão considera [all])
+        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+        if tms and tms not in (tl, "[all]"):
+            continue
+
+        if dedupe_bucket is not None:
+            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            if h in dedupe_bucket:
+                continue
+            dedupe_bucket.add(h)
+
+        picked.append(d)
+        if len(picked) >= int(max_items or 12):
+            break
+
+    if not picked:
+        return
+
+    lines = [
+        "[MEMÓRIAS FIXAS — LONG MEMORY]",
+        "FATOS DE MUNDO (canon prático): use para orientar locais, rotina e coerência.",
+        "Não citar literalmente; incorporar naturalmente na narração.",
+        "",
+    ]
+
+    for i, d in enumerate(picked, 1):
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+        title = str(meta.get("title") or meta.get("key") or "").strip()
+        header = f"- PIN {i}"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+        lines.append(str(d.get("text") or "").strip())
+        lines.append("")
+
+    block = "\n".join(lines).strip()
+
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base + "\n\n" + block).strip()
+    else:
+        messages.append({"role": "system", "content": block})
+    
+
     lines = [
         "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)]",
         "FONTE DE VERDADE para fatos passados (onde/quando/como).",
@@ -2085,6 +2165,14 @@ REGRAS ABSOLUTAS:
                 messages.append({"role": "assistant", "content": a})
 
         # 10.5) Memórias relevantes
+        _inject_long_memory_pins_always(
+            shared_key,
+            timeline,
+            messages,
+            max_items=12,
+            dedupe_bucket=dedupe_bucket,
+        )
+
         _inject_long_memory_textsearch(
             shared_key,
             timeline_final,
