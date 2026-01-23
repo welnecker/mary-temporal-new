@@ -1,14 +1,13 @@
 # characters/mary/persona.py
 from __future__ import annotations
 
+import logging
 from typing import List, Dict, Tuple, Optional, Callable
 
 from .persona_core import _norm_timeline
 
 _PERSONA_RESOLVER: dict[str, Callable[[str], Tuple[str, List[Dict[str, str]]]]] = {}
 
-
-import logging
 
 def _import_get_persona(modname: str) -> Optional[Callable[[str], Tuple[str, List[Dict[str, str]]]]]:
     try:
@@ -35,7 +34,8 @@ def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
     else:
         fn = _import_get_persona("personas_cumplice") or _import_get_persona("persona_cumplice")
 
-        if fn is None:
+    if fn is None:
+        # fallback seguro: nunca quebrar o app por import
         def _fallback(_: str) -> Tuple[str, List[Dict[str, str]]]:
             from .persona_core import BASE_PERSONA
             return (
