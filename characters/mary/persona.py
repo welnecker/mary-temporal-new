@@ -9,13 +9,25 @@ from .persona_core import _norm_timeline
 _PERSONA_RESOLVER: dict[str, Callable[[str], Tuple[str, List[Dict[str, str]]]]] = {}
 
 
+# --- DEBUG IMPORT PERSONA ---
+_LAST_PERSONA_IMPORT: dict[str, str] = {"ok": "", "err": ""}
+
 def _import_get_persona(modname: str) -> Optional[Callable[[str], Tuple[str, List[Dict[str, str]]]]]:
     try:
-        mod = __import__(f"{__package__}.{modname}", fromlist=["get_persona"])
+        full = f"{__package__}.{modname}"
+        mod = __import__(full, fromlist=["get_persona"])
         fn = getattr(mod, "get_persona", None)
-        return fn if callable(fn) else None
+        if callable(fn):
+            _LAST_PERSONA_IMPORT["ok"] = f"OK import: {full}"
+            _LAST_PERSONA_IMPORT["err"] = ""
+            return fn
+        _LAST_PERSONA_IMPORT["ok"] = ""
+        _LAST_PERSONA_IMPORT["err"] = f"Sem get_persona() em {full}"
+        return None
     except Exception as e:
         logging.exception("❌ Falha ao importar persona module: %s (%s)", modname, e)
+        _LAST_PERSONA_IMPORT["ok"] = ""
+        _LAST_PERSONA_IMPORT["err"] = f"ERRO import {__package__}.{modname}: {type(e).__name__}: {e}"
         return None
 
 
