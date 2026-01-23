@@ -9,26 +9,29 @@ from .persona_core import _norm_timeline
 _PERSONA_RESOLVER: dict[str, Callable[[str], Tuple[str, List[Dict[str, str]]]]] = {}
 
 
-# --- DEBUG IMPORT PERSONA ---
-_LAST_PERSONA_IMPORT: dict[str, str] = {"ok": "", "err": ""}
-
 def _import_get_persona(modname: str) -> Optional[Callable[[str], Tuple[str, List[Dict[str, str]]]]]:
     try:
-        full = f"{__package__}.{modname}"
-        mod = __import__(full, fromlist=["get_persona"])
+        mod = __import__(f"{__package__}.{modname}", fromlist=["get_persona"])
         fn = getattr(mod, "get_persona", None)
         if callable(fn):
-            _LAST_PERSONA_IMPORT["ok"] = f"OK import: {full}"
-            _LAST_PERSONA_IMPORT["err"] = ""
             return fn
-        _LAST_PERSONA_IMPORT["ok"] = ""
-        _LAST_PERSONA_IMPORT["err"] = f"Sem get_persona() em {full}"
+        logging.error("❌ Módulo %s importou, mas não tem get_persona() chamável.", modname)
         return None
     except Exception as e:
         logging.exception("❌ Falha ao importar persona module: %s (%s)", modname, e)
-        _LAST_PERSONA_IMPORT["ok"] = ""
-        _LAST_PERSONA_IMPORT["err"] = f"ERRO import {__package__}.{modname}: {type(e).__name__}: {e}"
         return None
+
+
+def _fallback_factory(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
+    def _fallback(_: str) -> Tuple[str, List[Dict[str, str]]]:
+        from .persona_core import BASE_PERSONA
+        return (
+            BASE_PERSONA + "\n\n[ERRO] Não achei personas_* importáveis. Verifique nomes dos arquivos.",
+            [{"role": "assistant", "timeline": tl, "content": "Eu te vejo. Diz pra mim o que você quer agora."}],
+        )
+
+    _fallback._is_fallback = True  # marca para permitir retry depois
+    return _fallback
 
 
 def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
@@ -47,16 +50,7 @@ def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
         fn = _import_get_persona("personas_cumplice") or _import_get_persona("persona_cumplice")
 
     if fn is None:
-        # fallback seguro: nunca quebrar o app por import
-        def _fallback(_: str) -> Tuple[str, List[Dict[str, str]]]:
-            from .persona_core import BASE_PERSONA
-            return (
-                BASE_PERSONA + "\n\n[ERRO] Não achei personas_* importáveis. Verifique nomes dos arquivos.",
-                [{"role": "assistant", "timeline": tl, "content": "Eu te vejo. Diz pra mim o que você quer agora."}],
-            )
-
-        _fallback._is_fallback = True  # marca para retry
-        return _fallback
+        fn = _fallback_factory(tl)
 
     _PERSONA_RESOLVER[tl] = fn
     return fn
