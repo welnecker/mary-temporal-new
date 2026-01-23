@@ -255,42 +255,27 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
     if not nsfw_on:
         return False
 
-    # ✅ chave NOVA do seu sidebar
-    if bool(_ss_get("mary_allow_third_party_seduction", False)):
-        return True
-
-    # ✅ compat antigo (se algum lugar ainda usa)
-    if bool(_ss_get("mary_allow_third_party", False)):
-        return True
-
-    v = _ss_get("mary_third_party_mode", None)
-    if isinstance(v, bool):
-        return bool(v)
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
-            return True
-
-    return False
-
-    # ✅ 1) checkbox atual do sidebar (você usa esta)
+    # ✅ 1) chave NOVA do sidebar (preferência)
     v_new = _ss_get("mary_allow_third_party_seduction", None)
     if isinstance(v_new, bool):
         return bool(v_new)
 
-    # ✅ 2) compat: antigas
-    v = _ss_get("mary_third_party_mode", None)
-    if isinstance(v, bool):
-        return bool(v)
+    # ✅ 2) compat antigo (se algum lugar ainda usa)
+    v_old = _ss_get("mary_allow_third_party", None)
+    if isinstance(v_old, bool):
+        return bool(v_old)
 
-    if isinstance(v, str):
-        s = v.strip().lower()
+    # ✅ 3) compat: modo antigo (bool ou string)
+    v_mode = _ss_get("mary_third_party_mode", None)
+    if isinstance(v_mode, bool):
+        return bool(v_mode)
+
+    if isinstance(v_mode, str):
+        s = v_mode.strip().lower()
         if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
             return True
 
-    # ✅ 3) compat: outra chave antiga
-    return bool(_ss_get("mary_allow_third_party", False))
-
+    return False
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
