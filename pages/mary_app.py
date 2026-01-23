@@ -2036,13 +2036,15 @@ def main() -> None:
         st.markdown("### ➕ Inserir memória (DB)")
         lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
-        lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory")
+        lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
+        lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory", disabled=lm_pin)
 
         if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
             try:
+                kind_final = "pin" if lm_pin else (lm_kind or "memory").strip()
                 meta = {
-                    "kind": (lm_kind or "memory").strip(),
                     "title": (lm_title or "").strip(),
+                    "kind": kind_final,
                     "timeline_at_save": _timeline(),
                     "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
                     "source": "ui_long_memory",
