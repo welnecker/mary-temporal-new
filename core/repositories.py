@@ -139,25 +139,30 @@ def get_history_docs(usuario: str, limit: int = 400) -> List[Dict[str, Any]]:
 
 
 
-def get_history_docs_multi(
-    users_or_keys: List[str],
-    limit: int = 400,
-    limit_per_key: int = 400,
-) -> List[Dict[str, Any]]:
-    keys = [k for k in (users_or_keys or []) if k]
-    if not keys:
+def get_history_docs_multi(usuarios: List[str], limit: int = 400) -> List[Dict[str, Any]]:
+    if not usuarios:
         return []
 
+    # Para múltiplas keys, traga os mais novos de cada key e depois una.
+    per_key = max(50, int(limit / max(1, len(usuarios))) + 25)
+
     all_docs: List[Dict[str, Any]] = []
-    for k in keys:
+    for u in usuarios:
         cur = _hist().find(
-            {"usuario": k},
+            {"usuario": u},
             sort=[("ts", -1), ("_id", -1)],
-            limit=limit_per_key,
+            limit=per_key,
         )
-        docs_k = list(cur)
-        docs_k.reverse()
-        all_docs.extend(docs_k)
+        docs_u = list(cur)
+        docs_u.reverse()  # cronológico dentro da key
+        all_docs.extend(docs_u)
+
+    # Ordena tudo em cronológico e pega o "tail" (os mais recentes no total)
+    all_docs.sort(key=lambda d: (d.get("ts"), d.get("_id")))
+    if len(all_docs) > limit:
+        all_docs = all_docs[-limit:]
+    return all_docs
+
 
 
     def _sort_key(d: Dict[str, Any]):
