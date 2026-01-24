@@ -610,7 +610,7 @@ def _inject_long_memory_pins_always(
 ) -> None:
     """
     ✅ Injeta memórias FIXAS (pin/guide/fixed) em TODAS as respostas.
-    Use para 'fatos de mundo' (onde moram, rotina, faculdade, trabalho, etc).
+    Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando meta.kind veio "memory".
     """
     try:
         rows = list_long_memory(shared_key, limit=400) or []
@@ -623,24 +623,85 @@ def _inject_long_memory_pins_always(
     tl = _normalize_timeline(timeline)
     picked: List[Dict[str, Any]] = []
 
-    # Preferir as mais recentes primeiro (assumindo rows ordenado por ts asc/desc dependendo do repo)
-    # Se seu list_long_memory já vem do mais novo pro mais antigo, ok.
-    # Se vier do mais antigo pro mais novo, você pode inverter aqui: rows = list(reversed(rows))
+    _RE_KIND_TAG = re.compile(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", re.IGNORECASE)
+    _RE_TIMELINE_TAG = re.compile(r"\[\s*timeline\s*=\s*([^\]]+)\s*\]", re.IGNORECASE)
+    _RE_ANY_BRACKETS = re.compile(r"\[[^\]]+\]")
+
+    def _clean_text(txt: str) -> str:
+        # remove tags [kind=...][timeline=...], etc.
+        cleaned = _RE_ANY_BRACKETS.sub("", txt or "")
+        # normaliza espaços
+        cleaned = re.sub(r"[ \t]+", " ", cleaned).strip()
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        return cleaned
+
+    def _infer_kind(meta_kind: str, txt: str) -> str:
+        k = (meta_kind or "").strip().lower()
+        if k in ("pin", "guide", "fixed"):
+            return k
+        # compat: meta.kind veio "memory" (ou vazio), mas o text está tagueado
+        m = _RE_KIND_TAG.search(txt or "")
+        if m:
+            return m.group(1).lower()
+        return k  # mantém como está (provavelmente "memory"/"")
+
+    def _infer_timeline(meta: Dict[str, Any], txt: str) -> str:
+        # prioridade: meta.timeline_at_save / meta.timeline
+        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+        if tms:
+            return tms
+        # fallback: ler do texto [timeline=...]
+        m = _RE_TIMELINE_TAG.search(txt or "")
+        if not m:
+            return ""
+        raw = (m.group(1) or "").strip()
+        # aceita formatos: [all], "[all]", [timeline=[all]]
+        raw = raw.strip().strip('"').strip("'")
+        raw = raw.replace("[", "").replace("]", "").strip()
+        return raw
+
+    # ✅ ordena por ts desc quando existir (mais recentes primeiro)
+    try:
+        def _ts_key(d: Dict[str, Any]) -> float:
+            v = d.get("ts")
+            # pode ser datetime, string, etc. Se falhar, joga 0.
+            try:
+                return float(getattr(v, "timestamp", lambda: 0.0)())
+            except Exception:
+                try:
+                    # se já vier numérico
+                    return float(v)
+                except Exception:
+                    return 0.0
+        rows = sorted(rows, key=_ts_key, reverse=True)
+    except Exception:
+        pass
+
     for d in rows:
-        txt = str(d.get("text") or "").strip()
-        if not txt:
+        raw_txt = str(d.get("text") or "").strip()
+        if not raw_txt:
             continue
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-        kind = str(meta.get("kind") or "").strip().lower()
+        kind = _infer_kind(str(meta.get("kind") or ""), raw_txt)
 
         # ✅ só entra o que for "fixo"
         if kind not in ("pin", "guide", "fixed"):
             continue
 
-        # respeita timeline_at_save se existir (senão considera [all])
-        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-        if tms and tms not in (tl, "[all]"):
+        # respeita timeline_at_save se existir; senão tenta timeline do text; senão considera "all"
+        tms = _infer_timeline(meta, raw_txt)
+        if tms:
+            tms_norm = tms.strip()
+            # normaliza também casos como "all" / "[all]"
+            tms_norm = tms_norm.replace("[", "").replace("]", "").strip()
+            if tms_norm.lower() in ("all",):
+                pass
+            elif tms_norm not in (tl, "[all]"):
+                continue
+
+        txt = _clean_text(raw_txt)
+        if not txt:
             continue
 
         if dedupe_bucket is not None:
@@ -670,7 +731,14 @@ def _inject_long_memory_pins_always(
         if title:
             header += f" — {title}"
         lines.append(header)
-        lines.append(str(d.get("text") or "").strip())
+
+        raw_txt = str(d.get("text") or "").strip()
+        # ✅ injeta texto limpo (sem tags)
+        txt = re.sub(r"\[[^\]]+\]", "", raw_txt).strip()
+        txt = re.sub(r"[ \t]+", " ", txt).strip()
+        txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+
+        lines.append(txt)
         lines.append("")
 
     block = "\n".join(lines).strip()
