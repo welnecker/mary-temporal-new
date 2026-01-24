@@ -2071,22 +2071,41 @@ def main() -> None:
         lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
         lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
-        lm_kind = st.text_input("kind (opcional)", key="lm_kind_inp", value="memory", disabled=lm_pin)
 
         if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
             try:
-                kind_final = "pin" if lm_pin else (lm_kind or "memory").strip()
+                txt = (lm_text or "").strip()
+                if not txt:
+                    st.warning("⚠️ Texto da memória está vazio.")
+                    st.stop()
+        
+                # ✅ kind FINAL: sem lm_kind (simplificado)
+                kind_final = "pin" if bool(lm_pin) else "memory"
+        
+                # ✅ PIN por padrão vale para todas as timelines
+                tl_current = _timeline()
+                timeline_at_save = "[all]" if kind_final == "pin" else tl_current
+        
                 meta = {
-                    "title": (lm_title or "").strip(),
+                    "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
                     "kind": kind_final,
-                    "timeline_at_save": _timeline(),
+                    "timeline_at_save": timeline_at_save,
                     "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
                     "source": "ui_long_memory",
                 }
-                doc = append_long_memory(lm_userkey, lm_text, meta=meta)
-                st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')}")
+        
+                doc = append_long_memory(lm_userkey, txt, meta=meta)
+                st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')} kind={kind_final} tl={timeline_at_save}")
+        
+                # opcional: atualizar lista na tela
+                try:
+                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
+                except Exception:
+                    pass
+        
             except Exception as e:
                 st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
+
 
         st.markdown("### 🔎 Buscar (Mongo $text)")
         q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
