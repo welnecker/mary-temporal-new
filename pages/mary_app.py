@@ -1499,12 +1499,15 @@ def main() -> None:
                 st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
 
     with st.sidebar.expander("🧩 Debug Persona Import", expanded=True):
-    try:
-        import characters.mary.persona as mary_persona
-        st.write("persona import OK:", mary_persona._LAST_PERSONA_IMPORT.get("ok") or "—")
-        st.write("persona import ERR:", mary_persona._LAST_PERSONA_IMPORT.get("err") or "—")
-    except Exception as e:
-        st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
+        try:
+            import characters.mary.persona as mary_persona
+
+            # Se você tiver essas chaves no persona.py
+            st.write("persona import OK:", getattr(mary_persona, "_LAST_PERSONA_IMPORT", {}).get("ok") or "—")
+            st.write("persona import ERR:", getattr(mary_persona, "_LAST_PERSONA_IMPORT", {}).get("err") or "—")
+
+        except Exception as e:
+            st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
 
 
     # ===== Header visual =====
