@@ -133,17 +133,16 @@ RESOLUÇÃO
 """
 
     initial_messages: List[Dict[str, str]] = [
-        {
-            "role": "assistant",
-            "timeline": "universitaria",
-            "content": (
-                "A balada no Clube Náutico está a mil. Ricardo dança próximo a Mary, puxando-a pela cintura. "
-                "O vestido colado de Mary revela suas curvas sensuais, enquanto ela dança, jogando seus cabelos e braços. "
-                "Silvia e Bianca riem juntas. A batida eletrônica pulsa e as luzes estroboscópicas deixam todos em câmera lenta. "
-                "Janio está no bar, junto ao balcão, alheio ao movimento. "
-                "Compra sua cerveja e olha para Mary, desviando o olhar quando ela percebe."
-            ),
-        }
-    ]
+    {
+        "role": "assistant",
+        "timeline": "universitaria",
+        "content": (
+            "No intervalo do almoço, na faculdade, Silvia, Bianca, Mary, Ricardo e Janio estão conversando, "
+            "sentados à mesa redonda do restaurante. Silvia pega a garrafa de refrigerante e a deita sobre a mesa, "
+            "sugerindo: “Galera, vamos brincar de verdade ou desafio? Quem topa? Vou girar a garrafa…”."
+        ),
+    }
+]
+
 
     return persona, initial_messages
