@@ -2154,13 +2154,14 @@ REGRAS ABSOLUTAS:
             dedupe_bucket=dedupe_hashes,
         )
 
-        _inject_pinned_long_memory_always(
+        _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
             messages,
             max_items=12,
             dedupe_bucket=dedupe_hashes,
         )
+
 
 
         # 10) Histórico curto
@@ -2172,15 +2173,7 @@ REGRAS ABSOLUTAS:
                 messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
             if a:
                 messages.append({"role": "assistant", "content": a})
-
-        # 10.5) Memórias relevantes
-        _inject_long_memory_pins_always(
-            shared_key,
-            timeline,
-            messages,
-            max_items=12,
-            dedupe_bucket=dedupe_bucket,
-        )
+       
 
         _inject_long_memory_textsearch(
             shared_key,
