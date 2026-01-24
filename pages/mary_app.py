@@ -1499,15 +1499,29 @@ def main() -> None:
                 st.warning(f"Não consegui ler settings para debug: {type(e).__name__}: {e}")
 
     with st.sidebar.expander("🧩 Debug Persona Import", expanded=True):
+    try:
+        import importlib.util
+        import characters.mary.persona as mary_persona
+
+        st.write("📌 persona.py ativo:", getattr(mary_persona, "__file__", "—"))
+
+        # mostra o último resultado do import (do seu persona.py)
+        st.write("✅ import OK:", (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
+        st.write("❌ import ERR:", (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
+
+        # checa se o módulo existe no deploy (antes de importar)
+        spec = importlib.util.find_spec("characters.mary.persona_universitaria")
+        st.write("🔎 find_spec(persona_universitaria):", "ENCONTRADO" if spec else "NÃO ENCONTRADO")
+
+        # tenta importar e mostra exceção real (se tiver)
         try:
-            import characters.mary.persona as mary_persona
-
-            # Se você tiver essas chaves no persona.py
-            st.write("persona import OK:", getattr(mary_persona, "_LAST_PERSONA_IMPORT", {}).get("ok") or "—")
-            st.write("persona import ERR:", getattr(mary_persona, "_LAST_PERSONA_IMPORT", {}).get("err") or "—")
-
+            import characters.mary.persona_universitaria as pu
+            st.success(f"✅ Import direto OK: {getattr(pu, '__file__', '—')}")
         except Exception as e:
-            st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
+            st.error(f"❌ Import direto FALHOU: {type(e).__name__}: {e}")
+
+    except Exception as e:
+        st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
 
 
     # ===== Header visual =====
