@@ -2218,55 +2218,55 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 {spatial_context}
 
 VOCÊ É MARY.
-Responda em primeira pessoa, do ponto de vista da Mary.
+        Responda em primeira pessoa, do ponto de vista da Mary.
 
-{language_rule}
-{pov_rule}
-{user_authorship_rule}
-{secrets_offscreen_admin_rule}
+        {language_rule}
+        {pov_rule}
+        {user_authorship_rule}
+        {secrets_offscreen_admin_rule}
 
-TIMELINE ATUAL: {timeline_final}
-TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction_final and nsfw_on)}
+        TIMELINE ATUAL: {timeline_final}
+        TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction_final and nsfw_on)}
 
 
-{user_name_block}
+        {user_name_block}
 
-[CANON — VERDADE ATUAL]
-{canon_txt}
-{state_section}
-PERSONA (baseline):
-{persona_text}
+        [CANON — VERDADE ATUAL]
+        {canon_txt}
+        {state_section}
+        PERSONA (baseline):
+        {persona_text}
 
-{rel_block}
+        {rel_block}
 
-{scene_lock_rule}
-{parallel_scene_rule}
+        {scene_lock_rule}
+        {parallel_scene_rule}
 
-{format_rule}
-{sensorial_guidance_rule}
-{physical_intensity_rule}
-{janio_focus_rule}
-{virginity_rule}
-{memory_fidelity_rule}
-{user_finalizes_rule}
-{pacing_rule}
-{initiative_rule}
-{manipulation_block}
-{conflict_block}
+        {format_rule}
+        {sensorial_guidance_rule}
+        {physical_intensity_rule}
+        {janio_focus_rule}
+        {virginity_rule}
+        {memory_fidelity_rule}
+        {user_finalizes_rule}
+        {pacing_rule}
+        {initiative_rule}
+        {manipulation_block}
+        {conflict_block}
 
-{desvio_curto_rule}
-{betrayal_rule}
+        {desvio_curto_rule}
+        {betrayal_rule}
 
-REGRAS ABSOLUTAS:
-- Uma timeline por vez.
-- Sem mudança de local/tempo sem comando explícito.
-- CANON/MEMÓRIA > persona.
-- Convite degradante com terceiro: Mary recusa.
+        REGRAS ABSOLUTAS:
+        - Uma timeline por vez.
+        - Sem mudança de local/tempo sem comando explícito.
+        - CANON/MEMÓRIA > persona.
+        - Convite degradante com terceiro: Mary recusa.
 
-{intimacy_control_block}
+        {intimacy_control_block}
 
-{nsfw_block}
-""".strip()
+        {nsfw_block}
+        """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
@@ -2300,7 +2300,7 @@ REGRAS ABSOLUTAS:
                 messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
             if a:
                 messages.append({"role": "assistant", "content": a})
-       
+
 
         _inject_long_memory_textsearch(
             shared_key,
@@ -2496,7 +2496,6 @@ REGRAS ABSOLUTAS:
     # Planos previsíveis
     # ======================================================
     @staticmethod
-      
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
         if nsfw_on:
             return [
@@ -2509,10 +2508,10 @@ REGRAS ABSOLUTAS:
         ]
 
 
-# ======================================================
-# Gerar + Repair
-# ======================================================
-def _generate_with_repair(
+    # ======================================================
+    # Gerar + Repair
+    # ======================================================
+    def _generate_with_repair(
         self,
         *,
         model: str,
