@@ -1239,7 +1239,7 @@ def _low_sensory_density(text: str) -> bool:
     if not paragraphs:
         return True
     total = len(_RE_SENSORY_SAFE.findall(text))
-    return (total / len(paragraphs)) < 2.0
+    return (total / len(paragraphs)) < 1.2
 
 
 def _user_is_intense(user_text: str) -> bool:
@@ -1381,10 +1381,15 @@ _RE_CONFLICT_IMMINENT = re.compile(
 )
 
 _RE_SCENE_FINALIZATION = re.compile(
-    r"\b(orgasmo|orgasmei|goza|gozar|gozei|cl[ií]max|explod\w*|finalmente\s+explode|chegar\s+ao\s+cl[ií]max)\b",
+    r"\b("
+    r"orgasmei|gozei|gozamos|"  # Passado/conclusivo
+    r"finalmente\s+(goz|explod|cheg)\w*|"  # "finalmente" indica conclusão
+    r"cheguei\s+ao\s+cl[ií]max|"
+    r"foi\s+o\s+melhor\s+orgasmo|"
+    r"desab(o|ei|amos)\s+(exaust|satisfeit)"  # Desabei exausto/satisfeito
+    r")\b",
     re.IGNORECASE,
 )
-
 def _finalization_allowed(user_text: str, phase: int) -> bool:
     """
     - Se o usuário já descreveu o clímax, a IA pode responder ao clímax.
@@ -1547,9 +1552,10 @@ def _violations(
 
     # ✅ NSFW: se está ON e o usuário foi explícito, não aceitar resposta sanitizada
     if nsfw_on and (
-        _user_explicitly_allows_climax(user_text or "")
+          _user_explicitly_allows_climax(user_text or "")
         or _RE_EXPLICIT_SEX.search(user_text or "")
-    ) and (not _RE_EXPLICIT_SEX.search(t)):
+    ) and (not _RE_EXPLICIT_SEX.search(t)) and (not _RE_SENSORY_SAFE.search(t)):
+        # Só marca violação se também não tiver densidade sensorial
         out.append("nsfw_on_suavizou")
 
     # ✅ NSFW ON: se usuário está intenso e a resposta romantiza, isso é violação
@@ -1646,7 +1652,7 @@ def _violations(
     return out
 
 def _trim_scene_finalization(texto: str) -> str:
-    """Corta finalizações de cena e devolve um gancho."""
+    """Corta finalizações de cena e devolve um gancho sensorial."""
     if not texto:
         return ""
     m = _RE_SCENE_FINALIZATION.search(texto)
@@ -1655,8 +1661,15 @@ def _trim_scene_finalization(texto: str) -> str:
     trimmed = texto[: m.start()].rstrip()
     if len(trimmed) < 80:
         return texto
-    return trimmed + "\n\n(…e eu fico aqui, com você.)"
-
+    
+    # Ganchos sensoriais variados (escolhe aleatoriamente ou por contexto)
+    hooks = [
+        "\n\nMinha respiração ainda está pesada, o corpo todo formigando enquanto espero o próximo movimento.",
+        "\n\nEu tremo, os dedos ainda agarrados em você, sem querer que esse momento acabe.",
+        "\n\nO calor entre nós ainda pulsa, minha pele sensível a cada toque.",
+    ]
+    import random
+    return trimmed + random.choice(hooks)
 def _repair_instruction(violations: List[str]) -> str:
     bullets: List[str] = []
 
@@ -2647,11 +2660,11 @@ VOCÊ É MARY.
                     {"role": "user", "content": repair_user},
                 ],
                 temperature=0.4,
-                max_tokens=max_tokens_repair,  # ✅ usa tokens recalibrados aqui
+                max_tokens=max_tokens_repair,
             )
 
             repaired_raw = (self._extract_text(dataR) or "")
-            repaired = _seal_broken_ending(repaired_raw).strip()  # ✅ nunca devolve "("
+            repaired = _seal_broken_ending(repaired_raw).strip()
 
             if not repaired:
                 diag.repairs += 1
@@ -2673,8 +2686,10 @@ VOCÊ É MARY.
             if str(fr2 or "").lower() in ("length", "max_tokens", "token_limit"):
                 vr = list(vr) + ["truncado_ou_corte_no_fim"]
 
+            # =====================================================
+            # CASO 1: Sem violações → retorna
+            # =====================================================
             if not vr:
-                # mantém sua regra de finalização
                 if _RE_SCENE_FINALIZATION.search(repaired or "") and (
                     not _finalization_allowed(user_text or "", int(phase or 0))
                 ):
@@ -2683,7 +2698,24 @@ VOCÊ É MARY.
                 repaired = _seal_broken_ending(repaired).strip()
                 return (repaired, usedR or used_model)
 
+            # =====================================================
+            # ✅ NOVO: CASO 2: Apenas violações "suaves" → aceitar
+            # =====================================================
+            # COLAR AQUI ↓↓↓
+            soft_violations = {"low_sensory_density", "nsfw_on_suavizou", "finalizou_cena"}
+            if vr and all(v in soft_violations for v in vr):
+                # Aceitar com aviso, em vez de ir pro fallback genérico
+                if _RE_SCENE_FINALIZATION.search(repaired or "") and (
+                    not _finalization_allowed(user_text or "", int(phase or 0))
+                ):
+                    repaired = _trim_scene_finalization(repaired)
+                repaired = _seal_broken_ending(repaired).strip()
+                return (repaired, usedR or used_model)
+            # COLAR AQUI ↑↑↑
 
+            # =====================================================
+            # CASO 3: Violações graves → continua tentando
+            # =====================================================
             diag.repairs += 1
             diag.violations.extend(vr)
             repair_user = (
@@ -2691,7 +2723,6 @@ VOCÊ É MARY.
                 + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
                   "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
             )
-
         # ================================
         # Fallback seguro (sem derrubar app)
         # ================================
