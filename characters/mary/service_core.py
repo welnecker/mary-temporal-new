@@ -2773,17 +2773,93 @@ def _generate_with_repair(
         except Exception:
             return ""
 
-    @staticmethod
-    def _get_intimacy_phase(facts: Dict[str, Any]) -> int:
-        try:
-            return int((facts or {}).get("intimacy.phase", 0))
-        except Exception:
+        # ==============================
+    # Intimacy Phase (compat)
+    # ==============================
+    _INTIMACY_MIN = 0
+    _INTIMACY_MAX = 5
+
+    def _get_intimacy_phase(self, facts: Dict[str, Any]) -> int:
+        """
+        Retorna a fase de intimidade (0..5).
+        Compatível com chaves antigas e chaves por timeline.
+        """
+        if not isinstance(facts, dict):
             return 0
 
-    @staticmethod
-    def _set_intimacy_phase(usuario_key: str, phase: int) -> None:
-        phase = max(0, min(int(phase), MAX_INTIMACY_PHASE))
-        set_fact_safe(usuario_key, "intimacy.phase", phase, {"fonte": "intimacy_progression"})
+        # tenta obter timeline do serviço ou do session_state
+        tl = getattr(self, "timeline", None) or getattr(self, "tl", None)
+        if not tl:
+            try:
+                tl = str(_ss_get("mary_timeline", "") or "").strip()
+            except Exception:
+                tl = ""
+
+        keys: List[str] = []
+
+        # por timeline (se existir)
+        if tl:
+            keys += [
+                f"intimacy.phase::{tl}",
+                f"intimacy_phase::{tl}",
+                f"mary_intimacy_phase::{tl}",
+            ]
+
+        # chaves atuais/legadas
+        keys += [
+            "intimacy.phase",          # ✅ sua chave atual
+            "intimacy_phase",
+            "mary_intimacy_phase",
+            "phase_intimacy",
+            "phase",
+        ]
+
+        for k in keys:
+            if k in facts:
+                try:
+                    v = int(facts.get(k))
+                    if v < self._INTIMACY_MIN:
+                        return self._INTIMACY_MIN
+                    if v > self._INTIMACY_MAX:
+                        return self._INTIMACY_MAX
+                    return v
+                except Exception:
+                    pass
+
+        return 0
+
+    def _set_intimacy_phase(self, usuario_key: str, phase: int) -> int:
+        """
+        Salva a fase (0..5) no storage (facts via set_fact_safe) e retorna o valor normalizado.
+        Também grava uma chave por timeline para evitar vazamento entre timelines.
+        """
+        try:
+            p = int(phase)
+        except Exception:
+            p = 0
+
+        # se existir MAX_INTIMACY_PHASE no arquivo, respeita; senão usa 5
+        maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
+        p = max(self._INTIMACY_MIN, min(p, maxp))
+
+        # salva chave principal (compat com seu código atual)
+        set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
+
+        # salva por timeline também
+        tl = ""
+        try:
+            tl = str(_ss_get("mary_timeline", "") or "").strip()
+        except Exception:
+            tl = ""
+
+        if tl:
+            try:
+                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_progression"})
+            except Exception:
+                pass
+
+        return p
+
 
     def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
         return service_router.route_chat_strict(
