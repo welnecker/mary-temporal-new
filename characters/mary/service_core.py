@@ -2007,15 +2007,11 @@ class MaryService(BaseCharacter):
         # ✅ TERCEIROS: agora respeita o toggle da UI (override) quando NSFW está ON
         if not nsfw_on:
             allow_third_party_seduction_final = False
+        elif allow_third_party_seduction is None:
+            # lê diretamente do sidebar/session_state
+            allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
         else:
-            if not nsfw_on:
-                allow_third_party_seduction_final = False
-            else:
-                if allow_third_party_seduction is None:
-                    # ✅ lê diretamente do sidebar/session_state
-                    allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
-                else:
-                    allow_third_party_seduction_final = bool(allow_third_party_seduction)
+            allow_third_party_seduction_final = bool(allow_third_party_seduction)
 
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
 
@@ -2350,7 +2346,7 @@ REGRAS ABSOLUTAS:
                     phase=int(intimacy_phase),
                     nsfw_on=bool(nsfw_on),
                     timeline=timeline_final,
-                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
+                    allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
                 diag.model_used = used_model
@@ -2500,6 +2496,7 @@ REGRAS ABSOLUTAS:
     # Planos previsíveis
     # ======================================================
     @staticmethod
+      
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
         if nsfw_on:
             return [
@@ -2507,9 +2504,8 @@ REGRAS ABSOLUTAS:
                 {"model": model, "temperature": 0.55, "max_tokens": 2400},
             ]
         return [
-            {"model": model, "temperature": 0.70, "max_tokens": 2000},
-            {"model": model, "temperature": 0.55, "max_tokens": 2000},
-            {"model": "deepseek/deepseek-chat-v3-0324", "temperature": 0.65, "max_tokens": 2000},
+            {"model": model, "temperature": 0.70, "max_tokens": 1600},
+            {"model": model, "temperature": 0.55, "max_tokens": 1600},
         ]
 
 
