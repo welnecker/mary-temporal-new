@@ -133,19 +133,18 @@ RESOLUÇÃO
 """
 
     initial_messages: List[Dict[str, str]] = [
-    {
-        "role": "assistant",
-        "timeline": "universitaria",
-        "content": (
-            "As férias universitárias estão em grande estilo em Balneário Camboriú. "
-            "O hotel está lotado de estudantes da UFES. "
-            "Mary divide a suíte com Silvia e Bianca. "
-            "Elas estão se arrumando para um dia de sol na praia. "
-            "Janio divide a suíte com Ricardo. "
-            "Eles já estão no quiosque, se preparando para o passeio de jetski."
-        ),
-    }
-]
-
+        {
+            "role": "assistant",
+            "timeline": "universitaria",
+            "content": (
+                "As férias universitárias estão em grande estilo em Balneário Camboriú. "
+                "O hotel está lotado de estudantes da UFES. "
+                "Mary divide a suíte com Silvia e Bianca. "
+                "Elas estão se arrumando para um dia de sol na praia. "
+                "Janio divide a suíte com Ricardo. "
+                "Eles já estão no quiosque, se preparando para o passeio de jetski."
+            ),
+        }
+    ]
 
     return persona, initial_messages
