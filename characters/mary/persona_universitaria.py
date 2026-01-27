@@ -137,9 +137,12 @@ RESOLUÇÃO
         "role": "assistant",
         "timeline": "universitaria",
         "content": (
-            "No intervalo do almoço, na faculdade, Silvia, Bianca, Mary, Ricardo e Janio estão conversando, "
-            "sentados à mesa redonda do restaurante. Silvia pega a garrafa de refrigerante e a deita sobre a mesa, "
-            "sugerindo: “Galera, vamos brincar de verdade ou desafio? Quem topa? Vou girar a garrafa…”."
+            "As férias universitárias estão em grande estilo em Balneário Camboriú. "
+            "O hotel está lotado de estudantes da UFES. "
+            "Mary divide a suíte com Silvia e Bianca. "
+            "Elas estão se arrumando para um dia de sol na praia. "
+            "Janio divide a suíte com Ricardo. "
+            "Eles já estão no quiosque, se preparando para o passeio de jetski."
         ),
     }
 ]
