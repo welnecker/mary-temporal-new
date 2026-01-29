@@ -54,6 +54,21 @@ from .persona import get_persona
 
 logger = logging.getLogger(__name__)
 
+
+# ==========================================================
+# HIDDEN-THOUGHT STRIPPER (initiative CoT scaffolding)
+# ==========================================================
+# O modelo pode emitir um bloco curto de raciocínio interno em <think>...</think>.
+# Esse bloco NUNCA deve chegar ao usuário final: usamos apenas como "andaime" para coerência.
+_RE_THINK_BLOCK = re.compile(r"(?is)\s*<think>.*?</think>\s*")
+
+def _strip_internal_thought(texto: str) -> str:
+    if not texto:
+        return ""
+    # remove blocos <think>... </think> inteiros (inclusive quebras de linha)
+    return _RE_THINK_BLOCK.sub("", texto).strip()
+
+
 # ==========================================================
 # SESSION STATE (safe wrappers)
 # ==========================================================
@@ -1750,6 +1765,56 @@ def _trim_scene_finalization(texto: str) -> str:
     ]
     import random
     return trimmed + random.choice(hooks)
+
+def _repair_fewshot_example(violations: List[str]) -> str:
+    """Retorna um exemplo RUIM→BOM curto, escolhido pela violação mais relevante."""
+    if not violations:
+        return ""
+    priority = [
+        "placeholder_reveal",
+        "autoria_usuario",
+        "tone_romantic_when_intense",
+        "finalizou_cena",
+        "nsfw_off_explicito",
+        "nsfw_on_suavizou",
+        "low_sensory_density",
+        "terceiro_logistica_offscreen",
+        "offscreen_msg_inventada",
+    ]
+    vset = set(violations)
+    chosen = next((p for p in priority if p in vset), violations[0])
+
+    examples: Dict[str, str] = {
+        "placeholder_reveal": """EXEMPLO DE CORREÇÃO (meta → in-character):
+[RUIM] 'Como IA eu não posso...'
+[BOM] 'Eu te encaro de perto, a voz baixa: "fala comigo" — e deixo o silêncio apertar.'""",
+        "autoria_usuario": """EXEMPLO DE CORREÇÃO (autoria do usuário):
+[RUIM] 'Você me puxa e me beija.'
+[BOM] 'Eu aproximo um dedo do seu queixo, paro a um sopro. "se quiser" — eu espero seu movimento.'""",
+        "tone_romantic_when_intense": """EXEMPLO DE CORREÇÃO (romance → físico direto):
+[RUIM] 'Meu coração é uma prece...'
+[BOM] 'Minha respiração falha quando você chega perto; o calor sobe pela minha pele e eu digo só: "agora".'""",
+        "finalizou_cena": """EXEMPLO DE CORREÇÃO (não concluir sozinho):
+[RUIM] 'E então termina tudo perfeito.'
+[BOM] 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
+        "nsfw_off_explicito": """EXEMPLO DE CORREÇÃO (NSFW OFF):
+[RUIM] '(descrição explícita...)'
+[BOM] 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
+        "nsfw_on_suavizou": """EXEMPLO DE CORREÇÃO (NSFW ON sem infantilizar):
+[RUIM] 'Eu fico corada e falo docinho...'
+[BOM] 'Eu falo baixo e adulto, o corpo colado no seu; minha mão guia o ritmo sem poesia nem hesitação.'""",
+        "low_sensory_density": """EXEMPLO DE CORREÇÃO (sensorialidade):
+[RUIM] 'Eu gosto disso.'
+[BOM] 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
+        "terceiro_logistica_offscreen": """EXEMPLO DE CORREÇÃO (sem logística offscreen):
+[RUIM] 'Eu pego um Uber e vamos ao hotel.'
+[BOM] 'Eu inclino a cabeça para um canto mais interno do lugar. "vem" — sem confirmar mudança de local.'""",
+        "offscreen_msg_inventada": """EXEMPLO DE CORREÇÃO (sem mensagens inventadas):
+[RUIM] 'Você me mandou áudio dizendo...'
+[BOM] 'Meu celular vibra. Eu nem olho ainda — fico em você, decidindo no corpo.'""",
+    }
+    return examples.get(chosen, "")
+
 def _repair_instruction(violations: List[str]) -> str:
     bullets: List[str] = []
 
@@ -1828,7 +1893,11 @@ def _repair_instruction(violations: List[str]) -> str:
 
 
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
-    return "\n".join(bullets).strip()
+    ex = _repair_fewshot_example(violations)
+    out = "\n".join(bullets).strip()
+    if ex:
+        out = (out + "\n\n" + ex).strip()
+    return out
 
 # ==========================================================
 # ✅ Blindagem de POV (usuário pode narrar em 1ª pessoa)
@@ -2244,6 +2313,8 @@ O usuário descreveu outro lugar/tempo.
         initiative_rule = (
             """
 [JANELA DE INICIATIVA — ATIVA]
+- Antes de agir por iniciativa, escreva 1 bloco curto de raciocínio interno em <think>...</think> (1–3 frases). Depois escreva a resposta normal.
+- O bloco <think> será removido antes de exibir ao usuário.
 - Permitido: Mary se aproxima, estende a mão, puxa 1 cm, aprofunda UM beijo, guia para um canto interno (sem mudar de lugar).
 - Proibido: inventar ação do usuário. Use convite/gesto e deixe ele aceitar/recusar.
 - NÃO teleporte: proposta ≠ mudança confirmada de local.
@@ -2422,8 +2493,26 @@ VOCÊ É MARY.
 
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
 
-        # 11) Tentativas previsíveis
-        attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on, phase=int(intimacy_phase), conflict_now=bool(conflict_now), user_text=prompt)
+
+        # 11) Tentativas previsíveis (decoding dinâmico + cool-down pós-clímax)
+        prev_phase_key = f"_mary_prev_phase::{usuario_key}"
+        streak_key = f"_mary_phase_streak::{usuario_key}"
+        prev_phase = int(_ss_get(prev_phase_key, int(intimacy_phase)) or int(intimacy_phase))
+        # streak: quantos turnos consecutivos na fase atual
+        if prev_phase == int(intimacy_phase):
+            phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
+        else:
+            phase_streak = 1
+
+        attempts = self._build_attempt_plan(
+            model=model,
+            nsfw_on=nsfw_on,
+            phase=int(intimacy_phase),
+            prev_phase=prev_phase,
+            phase_streak=phase_streak,
+            conflict_now=bool(conflict_now),
+            user_text=prompt,
+        )
         last_err: Optional[Exception] = None
 
         for plan in attempts:
@@ -2560,6 +2649,13 @@ VOCÊ É MARY.
                 except Exception:
                     pass
 
+                # Atualiza fase anterior/streak para o próximo turno (cool-down)
+                try:
+                    _ss_set(prev_phase_key, int(intimacy_phase))
+                    _ss_set(streak_key, int(phase_streak))
+                except Exception:
+                    pass
+
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
 
@@ -2596,6 +2692,8 @@ VOCÊ É MARY.
         model: str,
         nsfw_on: bool,
         phase: int,
+        prev_phase: int,
+        phase_streak: int,
         conflict_now: bool,
         user_text: str,
     ) -> List[Dict[str, Any]]:
@@ -2610,6 +2708,9 @@ VOCÊ É MARY.
         """
         ut = (user_text or "").lower()
         looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
+
+        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
+        cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
 
         # Base tokens (fôlego)
         base_tokens = 3200 if nsfw_on else 2200
@@ -2626,7 +2727,15 @@ VOCÊ É MARY.
             base_temp = 0.55
             base_top_p = 0.92
         else:
-            if phase >= 4:
+            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
+            if phase == 5:
+                if cooldown:
+                    base_temp = 0.58 if nsfw_on else 0.55
+                    base_top_p = 0.93 if nsfw_on else 0.94
+                else:
+                    base_temp = 0.64 if nsfw_on else 0.60
+                    base_top_p = 0.94 if nsfw_on else 0.95
+            elif phase >= 4:
                 base_temp = 0.90
                 base_top_p = 0.90
             elif phase == 3:
@@ -2706,6 +2815,7 @@ VOCÊ É MARY.
         # Texto base
         # ===========
         extracted = (self._extract_text(data) or "")
+        extracted = _strip_internal_thought(extracted)
         if not extracted.strip():
             raise RuntimeError("modelo retornou vazio")
 
@@ -2811,6 +2921,7 @@ VOCÊ É MARY.
             )
 
             repaired_raw = (self._extract_text(dataR) or "")
+            repaired_raw = _strip_internal_thought(repaired_raw)
             repaired = _seal_broken_ending(repaired_raw).strip()
 
             if not repaired:
