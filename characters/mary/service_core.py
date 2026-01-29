@@ -1,7 +1,7 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 """
-MaryService (v5.1 — Imersão Sensorial + Correções Críticas)
+MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
 ✅ Ajustes aplicados aqui (estritamente necessários):
 - FIX: _inject_canon_memories_always() injetava o bloco repetidamente dentro do loop (bug de duplicação).
@@ -151,8 +151,8 @@ NSFW_TOGGLE_STYLE = """
 - Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
 - Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
 - Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
-- PROIBIDO: Metáforas literárias ("como se fosse", "voto silencioso", "prece", "redenção", "verdade crua e linda").
-- PROIBIDO: Finalizar emocionalmente a cena com abstrações ("não há mais sombras", "só existe isso").
+- FOCO: descreva sensações e intenção de forma direta, física e concreta (sem abstrações poéticas).
+- FOCO: finalize com gesto/linha de tensão concreta (sem “encerramento abstrato” da cena).
 - Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
 
 EXEMPLO CORRETO (explícito e sensorial):
@@ -822,7 +822,11 @@ def _inject_long_memory_textsearch(
         if title:
             header += f" — {title}"
         lines.append(header)
-        lines.append(str(d.get("text") or "").strip())
+        raw = str(d.get("text") or "").strip()
+        best_chunks = _select_best_chunks(raw, user_prompt, max_pick=2)
+        for j, ch in enumerate(best_chunks, 1):
+            lines.append(f"(chunk {j}/{len(best_chunks)})")
+            lines.append(ch.strip())
         lines.append("")
 
     block = "\n".join(lines).strip()
@@ -890,6 +894,55 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     ranked = [i for i in ranked if scores[i] > 0.0]
     return ranked[: max(0, int(k))]
 
+
+# ==========================================================
+# Chunking semântico on-the-fly (RAG) — reduz tokens e melhora relevância
+# ==========================================================
+_SENT_SPLIT = re.compile(r"(?<=[\.\!\?…])\s+")
+
+def _chunk_semantic(text: str, max_chars: int = 520, max_chunks: int = 10) -> List[str]:
+    """
+    Chunking simples e robusto (sem dependências externas):
+    - prioriza parágrafos
+    - se parágrafo for grande, divide por sentenças
+    """
+    t = (text or "").strip()
+    if not t:
+        return []
+    paras = [p.strip() for p in re.split(r"\n{2,}", t) if p.strip()]
+    chunks: List[str] = []
+    for p in paras:
+        if len(p) <= max_chars:
+            chunks.append(p)
+            continue
+        sents = [s.strip() for s in _SENT_SPLIT.split(p) if s.strip()]
+        buf = ""
+        for s in sents:
+            if not buf:
+                buf = s
+            elif len(buf) + 1 + len(s) <= max_chars:
+                buf = buf + " " + s
+            else:
+                chunks.append(buf)
+                buf = s
+        if buf:
+            chunks.append(buf)
+    return chunks[: max_chunks]
+
+def _select_best_chunks(text: str, query: str, max_pick: int = 2) -> List[str]:
+    chunks = _chunk_semantic(text, max_chars=520, max_chunks=10)
+    if not chunks:
+        return []
+    idxs = _bm25_topk(chunks, query, k=max_pick)
+    if not idxs:
+        return chunks[: max_pick]
+    out: List[str] = []
+    for i in idxs:
+        if 0 <= i < len(chunks):
+            out.append(chunks[i])
+    return out[: max_pick]
+
+
 def _inject_relevant_memories(
     shared_key: str,
     timeline: str,
@@ -899,12 +952,21 @@ def _inject_relevant_memories(
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
+    """
+    ✅ BM25 em chunks (em vez do texto inteiro) para:
+    - aumentar relevância
+    - reduzir tokens no prompt
+    - mitigar 'lost-in-the-middle'
+    """
     mems = cached_list_memories(shared_key, limit=260)
     if not mems:
         return
 
-    soft: List[Dict[str, Any]] = []
-    docs: List[str] = []
+    chunk_docs: List[str] = []
+    # (mem, chunk, hash_texto_inteiro)
+    chunk_map: List[Tuple[Dict[str, Any], str, str]] = []
+
+    tl = _normalize_timeline(timeline)
 
     for m in mems:
         meta = m.get("meta") or {}
@@ -912,40 +974,58 @@ def _inject_relevant_memories(
 
         if kind == "canon":
             continue
-        if not _memory_timeline_ok(meta, timeline):
+        if not _memory_timeline_ok(meta, tl):
             continue
 
-        text = str(m.get("text") or "").strip()
-        if not text:
+        text_full = str(m.get("text") or "").strip()
+        if not text_full:
             continue
 
-        if dedupe_bucket is not None:
-            h = hashlib.sha1(text.encode("utf-8")).hexdigest()
-            if h in dedupe_bucket:
-                continue
+        h_full = hashlib.sha1(text_full.encode("utf-8")).hexdigest()
 
-        soft.append(m)
+        if dedupe_bucket is not None and h_full in dedupe_bucket:
+            continue
+
         title = str(meta.get("title") or meta.get("key") or "").strip()
-        docs.append(f"{title}\n{text}" if title else text)
 
-    if not soft:
+        chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
+        if not chunks:
+            continue
+
+        for ch in chunks:
+            chunk_docs.append(f"{title}\n{ch}" if title else ch)
+            chunk_map.append((m, ch, h_full))
+
+    if not chunk_docs:
         return
 
-    idxs = _bm25_topk(docs, user_prompt, k=k)
+    idxs = _bm25_topk(chunk_docs, user_prompt, k=max(int(k) * 2, 8))
     if not idxs:
         return
 
-    selected = [soft[i] for i in idxs if 0 <= i < len(soft)]
+    selected: List[Tuple[Dict[str, Any], str, str]] = []
+    seen_full: set = set()
+
+    for ix in idxs:
+        if 0 <= ix < len(chunk_map):
+            m, ch, h_full = chunk_map[ix]
+            if h_full in seen_full:
+                continue
+            seen_full.add(h_full)
+            selected.append((m, ch, h_full))
+            if len(selected) >= int(k):
+                break
+
     if not selected:
         return
 
     lines = [
-        "[MEMÓRIAS RELEVANTES (BM25)]",
+        "[MEMÓRIAS RELEVANTES (BM25 — chunks)]",
         "Use para coerência, sem citar literalmente.",
         "",
     ]
 
-    for i, m in enumerate(selected, 1):
+    for i, (m, ch, h_full) in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
         title = meta.get("title") or meta.get("key") or ""
@@ -956,12 +1036,11 @@ def _inject_relevant_memories(
             header += f" — {title}"
         lines.append(header)
 
-        txt = str(m.get("text") or "").strip()
-        lines.append(txt)
+        lines.append(str(ch or '').strip())
         lines.append("")
 
-        if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+        if dedupe_bucket is not None and h_full:
+            dedupe_bucket.add(h_full)
 
     block = "\n".join(lines).strip()
     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
@@ -969,6 +1048,7 @@ def _inject_relevant_memories(
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
         messages.append({"role": "system", "content": block})
+
 
 def _inject_shared_soft_context(
     shared_key: str,
@@ -2062,19 +2142,13 @@ O usuário descreveu outro lugar/tempo.
 
         format_rule = """
 [FORMATO — ADAPTATIVO]
-- Ritmo humano, sem excesso de descrição: prefira gesto + fala + consequência.
-- Ação rápida: 2-3 parágrafos curtos.
-- Tensão/diálogo: 3-4 parágrafos.
-- Intenso/íntimo: 4 parágrafos como padrão:
-  (1) ação/ambiente imediato + intenção,
-  (2) fala direta + 1 pensamento íntimo curto (entre parênteses ou travessões),
-  (3) escalada física/emocional (sem concluir a cena sozinho),
-  (4) gancho/convite sem pergunta (deixe o usuário escolher).
-- Em toda resposta: inclua pelo menos 1 fala direta entre aspas.
-- Cada parágrafo: 1 ação/sensação concreta + 1 consequência emocional/física.
-- Sem listas/títulos no texto final.
-- Não termine com pergunta; termine com um gesto/linha de tensão.
-        """.strip()
+- O tamanho da resposta deve ser natural e adequado ao contexto emocional.
+- Cenas de ação rápida: 2-3 parágrafos curtos e diretos.
+- Diálogo casual ou tensão crescente: 3-4 parágrafos.
+- Cenas íntimas ou emocionalmente intensas: 4-6 parágrafos densos, com espaço para desenvolver camadas sensoriais.
+- Cada parágrafo deve conter: 1 ação/sensação concreta + 1 consequência emocional/física.
+- Sem listas, títulos ou perguntas retóricas no final.
+""".strip()
 
         sensorial_guidance_rule = """
 [SENSORIALIDADE — CORPORAL E RELEVANTE]
@@ -2185,15 +2259,6 @@ O usuário descreveu outro lugar/tempo.
 - Substitua monólogo por micro-ação: olhar, aproximação, toque, frase curta e adulta.
 - OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
 """.strip()
-        anti_broxante_rule = """
-        [ANTI-FRASES / ANTI-FÓRMULAS — ABSOLUTO]
-        - Evite frases prontas e repetidas (soam robóticas), especialmente:
-          - "eu encosto minha boca no seu ouvido e sussurro"
-          - "eu seguro sua mão e te puxo um passo comigo"
-          - "eu inclino o corpo, deixando claro o que eu quero"
-        - Prefira ação específica do momento (detalhe concreto) + fala curta e adulta.
-        """.strip()
-
 
         intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
@@ -2247,6 +2312,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
 VOCÊ É MARY.
         Responda em primeira pessoa, do ponto de vista da Mary.
+        Delibere em silêncio: não exponha raciocínio/meta. (Pensamentos íntimos breves podem aparecer in-character.)
 
         {language_rule}
         {pov_rule}
@@ -2280,8 +2346,6 @@ VOCÊ É MARY.
         {pacing_rule}
         {initiative_rule}
         {manipulation_block}
-        {anti_broxante_rule}
-
         {conflict_block}
 
         {desvio_curto_rule}
@@ -2359,7 +2423,7 @@ VOCÊ É MARY.
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
 
         # 11) Tentativas previsíveis
-        attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on)
+        attempts = self._build_attempt_plan(model=model, nsfw_on=nsfw_on, phase=int(intimacy_phase), conflict_now=bool(conflict_now), user_text=prompt)
         last_err: Optional[Exception] = None
 
         for plan in attempts:
@@ -2528,27 +2592,69 @@ VOCÊ É MARY.
     # Planos previsíveis
     # ======================================================
     @staticmethod
-    def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
+    def _build_attempt_plan(
+        model: str,
+        nsfw_on: bool,
+        phase: int,
+        conflict_now: bool,
+        user_text: str,
+    ) -> List[Dict[str, Any]]:
         """
-        Plano de tentativas focado em: (1) devolução rica/longa, (2) criatividade controlada, (3) fallback estável.
-        Observação: parâmetros extras (presence/frequency/repetition) são enviados em modo "best effort";
-        se o provider rejeitar, _chat() re-tenta automaticamente sem esses campos.
+        Plano dinâmico de geração para maximizar imersão:
+        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
+        - Conflito: temperature desce (resposta mais firme/limpa)
+        - Explicações/fatos: mais contido
+        Campos opcionais em cada plano:
+        - top_p
+        - extra (best-effort: alguns providers ignoram/rejeitam)
         """
-        # Perfil base (coerente e rico)
-        base_extra = {"presence_penalty": 0.35, "frequency_penalty": 0.15, "repetition_penalty": 1.05}
-        if nsfw_on:
-            # NSFW_ON precisa de mais fôlego para "camadas" sensoriais e progressão sem truncar.
-            return [
-                {"model": model, "temperature": 0.88, "top_p": 0.98, "max_tokens": 3200, "extra": base_extra},
-                {"model": model, "temperature": 0.75, "top_p": 0.95, "max_tokens": 3200, "extra": base_extra},
-                {"model": model, "temperature": 0.60, "top_p": 0.92, "max_tokens": 3200, "extra": base_extra},
-            ]
-        # NSFW_OFF: mais contido, mas ainda com bom fôlego.
+        ut = (user_text or "").lower()
+        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
+
+        # Base tokens (fôlego)
+        base_tokens = 3200 if nsfw_on else 2200
+        if nsfw_on and phase >= 3:
+            base_tokens = 3600
+        if looks_factual and not nsfw_on:
+            base_tokens = 1800
+
+        # Decoding por cena
+        if conflict_now:
+            base_temp = 0.62 if nsfw_on else 0.58
+            base_top_p = 0.90
+        elif looks_factual:
+            base_temp = 0.55
+            base_top_p = 0.92
+        else:
+            if phase >= 4:
+                base_temp = 0.90
+                base_top_p = 0.90
+            elif phase == 3:
+                base_temp = 0.84
+                base_top_p = 0.93
+            elif phase == 2:
+                base_temp = 0.80
+                base_top_p = 0.95
+            else:
+                base_temp = 0.74
+                base_top_p = 0.96
+
+        extra = {
+            "presence_penalty": 0.35,
+            "frequency_penalty": 0.15,
+            "repetition_penalty": 1.05,
+        }
+
         return [
-            {"model": model, "temperature": 0.82, "top_p": 0.97, "max_tokens": 2200, "extra": base_extra},
-            {"model": model, "temperature": 0.70, "top_p": 0.95, "max_tokens": 2200, "extra": base_extra},
-            {"model": model, "temperature": 0.55, "top_p": 0.92, "max_tokens": 2200, "extra": base_extra},
+            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
         ]
+
+
+# ======================================================
+    # Gerar + Repair
+    # ======================================================
     def _generate_with_repair(
         self,
         *,
@@ -2556,7 +2662,7 @@ VOCÊ É MARY.
         messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
-        top_p: float = 0.95,
+        top_p: float,
         extra: Optional[Dict[str, Any]] = None,
         usuario_key: str,
         ctx_lower: str,
@@ -2646,8 +2752,11 @@ VOCÊ É MARY.
         # Se detectou truncamento/corte no fim, dá folga real pro repair concluir frase.
         # (não muda seu pipeline, só esta execução)
         max_tokens_repair = int(max_tokens or 0)
-        # Repair precisa manter criatividade suficiente para não "matar" a cena, mas com mais coerência.
-        repair_temperature = max(0.45, min(0.68, float(temperature) * 0.85))
+
+        # Repair precisa manter criatividade suficiente para não "matar" a cena,
+        # mas com mais coerência (dinâmico).
+        repair_temperature = max(0.45, min(0.70, float(temperature) * 0.85))
+
         if needs_more_room:
             # Dá fôlego real para concluir frase/cena (evita truncamento).
             max_tokens_repair = max(max_tokens_repair, 700)
@@ -2674,6 +2783,9 @@ VOCÊ É MARY.
               "4. NÃO terminar a resposta com parêntese aberto ou frase cortada.\n"
               "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
               "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
+              "\nFEW-SHOT (EXEMPLO):\n"
+              "RUIM: 'Você sorri e diz que já foi para outro lugar. (meta)'\n"
+              "BOM: 'Eu me aproximo devagar, a respiração curta; \"fica aqui\" — e deixo o silêncio pesar sem te mover por você.'\n"
         )
 
         repair_user = (
@@ -2694,7 +2806,7 @@ VOCÊ É MARY.
                 ],
                 temperature=repair_temperature,
                 max_tokens=max_tokens_repair,
-                top_p=max(0.92, min(0.97, float(top_p))),
+                top_p=max(0.90, min(0.97, float(top_p))),
                 extra=extra,
             )
 
@@ -2756,7 +2868,7 @@ VOCÊ É MARY.
             repair_user = (
                 repair_user
                 + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS LIMPO e MAIS DIRETO, "
-                  "sem meta e sem listas/títulos. Mantenha intensidade e densidade sensorial. Finalize com frase completa (sem corte/parêntese aberto)."
+                  "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
             )
         # ================================
         # Fallback seguro (sem derrubar app)
@@ -2929,12 +3041,11 @@ VOCÊ É MARY.
             try:
                 return service_router.route_chat_strict(model, payload)
             except Exception:
-                # Alguns providers rejeitam params extras. Re-tenta 1x sem eles.
+                # Provider rejeitou campos extras → re-tenta 1x sem extras
                 payload = {
                     "messages": messages,
                     "temperature": float(temperature),
                     "top_p": float(top_p),
                     "max_tokens": int(max_tokens),
                 }
-                return service_router.route_chat_strict(model, payload)
         return service_router.route_chat_strict(model, payload)
