@@ -2062,13 +2062,19 @@ O usuário descreveu outro lugar/tempo.
 
         format_rule = """
 [FORMATO — ADAPTATIVO]
-- O tamanho da resposta deve ser natural e adequado ao contexto emocional.
-- Cenas de ação rápida: 2-3 parágrafos curtos e diretos.
-- Diálogo casual ou tensão crescente: 3-4 parágrafos.
-- Cenas íntimas ou emocionalmente intensas: 4-6 parágrafos densos, com espaço para desenvolver camadas sensoriais.
-- Cada parágrafo deve conter: 1 ação/sensação concreta + 1 consequência emocional/física.
-- Sem listas, títulos ou perguntas retóricas no final.
-""".strip()
+- Ritmo humano, sem excesso de descrição: prefira gesto + fala + consequência.
+- Ação rápida: 2-3 parágrafos curtos.
+- Tensão/diálogo: 3-4 parágrafos.
+- Intenso/íntimo: 4 parágrafos como padrão:
+  (1) ação/ambiente imediato + intenção,
+  (2) fala direta + 1 pensamento íntimo curto (entre parênteses ou travessões),
+  (3) escalada física/emocional (sem concluir a cena sozinho),
+  (4) gancho/convite sem pergunta (deixe o usuário escolher).
+- Em toda resposta: inclua pelo menos 1 fala direta entre aspas.
+- Cada parágrafo: 1 ação/sensação concreta + 1 consequência emocional/física.
+- Sem listas/títulos no texto final.
+- Não termine com pergunta; termine com um gesto/linha de tensão.
+        """.strip()
 
         sensorial_guidance_rule = """
 [SENSORIALIDADE — CORPORAL E RELEVANTE]
@@ -2179,6 +2185,15 @@ O usuário descreveu outro lugar/tempo.
 - Substitua monólogo por micro-ação: olhar, aproximação, toque, frase curta e adulta.
 - OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
 """.strip()
+        anti_broxante_rule = """
+        [ANTI-FRASES / ANTI-FÓRMULAS — ABSOLUTO]
+        - Evite frases prontas e repetidas (soam robóticas), especialmente:
+          - "eu encosto minha boca no seu ouvido e sussurro"
+          - "eu seguro sua mão e te puxo um passo comigo"
+          - "eu inclino o corpo, deixando claro o que eu quero"
+        - Prefira ação específica do momento (detalhe concreto) + fala curta e adulta.
+        """.strip()
+
 
         intimacy_control_block = f"""
 [INTIMIDADE — FASES (ABSOLUTO)]
@@ -2265,6 +2280,8 @@ VOCÊ É MARY.
         {pacing_rule}
         {initiative_rule}
         {manipulation_block}
+        {anti_broxante_rule}
+
         {conflict_block}
 
         {desvio_curto_rule}
@@ -2353,6 +2370,8 @@ VOCÊ É MARY.
                     messages=messages,
                     temperature=float(plan["temperature"]),
                     max_tokens=int(plan["max_tokens"]),
+                    top_p=float(plan.get("top_p", 0.95)),
+                    extra=plan.get("extra"),
                     usuario_key=usuario_key,
                     ctx_lower=ctx_lower,
                     user_text=prompt,
@@ -2510,20 +2529,26 @@ VOCÊ É MARY.
     # ======================================================
     @staticmethod
     def _build_attempt_plan(model: str, nsfw_on: bool) -> List[Dict[str, Any]]:
+        """
+        Plano de tentativas focado em: (1) devolução rica/longa, (2) criatividade controlada, (3) fallback estável.
+        Observação: parâmetros extras (presence/frequency/repetition) são enviados em modo "best effort";
+        se o provider rejeitar, _chat() re-tenta automaticamente sem esses campos.
+        """
+        # Perfil base (coerente e rico)
+        base_extra = {"presence_penalty": 0.35, "frequency_penalty": 0.15, "repetition_penalty": 1.05}
         if nsfw_on:
+            # NSFW_ON precisa de mais fôlego para "camadas" sensoriais e progressão sem truncar.
             return [
-                {"model": model, "temperature": 0.70, "max_tokens": 2400},
-                {"model": model, "temperature": 0.55, "max_tokens": 2400},
+                {"model": model, "temperature": 0.88, "top_p": 0.98, "max_tokens": 3200, "extra": base_extra},
+                {"model": model, "temperature": 0.75, "top_p": 0.95, "max_tokens": 3200, "extra": base_extra},
+                {"model": model, "temperature": 0.60, "top_p": 0.92, "max_tokens": 3200, "extra": base_extra},
             ]
+        # NSFW_OFF: mais contido, mas ainda com bom fôlego.
         return [
-            {"model": model, "temperature": 0.70, "max_tokens": 1600},
-            {"model": model, "temperature": 0.55, "max_tokens": 1600},
+            {"model": model, "temperature": 0.82, "top_p": 0.97, "max_tokens": 2200, "extra": base_extra},
+            {"model": model, "temperature": 0.70, "top_p": 0.95, "max_tokens": 2200, "extra": base_extra},
+            {"model": model, "temperature": 0.55, "top_p": 0.92, "max_tokens": 2200, "extra": base_extra},
         ]
-
-
-    # ======================================================
-    # Gerar + Repair
-    # ======================================================
     def _generate_with_repair(
         self,
         *,
@@ -2531,6 +2556,8 @@ VOCÊ É MARY.
         messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
+        top_p: float = 0.95,
+        extra: Optional[Dict[str, Any]] = None,
         usuario_key: str,
         ctx_lower: str,
         user_text: str,
@@ -2546,6 +2573,8 @@ VOCÊ É MARY.
             messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=top_p,
+            extra=extra,
         )
         used_model = used_model or model
 
@@ -2617,10 +2646,14 @@ VOCÊ É MARY.
         # Se detectou truncamento/corte no fim, dá folga real pro repair concluir frase.
         # (não muda seu pipeline, só esta execução)
         max_tokens_repair = int(max_tokens or 0)
+        # Repair precisa manter criatividade suficiente para não "matar" a cena, mas com mais coerência.
+        repair_temperature = max(0.45, min(0.68, float(temperature) * 0.85))
         if needs_more_room:
-            # +35% com piso e teto defensivos
-            max_tokens_repair = max(max_tokens_repair, 420)
-            max_tokens_repair = min(int(max_tokens_repair * 1.35) + 80, 1400)
+            # Dá fôlego real para concluir frase/cena (evita truncamento).
+            max_tokens_repair = max(max_tokens_repair, 700)
+            max_tokens_repair = min(int(max_tokens_repair * 1.45) + 160, 4096)
+            # Nunca deixe o repair com menos espaço que o pedido original.
+            max_tokens_repair = max(max_tokens_repair, int(max_tokens or 0))
 
         # ======================
         # Prompt de repair (sys)
@@ -2659,8 +2692,10 @@ VOCÊ É MARY.
                     {"role": "system", "content": repair_sys},
                     {"role": "user", "content": repair_user},
                 ],
-                temperature=0.4,
+                temperature=repair_temperature,
                 max_tokens=max_tokens_repair,
+                top_p=max(0.92, min(0.97, float(top_p))),
+                extra=extra,
             )
 
             repaired_raw = (self._extract_text(dataR) or "")
@@ -2720,8 +2755,8 @@ VOCÊ É MARY.
             diag.violations.extend(vr)
             repair_user = (
                 repair_user
-                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS CURTO e MAIS DIRETO, "
-                  "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
+                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS LIMPO e MAIS DIRETO, "
+                  "sem meta e sem listas/títulos. Mantenha intensidade e densidade sensorial. Finalize com frase completa (sem corte/parêntese aberto)."
             )
         # ================================
         # Fallback seguro (sem derrubar app)
@@ -2873,13 +2908,33 @@ VOCÊ É MARY.
 
         return p
 
-    def _chat(self, model: str, messages: List[Dict[str, str]], temperature: float, max_tokens: int):
-        return service_router.route_chat_strict(
-            model,
-            {
-                "messages": messages,
-                "temperature": temperature,
-                "top_p": 0.95,
-                "max_tokens": max_tokens,
-            },
-        )
+    def _chat(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        *,
+        top_p: float = 0.95,
+        extra: Optional[Dict[str, Any]] = None,
+    ):
+        payload: Dict[str, Any] = {
+            "messages": messages,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_tokens": int(max_tokens),
+        }
+        if isinstance(extra, dict) and extra:
+            payload.update(extra)
+            try:
+                return service_router.route_chat_strict(model, payload)
+            except Exception:
+                # Alguns providers rejeitam params extras. Re-tenta 1x sem eles.
+                payload = {
+                    "messages": messages,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                }
+                return service_router.route_chat_strict(model, payload)
+        return service_router.route_chat_strict(model, payload)
