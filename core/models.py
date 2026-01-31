@@ -46,6 +46,6 @@ def available_providers() -> List[str]:
     if os.getenv("TOGETHER_API_KEY"):
         out.append("together")
     # ✅ NOVO
-    if os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY"):
+    if os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN"):
         out.append("hf")
     return out or ["openrouter", "together", "hf"]  # fallback visual
