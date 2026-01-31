@@ -1694,10 +1694,13 @@ def main() -> None:
             index=idx,
             key="model",
         )
-        with st.expander("🧪 Debug modelos (service_router)", expanded=True):
-            st.json(st.session_state.get("models_debug") or {})
+        with st.expander("🧪 Debug imports (service_router)", expanded=True):
+            try:
+                st.json(service_router.import_errors())
+            except Exception as e:
+                st.write(f"falhou: {type(e).__name__}: {e}")
 
-
+   
         # ======================================================
         # ✅ Provider detectado para o modelo selecionado
         # ======================================================
