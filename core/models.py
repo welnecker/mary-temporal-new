@@ -18,7 +18,7 @@ TOGETHER_DEFAULT = [
 
 # ✅ NOVO: Hugging Face Router defaults
 HF_DEFAULT = [
-    "zai-org/GLM-4.7-FP8:zai-org",
+    "zai-org/GLM-4.7",
 ]
 
 def _env_list(var: str, defaults: List[str]) -> List[str]:
