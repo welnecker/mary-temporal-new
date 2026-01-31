@@ -1,40 +1,51 @@
-# core/service_router.py
 from __future__ import annotations
 
 import os
 from typing import Any, Dict, List, Tuple
 
-from .openrouter import chat as openrouter_chat, DEFAULT_MODELS as OR_MODELS
-from .together import chat as together_chat, DEFAULT_MODELS as TG_MODELS
+# ============================================================
+# Imports SAFE (não deixar a UI cair pro fallback por exceção)
+# ============================================================
 
-# ✅ Hugging Face provider (Router HF via OpenAI SDK)
-from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
+# OpenRouter (obrigatório no teu app)
+try:
+    from .openrouter import chat as openrouter_chat, DEFAULT_MODELS as OR_MODELS
+except Exception as e:
+    OR_MODELS = []
+    def openrouter_chat(*args: Any, **kwargs: Any):
+        raise RuntimeError(f"OpenRouter indisponível: {type(e).__name__}: {e}")
 
-# Modelo seguro de fallback (OpenRouter)
+# Together (opcional)
+try:
+    from .together import chat as together_chat, DEFAULT_MODELS as TG_MODELS
+except Exception:
+    TG_MODELS = []
+    together_chat = None  # type: ignore
+
+# HuggingFace Router (opcional)
+try:
+    from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
+except Exception:
+    HF_MODELS = []
+    hf_chat = None  # type: ignore
+
+# ============================================================
+# Config
+# ============================================================
+
 SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 
-# Alias opcionais (ex: {"chimera": "tngtech/tng-r1t-chimera:free"})
 MODEL_ALIASES: Dict[str, str] = {}
 
+# ============================================================
+# Utils
+# ============================================================
 
-# ============================================================
-# NORMALIZAÇÃO: reasoning -> content (quando content vem vazio)
-# ============================================================
 def _normalize_reasoning_into_content(resp: Any) -> Any:
-    """
-    Alguns providers retornam a resposta em message.reasoning e deixam message.content vazio.
-    Este normalizador copia reasoning -> content quando content está vazio,
-    para evitar 'modelo retornou vazio' no service.
-
-    Suporta:
-      - dict OpenAI-like
-      - tuple(data, used_model, provider) (normaliza o data)
-    """
     # tuple: (data, used_model, provider)
     if isinstance(resp, tuple) and len(resp) >= 1:
         data = _normalize_reasoning_into_content(resp[0])
-        # mantém metadados do tuple intactos
-        if len(resp) >= 3:
+        if len(resp) == 3:
             return (data, resp[1], resp[2])
         if len(resp) == 2:
             return (data, resp[1])
@@ -67,14 +78,18 @@ def _normalize_reasoning_into_content(resp: Any) -> Any:
         return resp
 
 
-# ============================================================
-# PROVIDERS DISPONÍVEIS
-# ============================================================
+def _env_has_any(*keys: str) -> bool:
+    return any(bool(os.getenv(k)) for k in keys)
+
+
+# -------------------------
+# Providers disponíveis
+# -------------------------
 def available_providers() -> List[Tuple[str, bool, str]]:
-    have_or = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN"))
-    have_tg = bool(os.getenv("TOGETHER_API_KEY"))
-    # ✅ aceita os dois nomes (você disse que já tem a chave no Secrets)
-    have_hf = bool(os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN"))
+    have_or = _env_has_any("OPENROUTER_API_KEY", "OPENROUTER_TOKEN")
+    have_tg = _env_has_any("TOGETHER_API_KEY")
+    have_hf = _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN")
+
     return [
         ("OpenRouter", have_or, "OK" if have_or else "sem chave"),
         ("Together", have_tg, "OK" if have_tg else "sem chave"),
@@ -83,110 +98,72 @@ def available_providers() -> List[Tuple[str, bool, str]]:
 
 
 def list_models(provider: str | None = None) -> List[str]:
-    if provider == "OpenRouter":
-        return OR_MODELS[:]
-    if provider == "Together":
-        return TG_MODELS[:]
-    if provider == "HuggingFace":
-        return HF_MODELS[:]
+    """
+    Nunca estoura exceção. Se algum provider não estiver disponível,
+    simplesmente retorna lista vazia dele.
+    """
+    prov = (provider or "").strip()
 
-    # Merge sem duplicar (preserva ordem)
+    if prov == "OpenRouter":
+        return list(OR_MODELS or [])
+    if prov == "Together":
+        return list(TG_MODELS or [])
+    if prov == "HuggingFace":
+        return list(HF_MODELS or [])
+
     out: List[str] = []
-    for lst in (OR_MODELS, TG_MODELS, HF_MODELS):
+    for lst in (OR_MODELS or [], TG_MODELS or [], HF_MODELS or []):
         for m in lst:
-            if m not in out:
+            if m and m not in out:
                 out.append(m)
-    return out
+
+    # fallback visual só se realmente ficou vazio
+    return out or [SAFE_FALLBACK_MODEL]
 
 
-# ============================================================
-# NORMALIZAÇÃO DE MODEL ID (corrige prefixos ruins vindos da UI)
-# ============================================================
-def _strip_provider_prefix(raw: str) -> tuple[str, str | None]:
-    """
-    Aceita modelos vindos como:
-      - "together/<id>"
-      - "hf/<id>" ou "huggingface/<id>"
-      - "openrouter/<id>"
-
-    Retorna (model_sem_prefixo, provider_hint_ou_None)
-
-    Observação:
-      - "openrouter/auto" é um model id real; mantemos como OpenRouter.
-      - Para "together/<id>", removemos o prefixo e deixamos provider_hint="Together".
-        Porém: se o <id> estiver em HF_MODELS, vamos tratar como HuggingFace (salvamento).
-    """
-    m = (raw or "").strip()
-    low = m.lower()
-
-    if low.startswith("huggingface/"):
-        return (m.split("/", 1)[1].strip(), "HuggingFace")
-    if low.startswith("hf/"):
-        return (m.split("/", 1)[1].strip(), "HuggingFace")
-
-    if low.startswith("together/"):
-        return (m.split("/", 1)[1].strip(), "Together")
-
-    if low.startswith("openrouter/"):
-        # openrouter/auto é válido; mantém o prefixo e sinaliza OpenRouter
-        return (m.strip(), "OpenRouter")
-
-    return (m, None)
-
-
-def _normalize_model_id(raw: str) -> str:
-    if not raw:
-        return SAFE_FALLBACK_MODEL
-
-    model, _hint = _strip_provider_prefix(raw)
-
-    low = model.lower().strip()
-    if low in MODEL_ALIASES:
-        return MODEL_ALIASES[low]
-
-    return model
-
-
-# ============================================================
-# IDENTIFICAÇÃO DO PROVEDOR
-# ============================================================
+# -----------------------------------------
+# Identificação correta do provedor
+# -----------------------------------------
 def _provider_for(model_id: str) -> str:
     m = (model_id or "").strip()
     low = m.lower()
 
-    # 0) Prefixos explícitos vencem sempre
-    if low.startswith("together/"):
-        return "Together"
-    if low.startswith(("hf/", "huggingface/")):
+    # ✅ 0) HF explícito por lista (mais forte)
+    if m in (HF_MODELS or []):
         return "HuggingFace"
-    if low.startswith(("openrouter/", "or/")):
-        return "OpenRouter"
 
-    # 1) Membership é a regra mais confiável
-    if m in HF_MODELS:
-        return "HuggingFace"
-    if m in TG_MODELS:
+    # ✅ 1) Together explícito (apenas prefixos que realmente são Together)
+    # NÃO incluir "zai-org/" aqui.
+    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/")):
         return "Together"
-    if m in OR_MODELS:
-        return "OpenRouter"
 
-    # 2) Heurísticas OpenRouter
+    # ✅ 2) OpenRouter explícito
     if low.endswith(":free"):
         return "OpenRouter"
     if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
         return "OpenRouter"
 
-    # 3) HF Router com sufixo ":provider" (se você usar algum dia)
-    hf_suffixes = set()
-    for mid in HF_MODELS:
-        if ":" in (mid or ""):
-            hf_suffixes.add((mid.rsplit(":", 1)[-1] or "").lower())
-    if ":" in low:
-        suffix = low.rsplit(":", 1)[-1]
-        if suffix in hf_suffixes:
-            return "HuggingFace"
+    # ✅ 3) Se o HF estiver configurado e o modelo parece HF (ex: "org/model" sem together/)
+    # Heurística segura: se está na lista HF_DEFAULT, já caiu no item 0.
+    # Então aqui só tenta HF se tiver chave e HF_MODELS não vazio e o modelo começar com prefixo de algum HF model.
+    if (HF_MODELS or []) and _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN"):
+        # se existir algum HF model com mesmo prefixo org/
+        for mid in HF_MODELS:
+            pref = (mid.split("/", 1)[0] + "/") if "/" in mid else ""
+            if pref and low.startswith(pref.lower()):
+                return "HuggingFace"
 
+    # Default
     return "OpenRouter"
+
+
+def _normalize_model_id(raw: str) -> str:
+    if not raw:
+        return SAFE_FALLBACK_MODEL
+    low = raw.lower().strip()
+    if low in MODEL_ALIASES:
+        return MODEL_ALIASES[low]
+    return raw
 
 
 def _should_fallback_openrouter(err: Exception) -> bool:
@@ -204,26 +181,25 @@ def _should_fallback_openrouter(err: Exception) -> bool:
     return any(t in msg for t in triggers)
 
 
-# ============================================================
+# -----------------------------------------
 # CHAMADA GERAL
-# ============================================================
+# -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
-    # pega hint + strip prefix
-    raw = model or ""
-    stripped, hint = _strip_provider_prefix(raw)
-
-    norm_model = _normalize_model_id(stripped)
-    provider = _provider_for(norm_model, provider_hint=hint)
+    norm_model = _normalize_model_id(model)
+    provider = _provider_for(norm_model)
 
     if provider == "HuggingFace":
+        if hf_chat is None:
+            raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
         resp = hf_chat(norm_model, messages, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
+        if together_chat is None:
+            raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
         resp = together_chat(norm_model, messages, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
-    # OpenRouter
     try:
         resp = openrouter_chat(norm_model, messages, **kwargs)
         return _normalize_reasoning_into_content(resp)
@@ -234,23 +210,9 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
         raise
 
 
-# ============================================================
-# CHAMADA STRICT (onde a Mary injeta coisas especiais)
-# ============================================================
 def route_chat_strict(model: str, payload: Dict[str, Any]):
-    """
-    payload deve conter:
-        messages: [...],
-        max_tokens: int,
-        temperature: float,
-        top_p: float,
-        extra: dict (opcional)
-    """
-    raw = model or ""
-    stripped, hint = _strip_provider_prefix(raw)
-
-    norm_model = _normalize_model_id(stripped)
-    provider = _provider_for(norm_model, provider_hint=hint)
+    norm_model = _normalize_model_id(model)
+    provider = _provider_for(norm_model)
 
     msgs = payload.get("messages", [])
     kwargs = {
@@ -264,10 +226,14 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
         kwargs["extra"] = extra
 
     if provider == "HuggingFace":
+        if hf_chat is None:
+            raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
         resp = hf_chat(norm_model, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
+        if together_chat is None:
+            raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
         resp = together_chat(norm_model, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
