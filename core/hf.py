@@ -8,7 +8,7 @@ from openai import OpenAI
 HF_BASE_URL = "https://router.huggingface.co/v1"
 
 DEFAULT_MODELS = [
-    "zai-org/GLM-4.7-FP8:zai-org",
+    "zai-org/GLM-4.7-FP8",
 ]
 
 def _client() -> OpenAI:
