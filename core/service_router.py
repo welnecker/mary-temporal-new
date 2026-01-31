@@ -12,22 +12,30 @@ try:
     from .openrouter import chat as openrouter_chat, DEFAULT_MODELS as OR_MODELS
 except Exception as e:
     OR_MODELS = []
+    _IMPORT_ERRORS["openrouter"] = f"{type(e).__name__}: {e}"
     def openrouter_chat(*args: Any, **kwargs: Any):
         raise RuntimeError(f"OpenRouter indisponível: {type(e).__name__}: {e}")
+
 
 # Together (opcional)
 try:
     from .together import chat as together_chat, DEFAULT_MODELS as TG_MODELS
-except Exception:
+except Exception as e:
     TG_MODELS = []
     together_chat = None  # type: ignore
+    _IMPORT_ERRORS["together"] = f"{type(e).__name__}: {e}"
 
 # HuggingFace Router (opcional)
 try:
     from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
-except Exception:
+except Exception as e:
     HF_MODELS = []
     hf_chat = None  # type: ignore
+    _IMPORT_ERRORS["hf"] = f"{type(e).__name__}: {e}"
+
+# core/service_router.py
+_IMPORT_ERRORS: Dict[str, str] = {}
+
 
 # ============================================================
 # Config
@@ -80,6 +88,26 @@ def _normalize_reasoning_into_content(resp: Any) -> Any:
 
 def _env_has_any(*keys: str) -> bool:
     return any(bool(os.getenv(k)) for k in keys)
+
+def import_errors() -> Dict[str, str]:
+    return dict(_IMPORT_ERRORS)
+
+def _raise_if_provider_error(resp: Any, provider: str) -> None:
+    # tuple: (data, used_model, provider)
+    data = resp[0] if isinstance(resp, tuple) and resp else resp
+
+    if not isinstance(data, dict):
+        return
+
+    # padrões comuns
+    if "error" in data and data["error"]:
+        raise RuntimeError(f"{provider} error: {data['error']}")
+    if "errors" in data and data["errors"]:
+        raise RuntimeError(f"{provider} errors: {data['errors']}")
+
+    # alguns providers jogam msg em "message"
+    if data.get("message") and isinstance(data.get("message"), str) and ("error" in data.get("message","").lower()):
+        raise RuntimeError(f"{provider} message: {data['message']}")
 
 
 # -------------------------
@@ -186,28 +214,53 @@ def _should_fallback_openrouter(err: Exception) -> bool:
 # -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     norm_model = _normalize_model_id(model)
-    provider = _provider_for(norm_model)
+    provider = _provider_for(norm_model)  # "OpenRouter" | "Together" | "HuggingFace"
 
     if provider == "HuggingFace":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
         resp = hf_chat(norm_model, messages, **kwargs)
-        return _normalize_reasoning_into_content(resp)
+        resp = _normalize_reasoning_into_content(resp)
+        _raise_if_provider_error(resp, "HuggingFace")
+
+        # ✅ garante tuple (data, used_model, used_provider)
+        if isinstance(resp, tuple):
+            return resp
+        return (resp, norm_model, "huggingface")
 
     if provider == "Together":
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
         resp = together_chat(norm_model, messages, **kwargs)
-        return _normalize_reasoning_into_content(resp)
+        resp = _normalize_reasoning_into_content(resp)
+        _raise_if_provider_error(resp, "Together")
 
+        # ✅ garante tuple (data, used_model, used_provider)
+        if isinstance(resp, tuple):
+            return resp
+        return (resp, norm_model, "together")
+
+    # OpenRouter
     try:
         resp = openrouter_chat(norm_model, messages, **kwargs)
-        return _normalize_reasoning_into_content(resp)
+        resp = _normalize_reasoning_into_content(resp)
+        _raise_if_provider_error(resp, "OpenRouter")
+
+        # ✅ se OpenRouter não devolver tuple, padroniza também
+        if isinstance(resp, tuple):
+            return resp
+        return (resp, norm_model, "openrouter")
+
     except RuntimeError as e:
         if _should_fallback_openrouter(e):
             resp = openrouter_chat(SAFE_FALLBACK_MODEL, messages, **kwargs)
-            return _normalize_reasoning_into_content(resp)
+            resp = _normalize_reasoning_into_content(resp)
+            _raise_if_provider_error(resp, "OpenRouter")
+            if isinstance(resp, tuple):
+                return resp
+            return (resp, SAFE_FALLBACK_MODEL, "openrouter")
         raise
+
 
 
 def route_chat_strict(model: str, payload: Dict[str, Any]):
