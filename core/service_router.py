@@ -150,53 +150,42 @@ def _normalize_model_id(raw: str) -> str:
 # ============================================================
 # IDENTIFICAÇÃO DO PROVEDOR
 # ============================================================
-def _provider_for(model_id: str, *, provider_hint: str | None = None) -> str:
-    """
-    Regra de ouro:
-      1) Se estiver explicitamente em HF_MODELS => HuggingFace
-      2) Se hint existir e fizer sentido => usa hint (com salvamento)
-      3) Heurísticas por prefixos/sufixos
-    """
+def _provider_for(model_id: str) -> str:
     m = (model_id or "").strip()
     low = m.lower()
 
-    # 1) Se estiver explicitamente na lista HF, respeita (isso evita cair em Together por engano)
+    # 0) Prefixos explícitos vencem sempre
+    if low.startswith("together/"):
+        return "Together"
+    if low.startswith(("hf/", "huggingface/")):
+        return "HuggingFace"
+    if low.startswith(("openrouter/", "or/")):
+        return "OpenRouter"
+
+    # 1) Membership é a regra mais confiável
     if m in HF_MODELS:
         return "HuggingFace"
-
-    # 2) Hint (vindo de "hf/<id>", "together/<id>", etc.)
-    if provider_hint == "HuggingFace":
-        return "HuggingFace"
-    if provider_hint == "Together":
-        # ✅ salvamento: se o modelo dentro do prefixo Together for um HF_MODEL, trata como HF
-        if m in HF_MODELS:
-            return "HuggingFace"
+    if m in TG_MODELS:
         return "Together"
-    if provider_hint == "OpenRouter":
+    if m in OR_MODELS:
         return "OpenRouter"
 
-    # 3) Together explícito / padrões comuns (sem incluir zai-org/)
-    if low.startswith(("deepseek-ai/", "moonshotai/", "together/", "google/")):
-        return "Together"
-
-    # 4) OpenRouter explícito (inclui sufixos ':free')
-    if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
-        return "OpenRouter"
+    # 2) Heurísticas OpenRouter
     if low.endswith(":free"):
         return "OpenRouter"
+    if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
+        return "OpenRouter"
 
-    # 5) HuggingFace Router: trate como HF se o sufixo após ":" for um provider HF conhecido
+    # 3) HF Router com sufixo ":provider" (se você usar algum dia)
     hf_suffixes = set()
     for mid in HF_MODELS:
         if ":" in (mid or ""):
             hf_suffixes.add((mid.rsplit(":", 1)[-1] or "").lower())
-
     if ":" in low:
         suffix = low.rsplit(":", 1)[-1]
         if suffix in hf_suffixes:
             return "HuggingFace"
 
-    # Default
     return "OpenRouter"
 
 
