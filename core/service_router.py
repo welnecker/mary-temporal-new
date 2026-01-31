@@ -67,12 +67,14 @@ def _normalize_reasoning_into_content(resp: Any) -> Any:
 def available_providers() -> List[Tuple[str, bool, str]]:
     have_or = bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN"))
     have_tg = bool(os.getenv("TOGETHER_API_KEY"))
-    have_hf = bool(os.getenv("HUGGINGFACE_API_KEY"))
+    # agora checa HUGGINGFACE_API_KEY ou HF_TOKEN
+    have_hf = bool(os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN"))
     return [
         ("OpenRouter", have_or, "OK" if have_or else "sem chave"),
         ("Together", have_tg, "OK" if have_tg else "sem chave"),
         ("HuggingFace", have_hf, "OK" if have_hf else "sem chave"),
     ]
+
 
 
 def list_models(provider: str | None = None) -> List[str]:
@@ -99,10 +101,9 @@ def _provider_for(model_id: str) -> str:
     m = (model_id or "").strip()
     low = m.lower()
 
-    # 1) Together explícito / padrões comuns
-    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/", "zai-org/")):
+    # slugs “zai-org/…” não devem cair em Together
+    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/")):
         return "Together"
-
 
     # 2) OpenRouter explícito (IMPORTANTE: OpenRouter usa sufixos como ':free')
     if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
