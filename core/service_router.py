@@ -100,8 +100,9 @@ def _provider_for(model_id: str) -> str:
     low = m.lower()
 
     # 1) Together explícito / padrões comuns
-    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/")):
+    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/", "zai-org/")):
         return "Together"
+
 
     # 2) OpenRouter explícito (IMPORTANTE: OpenRouter usa sufixos como ':free')
     if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
