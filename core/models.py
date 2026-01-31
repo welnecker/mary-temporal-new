@@ -18,7 +18,7 @@ TOGETHER_DEFAULT = [
 
 # ✅ NOVO: Hugging Face Router defaults
 HF_DEFAULT = [
-    "zai-org/GLM-4.7",
+    "zai-org/GLM-4.7:cerebras",
 ]
 
 def _env_list(var: str, defaults: List[str]) -> List[str]:
@@ -46,6 +46,6 @@ def available_providers() -> List[str]:
     if os.getenv("TOGETHER_API_KEY"):
         out.append("together")
     # ✅ NOVO
-    if os.getenv("HF_TOKEN"):
+    if os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY"):
         out.append("hf")
     return out or ["openrouter", "together", "hf"]  # fallback visual
