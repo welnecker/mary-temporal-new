@@ -1246,41 +1246,50 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
 
 
 def _router_ping_once(user: str, model: str) -> dict:
-    """
-    Ping/Pong via core.service_router (fonte única).
-    NÃO chama OpenRouter direto, para funcionar com HuggingFace/Together/OpenRouter.
-    """
+    import core.service_router as service_router
+
     prompt = "Responda APENAS com a palavra: PONG"
     messages = [{"role": "user", "content": prompt}]
 
     try:
-        # service_router.chat() deve retornar:
-        #   - tuple(data, used_model, provider)
-        # ou dict OpenAI-like (dependendo do provider)
-        resp = service_router.chat(
+        raw = service_router.chat(
             model=str(model or "").strip(),
             messages=messages,
-            max_tokens=30,
+            max_tokens=20,
             temperature=0.0,
             top_p=1.0,
         )
 
-        # extrai texto (você já tem isso no arquivo)
-        txt = _extract_router_text(resp) or ""
+        # raw pode ser:
+        # - dict OpenAI-like
+        # - tuple(data, used_model, provider)
+        data = raw
+        used_model = None
+        used_provider = None
 
-        # extrai provider/model usado (você já tem isso no arquivo)
-        prov, used_model = _extract_router_used_model_provider(resp)
+        if isinstance(raw, tuple) and len(raw) >= 1:
+            data = raw[0]
+            if len(raw) >= 2:
+                used_model = raw[1]
+            if len(raw) >= 3:
+                used_provider = raw[2]
 
-        pong_ok = "PONG" in txt.upper()
+        txt = ""
+        try:
+            txt = (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content") or ""
+        except Exception:
+            txt = ""
+
+        ok = "PONG" in (txt or "").upper()
 
         return {
-            "ok": bool(txt.strip()) and pong_ok,
+            "ok": ok,
             "status": 200,
             "ui_model": model,
-            "used_model": used_model or model,
-            "used_provider": prov or "—",
-            "text": txt[:300],
-            "raw_type": type(resp).__name__,
+            "used_model": used_model or (data.get("model") if isinstance(data, dict) else None),
+            "used_provider": used_provider,
+            "text": (txt or "")[:300],
+            "raw": (str(data)[:1200] if data is not None else ""),
         }
 
     except Exception as e:
