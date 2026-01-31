@@ -1246,46 +1246,50 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
 
 
 def _router_ping_once(user: str, model: str) -> dict:
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 30,
-        "temperature": 0.0,
-    }
+    """
+    Ping/Pong via core.service_router (fonte única).
+    NÃO chama OpenRouter direto, para funcionar com HuggingFace/Together/OpenRouter.
+    """
+    prompt = "Responda APENAS com a palavra: PONG"
+    messages = [{"role": "user", "content": prompt}]
 
     try:
-        r = httpx.post(url, headers=headers, json=payload, timeout=30.0)
-        raw = r.text
-        if r.status_code >= 400:
-            return {"ok": False, "status": r.status_code, "error": raw, "ui_model": model}
+        # service_router.chat() deve retornar:
+        #   - tuple(data, used_model, provider)
+        # ou dict OpenAI-like (dependendo do provider)
+        resp = service_router.chat(
+            model=str(model or "").strip(),
+            messages=messages,
+            max_tokens=30,
+            temperature=0.0,
+            top_p=1.0,
+        )
 
-        data = r.json()
-        txt = ""
-        try:
-            txt = (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content") or ""
-        except Exception:
-            txt = ""
+        # extrai texto (você já tem isso no arquivo)
+        txt = _extract_router_text(resp) or ""
 
-        # se o provider/model vier no body, ótimo (às vezes vem; às vezes não)
-        used_model = data.get("model")
-        used_provider = data.get("provider")
+        # extrai provider/model usado (você já tem isso no arquivo)
+        prov, used_model = _extract_router_used_model_provider(resp)
+
+        pong_ok = "PONG" in txt.upper()
 
         return {
-            "ok": True,
-            "status": r.status_code,
+            "ok": bool(txt.strip()) and pong_ok,
+            "status": 200,
             "ui_model": model,
-            "used_model": used_model,
-            "used_provider": used_provider,
+            "used_model": used_model or model,
+            "used_provider": prov or "—",
             "text": txt[:300],
-            "raw": raw[:1200],
+            "raw_type": type(resp).__name__,
         }
+
     except Exception as e:
-        return {"ok": False, "status": None, "error": f"{type(e).__name__}: {e}", "ui_model": model}
+        return {
+            "ok": False,
+            "status": None,
+            "error": f"{type(e).__name__}: {e}",
+            "ui_model": model,
+        }
 
 
 
