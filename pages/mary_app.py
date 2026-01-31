@@ -1664,8 +1664,22 @@ def main() -> None:
 
         try:
             all_models = service_router.list_models() or []
-        except Exception:
+            st.session_state["models_debug"] = {
+                "ok": True,
+                "len": len(all_models),
+                "head": all_models[:10],
+                "providers": (service_router.available_providers() if hasattr(service_router, "available_providers") else "—"),
+                "err": None,
+            }
+        except Exception as e:
             all_models = []
+            st.session_state["models_debug"] = {
+                "ok": False,
+                "len": 0,
+                "head": [],
+                "providers": "—",
+                "err": f"{type(e).__name__}: {e}",
+            }
 
         if not all_models:
             all_models = [FALLBACK_MODEL]
@@ -1682,6 +1696,9 @@ def main() -> None:
             index=idx,
             key="model",
         )
+        with st.expander("🧪 Debug modelos (service_router)", expanded=True):
+            st.json(st.session_state.get("models_debug") or {})
+
 
         # ======================================================
         # ✅ Provider detectado para o modelo selecionado
