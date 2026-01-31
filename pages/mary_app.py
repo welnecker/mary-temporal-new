@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 # pages/mary_app.py
 
 # ==========================================================
@@ -13,6 +12,7 @@ import inspect
 from typing import Any
 import streamlit as st
 import httpx
+import core.service_router as service_router
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
@@ -1246,8 +1246,6 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
 
 
 def _router_ping_once(user: str, model: str) -> dict:
-    import core.service_router as service_router
-
     prompt = "Responda APENAS com a palavra: PONG"
     messages = [{"role": "user", "content": prompt}]
 
@@ -1749,11 +1747,11 @@ def main() -> None:
                 # fallback: se o ping não devolveu used_provider, tenta detectar pelo model(UI)
                 if not used_p:
                     try:
-                        import core.service_router as service_router
                         if hasattr(service_router, "_provider_for"):
                             used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
                     except Exception:
                         used_p = None
+
         
                 st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
         
