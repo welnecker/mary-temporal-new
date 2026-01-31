@@ -1260,13 +1260,11 @@ def _router_ping_once(user: str, model: str) -> dict:
             top_p=1.0,
         )
 
-        # raw pode ser:
-        # - dict OpenAI-like
-        # - tuple(data, used_model, provider)
         data = raw
         used_model = None
         used_provider = None
 
+        # aceita tuple(data, used_model, provider)
         if isinstance(raw, tuple) and len(raw) >= 1:
             data = raw[0]
             if len(raw) >= 2:
@@ -1286,10 +1284,9 @@ def _router_ping_once(user: str, model: str) -> dict:
             "ok": ok,
             "status": 200,
             "ui_model": model,
-            "used_model": used_model or (data.get("model") if isinstance(data, dict) else None),
+            "used_model": used_model,
             "used_provider": used_provider,
             "text": (txt or "")[:300],
-            "raw": (str(data)[:1200] if data is not None else ""),
         }
 
     except Exception as e:
@@ -1299,7 +1296,6 @@ def _router_ping_once(user: str, model: str) -> dict:
             "error": f"{type(e).__name__}: {e}",
             "ui_model": model,
         }
-
 
 
     prompt = 'Responda APENAS com a palavra: PONG'
@@ -1687,6 +1683,33 @@ def main() -> None:
             key="model",
         )
 
+        # ======================================================
+        # ✅ Provider detectado para o modelo selecionado
+        # ======================================================
+        try:
+            # service_router é o core.service_router importado como "service_router" no seu arquivo
+            # vamos usar a função interna de detecção se existir; se não, usamos heurística simples.
+            prov_detected = None
+
+            # tenta usar _provider_for (mesmo sendo "privada", é estável pra debug)
+            if hasattr(service_router, "_provider_for"):
+                prov_detected = service_router._provider_for(str(st.session_state.get("model") or "").strip())
+
+            # fallback heurístico (caso você remova _provider_for)
+            if not prov_detected:
+                msel = str(st.session_state.get("model") or "").strip().lower()
+                if msel.startswith("together/"):
+                    prov_detected = "Together"
+                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
+                    prov_detected = "HuggingFace"
+                else:
+                    prov_detected = "OpenRouter"
+
+            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
+        except Exception:
+            st.caption("🔌 Provider detectado: **—**")
+
+
         st.markdown("---")
         st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
 
@@ -1702,18 +1725,34 @@ def main() -> None:
             if ping.get("ok"):
                 st.success("✅ Ping executado.")
                 st.write("Modelo (UI):", ping.get("ui_model") or "—")
-                st.write("Usado (router):", f"{ping.get('used_provider') or '—'} / {ping.get('used_model') or '—'}")
+        
+                used_p = ping.get("used_provider")
+                used_m = ping.get("used_model")
+        
+                # fallback: se o ping não devolveu used_provider, tenta detectar pelo model(UI)
+                if not used_p:
+                    try:
+                        import core.service_router as service_router
+                        if hasattr(service_router, "_provider_for"):
+                            used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
+                    except Exception:
+                        used_p = None
+        
+                st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
+        
                 st.caption("PONG (trecho retornado):")
                 st.code(ping.get("text") or "")
-                if not ping.get("used_model"):
+        
+                if not used_m:
                     st.warning(
                         "⚠️ O router NÃO retornou o modelo usado no payload. "
-                        "Nesse caso, a confirmação só vale pelo 'PONG' + modelo(UI). "
-                        "Se quiser 100% garantido, a gente ajusta o service_router.chat para incluir used_model/used_provider."
+                        "Nesse caso, a confirmação vale por: 'PONG' + Provider detectado + Modelo(UI). "
+                        "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
                     )
             else:
                 st.error("❌ Falha no ping.")
                 st.code(ping.get("error") or "erro desconhecido")
+
 
         st.markdown("---")
         st.subheader("🧨 Último erro (service)")
