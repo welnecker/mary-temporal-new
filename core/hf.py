@@ -15,15 +15,9 @@ DEFAULT_MODELS: List[str] = [
 ]
 
 def _client() -> OpenAI:
-    """
-    Instancia um cliente OpenAI apontando para o router da Hugging Face.
-    Aceita token em HUGGINGFACE_API_KEY ou HF_TOKEN.
-    """
     token = os.getenv("HUGGINGFACE_API_KEY") or os.getenv("HF_TOKEN")
     if not token:
-        raise RuntimeError(
-            "É necessário definir HUGGINGFACE_API_KEY ou HF_TOKEN nos secrets do Streamlit Cloud."
-        )
+        raise RuntimeError("HUGGINGFACE_API_KEY (ou HF_TOKEN) não configurado no Secrets do Streamlit Cloud.")
     return OpenAI(base_url=HF_BASE_URL, api_key=token)
 
 def chat(
