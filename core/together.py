@@ -9,6 +9,7 @@ DEFAULT_MODELS = [
     "together/meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     "together/Qwen/Qwen2.5-72B-Instruct",
     "together/Qwen/QwQ-32B",
+    "together/zai-org/GLM-4.7",
 ]
 
 TOGETHER_BASE_URL = os.getenv(
