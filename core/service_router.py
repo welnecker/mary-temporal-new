@@ -325,10 +325,12 @@ def call_model(*args: Any, **kwargs: Any):
 def route_chat_strict(model: str, payload: Dict[str, Any]):
     norm_model = _normalize_model_id(model)
     provider = _provider_for(norm_model)
-    model_to_send = _model_for_provider(norm_model, provider)
+
+    # ✅ define call_model aqui também (BUGFIX do NameError)
+    call_model = _model_for_provider(norm_model, provider)
 
     msgs = payload.get("messages", [])
-    kwargs: Dict[str, Any] = {
+    kwargs = {
         "max_tokens": payload.get("max_tokens", 1024),
         "temperature": payload.get("temperature", 0.7),
         "top_p": payload.get("top_p", 0.95),
@@ -341,17 +343,17 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
     if provider == "HuggingFace":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
-        resp = hf_chat(model_to_send, msgs, **kwargs)
+        resp = hf_chat(call_model, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
-        resp = together_chat(model_to_send, msgs, **kwargs)
+        resp = together_chat(call_model, msgs, **kwargs)  # ✅ usa call_model (sem prefixo)
         return _normalize_reasoning_into_content(resp)
 
     try:
-        resp = openrouter_chat(norm_model, msgs, **kwargs)
+        resp = openrouter_chat(call_model, msgs, **kwargs)  # ✅ usa call_model por consistência
         return _normalize_reasoning_into_content(resp)
     except RuntimeError as e:
         if _should_fallback_openrouter(e):
