@@ -1249,6 +1249,43 @@ def _router_ping_once(user: str, model: str) -> dict:
     prompt = "Responda APENAS com a palavra: PONG"
     messages = [{"role": "user", "content": prompt}]
 
+    def _safe_extract_text(data: Any) -> str:
+        """
+        Extrai texto de respostas OpenAI-like (dict) e variantes.
+        """
+        if not isinstance(data, dict):
+            return ""
+        try:
+            choices = data.get("choices") or []
+            if not isinstance(choices, list) or not choices:
+                return ""
+            c0 = choices[0] or {}
+
+            # OpenAI-like: choices[0].message.content
+            msg = c0.get("message") or {}
+            ct = msg.get("content")
+
+            if isinstance(ct, str):
+                return ct
+
+            # Alguns providers retornam content como lista de blocos
+            if isinstance(ct, list):
+                parts: list[str] = []
+                for item in ct:
+                    if isinstance(item, str):
+                        parts.append(item)
+                    elif isinstance(item, dict):
+                        t = item.get("text")
+                        if isinstance(t, str):
+                            parts.append(t)
+                return "\n".join([p for p in parts if p])
+
+            # fallback antigo: choices[0].text
+            txt2 = c0.get("text")
+            return txt2 if isinstance(txt2, str) else ""
+        except Exception:
+            return ""
+
     try:
         raw = service_router.chat(
             model=str(model or "").strip(),
@@ -1258,40 +1295,54 @@ def _router_ping_once(user: str, model: str) -> dict:
             top_p=1.0,
         )
 
+        # ✅ aceita tuple(data, used_model, provider)
         data = raw
         used_model = None
         used_provider = None
 
-        # aceita tuple(data, used_model, provider)
         if isinstance(raw, tuple) and len(raw) >= 1:
             data = raw[0]
-            if len(raw) >= 2:
-                used_model = raw[1]
-            if len(raw) >= 3:
-                used_provider = raw[2]
+            if len(raw) >= 2 and isinstance(raw[1], str):
+                used_model = raw[1].strip() or None
+            if len(raw) >= 3 and isinstance(raw[2], str):
+                used_provider = raw[2].strip() or None
 
-        txt = ""
-        try:
-            txt = (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content") or ""
-        except Exception:
-            txt = ""
-
+        txt = _safe_extract_text(data)
         ok = "PONG" in (txt or "").upper()
 
+        # ✅ fallback provider (se router não devolveu)
+        if not used_provider:
+            try:
+                if hasattr(service_router, "_provider_for"):
+                    used_provider = service_router._provider_for(str(model or "").strip())
+            except Exception:
+                used_provider = None
+
+        # ✅ guarda um preview pra debug (não explode UI)
+        try:
+            st.session_state["mary_ping_raw_summary"] = _summarize_raw(raw)
+        except Exception:
+            st.session_state["mary_ping_raw_summary"] = {"raw_type": type(raw).__name__}
+
         return {
-            "ok": ok,
+            "ok": bool(ok),
             "status": 200,
             "ui_model": model,
             "used_model": used_model,
             "used_provider": used_provider,
-            "text": (txt or "")[:300],
+            "text": (txt or "")[:600],
+            "raw_type": type(raw).__name__,
         }
 
     except Exception as e:
+        # ✅ erro REAL + snapshot do raw se existir no exception
+        err_txt = f"{type(e).__name__}: {e}"
+        st.session_state["mary_ping_last_error"] = err_txt
+
         return {
             "ok": False,
             "status": None,
-            "error": f"{type(e).__name__}: {e}",
+            "error": err_txt,
             "ui_model": model,
         }
 
@@ -1769,7 +1820,9 @@ def main() -> None:
                     )
             else:
                 st.error("❌ Falha no ping.")
-                st.code(ping.get("error") or "erro desconhecido")
+                err = ping.get("error")
+                st.code(err if isinstance(err, str) and err.strip() else str(ping))
+
 
 
         st.markdown("---")
