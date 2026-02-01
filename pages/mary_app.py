@@ -1246,13 +1246,12 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
 
 
 def _router_ping_once(user: str, model: str) -> dict:
-    prompt = "Responda APENAS com a palavra: PONG"
-    messages = [{"role": "user", "content": prompt}]
+    # Ping em 2 tentativas:
+    # 1) user-only "PONG"
+    # 2) system+user (mais forte)
+    # Considera OK se o router confirmou provider/model, mesmo sem "PONG".
 
     def _safe_extract_text(data: Any) -> str:
-        """
-        Extrai texto de respostas OpenAI-like (dict) e variantes.
-        """
         if not isinstance(data, dict):
             return ""
         try:
@@ -1260,15 +1259,12 @@ def _router_ping_once(user: str, model: str) -> dict:
             if not isinstance(choices, list) or not choices:
                 return ""
             c0 = choices[0] or {}
-
-            # OpenAI-like: choices[0].message.content
             msg = c0.get("message") or {}
             ct = msg.get("content")
 
             if isinstance(ct, str):
                 return ct
 
-            # Alguns providers retornam content como lista de blocos
             if isinstance(ct, list):
                 parts: list[str] = []
                 for item in ct:
@@ -1280,22 +1276,22 @@ def _router_ping_once(user: str, model: str) -> dict:
                             parts.append(t)
                 return "\n".join([p for p in parts if p])
 
-            # fallback antigo: choices[0].text
             txt2 = c0.get("text")
             return txt2 if isinstance(txt2, str) else ""
         except Exception:
             return ""
 
-    try:
+    def _do_call(msgs: list[dict[str, str]]) -> tuple[Any, str | None, str | None, str]:
         raw = service_router.chat(
             model=str(model or "").strip(),
-            messages=messages,
-            max_tokens=20,
+            messages=msgs,
+            max_tokens=12,        # menor pra evitar “explicação”
             temperature=0.0,
             top_p=1.0,
+            # se seu router repassa extra pro Together, ótimo. Se não, ignora.
+            extra={"stop": ["\n"]},
         )
 
-        # ✅ aceita tuple(data, used_model, provider)
         data = raw
         used_model = None
         used_provider = None
@@ -1308,9 +1304,8 @@ def _router_ping_once(user: str, model: str) -> dict:
                 used_provider = raw[2].strip() or None
 
         txt = _safe_extract_text(data)
-        ok = "PONG" in (txt or "").upper()
 
-        # ✅ fallback provider (se router não devolveu)
+        # fallback provider pelo model(UI)
         if not used_provider:
             try:
                 if hasattr(service_router, "_provider_for"):
@@ -1318,14 +1313,45 @@ def _router_ping_once(user: str, model: str) -> dict:
             except Exception:
                 used_provider = None
 
-        # ✅ guarda um preview pra debug (não explode UI)
+        return raw, used_model, used_provider, txt
+
+    # tentativa 1 (simples)
+    prompt = "Responda APENAS com a palavra: PONG"
+    msgs1 = [{"role": "user", "content": prompt}]
+
+    # tentativa 2 (mais forte)
+    msgs2 = [
+        {"role": "system", "content": "Responda somente com 'PONG'. Nenhuma outra palavra, número ou pontuação."},
+        {"role": "user", "content": "PONG"},
+    ]
+
+    try:
+        raw, used_model, used_provider, txt = _do_call(msgs1)
+        pong_ok = "PONG" in (txt or "").upper()
+
+        # se não veio PONG, tenta a 2
+        if not pong_ok:
+            raw2, used_model2, used_provider2, txt2 = _do_call(msgs2)
+            # se segunda tentativa trouxe algo melhor, substitui
+            if (txt2 or "").strip():
+                raw, used_model, used_provider, txt = raw2, used_model2, used_provider2, txt2
+            pong_ok = "PONG" in (txt or "").upper()
+
+        # resumo raw (pra debug)
         try:
             st.session_state["mary_ping_raw_summary"] = _summarize_raw(raw)
         except Exception:
             st.session_state["mary_ping_raw_summary"] = {"raw_type": type(raw).__name__}
 
+        # ✅ critério correto:
+        # - OK de transporte (a call não explodiu)
+        # - OK de roteamento (router informou provider/model)
+        ok_transport = True
+        ok_route = bool((used_provider or "").strip()) and bool((used_model or "").strip())
+
         return {
-            "ok": bool(ok),
+            "ok": bool(ok_transport and ok_route),   # ✅ não depende mais do PONG
+            "pong_ok": bool(pong_ok),               # ✅ informa se o teste “PONG” passou
             "status": 200,
             "ui_model": model,
             "used_model": used_model,
@@ -1335,16 +1361,9 @@ def _router_ping_once(user: str, model: str) -> dict:
         }
 
     except Exception as e:
-        # ✅ erro REAL + snapshot do raw se existir no exception
         err_txt = f"{type(e).__name__}: {e}"
         st.session_state["mary_ping_last_error"] = err_txt
-
-        return {
-            "ok": False,
-            "status": None,
-            "error": err_txt,
-            "ui_model": model,
-        }
+        return {"ok": False, "status": None, "error": err_txt, "ui_model": model}
 
 
     prompt = 'Responda APENAS com a palavra: PONG'
@@ -1792,7 +1811,13 @@ def main() -> None:
         ping = st.session_state.get("mary_ping_result")
         if isinstance(ping, dict):
             if ping.get("ok"):
-                st.success("✅ Ping executado.")
+                st.success("✅ Ping executado (router confirmou provider/model).")
+            
+                if not ping.get("pong_ok"):
+                    st.warning(
+                        "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
+                        "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
+                    )
                 st.write("Modelo (UI):", ping.get("ui_model") or "—")
         
                 used_p = ping.get("used_provider")
