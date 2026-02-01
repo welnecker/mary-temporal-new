@@ -109,6 +109,44 @@ def _raise_if_provider_error(resp: Any, provider: str) -> None:
     if data.get("message") and isinstance(data.get("message"), str) and ("error" in data.get("message","").lower()):
         raise RuntimeError(f"{provider} message: {data['message']}")
 
+def _strip_prefix(s: str, prefix: str) -> str:
+    s = (s or "").strip()
+    p = (prefix or "").strip()
+    if s.lower().startswith(p.lower()):
+        return s[len(p):].lstrip()
+    return s
+
+def _model_for_provider(model: str, provider: str) -> str:
+    m = (model or "").strip()
+    if provider == "Together":
+        # aceita "together/xxx" no UI, mas envia "xxx" pra API
+        return _strip_prefix(m, "together/")
+    if provider == "HuggingFace":
+        # se você decidir usar prefixos na UI
+        m = _strip_prefix(m, "hf/")
+        m = _strip_prefix(m, "huggingface/")
+        return m
+    return m
+def _strip_prefix(s: str, prefix: str) -> str:
+    s = (s or "").strip()
+    p = (prefix or "").strip()
+    if s.lower().startswith(p.lower()):
+        return s[len(p):].lstrip()
+    return s
+
+def _model_for_provider(model: str, provider: str) -> str:
+    m = (model or "").strip()
+    if provider == "Together":
+        # aceita "together/xxx" no UI, mas envia "xxx" pra API
+        return _strip_prefix(m, "together/")
+    if provider == "HuggingFace":
+        # se você decidir usar prefixos na UI
+        m = _strip_prefix(m, "hf/")
+        m = _strip_prefix(m, "huggingface/")
+        return m
+    return m
+
+
 
 # -------------------------
 # Providers disponíveis
@@ -215,11 +253,12 @@ def _should_fallback_openrouter(err: Exception) -> bool:
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     norm_model = _normalize_model_id(model)
     provider = _provider_for(norm_model)  # "OpenRouter" | "Together" | "HuggingFace"
+    call_model = _model_for_provider(norm_model, provider)  # ✅ NOVO
 
     if provider == "HuggingFace":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
-        resp = hf_chat(norm_model, messages, **kwargs)
+        resp = hf_chat(call_model, messages, **kwargs)
         resp = _normalize_reasoning_into_content(resp)
         _raise_if_provider_error(resp, "HuggingFace")
 
@@ -281,7 +320,7 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
     if provider == "HuggingFace":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
-        resp = hf_chat(norm_model, msgs, **kwargs)
+        resp = hf_chat(call_model, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
