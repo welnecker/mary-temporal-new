@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 import httpx
 
+# ✅ Lista pra UI (pode manter com prefixo "together/" porque o router pode usar isso na escolha)
 DEFAULT_MODELS = [
     "together/meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
     "together/Qwen/Qwen2.5-72B-Instruct",
@@ -12,6 +13,7 @@ DEFAULT_MODELS = [
     "together/zai-org/GLM-4.7",
 ]
 
+# ✅ Endpoint padrão do Together é /v1/chat/completions
 TOGETHER_BASE_URL = os.getenv(
     "TOGETHER_BASE_URL",
     "https://api.together.xyz/v1/chat/completions",
@@ -19,13 +21,31 @@ TOGETHER_BASE_URL = os.getenv(
 
 
 def _headers() -> Dict[str, str]:
-    key = os.getenv("TOGETHER_API_KEY", "")
+    key = (os.getenv("TOGETHER_API_KEY", "") or "").strip()
     if not key:
         raise RuntimeError("TOGETHER_API_KEY ausente.")
     return {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+
+
+def _strip_together_prefix(model: str) -> str:
+    m = (model or "").strip()
+    if m.lower().startswith("together/"):
+        return m.split("/", 1)[1].strip()
+    return m
+
+
+def _normalize_used_model_for_ui(used: str) -> str:
+    u = (used or "").strip()
+    if not u:
+        return ""
+    # se já vier "together/..." mantém
+    if u.lower().startswith("together/"):
+        return u
+    # normaliza pra UI como "together/<model>"
+    return f"together/{u}"
 
 
 def chat(
@@ -39,44 +59,51 @@ def chat(
 ) -> Tuple[Dict[str, Any], str, str]:
     """
     Wrapper para Together chat/completions.
-    Retorna (json, used_model, "together").
+    Retorna (json, used_model, "Together").
     """
-    # 👉 se vier "together/..." a gente tira o prefixo;
-    # 👉 se vier "deepseek-ai/..." a gente NÃO mexe.
-    if model.startswith("together/"):
-        model_to_send = model.replace("together/", "", 1)
-    else:
-        model_to_send = model
+
+    model_to_send = _strip_together_prefix(model)
 
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": temperature,
-        "top_p": top_p,
+        "max_tokens": int(max_tokens),
+        "temperature": float(temperature),
+        "top_p": float(top_p),
     }
-    if extra:
+    if isinstance(extra, dict) and extra:
         body.update(extra)
 
     timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
+
     try:
         with httpx.Client(timeout=timeout) as client:
             r = client.post(TOGETHER_BASE_URL, json=body, headers=_headers())
+
+            # ✅ erro com payload bruto (pra você enxergar de verdade)
             if r.status_code >= 400:
                 try:
                     err = r.json()
                 except Exception:
                     err = {"text": r.text}
-                raise RuntimeError(
-                    f"Together {r.status_code}: {err.get('error') or err.get('message') or err}"
-                )
+                raise RuntimeError(f"Together HTTP {r.status_code}: {err}")
+
             data = r.json()
-            used = data.get("model") or model_to_send
-            # normaliza só pra exibir
-            if not used.startswith("together/") and not used.startswith("deepseek-ai/"):
-                used = f"together/{used}"
-            return data, used, "together"
+            if not isinstance(data, dict):
+                raise RuntimeError(f"Together retornou tipo inesperado: {type(data).__name__}")
+
+            # ✅ garante que existe choices (ping depende disso)
+            choices = data.get("choices")
+            if not isinstance(choices, list) or not choices:
+                raise RuntimeError(f"Together sem choices: {data}")
+
+            used_raw = data.get("model") or model_to_send
+            used_ui = _normalize_used_model_for_ui(str(used_raw))
+
+            # ✅ Provider com mesmo casing do resto do app
+            return data, used_ui, "Together"
+
     except httpx.TimeoutException as e:
         raise RuntimeError("Together: timeout") from e
     except httpx.HTTPError as e:
-        raise RuntimeError(f"Falha Together: {e}") from e
+        raise RuntimeError(f"Together HTTPError: {e}") from e
