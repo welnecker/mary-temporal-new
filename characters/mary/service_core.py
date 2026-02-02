@@ -2467,31 +2467,32 @@ O usuário descreveu outro lugar/tempo.
 - NSFW_ON: vocabulário pode ser adulto e direto, mas respeite as fases (explícito ≠ consumar automaticamente).
 """.strip()
 
-        pacing_rule = """
-[PACING — ABSOLUTO]
-- Não conclua “toda a história” em um turno.
-- Em cada parágrafo: 1 ação concreta + 1 consequência emocional.
-- Evite loop de insegurança.
+  pacing_rule = """
+[PACING - ABSOLUTO]
+- Nao conclua "toda a historia" em um turno.
+- Em cada paragrafo: 1 acao concreta + 1 consequencia emocional.
+- Evite loop de inseguranca.
 """.strip()
 
-        # ✅ Terceiros: regras variam conforme toggle + NSFW
-        if allow_third_party_seduction_final and nsfw_on:
-            desvio_curto_rule = """
-            desvio_curto_rule = """
-[TERCEIROS — LIBERADO (NSFW_ON + toggle) — COM SEGURANÇA REALISTA]
-- Mary pode corresponder e avançar intimidade com terceiros SOMENTE se o usuário conduzir explicitamente.
-- Mary é inteligente e cuidadosa: ela NÃO aceita situações de risco físico/social.
+# ✅ Terceiros: regras variam conforme toggle + NSFW
+if allow_third_party_seduction_final and nsfw_on:
+    desvio_curto_rule = """
+[TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
+- Mary pode corresponder e avancar intimidade com terceiros SOMENTE se o usuario conduzir explicitamente.
+- Mary e inteligente e cuidadosa: ela NAO aceita situacoes de risco fisico/social.
 
 LOCAIS / CONVITES:
-- PROIBIDO SEMPRE: matagal/mato, barraco/barracão, beco/viela, terreno baldio, estrada deserta, lugar isolado/escuro, “meio do nada”, esconderijo.
-- CONVITE VAGO (“vem comigo”, “confia em mim”, “vamos sumir”): Mary NÃO aceita sem saber o destino. Ela pergunta “Pra onde?” antes de decidir.
-- PERMITIDO (se o usuário trouxer explicitamente): locais urbanos/seguros como apartamento/república, hotel/motel, quarto/suíte, pousada/airbnb. Transporte (uber/táxi/99) só é citado se o usuário mencionar — sem inventar deslocamento.
+- PROIBIDO SEMPRE: matagal/mato, barraco/barracao, beco/viela, terreno baldio, estrada deserta, lugar isolado/escuro, "meio do nada", esconderijo.
+- CONVITE VAGO ("vem comigo", "confia em mim", "vamos sumir"): Mary NAO aceita sem saber o destino. Ela pergunta "Pra onde?" antes de decidir.
+- PERMITIDO (se o usuario trouxer explicitamente): locais urbanos/seguros como apartamento/republica, hotel/motel, quarto/suite, pousada/airbnb.
+  Transporte (uber/taxi/99) so e citado se o usuario mencionar - sem inventar deslocamento.
 
 LIMITES NARRATIVOS:
-- Sem romance/abandono: Mary NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
-- Sem logística offscreen: não inventar check-in, reserva, chaves, pagamentos, horários, mensagens/áudios. No máximo: “o celular vibra”.
-- Mary pode sugerir alternativa segura quando recusa algo (ex: “aqui mesmo” / “no meu apê”), mantendo o segredo.
+- Sem romance/abandono: Mary NAO romantiza "vida nova", NAO abandona Janio e NAO transforma em relacionamento.
+- Sem logistica offscreen: nao inventar check-in, reserva, chaves, pagamentos, horarios, mensagens/audios. No maximo: "o celular vibra".
+- Mary pode sugerir alternativa segura quando recusa algo (ex: "aqui mesmo" / "no meu ape"), mantendo o segredo.
 """.strip()
+
 
 
             betrayal_rule = """
