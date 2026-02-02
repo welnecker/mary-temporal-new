@@ -1745,13 +1745,13 @@ def _violations(
         else:
             out.append("tone_romantic_when_intense")
         # ✅ Sensorialidade: no NSFW_RELAXED não punimos diálogo rápido/intenso
+       # Sensorialidade: APENAS em SAFE ou quando for explicitamente forçado
     enforce_density = bool(_ss_get("mary_enforce_sensory_density", False))
-    if (
-        nsfw_on
-        and (nsfw_profile != "NSFW_RELAXED" or enforce_density)
-        and _user_is_intense(user_text or "")
-        and _low_sensory_density(t)
-    ):
+
+    if (not nsfw_on) and _low_sensory_density(t):
+        out.append("low_sensory_density")
+
+    if nsfw_on and enforce_density and _low_sensory_density(t):
         out.append("low_sensory_density")
 
     # ======================================================
