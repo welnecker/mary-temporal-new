@@ -1716,7 +1716,7 @@ def _violations(
 
 
     # Finalização de cena fora de hora
-        if _RE_SCENE_FINALIZATION.search(t):
+    if _RE_SCENE_FINALIZATION.search(t):
         allowed = _finalization_allowed(user_text or "", int(phase or 0))
         if not allowed:
             # ✅ No NSFW_RELAXED, fase alta pode encerrar microciclo sem travar tudo
@@ -1773,8 +1773,9 @@ def _violations(
         if re.search(r"\b(barman|bartender|gar[cç]om|gar[cç]onete|atendente|bar)\b", ut, re.IGNORECASE):
             third_party_context = True
 
-        if third_party_context:
+    if third_party_context:
         if allow_third_party_seduction and nsfw_on:
+
             # ✅ Terceiro liberado: pode avançar intimidade
             # Mantém Janio intacto: sem “vida nova”, sem romance, sem abandono.
 
@@ -1833,11 +1834,7 @@ def _violations(
                 )
             )
 
-            if refused_hard and not did_any_step:
-                out.append("terceiro_liberado_travou")
-
-
-            # ✅ NOVO: "travou" — quando está liberado, Mary não pode ficar só no flerte recusando
+            # ✅ "travou" — quando está liberado, Mary não pode só recusar e ficar no flerte
             # sem dar 1 passo concreto (ação curta, no mesmo ambiente, sem logística).
             refused_hard = bool(
                 re.search(
@@ -2064,7 +2061,7 @@ def _repair_instruction(violations: List[str]) -> str:
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-        if "terceiro_local_perigoso" in violations:
+    if "terceiro_local_perigoso" in violations:
         bullets.append(
             "- TERCEIRO: LOCAL PERIGOSO. Mary NÃO aceita matagal/barraco/beco/viela/lugar isolado. "
             "Reescreva: recusa firme e realista, sem moralizar. Pode sugerir alternativa segura (apê/hotel) "
@@ -2374,7 +2371,8 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
 
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
-                nsfw_profile = _nsfw_profile(
+
+        nsfw_profile = _nsfw_profile(
             nsfw_on=bool(nsfw_on),
             allow_third_party_seduction=bool(allow_third_party_seduction_final),
         )
