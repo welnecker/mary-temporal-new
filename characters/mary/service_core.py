@@ -294,6 +294,36 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
     return False
 
 # ==========================================================
+# NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
+# ==========================================================
+def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
+    """
+    SAFE          -> NSFW off
+    STRICT        -> NSFW on (padrão)
+    NSFW_RELAXED  -> NSFW on + terceiros liberado (segredo)
+    """
+    if nsfw_on and allow_third_party_seduction:
+        return "NSFW_RELAXED"
+    if nsfw_on:
+        return "STRICT"
+    return "SAFE"
+# ==========================================================
+# NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
+# ==========================================================
+def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
+    """
+    SAFE          -> NSFW off
+    STRICT        -> NSFW on (padrão)
+    NSFW_RELAXED  -> NSFW on + terceiros liberado (segredo)
+    """
+    if nsfw_on and allow_third_party_seduction:
+        return "NSFW_RELAXED"
+    if nsfw_on:
+        return "STRICT"
+    return "SAFE"
+
+
+# ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -1639,8 +1669,9 @@ def _violations(
     user_text: str = "",
     phase: int = 0,
     nsfw_on: bool = False,
-    timeline: str = "",  # ✅ NOVO (não quebra chamadas antigas; deixe default)
-    allow_third_party_seduction: bool = False,  # ✅ NOVO
+    nsfw_profile: str = "SAFE",  # ✅ NOVO
+    timeline: str = "",
+    allow_third_party_seduction: bool = False,
 ) -> List[str]:
     """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
     t = (texto or "").strip()
@@ -1685,9 +1716,14 @@ def _violations(
 
 
     # Finalização de cena fora de hora
-    if _RE_SCENE_FINALIZATION.search(t):
-        if not _finalization_allowed(user_text or "", int(phase or 0)):
-            out.append("finalizou_cena")
+        if _RE_SCENE_FINALIZATION.search(t):
+        allowed = _finalization_allowed(user_text or "", int(phase or 0))
+        if not allowed:
+            # ✅ No NSFW_RELAXED, fase alta pode encerrar microciclo sem travar tudo
+            if nsfw_profile == "NSFW_RELAXED" and int(phase or 0) >= 3:
+                out.append("finalizou_cena_soft")
+            else:
+                out.append("finalizou_cena")
 
     # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
     if (not nsfw_on) and _is_explicit(t):
@@ -1702,9 +1738,20 @@ def _violations(
         out.append("nsfw_on_suavizou")
 
     # ✅ NSFW ON: se usuário está intenso e a resposta romantiza, isso é violação
+        # ✅ Romantização: no NSFW_RELAXED vira "soft" (não obriga repair)
     if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
-        out.append("tone_romantic_when_intense")
-    if nsfw_on and _user_is_intense(user_text or "") and _low_sensory_density(t):
+        if nsfw_profile == "NSFW_RELAXED":
+            out.append("tone_romantic_when_intense_soft")
+        else:
+            out.append("tone_romantic_when_intense")
+        # ✅ Sensorialidade: no NSFW_RELAXED não punimos diálogo rápido/intenso
+    enforce_density = bool(_ss_get("mary_enforce_sensory_density", False))
+    if (
+        nsfw_on
+        and (nsfw_profile != "NSFW_RELAXED" or enforce_density)
+        and _user_is_intense(user_text or "")
+        and _low_sensory_density(t)
+    ):
         out.append("low_sensory_density")
 
     # ======================================================
@@ -1726,10 +1773,11 @@ def _violations(
         if re.search(r"\b(barman|bartender|gar[cç]om|gar[cç]onete|atendente|bar)\b", ut, re.IGNORECASE):
             third_party_context = True
 
-    if third_party_context:
+        if third_party_context:
         if allow_third_party_seduction and nsfw_on:
-            # ✅ Terceiro liberado: NÃO bloqueia avanço/sexo
-            # Mantém lógica com Janio intacta: sem “vida nova”, sem romance, sem abandono.
+            # ✅ Terceiro liberado: pode avançar intimidade
+            # Mantém Janio intacto: sem “vida nova”, sem romance, sem abandono.
+
             if re.search(
                 r"\b(vou\s+embora\s+com\s+ele|larg(o|ar)\s+o\s+janio|"
                 r"n[aã]o\s+preciso\s+do\s+janio|"
@@ -1740,17 +1788,53 @@ def _violations(
             ):
                 out.append("terceiro_romantizou_abandono")
 
-            # ❌ Local perigoso: SEMPRE bloqueado
+            ut2 = (user_text or "").lower()
+
+            # 1) ❌ Local perigoso: SEMPRE bloqueado
             if _RE_DANGEROUS_LOCATIONS.search(t):
                 out.append("terceiro_local_perigoso")
-            
-            # ⚠️ Convite vago sem local seguro explícito
+
+            # 2) ⚠️ Convite vago: se não há local seguro explícito, Mary deve questionar/recusar
             elif _RE_VAGUE_INVITE.search(t) and not _RE_SAFE_LOCATIONS.search(t):
                 out.append("terceiro_convite_vago")
-            
-            # 🚫 Logística offscreen (check-in, deslocamento inventado)
-            elif _RE_RUNAWAY_INVITE.search(t):
-                out.append("terceiro_logistica_offscreen")
+
+            # 3) 🚫 Logística offscreen inventada:
+            # Se Mary mencionar hotel/motel/uber/apê/etc. na RESPOSTA,
+            # mas o usuário NÃO mencionou local seguro no PROMPT, então é invenção.
+            else:
+                mentioned_safe_place_in_reply = bool(_RE_SAFE_LOCATIONS.search(t))
+                user_named_safe_place = bool(_RE_SAFE_LOCATIONS.search(ut2))
+
+                if mentioned_safe_place_in_reply and not user_named_safe_place:
+                    out.append("terceiro_logistica_offscreen")
+
+            # 4) ✅ Travou (seu trecho atual pode continuar abaixo, se você quiser manter)
+            refused_hard = bool(
+                re.search(
+                    r"\b(n[aã]o\s+vou\s+trair|n[aã]o\s+posso|n[aã]o\s+vou|"
+                    r"n[aã]o\s+vai\s+rolar|n[aã]o\s+agora|"
+                    r"eu\s+paro|eu\s+recuo|eu\s+me\s+afasto)\b",
+                    t,
+                    re.IGNORECASE,
+                )
+            )
+
+            did_any_step = bool(
+                re.search(
+                    r"\b("
+                    r"eu\s+(vou|caminho|chego)\s+(at[eé]\s+)?(o\s+)?bar|"
+                    r"eu\s+(pego|aceito|tomo)\s+(o\s+)?drink|"
+                    r"eu\s+aproximo|"
+                    r"eu\s+encosto|"
+                    r"eu\s+beijo"
+                    r")\b",
+                    t,
+                    re.IGNORECASE,
+                )
+            )
+
+            if refused_hard and not did_any_step:
+                out.append("terceiro_liberado_travou")
 
 
             # ✅ NOVO: "travou" — quando está liberado, Mary não pode ficar só no flerte recusando
@@ -1979,6 +2063,31 @@ def _repair_instruction(violations: List[str]) -> str:
             "- Sensorialidade baixa. Reescreva com corpo e presença: respiração, pele, calor, pressão, ritmo, tremor, arrepio. "
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
+
+        if "terceiro_local_perigoso" in violations:
+        bullets.append(
+            "- TERCEIRO: LOCAL PERIGOSO. Mary NÃO aceita matagal/barraco/beco/viela/lugar isolado. "
+            "Reescreva: recusa firme e realista, sem moralizar. Pode sugerir alternativa segura (apê/hotel) "
+            "APENAS se o usuário tiver proposto isso."
+        )
+
+    if "terceiro_convite_vago" in violations:
+        bullets.append(
+            "- TERCEIRO: CONVITE VAGO. Mary não aceita 'vem comigo/sumir/surpresa' sem destino. "
+            "Ela questiona 'pra onde?' ou recusa se o outro insistir em segredo."
+        )
+
+    if "finalizou_cena_soft" in violations:
+        bullets.append(
+            "- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes."
+        )
+
+    if "tone_romantic_when_intense_soft" in violations:
+        bullets.append(
+            "- TOM (SOFT): reduza romantização exagerada, mas não precisa reescrever tudo. "
+            "Mantenha físico direto + tensão adulta."
+        )
+
 
 
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
@@ -2265,6 +2374,12 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
 
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
+                nsfw_profile = _nsfw_profile(
+            nsfw_on=bool(nsfw_on),
+            allow_third_party_seduction=bool(allow_third_party_seduction_final),
+        )
+        _ss_set("mary_nsfw_profile", nsfw_profile)
+
 
 
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
@@ -2497,6 +2612,8 @@ VOCÊ É MARY.
 
         TIMELINE ATUAL: {timeline_final}
         TERCEIROS_LIBERADOS: {bool(allow_third_party_seduction_final and nsfw_on)}
+        NSFW_PROFILE: {nsfw_profile}
+
 
 
         {user_name_block}
@@ -2635,6 +2752,7 @@ VOCÊ É MARY.
                     user_text=prompt,
                     phase=int(intimacy_phase),
                     nsfw_on=bool(nsfw_on),
+                    nsfw_profile=str(nsfw_profile),
                     timeline=timeline_final,
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
@@ -2883,6 +3001,7 @@ VOCÊ É MARY.
         user_text: str,
         phase: int,
         nsfw_on: bool,
+        nsfw_profile: str,  # ✅ NOVO
         timeline: str,
         allow_third_party_seduction: bool,
         diag: _Diag,
@@ -2942,6 +3061,7 @@ VOCÊ É MARY.
             user_text=user_text,
             phase=phase,
             nsfw_on=nsfw_on,
+            nsfw_profile=nsfw_profile,
             timeline=timeline,
             allow_third_party_seduction=allow_third_party_seduction,
         )
@@ -2970,7 +3090,12 @@ VOCÊ É MARY.
 
         # Repair precisa manter criatividade suficiente para não "matar" a cena,
         # mas com mais coerência (dinâmico).
-        repair_temperature = max(0.45, min(0.70, float(temperature) * 0.85))
+        # ✅ Repair: no NSFW_RELAXED, não “pasteuriza” a cena
+        if str(nsfw_profile) == "NSFW_RELAXED":
+            repair_temperature = max(0.65, min(0.85, float(temperature) * 0.95))
+        else:
+            repair_temperature = max(0.45, min(0.70, float(temperature) * 0.85))
+
 
         if needs_more_room:
             # Dá fôlego real para concluir frase/cena (evita truncamento).
@@ -3040,6 +3165,7 @@ VOCÊ É MARY.
                 user_text=user_text,
                 phase=phase,
                 nsfw_on=nsfw_on,
+                nsfw_profile=nsfw_profile,
                 timeline=timeline,
                 allow_third_party_seduction=allow_third_party_seduction,
             )
@@ -3068,7 +3194,14 @@ VOCÊ É MARY.
             hard_never_soft = {"terceiro_local_perigoso", "terceiro_convite_vago", "terceiro_logistica_offscreen"}
 
             # Violações realmente "suaves" (não quebram segurança/realismo estrutural)
-            soft_violations = {"low_sensory_density", "nsfw_on_suavizou", "finalizou_cena"}
+            soft_violations = {
+                "low_sensory_density",
+                "nsfw_on_suavizou",
+                "finalizou_cena",
+                "finalizou_cena_soft",
+                "tone_romantic_when_intense_soft",
+            }
+
 
             if vr and (not any(v in hard_never_soft for v in vr)) and all(v in soft_violations for v in vr):
                 # Aceitar com ajuste final, em vez de ir pro fallback genérico
