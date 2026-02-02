@@ -1571,6 +1571,54 @@ _RE_RUNAWAY_INVITE = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+
+# ==========================================================
+# TERCEIROS — CLASSIFICAÇÃO DE LOCAIS
+# ==========================================================
+
+# ✅ Locais SEGUROS (urbanos, realistas)
+_RE_SAFE_LOCATIONS = re.compile(
+    r"\b("
+    r"hotel|motel|"
+    r"apartamento|ap[eê]|flat|"
+    r"rep[uú]blica|"
+    r"uber|99|taxi|t[aá]xi|"
+    r"quarto|su[ií]te|"
+    r"casa\s+(dele|dela|minha)|"
+    r"pousada|airbnb"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# ❌ Locais PERIGOSOS (isolamento, risco físico)
+_RE_DANGEROUS_LOCATIONS = re.compile(
+    r"\b("
+    r"matagal|mato|"
+    r"barraco|barrac[aã]o|"
+    r"lugar\s+(isolado|ermo|deserto|escuro)|"
+    r"beco|viela|"
+    r"terreno\s+baldio|"
+    r"estrada\s+(deserta|escura)|"
+    r"meio\s+do\s+nada|"
+    r"escondido|esconderijo|"
+    r"carro\s+(parado|estacionado)\s+(no|em)\s+(mato|escuro|lugar\s+isolado)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# ⚠️ Convites vagos (dependem de confirmação de destino)
+_RE_VAGUE_INVITE = re.compile(
+    r"\b("
+    r"sumir|"
+    r"vem\s+comigo\s+agora|"
+    r"confia\s+em\s+mim|"
+    r"n[aã]o\s+pergunta\s+pra\s+onde|"
+    r"lugar\s+especial|"
+    r"surpresa"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _RE_JANIO_ACTING = re.compile(
     r"(?is)\bjanio\b.{0,60}\b("
     r"beija|me\s+beija|"
@@ -1692,9 +1740,18 @@ def _violations(
             ):
                 out.append("terceiro_romantizou_abandono")
 
-            # Logística offscreen continua proibida (hotel/uber etc. inventados)
-            if _RE_RUNAWAY_INVITE.search(t):
+            # ❌ Local perigoso: SEMPRE bloqueado
+            if _RE_DANGEROUS_LOCATIONS.search(t):
+                out.append("terceiro_local_perigoso")
+            
+            # ⚠️ Convite vago sem local seguro explícito
+            elif _RE_VAGUE_INVITE.search(t) and not _RE_SAFE_LOCATIONS.search(t):
+                out.append("terceiro_convite_vago")
+            
+            # 🚫 Logística offscreen (check-in, deslocamento inventado)
+            elif _RE_RUNAWAY_INVITE.search(t):
                 out.append("terceiro_logistica_offscreen")
+
 
             # ✅ NOVO: "travou" — quando está liberado, Mary não pode ficar só no flerte recusando
             # sem dar 1 passo concreto (ação curta, no mesmo ambiente, sem logística).
@@ -1778,9 +1835,15 @@ def _repair_fewshot_example(violations: List[str]) -> str:
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
         "low_sensory_density",
+
+        # ✅ TERCEIROS — NOVAS PRIORIDADES (segurança realista)
+        "terceiro_local_perigoso",
+        "terceiro_convite_vago",
         "terceiro_logistica_offscreen",
+
         "offscreen_msg_inventada",
     ]
+
     vset = set(violations)
     chosen = next((p for p in priority if p in vset), violations[0])
 
@@ -1812,6 +1875,15 @@ def _repair_fewshot_example(violations: List[str]) -> str:
         "offscreen_msg_inventada": """EXEMPLO DE CORREÇÃO (sem mensagens inventadas):
 [RUIM] 'Você me mandou áudio dizendo...'
 [BOM] 'Meu celular vibra. Eu nem olho ainda — fico em você, decidindo no corpo.'""",
+
+        "terceiro_local_perigoso": """EXEMPLO DE CORREÇÃO (segurança realista):
+[RUIM] 'Eu topo ir pro matagal com ele.'
+[BOM] 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou então num lugar decente."''""",
+
+        "terceiro_convite_vago": """EXEMPLO DE CORREÇÃO (convite vago):
+[RUIM] 'Eu vou com ele sem perguntar.'
+[BOM] 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."''""",
+
     }
     return examples.get(chosen, "")
 
@@ -1859,6 +1931,23 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append(
             "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, sem confirmar mudança de local."
         )
+
+        # ✅ NOVAS VIOLAÇÕES (TERCEIROS) — SEGURANÇA REALISTA
+    if "terceiro_local_perigoso" in violations:
+        bullets.append(
+            "- LOCAL PERIGOSO: Mary NÃO aceita ir para matagal, barraco, lugar isolado, beco, viela, terreno baldio, estrada deserta. "
+            "Ela é inteligente e consciente da própria segurança. "
+            "Reescreva: Mary recusa com firmeza e presença (sem moralizar) "
+            "e, se couber, sugere alternativa segura (ex: 'no meu apê' / 'aqui mesmo')."
+        )
+
+    if "terceiro_convite_vago" in violations:
+        bullets.append(
+            "- CONVITE VAGO: Mary não aceita 'sumir' / 'vem comigo' / 'confia em mim' sem saber o destino. "
+            "Ela QUESTIONA objetivamente ('Pra onde?') antes de decidir. "
+            "Se o destino não for dito, Mary recusa ou mantém no mesmo ambiente."
+        )
+
 
 
     # ✅ NSFW OFF: tirar termos explícitos
@@ -2275,13 +2364,22 @@ O usuário descreveu outro lugar/tempo.
         # ✅ Terceiros: regras variam conforme toggle + NSFW
         if allow_third_party_seduction_final and nsfw_on:
             desvio_curto_rule = """
-[TERCEIROS — LIBERADO (NSFW_ON + toggle)]
+            desvio_curto_rule = """
+[TERCEIROS — LIBERADO (NSFW_ON + toggle) — COM SEGURANÇA REALISTA]
 - Mary pode corresponder e avançar intimidade com terceiros SOMENTE se o usuário conduzir explicitamente.
-- Se o usuário estiver só provocando/flertando (ex: “vem pegar?”), Mary mantém tensão e controle, sem “pular” para sexo.
-- Mary NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
-- Sem logística offscreen (sem inventar hotel, check-in, mensagens, chaves). Só o que o usuário narra.
-- Convite degradante/“sumir” com terceiro continua proibido.
+- Mary é inteligente e cuidadosa: ela NÃO aceita situações de risco físico/social.
+
+LOCAIS / CONVITES:
+- PROIBIDO SEMPRE: matagal/mato, barraco/barracão, beco/viela, terreno baldio, estrada deserta, lugar isolado/escuro, “meio do nada”, esconderijo.
+- CONVITE VAGO (“vem comigo”, “confia em mim”, “vamos sumir”): Mary NÃO aceita sem saber o destino. Ela pergunta “Pra onde?” antes de decidir.
+- PERMITIDO (se o usuário trouxer explicitamente): locais urbanos/seguros como apartamento/república, hotel/motel, quarto/suíte, pousada/airbnb. Transporte (uber/táxi/99) só é citado se o usuário mencionar — sem inventar deslocamento.
+
+LIMITES NARRATIVOS:
+- Sem romance/abandono: Mary NÃO romantiza “vida nova”, NÃO abandona Janio e NÃO transforma em relacionamento.
+- Sem logística offscreen: não inventar check-in, reserva, chaves, pagamentos, horários, mensagens/áudios. No máximo: “o celular vibra”.
+- Mary pode sugerir alternativa segura quando recusa algo (ex: “aqui mesmo” / “no meu apê”), mantendo o segredo.
 """.strip()
+
 
             betrayal_rule = """
 [LEALDADE A JANIO — INTACTA]
@@ -2292,11 +2390,18 @@ O usuário descreveu outro lugar/tempo.
 
         else:
             desvio_curto_rule = f"""
-[DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
+[DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()} — COM SEGURANÇA REALISTA]
 - Mary pode, por impulso e escolha dela, corresponder a UM beijo (curto) se houver tensão.
 - Ao menor sinal de avanço íntimo (mãos subindo/decote/por baixo da roupa/querer ir além do beijo): Mary BLOQUEIA na hora.
-- Mary NÃO transforma isso em possibilidade nem romance: é falha, culpa, segredo.
-- Sem moralizar, sem discurso: corte firme, adulto, sensorial.
+- Mary NÃO transforma isso em possibilidade nem romance: é falha, culpa, segredo (sem discurso moral).
+
+LOCAIS / CONVITES COM TERCEIRO:
+- PROIBIDO: matagal/mato, barraco/barracão, beco/viela, terreno baldio, estrada deserta, lugar isolado/escuro, “meio do nada”.
+- CONVITE VAGO (“sumir”, “vem comigo”, “confia em mim”): Mary NÃO aceita; ela exige destino (“Pra onde?”) e, sem resposta clara, corta.
+- Mesmo em locais potencialmente seguros (apê/hotel/motel/uber/república): com toggle OFF, Mary NÃO segue. Ela recusa curto e firme, mantendo o segredo.
+
+SEM LOGÍSTICA OFFSCREEN:
+- Sem inventar hotel/uber/check-in/mensagens. Só o que o usuário narra; no máximo, manter no mesmo ambiente.
 """.strip()
 
             betrayal_rule = f"""
@@ -2959,28 +3064,42 @@ VOCÊ É MARY.
             # =====================================================
             # ✅ NOVO: CASO 2: Apenas violações "suaves" → aceitar
             # =====================================================
-            # COLAR AQUI ↓↓↓
+            # NUNCA aceitar como "soft" se envolver segurança de terceiros
+            hard_never_soft = {"terceiro_local_perigoso", "terceiro_convite_vago", "terceiro_logistica_offscreen"}
+
+            # Violações realmente "suaves" (não quebram segurança/realismo estrutural)
             soft_violations = {"low_sensory_density", "nsfw_on_suavizou", "finalizou_cena"}
-            if vr and all(v in soft_violations for v in vr):
-                # Aceitar com aviso, em vez de ir pro fallback genérico
+
+            if vr and (not any(v in hard_never_soft for v in vr)) and all(v in soft_violations for v in vr):
+                # Aceitar com ajuste final, em vez de ir pro fallback genérico
                 if _RE_SCENE_FINALIZATION.search(repaired or "") and (
                     not _finalization_allowed(user_text or "", int(phase or 0))
                 ):
                     repaired = _trim_scene_finalization(repaired)
                 repaired = _seal_broken_ending(repaired).strip()
                 return (repaired, usedR or used_model)
-            # COLAR AQUI ↑↑↑
+
 
             # =====================================================
             # CASO 3: Violações graves → continua tentando
             # =====================================================
             diag.repairs += 1
             diag.violations.extend(vr)
-            repair_user = (
-                repair_user
-                + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS LIMPO e MAIS DIRETO, "
-                  "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
-            )
+
+            if any(x in {"terceiro_local_perigoso", "terceiro_convite_vago"} for x in vr):
+                repair_user = (
+                    repair_user
+                    + "\n\nATENÇÃO: VIOLAÇÃO DE SEGURANÇA com terceiro. "
+                      "Mary deve recusar local perigoso OU exigir destino claro (\"Pra onde?\") "
+                      "antes de qualquer movimento. Sem aceitar convites vagos."
+                )
+            else:
+                repair_user = (
+                    repair_user
+                    + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS LIMPO e MAIS DIRETO, "
+                      "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
+                )
+
         # ================================
         # Fallback seguro (sem derrubar app)
         # ================================
