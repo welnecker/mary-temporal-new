@@ -1517,13 +1517,13 @@ _RE_SCENE_FINALIZATION = re.compile(
 )
 def _finalization_allowed(user_text: str, phase: int) -> bool:
     """
-    - Se o usuário já descreveu o clímax, a IA pode responder ao clímax.
-    - Se a fase >= 3 (pre_climax/climax), pode responder ao clímax.
-    - Caso contrário, NÃO pode finalizar por conta própria.
+    Regra simplificada:
+    - Se a fase >= 3, o clímax é permitido no NSFW padrão.
+    - Se o usuário já descreveu clímax, sempre permitido.
     """
     if _RE_SCENE_FINALIZATION.search(user_text or ""):
         return True
-    if phase >= 3:
+    if int(phase or 0) >= 3:
         return True
     return False
 
@@ -1717,13 +1717,13 @@ def _violations(
 
     # Finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
-        allowed = _finalization_allowed(user_text or "", int(phase or 0))
-        if not allowed:
-            # ✅ No NSFW_RELAXED, fase alta pode encerrar microciclo sem travar tudo
-            if nsfw_profile == "NSFW_RELAXED" and int(phase or 0) >= 3:
+        if not _finalization_allowed(user_text or "", int(phase or 0)):
+            # No NSFW padrão, NÃO tratar como violação dura
+            if nsfw_on:
                 out.append("finalizou_cena_soft")
             else:
                 out.append("finalizou_cena")
+
 
     # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
     if (not nsfw_on) and _is_explicit(t):
