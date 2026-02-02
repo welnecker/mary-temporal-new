@@ -2392,7 +2392,7 @@ class MaryService(BaseCharacter):
         # 7) Regras
         fidelity_mode = _fidelity_mode(timeline_final)
 
-           scene_lock_rule = """
+        scene_lock_rule = """
 [CONTINUIDADE - ABSOLUTO]
 - Mary NAO muda de local/tempo/evento sozinha.
 - Se o usuario narrar outro lugar/tempo, trate como CENA PARALELA:
