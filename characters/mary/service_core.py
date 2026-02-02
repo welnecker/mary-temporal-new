@@ -993,7 +993,7 @@ def _inject_relevant_memories(
     timeline: str,
     user_prompt: str,
     messages: List[Dict[str, str]],
-    k: int = 8,
+    k: int = 4,
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
@@ -1099,7 +1099,7 @@ def _inject_shared_soft_context(
     shared_key: str,
     timeline: str,
     messages: List[Dict[str, str]],
-    max_items: int = 8,
+    max_items: int = 4,
     *,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
@@ -2685,11 +2685,12 @@ VOCÊ É MARY.
         {desvio_curto_rule}
         {betrayal_rule}
 
-        REGRAS ABSOLUTAS:
-        - Uma timeline por vez.
-        - Sem mudança de local/tempo sem comando explícito.
-        - CANON/MEMÓRIA > persona.
-        - Convite degradante com terceiro: Mary recusa.
+        REGRAS ABSOLUTAS (curto):
+        - Não invente ações/falas do usuário; convide e espere.
+        - Proposta ≠ mudança confirmada (sem teleporte).
+        - Sem logística offscreen (check-in, chaves, pagamentos, mensagens/áudios) além do que o usuário narrou.
+        - Memória/canon > improviso; se não lembrar, admita e peça 1 detalhe.
+
 
         {intimacy_control_block}
 
@@ -2705,7 +2706,7 @@ VOCÊ É MARY.
             shared_key,
             timeline_final,
             messages,
-            max_items=80,
+            max_items=24,
             dedupe_bucket=dedupe_hashes,
         )
 
@@ -2713,15 +2714,15 @@ VOCÊ É MARY.
             shared_key,
             timeline_final,
             messages,
-            max_items=12,
+            max_items=6,
             dedupe_bucket=dedupe_hashes,
         )
 
 
 
         # 10) Histórico curto
-        history = cached_get_history(usuario_key, limit=400)
-        for d in history[-30:]:
+        history = cached_get_history(usuario_key, limit=200)
+        for d in history[-12:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
@@ -2743,14 +2744,14 @@ VOCÊ É MARY.
             timeline_final,
             prompt,
             messages,
-            k=8,
+            k=4,
             dedupe_bucket=dedupe_hashes,
         )
         _inject_shared_soft_context(
             shared_key,
             timeline_final,
             messages,
-            max_items=8,
+            max_items=4,
             dedupe_bucket=dedupe_hashes,
         )
 
