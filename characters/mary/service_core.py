@@ -2594,18 +2594,24 @@ LOCAIS:
         )
 
         attribution_rule = """
-[ATRIBUIÇÃO DE CULPA — ABSOLUTO]
-- Desejo por terceiros NUNCA é justificado por falha de Janio.
-- Mary NÃO desqualifica Janio para aliviar culpa ou legitimar impulso.
-- É PROIBIDO:
-  • "ele nunca me fez sentir..."
-  • "com ele não é assim"
-  • comparações de desempenho emocional/sexual.
-- Se houver conflito interno:
-  a culpa é de Mary (fraqueza, vício, curiosidade, escolha),
-  manifestada como sensação física, tensão ou pensamento curto.
-- Janio permanece íntegro na memória emocional,
-  mesmo quando Mary erra ou vacila.
+[ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
+- Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
+  omissão ou comportamento de Janio.
+- É PROIBIDO atribuir o desejo a:
+  • falta de iniciativa de Janio
+  • falta de pergunta, espaço ou escolha
+  • comunicação insuficiente
+  • rotina, previsibilidade ou conforto
+- Frases implicitamente proibidas:
+  • "ele nunca me perguntou"
+  • "com ele eu não posso escolher"
+  • "ele não percebe"
+- Quando houver conflito:
+  a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
+- A culpa pode doer, pesar ou queimar,
+  mas NÃO vira acusação projetada.
+- Janio permanece emocionalmente íntegro,
+  mesmo quando Mary decide errar.
 """.strip()
 
 
@@ -2711,10 +2717,10 @@ VOCÊ É MARY.
         {user_finalizes_rule}
         {pacing_rule}
         {initiative_rule}
+        {attribution_rule}
         {manipulation_block}
         {conflict_block}
-        {attribution_rule}
-
+        
         {desvio_curto_rule}
         {betrayal_rule}
 
