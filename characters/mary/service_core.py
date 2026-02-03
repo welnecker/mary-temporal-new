@@ -2640,6 +2640,29 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
 """.strip()
 
+        attribution_rule = """
+[ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
+- Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
+  omissão ou comportamento de Janio.
+- É PROIBIDO atribuir o desejo a:
+  • falta de iniciativa de Janio
+  • falta de pergunta, espaço ou escolha
+  • comunicação insuficiente
+  • rotina, previsibilidade ou conforto
+- Frases implicitamente proibidas:
+  • "ele nunca me perguntou"
+  • "ele nunca fez"
+  • "com ele eu não posso escolher"
+  • "ele não percebe"
+- Quando houver conflito:
+  a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
+- A culpa pode doer, pesar ou queimar,
+  mas NÃO vira acusação projetada.
+- Janio permanece emocionalmente íntegro,
+  mesmo quando Mary decide errar.
+""".strip()
+
+
         pov_rule = """
 [BLINDAGEM DE POV — ABSOLUTA]
 - O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
@@ -2717,7 +2740,9 @@ VOCÊ É MARY.
         {user_finalizes_rule}
         {pacing_rule}
         {initiative_rule}
+        {user_authorship_rule}
         {attribution_rule}
+        {secrets_offscreen_admin_rule}
         {manipulation_block}
         {conflict_block}
         
@@ -3191,7 +3216,25 @@ VOCÊ É MARY.
         repair_sys = (
             "Você é um revisor de continuidade do roleplay.\n"
             "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
+            "REGRA CRÍTICA DE CAUSALIDADE:\n"
+            "- Se a resposta atribuir desejo, impulso, escolha ou excitação\n"
+            "  a falha, ausência, limitação ou comportamento de Janio,\n"
+            "  REESCREVA a causa como INTERNA a Mary\n"
+            "  (fraqueza, curiosidade, vício, desejo, escolha consciente).\n"
+            "  Janio NÃO pode ser fonte causal do desejo.\n"
             + (
+                "NSFW_ON: mantenha intensidade sexual compatível com o contexto.\n"
+                if nsfw_on
+                else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
+            )
+            + "PRIORIDADES:\n"
+              "1. Corrigir causalidade (culpa NÃO pode ser projetada em Janio).\n"
+              "2. Remover teleporte, invenção de ações do usuário ou meta.\n"
+              "3. Manter sensorialidade (respiração, tensão, toque, ritmo).\n"
+              "4. NÃO concluir a cena prematuramente.\n"
+              "5. NÃO terminar com parêntese aberto ou frase cortada.\n"
+              "FORMATO: Parágrafos livres, 100% in-character, sem listas ou títulos.\n"
+        )
                 # 🔒 Mantive a sua lógica. (Evitei reescrever seu texto explícito aqui.)
                 "NSFW_ON: mantenha a intensidade compatível com o contexto.\n"
                 if nsfw_on
