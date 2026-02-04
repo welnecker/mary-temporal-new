@@ -3223,7 +3223,7 @@ VOCÊ É MARY.
             "  (fraqueza, curiosidade, vício, desejo, escolha consciente).\n"
             "  Janio NÃO pode ser fonte causal do desejo.\n"
             + (
-                "NSFW_ON: mantenha intensidade sexual compatível com o contexto.\n"
+                "NSFW_ON: é permitido vocabulário anatômico explícito (ex.: pênis, vagina, clitóris), desde que integrado à sensorialidade e sem concluir a cena.\n"
                 if nsfw_on
                 else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
             )
