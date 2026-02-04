@@ -3210,7 +3210,7 @@ VOCÊ É MARY.
             # Nunca deixe o repair com menos espaço que o pedido original.
             max_tokens_repair = max(max_tokens_repair, int(max_tokens or 0))
 
-        # ======================
+      # ======================
         # Prompt de repair (sys)
         # ======================
         repair_sys = (
@@ -3228,28 +3228,12 @@ VOCÊ É MARY.
                 else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
             )
             + "PRIORIDADES:\n"
-              "1. Corrigir causalidade (culpa NÃO pode ser projetada em Janio).\n"
-              "2. Remover teleporte, invenção de ações do usuário ou meta.\n"
-              "3. Manter sensorialidade (respiração, tensão, toque, ritmo).\n"
-              "4. NÃO concluir a cena prematuramente.\n"
-              "5. NÃO terminar com parêntese aberto ou frase cortada.\n"
-              "FORMATO: Parágrafos livres, 100% in-character, sem listas ou títulos.\n"
-        )
-                # 🔒 Mantive a sua lógica. (Evitei reescrever seu texto explícito aqui.)
-                "NSFW_ON: mantenha a intensidade compatível com o contexto.\n"
-                if nsfw_on
-                else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
-            )
-            + "PRIORIDADES:\n"
-              "1. Remover violações (teleporte, invenção de ações do usuário, meta).\n"
-              "2. Manter sensorialidade (respiração, tensão, toque, ritmo, reações).\n"
-              "3. Não concluir a cena prematuramente.\n"
-              "4. NÃO terminar a resposta com parêntese aberto ou frase cortada.\n"
-              "FORMATO: Parágrafos livres, 100% in-character, sem meta/listas/títulos.\n"
-              "CONTEÚDO: Cada parágrafo deve ter 1 ação/sensação concreta + 1 consequência física/emocional.\n"
-              "\nFEW-SHOT (EXEMPLO):\n"
-              "RUIM: 'Você sorri e diz que já foi para outro lugar. (meta)'\n"
-              "BOM: 'Eu me aproximo devagar, a respiração curta; \"fica aqui\" — e deixo o silêncio pesar sem te mover por você.'\n"
+            "1. Corrigir causalidade (culpa NÃO pode ser projetada em Janio).\n"
+            "2. Remover teleporte, invenção de ações do usuário ou meta.\n"
+            "3. Manter sensorialidade (respiração, tensão, toque, ritmo).\n"
+            "4. NÃO concluir a cena prematuramente.\n"
+            "5. NÃO terminar com parêntese aberto ou frase cortada.\n"
+            "FORMATO: Parágrafos livres, 100% in-character, sem listas ou títulos.\n"
         )
 
         repair_user = (
@@ -3260,6 +3244,7 @@ VOCÊ É MARY.
             "[RESPOSTA ORIGINAL]\n"
             f"{texto}\n"
         )
+
 
         for _i in range(2):
             dataR, usedR, _ = self._chat(
