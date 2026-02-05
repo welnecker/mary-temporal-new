@@ -16,6 +16,7 @@ import core.service_router as service_router
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
+# + MIGRAÇÃO: limpar schema quebrado de mary.intro.fixed
 # ==========================================================
 def _hard_reset_on_boot_if_needed() -> None:
     """
@@ -54,9 +55,41 @@ def _hard_reset_on_boot_if_needed() -> None:
         st.session_state["mary_last_boot_timeline"] = current_tl
 
 
+def _cleanup_broken_intro_schema_on_boot() -> None:
+    """
+    MIGRAÇÃO DEFINITIVA:
+    Remove TODOS os formatos antigos de mary.intro.fixed
+    - formato antigo: mary.intro.fixed = "texto"
+    - formato híbrido: mary.intro.fixed.<timeline> = "texto"
+    Executa SEMPRE no boot do app (não depende do fluxo do prompt).
+    """
+    try:
+        # ⚠️ essas funções existem após os imports do projeto
+        usuario_key = _usuario_key_atual()
+        timeline = _timeline()
+
+        # remove o formato antigo (string direta)
+        try:
+            delete_fact(usuario_key, "mary.intro.fixed")
+        except Exception:
+            pass
+
+        # remove o formato híbrido por timeline (se existir)
+        tl = str(timeline or "").strip()
+        if tl:
+            try:
+                delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
+            except Exception:
+                pass
+
+    except Exception:
+        # não deixa o boot quebrar por causa da migração
+        pass
+
+
 # ⚠️ EXECUTA IMEDIATAMENTE NO BOOT
 _hard_reset_on_boot_if_needed()
-
+_cleanup_broken_intro_schema_on_boot()
 # ==========================================================
 # IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
 # ==========================================================
