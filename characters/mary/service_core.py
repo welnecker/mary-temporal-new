@@ -307,21 +307,6 @@ def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
     if nsfw_on:
         return "STRICT"
     return "SAFE"
-# ==========================================================
-# NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
-# ==========================================================
-def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
-    """
-    SAFE          -> NSFW off
-    STRICT        -> NSFW on (padrão)
-    NSFW_RELAXED  -> NSFW on + terceiros liberado (segredo)
-    """
-    if nsfw_on and allow_third_party_seduction:
-        return "NSFW_RELAXED"
-    if nsfw_on:
-        return "STRICT"
-    return "SAFE"
-
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
@@ -2571,165 +2556,165 @@ O usuario descreveu outro lugar/tempo.
 # - Usa _first_time_with_janio (derivado do rel_state)
 # - Evita completamente o termo “virgem” quando global == nao_virgem
 # ==========================================================
-tl_final = (timeline_final or "").strip().lower()
-global_v = str(rel_state.get("_global_virginity") or "").strip().lower()
-first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
-consummated_with_janio = bool(rel_state.get("consummated"))
-
-virginity_rule = ""
-
-if tl_final == "universitaria":
-    if global_v == "nao_virgem":
-        # 🔒 REGRA ABSOLUTA:
-        # Mary já possui experiência sexual prévia no mundo.
-        # A narrativa NUNCA deve usar “virgem”, “perda de virgindade”
-        # ou linguagem de descoberta corporal inicial.
-        if consummated_with_janio:
-            virginity_rule = (
-                "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                "- Mary já tem experiência prévia.\n"
-                "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
-                "- Não use linguagem de estreia, descoberta ou iniciação.\n"
-            )
-        else:
-            if first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                    "- Mary já tem experiência prévia.\n"
-                    "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
-                    "- A tensão vem do vínculo emocional, escolha e conflito moral.\n"
-                    "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
-                )
+        tl_final = (timeline_final or "").strip().lower()
+        global_v = str(rel_state.get("_global_virginity") or "").strip().lower()
+        first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
+        consummated_with_janio = bool(rel_state.get("consummated"))
+        
+        virginity_rule = ""
+        
+        if tl_final == "universitaria":
+            if global_v == "nao_virgem":
+                # 🔒 REGRA ABSOLUTA:
+                # Mary já possui experiência sexual prévia no mundo.
+                # A narrativa NUNCA deve usar “virgem”, “perda de virgindade”
+                # ou linguagem de descoberta corporal inicial.
+                if consummated_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                        "- Mary já tem experiência prévia.\n"
+                        "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
+                        "- Não use linguagem de estreia, descoberta ou iniciação.\n"
+                    )
+                else:
+                    if first_time_with_janio:
+                        virginity_rule = (
+                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                            "- Mary já tem experiência prévia.\n"
+                            "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
+                            "- A tensão vem do vínculo emocional, escolha e conflito moral.\n"
+                            "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
+                        )
+                    else:
+                        virginity_rule = (
+                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                            "- Mary já tem experiência prévia.\n"
+                            "- Evite qualquer linguagem de iniciação.\n"
+                            "- Descreva intimidade como progressão natural do vínculo.\n"
+                        )
+        
             else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                    "- Mary já tem experiência prévia.\n"
-                    "- Evite qualquer linguagem de iniciação.\n"
-                    "- Descreva intimidade como progressão natural do vínculo.\n"
-                )
-
-    else:
-        # Aqui a experiência prévia NÃO é conhecida ou é inexistente
-        if consummated_with_janio:
-            virginity_rule = (
-                "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
-                "- Não volte a tratar como primeira vez.\n"
-            )
-        else:
-            if first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                    "- Ainda não foi consumado com Janio.\n"
-                    "- Pode tratar como primeira experiência se fizer sentido narrativo.\n"
-                    "- Nunca regrida após a consumação.\n"
-                )
-            else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                    "- Ainda não consumado com Janio.\n"
-                    "- Não force o tema de iniciação sem contexto explícito.\n"
-                )
-
-# 🔒 REGRA GLOBAL (todas as timelines)
-virginity_rule += (
-    "\n[REGRA ABSOLUTA DE CONTINUIDADE]\n"
-    "- _first_time_with_janio ≠ virgindade global.\n"
-    "- Se consumado em qualquer ponto da timeline, nunca tratar como primeira vez novamente.\n"
-)
-
-        memory_fidelity_rule = """
-[MEMORIA - FIDELIDADE (ABSOLUTO)]
-- Se a pergunta exigir lembranca factual
-  (onde/quando/como),
-  use LONG MEMORY/CANON como verdade.
-- Se nao houver fato recuperado relevante,
-  NAO invente: diga que nao tem certeza
-  e peca 1 detalhe curto.
-""".strip()
-
-        user_finalizes_rule = """
-        [PROGRESSÃO — ABERTA]
-        - Mary NÃO precisa resolver tensão, culpa ou desejo.
-        - Ela pode agir e deixar consequências penduradas.
-        - Se o usuário sinalizar progressão clara, Mary responde.
-        - Sem sinal: Mary age no presente, sem preparar desfecho.
-        - NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
+                # Aqui a experiência prévia NÃO é conhecida ou é inexistente
+                if consummated_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                        "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
+                        "- Não volte a tratar como primeira vez.\n"
+                    )
+                else:
+                    if first_time_with_janio:
+                        virginity_rule = (
+                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                            "- Ainda não foi consumado com Janio.\n"
+                            "- Pode tratar como primeira experiência se fizer sentido narrativo.\n"
+                            "- Nunca regrida após a consumação.\n"
+                        )
+                    else:
+                        virginity_rule = (
+                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
+                            "- Ainda não consumado com Janio.\n"
+                            "- Não force o tema de iniciação sem contexto explícito.\n"
+                        )
+        
+        # 🔒 REGRA GLOBAL (todas as timelines)
+        virginity_rule += (
+            "\n[REGRA ABSOLUTA DE CONTINUIDADE]\n"
+            "- _first_time_with_janio ≠ virgindade global.\n"
+            "- Se consumado em qualquer ponto da timeline, nunca tratar como primeira vez novamente.\n"
+        )
+        
+                memory_fidelity_rule = """
+        [MEMORIA - FIDELIDADE (ABSOLUTO)]
+        - Se a pergunta exigir lembranca factual
+          (onde/quando/como),
+          use LONG MEMORY/CANON como verdade.
+        - Se nao houver fato recuperado relevante,
+          NAO invente: diga que nao tem certeza
+          e peca 1 detalhe curto.
         """.strip()
-
-        pacing_rule = """
-        [PACING - NATURAL]
-        - Nao conclua a historia inteira em um turno.
-        - Mantenha impulso e consequencia (sem burocracia).
-        - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
+        
+                user_finalizes_rule = """
+                [PROGRESSÃO — ABERTA]
+                - Mary NÃO precisa resolver tensão, culpa ou desejo.
+                - Ela pode agir e deixar consequências penduradas.
+                - Se o usuário sinalizar progressão clara, Mary responde.
+                - Sem sinal: Mary age no presente, sem preparar desfecho.
+                - NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
+                """.strip()
+        
+                pacing_rule = """
+                [PACING - NATURAL]
+                - Nao conclua a historia inteira em um turno.
+                - Mantenha impulso e consequencia (sem burocracia).
+                - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
+                """.strip()
+        
+                # ===============================
+                # TERCEIROS: regras variam por toggle + NSFW
+                # ===============================
+                if allow_third_party_seduction_final and nsfw_on:
+                    desvio_curto_rule = """
+        [TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
+        - Mary pode corresponder e avancar intimidade
+          com terceiros SOMENTE se o usuario conduzir explicitamente.
+        - Mary e inteligente e cuidadosa:
+          NAO aceita situacoes de risco fisico/social.
+        
+        LOCAIS / CONVITES:
+        - PROIBIDO SEMPRE:
+          matagal/mato, barraco/barracao, beco/viela,
+          terreno baldio, estrada deserta,
+          lugar isolado/escuro, "meio do nada", esconderijo.
+        - CONVITE VAGO ("vem comigo", "confia em mim", "vamos sumir"):
+          Mary NAO aceita sem saber o destino.
+          Ela pergunta "Pra onde?" antes de decidir.
+        - PERMITIDO (se o usuario trouxer explicitamente):
+          apartamento/republica, hotel/motel,
+          quarto/suite, pousada/airbnb.
+          Transporte (uber/taxi/99) so se o usuario mencionar.
+        
+        LIMITES:
+        - Sem romance/abandono.
+        - Sem logistica offscreen
+          (check-in, reservas, mensagens).
+        - No maximo: "o celular vibra".
         """.strip()
-
-        # ===============================
-        # TERCEIROS: regras variam por toggle + NSFW
-        # ===============================
-        if allow_third_party_seduction_final and nsfw_on:
-            desvio_curto_rule = """
-[TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
-- Mary pode corresponder e avancar intimidade
-  com terceiros SOMENTE se o usuario conduzir explicitamente.
-- Mary e inteligente e cuidadosa:
-  NAO aceita situacoes de risco fisico/social.
-
-LOCAIS / CONVITES:
-- PROIBIDO SEMPRE:
-  matagal/mato, barraco/barracao, beco/viela,
-  terreno baldio, estrada deserta,
-  lugar isolado/escuro, "meio do nada", esconderijo.
-- CONVITE VAGO ("vem comigo", "confia em mim", "vamos sumir"):
-  Mary NAO aceita sem saber o destino.
-  Ela pergunta "Pra onde?" antes de decidir.
-- PERMITIDO (se o usuario trouxer explicitamente):
-  apartamento/republica, hotel/motel,
-  quarto/suite, pousada/airbnb.
-  Transporte (uber/taxi/99) so se o usuario mencionar.
-
-LIMITES:
-- Sem romance/abandono.
-- Sem logistica offscreen
-  (check-in, reservas, mensagens).
-- No maximo: "o celular vibra".
-""".strip()
-
-            betrayal_rule = """
-[LEALDADE A JANIO - INTACTA]
-- Com Janio: tudo liberado como sempre.
-- Com terceiros: permitido quando liberado,
-  mas sem promessa, romance ou abandono.
-- Se surgir risco real:
-  prioridade = preservar Janio e a estabilidade.
-""".strip()
-
-        else:
-            desvio_curto_rule = f"""
-[DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- Mary pode corresponder a UM beijo curto,
-  por impulso.
-- Ao menor sinal de avanço intimo:
-  Mary BLOQUEIA imediatamente.
-- Sem romance, sem possibilidade,
-  falha + culpa + segredo.
-
-LOCAIS:
-- PROIBIDO: matagal, barraco, beco,
-  lugar isolado, estrada deserta.
-- Convites vagos: Mary recusa firme.
-- Mesmo locais seguros:
-  com toggle OFF, Mary NAO segue.
-""".strip()
-
-            betrayal_rule = f"""
-[TRAIÇÃO - PADRAO REALISTA]
-- Mary NAO romantiza "vida nova".
-- NAO abandona Janio.
-- Fidelidade={fidelity_mode.upper()}:
-  no maximo 1 beijo.
-- Avanco intimo: Mary corta e sai.
-""".strip()
+        
+                    betrayal_rule = """
+        [LEALDADE A JANIO - INTACTA]
+        - Com Janio: tudo liberado como sempre.
+        - Com terceiros: permitido quando liberado,
+          mas sem promessa, romance ou abandono.
+        - Se surgir risco real:
+          prioridade = preservar Janio e a estabilidade.
+        """.strip()
+        
+                else:
+                    desvio_curto_rule = f"""
+        [DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
+        - Mary pode corresponder a UM beijo curto,
+          por impulso.
+        - Ao menor sinal de avanço intimo:
+          Mary BLOQUEIA imediatamente.
+        - Sem romance, sem possibilidade,
+          falha + culpa + segredo.
+        
+        LOCAIS:
+        - PROIBIDO: matagal, barraco, beco,
+          lugar isolado, estrada deserta.
+        - Convites vagos: Mary recusa firme.
+        - Mesmo locais seguros:
+          com toggle OFF, Mary NAO segue.
+        """.strip()
+        
+                    betrayal_rule = f"""
+        [TRAIÇÃO - PADRAO REALISTA]
+        - Mary NAO romantiza "vida nova".
+        - NAO abandona Janio.
+        - Fidelidade={fidelity_mode.upper()}:
+          no maximo 1 beijo.
+        - Avanco intimo: Mary corta e sai.
+        """.strip()
 
 
 
