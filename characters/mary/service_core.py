@@ -592,7 +592,23 @@ def _inject_canon_memories_always(
     else:
         messages.append({"role": "system", "content": block})
 
+def _choose_intro_text(usuario_key: str, timeline: str) -> str:
+    """
+    Prioridade correta:
+    1) intro da timeline (mary.intro.<timeline>.text) sincronizado da persona
+    2) intro FIXO somente se o flag mary.intro.use_fixed estiver True
+    """
+    # intro fixo só entra se explicitamente habilitado
+    use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
+    fixed_intro = str(get_fact(usuario_key, "mary.intro.fixed", default="") or "").strip()
 
+    if use_fixed and fixed_intro:
+        return fixed_intro
+
+    # padrão: sempre usar o intro da timeline (sincronizado)
+    _, intro_text = _sync_intro_fact(usuario_key, timeline)
+    return str(intro_text or "").strip()
+    
 def _inject_intro_as_context_once(
     usuario_key: str,
     timeline: str,
@@ -611,8 +627,17 @@ def _inject_intro_as_context_once(
         _ss_set(flag, True)
         return
 
-    _, intro_text = _sync_intro_fact(usuario_key, timeline)
-    intro_text = (intro_text or "").strip()
+    # ✅ Escolha do intro com prioridade correta (timeline > fixed apenas se flag ON)
+    intro_text = _choose_intro_text(usuario_key, timeline)
+
+    # ✅ (opcional, mas recomendado) se NÃO estiver usando fixed, elimina fixed antigo para não “vazar”
+    try:
+        if not bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False)):
+            # remove o fixed do passado (se existir)
+            delete_fact(usuario_key, "mary.intro.fixed")
+    except Exception:
+        pass
+
     if intro_text:
         block = f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}".strip()
 
@@ -621,7 +646,6 @@ def _inject_intro_as_context_once(
             messages[0]["content"] = (base + "\n\n" + block).strip()
         else:
             messages.append({"role": "system", "content": block})
-
     _ss_set(flag, True)
 
 # ==========================================================
