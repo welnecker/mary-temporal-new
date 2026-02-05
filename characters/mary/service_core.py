@@ -620,15 +620,22 @@ def _inject_intro_as_context_once(
     mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
     """
 
-    # 🔥 LIMPEZA SEMPRE EXECUTADA (NÃO depende de flag de sessão)
+    # 🔥 LIMPEZA DEFINITIVA — SEMPRE EXECUTADA
+    # (não pode ficar atrás de guard de sessão)
     try:
         use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
         if not use_fixed:
+            # formato antigo (string direta)
             delete_fact(usuario_key, "mary.intro.fixed")
+
+            # formato por timeline (schema híbrido)
+            tl = str(timeline or "").strip()
+            if tl:
+                delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
     except Exception:
         pass
 
-    # ⛔ guard de sessão vem DEPOIS da limpeza
+    # ⛔ AGORA SIM vem o guard de sessão
     flag = f"intro_ctx_injected::{usuario_key}"
     if bool(_ss_get(flag, False)):
         return
@@ -649,6 +656,7 @@ def _inject_intro_as_context_once(
         else:
             messages.append({"role": "system", "content": block})
 
+    # ✅ marca como injetado (impede reinjeção)
     _ss_set(flag, True)
 # ==========================================================
 # ✅ LONG MEMORY (Mongo $text)
