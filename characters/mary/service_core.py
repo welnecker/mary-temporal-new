@@ -619,6 +619,16 @@ def _inject_intro_as_context_once(
     Injeta o intro da persona como contexto UMA ÚNICA VEZ por usuario_key,
     mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
     """
+
+    # 🔥 LIMPEZA SEMPRE EXECUTADA (NÃO depende de flag de sessão)
+    try:
+        use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
+        if not use_fixed:
+            delete_fact(usuario_key, "mary.intro.fixed")
+    except Exception:
+        pass
+
+    # ⛔ guard de sessão vem DEPOIS da limpeza
     flag = f"intro_ctx_injected::{usuario_key}"
     if bool(_ss_get(flag, False)):
         return
@@ -630,24 +640,15 @@ def _inject_intro_as_context_once(
     # ✅ Escolha do intro com prioridade correta
     intro_text = _choose_intro_text(usuario_key, timeline)
 
-    # 🔥 Remove intro FIXO antigo se não estiver explicitamente autorizado
-    try:
-        if not bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False)):
-            delete_fact(usuario_key, "mary.intro.fixed")
-    except Exception:
-        pass
-
     if intro_text:
         block = f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}".strip()
 
-        # injeta no PRIMEIRO system
         if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
             base = str(messages[0].get("content") or "").rstrip()
             messages[0]["content"] = (base + "\n\n" + block).strip()
         else:
             messages.append({"role": "system", "content": block})
 
-    # ✅ marca como injetado (impede reinjeção)
     _ss_set(flag, True)
 # ==========================================================
 # ✅ LONG MEMORY (Mongo $text)
