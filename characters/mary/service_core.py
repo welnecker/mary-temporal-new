@@ -1191,29 +1191,35 @@ def _rel_fact_key(timeline: str) -> str:
     tl = (timeline or "").strip() or "cumplice"
     return f"rel.state::{tl}"
 
+
 def _load_rel_state(
     facts: Dict[str, Any],
     timeline: str,
     canon_default: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     base = default_relationship_state(timeline)
+
+    # 1) Canon default (do canon.yaml / canon store) entra primeiro
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
                 base[k] = v
 
+    # 2) Estado persistido (facts) entra por cima
     key = _rel_fact_key(timeline)
     raw = (facts or {}).get(key)
     if isinstance(raw, dict):
         for k, v in raw.items():
             base[k] = v
 
+    # 3) Metas internas
     base.setdefault("_promote_streak", 0)
     base.setdefault("_regress_streak", 0)
     base.setdefault("_loop_streak", 0)
     base.setdefault("_last_pattern", "")
     base.setdefault("_last_updated_ts", 0)
 
+    # 4) Defaults mínimos (apenas se não existir)
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
     base.setdefault("consummated", False if timeline == "universitaria" else True)
@@ -1233,10 +1239,35 @@ def _load_rel_state(
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
+    # ==========================================================
+    # 🔒 CANON ABSOLUTO — virgindade nunca pode regredir
+    # Se o CANON (facts) diz nao_virgem, força o rel_state acima de tudo.
+    # ==========================================================
+    canon_v = None
+    try:
+        mary = (facts or {}).get("mary")
+        if isinstance(mary, dict):
+            canon_v = mary.get("virginity")
+        if canon_v is None:
+            # fallback raro: virginity solta na raiz
+            canon_v = (facts or {}).get("virginity")
+    except Exception:
+        canon_v = None
+
+    if str(canon_v or "").strip() == "nao_virgem":
+        base["virginity"] = "nao_virgem"
+        base["consummated"] = True
+        base["allows_penetration"] = True
+        # coerência pós-consumado (não quebra universitaria; só impede contradição)
+        base.setdefault("allows_mutual_relief", True)
+        base.setdefault("allows_extended_touch", True)
+
     return base
+
 
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
+
 
 def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     tl = _normalize_timeline(timeline)
@@ -1253,7 +1284,6 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 
     _save_rel_state(uk, tl, rel)
     clear_user_cache(uk)
-
 # ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
