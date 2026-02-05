@@ -627,13 +627,12 @@ def _inject_intro_as_context_once(
         _ss_set(flag, True)
         return
 
-    # ✅ Escolha do intro com prioridade correta (timeline > fixed apenas se flag ON)
+    # ✅ Escolha do intro com prioridade correta
     intro_text = _choose_intro_text(usuario_key, timeline)
 
-    # ✅ (opcional, mas recomendado) se NÃO estiver usando fixed, elimina fixed antigo para não “vazar”
+    # 🔥 Remove intro FIXO antigo se não estiver explicitamente autorizado
     try:
         if not bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False)):
-            # remove o fixed do passado (se existir)
             delete_fact(usuario_key, "mary.intro.fixed")
     except Exception:
         pass
@@ -641,13 +640,15 @@ def _inject_intro_as_context_once(
     if intro_text:
         block = f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}".strip()
 
+        # injeta no PRIMEIRO system
         if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
             base = str(messages[0].get("content") or "").rstrip()
             messages[0]["content"] = (base + "\n\n" + block).strip()
         else:
             messages.append({"role": "system", "content": block})
-    _ss_set(flag, True)
 
+    # ✅ marca como injetado (impede reinjeção)
+    _ss_set(flag, True)
 # ==========================================================
 # ✅ LONG MEMORY (Mongo $text)
 # ==========================================================
