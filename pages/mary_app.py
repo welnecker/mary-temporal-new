@@ -1950,24 +1950,42 @@ def main() -> None:
 
             with c2:
                 if st.button("🧹 Limpar Estado", key="btn_clear_state"):
+                    # 1) Apaga de verdade os campos do state.*
                     for k in (
                         "state.local",
                         "state.roupa",
                         "state.cabelo",
                         "state.desculpa",
-                        "state.horarios",     # ✅ plural
+                        "state.horarios",
                         "state.pendencias",
-                        "state.horario",      # ✅ legado (limpa junto)
+                        "state.horario",   # legado
                     ):
                         try:
-                            set_fact(_uk, k, "", {"fonte": "sidebar_state_clear_all"})
+                            delete_fact(_uk, k)
                         except Exception:
                             pass
-
+            
+                    # 2) Apaga de verdade os campos que estavam te assombrando
+                    #    (fora de state.*)
+                    for k in (
+                        "local_cena_atual",
+                        "cena",            # <- apaga o bloco inteiro (inclui locked/local/tempo/acao)
+                    ):
+                        try:
+                            delete_fact(_uk, k)
+                        except Exception:
+                            pass
+            
+                    # 3) Segurança extra: se a cena voltar por algum motivo, garante unlocked
+                    try:
+                        set_fact(_uk, "cena.locked", False, {"fonte": "sidebar_state_unlock_scene"})
+                    except Exception:
+                        pass
+            
                     _invalidate_backend_cache()
                     _clear_mary_caches_all_related(also_clear_other_timeline=False)
                     _kill_all_mary_services()
-                    st.success("✅ Estado limpo.")
+                    st.success("✅ Estado limpo (remoção real) + cena destravada.")
                     st.rerun()
 
 
