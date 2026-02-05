@@ -2929,6 +2929,7 @@ VOCÊ É MARY.
 
                         if timeline_final == "universitaria":
                             txt_all = f"{prompt}\n{texto}".lower()
+                        
                             transition = bool(
                                 re.search(
                                     r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
@@ -2936,10 +2937,11 @@ VOCÊ É MARY.
                                     re.IGNORECASE,
                                 )
                             )
-                            if not transition:
-                                rel_state["virginity"] = "virgem"
-                                rel_state["consummated"] = False
-
+                        
+                            # 🔒 REGRA ABSOLUTA: virgindade NÃO regride
+                            if transition and rel_state.get("virginity") == "virgem":
+                                rel_state["virginity"] = "nao_virgem"
+                                rel_state["consummated"] = True
                         _save_rel_state(usuario_key, timeline_final, rel_state)
 
                         if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
