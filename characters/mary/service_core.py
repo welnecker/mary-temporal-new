@@ -1192,6 +1192,45 @@ def _rel_fact_key(timeline: str) -> str:
     return f"rel.state::{tl}"
 
 
+def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
+    """
+    Virginidade GLOBAL (histórico sexual da Mary no mundo).
+    Fonte de verdade: facts["mary"]["virginity"] (ou fallback raro).
+    Retorna: "virgem" | "nao_virgem" | "" (desconhecido)
+    """
+    try:
+        mary = (facts or {}).get("mary")
+        if isinstance(mary, dict):
+            v = str(mary.get("virginity") or "").strip()
+            return v
+        # fallback raro
+        v2 = str((facts or {}).get("virginity") or "").strip()
+        return v2
+    except Exception:
+        return ""
+
+
+def _derive_rel_first_time_with_janio(
+    timeline: str,
+    facts: Dict[str, Any],
+    rel: Dict[str, Any],
+) -> bool:
+    """
+    Define um "derivado" seguro:
+    first_time_with_janio = True quando o relacionamento AINDA NÃO foi consumado.
+    Isso é o que você quer usar no prompt da universitaria,
+    sem confundir com a virginidade GLOBAL.
+    """
+    tl = (timeline or "").strip().lower()
+    consummated = bool(rel.get("consummated"))
+
+    if tl == "universitaria":
+        return (not consummated)
+
+    # Em outras timelines, não faz sentido
+    return False
+
+
 def _load_rel_state(
     facts: Dict[str, Any],
     timeline: str,
@@ -1199,7 +1238,7 @@ def _load_rel_state(
 ) -> Dict[str, Any]:
     base = default_relationship_state(timeline)
 
-    # 1) Canon default (do canon.yaml / canon store) entra primeiro
+    # 1) Canon default entra primeiro
     if isinstance(canon_default, dict):
         for k, v in canon_default.items():
             if not str(k).startswith("_"):
@@ -1223,6 +1262,10 @@ def _load_rel_state(
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
     base.setdefault("consummated", False if timeline == "universitaria" else True)
+
+    # ⚠️ IMPORTANTE:
+    # "virginity" aqui deve ser tratado como ESTADO DO RELACIONAMENTO com Janio na timeline,
+    # não como virginidade global.
     base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
 
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
@@ -1234,33 +1277,30 @@ def _load_rel_state(
     base.setdefault("allows_sleep_together", False if timeline == "universitaria" else True)
     base.setdefault("allows_masturbation", True)
     base.setdefault("allows_mutual_relief", False if timeline == "universitaria" else True)
+
+    # allows_penetration deve respeitar consummated/estágio do relacionamento
+    # (não o global).
     base.setdefault("allows_penetration", False if timeline == "universitaria" else True)
 
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
     # ==========================================================
-    # 🔒 CANON ABSOLUTO — virgindade nunca pode regredir
-    # Se o CANON (facts) diz nao_virgem, força o rel_state acima de tudo.
+    # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
     # ==========================================================
-    canon_v = None
-    try:
-        mary = (facts or {}).get("mary")
-        if isinstance(mary, dict):
-            canon_v = mary.get("virginity")
-        if canon_v is None:
-            # fallback raro: virginity solta na raiz
-            canon_v = (facts or {}).get("virginity")
-    except Exception:
-        canon_v = None
+    global_v = _get_global_virginity_from_facts(facts)
+    base["_global_virginity"] = global_v  # debug/uso em prompt se quiser
 
-    if str(canon_v or "").strip() == "nao_virgem":
+    # Primeira vez com Janio (derivado)
+    base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, facts, base)
+
+    # Regra mínima de consistência interna do REL:
+    # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
+    if bool(base.get("consummated")):
         base["virginity"] = "nao_virgem"
-        base["consummated"] = True
         base["allows_penetration"] = True
-        # coerência pós-consumado (não quebra universitaria; só impede contradição)
-        base.setdefault("allows_mutual_relief", True)
         base.setdefault("allows_extended_touch", True)
+        base.setdefault("allows_mutual_relief", True)
 
     return base
 
@@ -1283,8 +1323,7 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
     _save_rel_state(uk, tl, rel)
-    clear_user_cache(uk)
-# ==========================================================
+    clear_user_cache(uk)# ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
 _RE_PLACEHOLDER_REVEAL = re.compile(
