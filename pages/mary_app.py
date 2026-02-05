@@ -55,41 +55,40 @@ def _hard_reset_on_boot_if_needed() -> None:
         st.session_state["mary_last_boot_timeline"] = current_tl
 
 
-def _cleanup_broken_intro_schema_on_boot() -> None:
+def _cleanup_broken_facts_schema_on_boot() -> None:
     """
-    MIGRAÇÃO DEFINITIVA:
-    Remove TODOS os formatos antigos de mary.intro.fixed
-    - formato antigo: mary.intro.fixed = "texto"
-    - formato híbrido: mary.intro.fixed.<timeline> = "texto"
-    Executa SEMPRE no boot do app (não depende do fluxo do prompt).
+    MIGRAÇÃO DEFINITIVA (BOOT-SAFE):
+    - remove mary.intro.fixed (string antiga)
+    - remove mary.intro.fixed.<timeline> (schema híbrido)
+    - remove virgindade global conflitante (apenas universitaria)
     """
     try:
-        # ⚠️ essas funções existem após os imports do projeto
-        usuario_key = _usuario_key_atual()
-        timeline = _timeline()
+        # ✅ não depende de _timeline() / _usuario_key_atual()
+        tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
+        user = str(st.session_state.get("user_id") or "Janio Donisete").strip()
+        usuario_key = f"{user}::mary::{tl}"
 
-        # remove o formato antigo (string direta)
-        try:
-            delete_fact(usuario_key, "mary.intro.fixed")
-        except Exception:
-            pass
+        # ✅ import local pra não depender da ordem dos imports do arquivo
+        from core.repositories import delete_fact
 
-        # remove o formato híbrido por timeline (se existir)
-        tl = str(timeline or "").strip()
+        # --- limpar intro FIXO (2 schemas) ---
+        delete_fact(usuario_key, "mary.intro.fixed")
         if tl:
-            try:
-                delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
-            except Exception:
-                pass
+            delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
+
+        # --- limpar conflito de virgindade (universitaria) ---
+        # você tem facts.virginity="nao_virgem" mas rel.state::universitaria diz "virgem"
+        if tl == "universitaria":
+            delete_fact(usuario_key, "virginity")
 
     except Exception:
-        # não deixa o boot quebrar por causa da migração
+        # não deixa o boot quebrar
         pass
 
 
 # ⚠️ EXECUTA IMEDIATAMENTE NO BOOT
 _hard_reset_on_boot_if_needed()
-_cleanup_broken_intro_schema_on_boot()
+_cleanup_broken_facts_schema_on_boot()
 # ==========================================================
 # IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
 # ==========================================================
