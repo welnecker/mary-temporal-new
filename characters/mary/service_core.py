@@ -1664,8 +1664,9 @@ def _detect_climax_signal(texto: str, user_text: str, *, nsfw_on: bool, phase: i
 
     # sinais "estruturais" (sem depender de 1 palavra específica)
     signals = (
-        "espasmo", "contraç", "trem", "pernas", "corpo arque", "perde o controle",
-        "onda", "explod", "goz", "clímax", "chega lá", "goza", "gozou", "gozar",
+        "espasmo", "contraç", "trem", "pernas", "corpo arque",
+        "perde o controle", "onda", "explod no corpo", "goz",
+        "clímax", "chega lá", "goza", "gozou", "gozar",
     )
 
     score = 0
@@ -1684,6 +1685,15 @@ def _detect_climax_signal(texto: str, user_text: str, *, nsfw_on: bool, phase: i
         return True
     return False
 
+def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
+    if not user_text:
+        return False
+    return bool(
+        re.search(
+            r"\b(goza|pode gozar|eu vou gozar|vou gozar|t[oô] gozando|estou gozando|me faz gozar|me faça gozar)\b",
+            (user_text or "").lower(),
+        )
+    )
 # ==========================================================
 # ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS)
 # ==========================================================
@@ -1839,7 +1849,6 @@ def _violations(
         if _RE_CONFLICT_IMMINENT.search(t):
             out.append("conflito_extremo")
 
-
     # Finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
@@ -1849,7 +1858,20 @@ def _violations(
             else:
                 out.append("finalizou_cena")
 
+    # ======================================================
+    # ❌ PATCH: Mary NÃO pode finalizar orgasmo do usuário
+    # - Só é permitido se o usuário autorizar explicitamente
+    # ======================================================
+    # Observação: isso é independente de fase; fase controla "clímax" dela,
+    # mas aqui estamos bloqueando "finalizar o usuário" sem comando.
+    if re.search(
+        r"\b(goz(a|ou)|ejacul(a|ou)|explodiu|jatos quentes|cl[ií]max dele)\b",
+        t.lower(),
+    ):
+        if not _user_explicitly_allows_user_orgasm(user_text):
+            out.append("mary_finalizou_orgasmo_do_usuario")
 
+    return out
     # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
     if (not nsfw_on) and _is_explicit(t):
         out.append("nsfw_off_explicito")
@@ -2679,6 +2701,8 @@ O usuario descreveu outro lugar/tempo.
 - NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
 """.strip()
 
+
+
         pacing_rule = """
 [PACING - NATURAL]
 - Nao conclua a historia inteira em um turno.
@@ -2920,6 +2944,7 @@ VOCÊ É MARY.
         {virginity_rule}
         {memory_fidelity_rule}
         {user_finalizes_rule}
+        {user_orgasm_finalization_rule}
         {pacing_rule}
         {initiative_rule}
         {user_authorship_rule}
