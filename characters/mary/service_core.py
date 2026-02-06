@@ -1647,6 +1647,43 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
             last_users.append(u)
     return "\n".join(last_users + [prompt]).lower()
 
+def _detect_climax_signal(texto: str, user_text: str, *, nsfw_on: bool, phase: int) -> bool:
+    """
+    Heurística de detecção de clímax:
+    - só roda com NSFW on
+    - só considera fases altas (>=3) OU sinais suficientes no texto
+    """
+    if not nsfw_on:
+        return False
+
+    t = (texto or "").lower()
+    u = (user_text or "").lower()
+
+    if len(t) < 120:
+        return False
+
+    # sinais "estruturais" (sem depender de 1 palavra específica)
+    signals = (
+        "espasmo", "contraç", "trem", "pernas", "corpo arque", "perde o controle",
+        "onda", "explod", "goz", "clímax", "chega lá", "goza", "gozou", "gozar",
+    )
+
+    score = 0
+    for s in signals:
+        if s in t:
+            score += 1
+    # user_text pode disparar transição também
+    for s in ("goza", "gozou", "gozar", "clímax", "finaliza", "finalizar"):
+        if s in u:
+            score += 1
+
+    # regra final
+    if phase >= 4 and score >= 1:
+        return True
+    if phase >= 3 and score >= 3:
+        return True
+    return False
+
 # ==========================================================
 # ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS)
 # ==========================================================
@@ -2965,22 +3002,38 @@ VOCÊ É MARY.
         )
 
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
-
+        
+        # Fase efetiva usada no decoding (pode ser forçada para aftercare)
+        phase = int(intimacy_phase)
 
         # 11) Tentativas previsíveis (decoding dinâmico + cool-down pós-clímax)
         prev_phase_key = f"_mary_prev_phase::{usuario_key}"
         streak_key = f"_mary_phase_streak::{usuario_key}"
-        prev_phase = int(_ss_get(prev_phase_key, int(intimacy_phase)) or int(intimacy_phase))
-        # streak: quantos turnos consecutivos na fase atual
-        if prev_phase == int(intimacy_phase):
+        prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
+
+        if prev_phase == phase:
             phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
         else:
             phase_streak = 1
 
+        # ======================================================
+        # ✅ FORÇAR AFTERCARE (fase 5) quando houver pós-clímax pendente
+        # ======================================================
+        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
+        if _ss_has(pk):
+            stt = _ss_get(pk)
+            if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
+                # força fase 5 neste turno
+                prev_phase = phase
+                phase = 5
+
+                # decrementa contador
+                stt["turns_left"] = int(stt.get("turns_left") or 0) - 1
+                _ss_set(pk, stt)
         attempts = self._build_attempt_plan(
             model=model,
             nsfw_on=nsfw_on,
-            phase=int(intimacy_phase),
+            phase=phase,
             prev_phase=prev_phase,
             phase_streak=phase_streak,
             conflict_now=bool(conflict_now),
@@ -3001,7 +3054,7 @@ VOCÊ É MARY.
                     usuario_key=usuario_key,
                     ctx_lower=ctx_lower,
                     user_text=prompt,
-                    phase=int(intimacy_phase),
+                    phase=phase,
                     nsfw_on=bool(nsfw_on),
                     nsfw_profile=str(nsfw_profile),
                     timeline=timeline_final,
@@ -3112,22 +3165,26 @@ VOCÊ É MARY.
                 _lock_scene(usuario_key)
 
                 # Intimacy progression
+                           
                 try:
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-                    if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
-                        desired_next = _cap_next_phase(current_phase, current_phase + 1)
-                        if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
-                            desired_next = current_phase
-                        if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
-                            desired_next = current_phase
-                        if desired_next != current_phase:
-                            self._set_intimacy_phase(usuario_key, desired_next)
+                
+                    # 🚫 Não altera fase durante aftercare forçado
+                    if phase != 5:
+                        if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
+                            desired_next = _cap_next_phase(current_phase, current_phase + 1)
+                            if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
+                                desired_next = current_phase
+                            if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
+                                desired_next = current_phase
+                            if desired_next != current_phase:
+                                self._set_intimacy_phase(usuario_key, desired_next)
                 except Exception:
                     pass
 
                 # Atualiza fase anterior/streak para o próximo turno (cool-down)
                 try:
-                    _ss_set(prev_phase_key, int(intimacy_phase))
+                    _ss_set(prev_phase_key, int(phase))
                     _ss_set(streak_key, int(phase_streak))
                 except Exception:
                     pass
@@ -3299,6 +3356,26 @@ VOCÊ É MARY.
         # ✅ PATCH 0 aplicado aqui: sela finais quebrados (parêntese aberto etc.)
         sealed = _seal_broken_ending(extracted)
         texto = sealed.strip()
+
+        # ======================================================
+        # 🔥 CLÍMAX DETECTADO → FORÇA AFTERCARE NO PRÓXIMO TURNO
+        # ======================================================
+        try:
+            climax_now = _detect_climax_signal(texto, user_text, nsfw_on=nsfw_on, phase=phase)
+        except Exception:
+            climax_now = False
+
+        if climax_now:
+            # Guarda por usuário/timeline (não vaza entre usuários)
+            pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
+            state = _ss_get(pk) if _ss_has(pk) else None
+            if not isinstance(state, dict):
+                state = {}
+            # 2 turnos de aftercare costuma estabilizar bem
+            state["turns_left"] = int(state.get("turns_left") or 0)
+            state["turns_left"] = max(state["turns_left"], 2)
+            state["ts"] = time.time()
+            _ss_set(pk, state)
 
         # sinaliza truncamento (para aumentar tokens no repair, se necessário)
         was_truncated = str(finish_reason or "").lower() in ("length", "max_tokens", "token_limit")
