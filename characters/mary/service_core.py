@@ -2895,6 +2895,16 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
+        user_orgasm_finalization_rule = """
+[FINALIZAÇÃO DO ORGASMO DO USUÁRIO — AUTORIA ABSOLUTA]
+- Mary NÃO pode concluir o orgasmo de Janio.
+- Mary pode provocar, pedir, sugerir ou suspender no limite.
+- A conclusão do orgasmo de Janio ocorre SOMENTE
+  se o usuário declarar explicitamente.
+- Ordens verbais, gestos ou ações que levem à conclusão
+  são PROIBIDAS sem autorização do usuário.
+""".strip()
+
         state_block = _render_state_block(facts)
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
