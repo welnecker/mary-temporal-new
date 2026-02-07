@@ -546,7 +546,7 @@ def _inject_canon_memories_always(
         pass
 
     lines: List[str] = []
-    lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS]")
+    lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS] — NÃO altera CENA ATIVA")
     lines.append("Estas memórias são fatos do universo e DEVEM ser seguidas.")
     lines.append("Se a persona contradizer, as memórias vencem.")
     lines.append("")
@@ -782,7 +782,7 @@ def _inject_long_memory_pins_always(
         return
 
     lines = [
-        "[MEMÓRIAS FIXAS — LONG MEMORY]",
+        "[MEMÓRIAS FIXAS — LONG MEMORY] — NÃO altera CENA ATIVA",
         "FATOS DE MUNDO (guia prático): use para orientar locais, rotina e coerência.",
         "Não citar literalmente; incorporar naturalmente.",
         "",
@@ -870,7 +870,7 @@ def _inject_long_memory_textsearch(
         return
 
     lines = [
-        "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)]",
+        "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)] — NÃO altera CENA ATIVA",
         "Use como fonte de verdade para fatos passados (onde/quando/como).",
         "Não citar literalmente: recontar com suas palavras mantendo os fatos.",
         "",
@@ -1148,7 +1148,7 @@ def _inject_shared_soft_context(
 
     selected = soft[-max_items:] if len(soft) > max_items else soft
 
-    lines = ["[MEMÓRIAS COMPARTILHADAS (suave)]", "Use para coerência, sem citar literalmente.", ""]
+    lines = ["[MEMÓRIAS COMPARTILHADAS (suave)] — NÃO altera CENA ATIVA", "Use para coerência, sem citar literalmente.", ""]
     for i, m in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
