@@ -2908,26 +2908,26 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         state_block = _render_state_block(facts)
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
-            # IMPORTANTE: este bloco passa a ser "lei de cena" (não é sugestão)
-            state_section = f"\n[CENA ATIVA — ESTADO]\n{state_block}\n"
+            # IMPORTANTE: este bloco passa a ser "lei de cena"
+            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
 
-system = f"""
+        system = f"""
 [REGRAS DO SISTEMA - LEI]
 Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
 
 HIERARQUIA (o que manda mais -> menos):
 1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-2) Regras do sistema (as regras abaixo).
-3) CANON (verdades do universo).
-4) PERSONA (como Mary age/fala; nunca pode contradizer CENA ATIVA ou CANON).
+2) Regras do sistema.
+3) CANON.
+4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
 5) MEMORIAS CANONICAS/SHARED.
-6) LONG MEMORY (DB/$text) = LEMBRANCAS; NAO altera a CENA ATIVA.
+6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
 7) Historico curto = continuidade; nao muda fatos.
 
 PROIBICOES ABSOLUTAS:
 - NAO invente local, tempo, roupa, posicao, acao, horario.
 - NAO teleporte.
-- NAO invente acoes/falas do usuario.
+- NAO invente acoes ou falas do usuario.
 - Sem logistica offscreen.
 
 {language_rule}
@@ -2977,10 +2977,9 @@ LEMBRETE:
 {intimacy_control_block}
 {nsfw_block}
 """.strip()
-        
+
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
-
         # 9) Injeções de memória
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
         _inject_canon_memories_always(
