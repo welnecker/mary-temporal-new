@@ -2979,8 +2979,7 @@ LEMBRETE FINAL (executivo):
 
 {intimacy_control_block}
 
-{nsfw_block}
-""".strip()system = f"""
+system = f"""
 [REGRAS DO SISTEMA — LEI]
 Você está dentro de uma CENA ATIVA. O sistema fornece fatos; você NÃO os inventa.
 
@@ -3050,6 +3049,7 @@ LEMBRETE FINAL (executivo):
 
 {nsfw_block}
 """.strip()
+        
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
 
