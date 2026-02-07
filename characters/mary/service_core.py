@@ -2911,7 +2911,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             # IMPORTANTE: este bloco passa a ser "lei de cena" (não é sugestão)
             state_section = f"\n[CENA ATIVA — ESTADO]\n{state_block}\n"
 
-       system = f"""
+system = f"""
 [REGRAS DO SISTEMA - LEI]
 Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
 
