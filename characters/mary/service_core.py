@@ -2980,7 +2980,7 @@ LEMBRETE FINAL (executivo):
 {intimacy_control_block}
 
 {nsfw_block}
-""".strip()zsystem = f"""
+""".strip()system = f"""
 [REGRAS DO SISTEMA — LEI]
 Você está dentro de uma CENA ATIVA. O sistema fornece fatos; você NÃO os inventa.
 
