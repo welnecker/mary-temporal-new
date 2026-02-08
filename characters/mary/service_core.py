@@ -3401,13 +3401,11 @@ LEMBRETE:
     # ======================================================
     def _generate_with_repair(
         self,
-        
         model: str,
         messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
         top_p: float,
-        extra: Optional[Dict[str, Any]] = None,
         usuario_key: str,
         ctx_lower: str,
         user_text: str,
@@ -3417,6 +3415,7 @@ LEMBRETE:
         timeline: str,
         allow_third_party_seduction: bool,
         diag: _Diag,
+        extra: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, str]:
 
         data, used_model, _provider_meta = self._chat(
