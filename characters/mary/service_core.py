@@ -3048,8 +3048,13 @@ LEMBRETE:
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
+        
+        # 🔒 8.5) CONTEXTO ATUAL ABSOLUTO (ANTI-TELEPORTE) — entra ANTES das memórias
+        _inject_now_context(messages, usuario_key, timeline_final)
+        
         # 9) Injeções de memória
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
+        
         _inject_canon_memories_always(
             shared_key,
             timeline_final,
@@ -3057,7 +3062,7 @@ LEMBRETE:
             max_items=24,
             dedupe_bucket=dedupe_hashes,
         )
-
+        
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
@@ -3065,9 +3070,7 @@ LEMBRETE:
             max_items=6,
             dedupe_bucket=dedupe_hashes,
         )
-
-
-
+        
         # 10) Histórico curto
         history = cached_get_history(usuario_key, limit=200)
         for d in history[-12:]:
@@ -3077,8 +3080,7 @@ LEMBRETE:
                 messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
             if a:
                 messages.append({"role": "assistant", "content": a})
-
-
+        
         _inject_long_memory_textsearch(
             shared_key,
             timeline_final,
@@ -3087,6 +3089,7 @@ LEMBRETE:
             limit=10,
             dedupe_bucket=dedupe_hashes,
         )
+        
         _inject_relevant_memories(
             shared_key,
             timeline_final,
@@ -3095,6 +3098,7 @@ LEMBRETE:
             k=4,
             dedupe_bucket=dedupe_hashes,
         )
+        
         _inject_shared_soft_context(
             shared_key,
             timeline_final,
@@ -3102,9 +3106,8 @@ LEMBRETE:
             max_items=4,
             dedupe_bucket=dedupe_hashes,
         )
-
-        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
         
+        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})        
         # Fase efetiva usada no decoding (pode ser forçada para aftercare)
         phase = int(intimacy_phase)
 
