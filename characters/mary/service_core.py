@@ -2424,7 +2424,7 @@ class _Diag:
     facts: Dict[str, Any],
     rel_state: Dict[str, Any],
     timeline_final: str,
-) -> Dict[str, Any]:
+    ) -> Dict[str, Any]:
     """
     Sincroniza rel_state com a fonte absoluta do global_v:
       facts["mary"]["virginity"]  (única fonte)
