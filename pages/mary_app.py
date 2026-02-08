@@ -2188,6 +2188,40 @@ def main() -> None:
         shared_key = _shared_key_atual()
         st.caption("Key compartilhada:")
         st.code(shared_key)
+                # ➕ Inserir memória (shared)
+        st.markdown("**➕ Inserir memória (shared)**")
+        mem_text = st.text_area(
+            "Texto da memória",
+            placeholder="Ex: Mary odeia amendoim #500...\nEx: Evento no quiosque com Canobio (nao altera a cena ativa).",
+            height=120,
+            key="shared_mem_text",
+        )
+        mem_title = st.text_input(
+            "Título (opcional)",
+            placeholder="Ex: amendoim 500 / evento quiosque",
+            key="shared_mem_title",
+        )
+
+        if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
+            t = (mem_text or "").strip()
+            if not t:
+                st.warning("Escreva o texto da memória antes de salvar.")
+            else:
+                meta = {}
+                if (mem_title or "").strip():
+                    meta["title"] = mem_title.strip()
+
+                try:
+                    # append_memory já está importado no topo do mary_app.py
+                    append_memory(shared_key, t, meta=(meta or None))
+                    st.success("✅ Memória salva em (shared).")
+
+                    # Atualiza lista (se já estiver aberta) e limpa caches
+                    st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+                    _clear_mary_caches_all_related()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
 
         if st.button("📜 Listar memórias", key="btn_list_mems"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
