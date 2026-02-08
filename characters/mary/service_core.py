@@ -2420,7 +2420,6 @@ class _Diag:
         }
 
     def _sync_rel_state_with_facts_canon(
-        *,
         facts: Dict[str, Any],
         rel_state: Dict[str, Any],
         timeline_final: str,
