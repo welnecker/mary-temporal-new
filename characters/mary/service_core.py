@@ -2419,6 +2419,40 @@ class _Diag:
             "scene_transition": self.scene_transition,
         }
 
+    def _sync_rel_state_with_facts_canon(
+    *,
+    facts: Dict[str, Any],
+    rel_state: Dict[str, Any],
+    timeline_final: str,
+) -> Dict[str, Any]:
+    """
+    Sincroniza rel_state com a fonte absoluta do global_v:
+      facts["mary"]["virginity"]  (única fonte)
+    E preserva a regra: first_time_with_janio ≠ virgindade global.
+
+    NÃO inventa nada: só força coerência quando o fato global existe.
+    """
+    rs = rel_state if isinstance(rel_state, dict) else {}
+    rs = dict(rs)  # cópia defensiva
+
+    # Fonte única do global
+    mary_fact = facts.get("mary") if isinstance(facts, dict) else None
+    mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
+    gv = (mary_fact.get("virginity") or "").strip().lower()
+
+    if gv:
+        rs["_global_virginity"] = gv
+
+        # Se o global diz nao_virgem, não faz sentido rel_state dizer virgem
+        if gv == "nao_virgem" and str(rs.get("virginity") or "").strip().lower() == "virgem":
+            rs["virginity"] = "nao_virgem"
+
+    # Se já consumou com Janio, nunca pode continuar marcando "first_time_with_janio"
+    if bool(rs.get("consummated")):
+        rs["_first_time_with_janio"] = False
+
+    return rs
+
 # ==========================================================
 # SERVICE
 # ==========================================================
@@ -3081,7 +3115,7 @@ LEMBRETE:
         # ======================================================
         # ✅ FORÇAR AFTERCARE (fase 5) quando houver pós-clímax pendente
         # ======================================================
-        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
+        pk = f"mary_postclimax::{usuario_key}::{timeline}"
         if _ss_has(pk):
             stt = _ss_get(pk)
             if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
