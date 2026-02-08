@@ -2206,18 +2206,30 @@ def main() -> None:
         st.caption("Key efetiva:")
         st.code(shared_key)
         
-        # ➕ Inserir memória (shared)
+       # ➕ Inserir memória (shared)
         st.markdown("**➕ Inserir memória (shared)**")
         mem_text = st.text_area(
             "Texto da memória",
-            placeholder="Ex: Mary odeia amendoim #500...\nEx: Evento no quiosque com Canobio (nao altera a cena ativa).",
+            placeholder="Ex: Mary e Janio moram em Vitória.\nEx: Estão de férias em Balneário Camboriú.\nEx: Evento no quiosque com Canobio (não altera a cena ativa).",
             height=120,
             key="shared_mem_text",
         )
         mem_title = st.text_input(
             "Título (opcional)",
-            placeholder="Ex: amendoim 500 / evento quiosque",
+            placeholder="Ex: Moradia / Férias em BC / Evento quiosque",
             key="shared_mem_title",
+        )
+        
+        mem_kind = st.selectbox(
+            "Tipo da memória",
+            [
+                "estado_ativo",   # ex: férias em andamento
+                "evento_passado", # ex: férias concluídas
+                "canon",          # verdades absolutas (você pode preferir manter só via botão de canon)
+                "nota",           # observação leve
+            ],
+            index=0,
+            key="shared_mem_kind",
         )
         
         if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
@@ -2225,12 +2237,15 @@ def main() -> None:
             if not t:
                 st.warning("Escreva o texto da memória antes de salvar.")
             else:
-                meta = {}
+                meta = {
+                    "kind": str(st.session_state.get("shared_mem_kind") or mem_kind).strip(),
+                    "source": "ui_shared_memory",
+                }
                 if (mem_title or "").strip():
                     meta["title"] = mem_title.strip()
         
                 try:
-                    append_memory(shared_key, t, meta=(meta or None))
+                    append_memory(shared_key, t, meta=meta)
                     st.success("✅ Memória salva em (shared).")
         
                     # Atualiza lista e limpa caches
@@ -2238,8 +2253,7 @@ def main() -> None:
                     _clear_mary_caches_all_related()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
-        
+                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")        
         # 🔄 Atualizar lista (substitui o antigo "📜 Listar memórias")
         if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
