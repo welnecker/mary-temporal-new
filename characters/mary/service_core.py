@@ -2621,67 +2621,86 @@ O usuario descreveu outro lugar/tempo.
 
 # ==========================================================
 # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
-# - Usa _first_time_with_janio (derivado do rel_state)
-# - Evita completamente o termo “virgem” quando global == nao_virgem
+# - first_time_with_janio ≠ virgindade global
+# - Fonte ÚNICA do global: facts["mary"]["virginity"]
+# - Regra GLOBAL: se nao_virgem, PROIBIDO falar "virgem/virgindade"
 # ==========================================================
         tl_final = (timeline_final or "").strip().lower()
-        global_v = str(rel_state.get("_global_virginity") or "").strip().lower()
+
+        mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
+        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
+        global_v = (mary_fact.get("virginity") or "").strip().lower()  # ✅ única fonte
+
         first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
         consummated_with_janio = bool(rel_state.get("consummated"))
 
         virginity_rule = ""
 
-        if tl_final == "universitaria":
-            if global_v == "nao_virgem":
-                # 🔒 REGRA ABSOLUTA:
-                # Mary já possui experiência sexual prévia no mundo.
-                # A narrativa NUNCA deve usar “virgem”, “perda de virgindade”
-                # ou linguagem de descoberta corporal inicial.
-                if consummated_with_janio:
-                    virginity_rule = (
-                        "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                        "- Mary já tem experiência prévia.\n"
-                        "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
-                        "- Não use linguagem de estreia, descoberta ou iniciação.\n"
-                    )
-                else:
-                    if first_time_with_janio:
-                        virginity_rule = (
-                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                            "- Mary já tem experiência prévia.\n"
-                            "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
-                            "- A tensão vem do vínculo emocional, escolha e conflito moral.\n"
-                            "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
-                        )
-                    else:
-                        virginity_rule = (
-                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                            "- Mary já tem experiência prévia.\n"
-                            "- Evite qualquer linguagem de iniciação.\n"
-                            "- Descreva intimidade como progressão natural do vínculo.\n"
-                        )
+        # ----------------------------------------------------------
+        # ✅ REGRA GLOBAL: se Mary NÃO é virgem no mundo, a narrativa
+        # NUNCA usa "virgem/virgindade/perder virgindade" em nenhuma timeline.
+        # ----------------------------------------------------------
+        if global_v == "nao_virgem":
+            if consummated_with_janio:
+                virginity_rule = (
+                    "[CONTINUIDADE ÍNTIMA — REGRA GLOBAL]\n"
+                    "- Mary já tem experiência sexual prévia no mundo.\n"
+                    "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
+                    "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
+                    "- Não use linguagem de estreia, descoberta ou iniciação.\n"
+                )
             else:
-                # Aqui a experiência prévia NÃO é conhecida ou é inexistente
-                if consummated_with_janio:
+                if first_time_with_janio:
                     virginity_rule = (
-                        "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                        "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
-                        "- Não volte a tratar como primeira vez.\n"
+                        "[CONTINUIDADE ÍNTIMA — REGRA GLOBAL]\n"
+                        "- Mary já tem experiência sexual prévia no mundo.\n"
+                        "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
+                        "- A tensão vem de escolha, vínculo e conflito interno — não de iniciação.\n"
+                        "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
                     )
                 else:
-                    if first_time_with_janio:
-                        virginity_rule = (
-                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                            "- Ainda não foi consumado com Janio.\n"
-                            "- Pode tratar como primeira experiência se fizer sentido narrativo.\n"
-                            "- Nunca regrida após a consumação.\n"
-                        )
-                    else:
-                        virginity_rule = (
-                            "[CONTINUIDADE ÍNTIMA — UNIVERSITÁRIA]\n"
-                            "- Ainda não consumado com Janio.\n"
-                            "- Não force o tema de iniciação sem contexto explícito.\n"
-                        )
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA GLOBAL]\n"
+                        "- Mary já tem experiência sexual prévia no mundo.\n"
+                        "- Evite qualquer linguagem de iniciação.\n"
+                        "- Descreva intimidade como progressão natural do vínculo.\n"
+                        "- PROIBIDO usar os termos: virgem, virgindade, perder a virgindade.\n"
+                    )
+
+        # ----------------------------------------------------------
+        # (Opcional) Quando global NÃO está definido como nao_virgem:
+        # mantém apenas a continuidade local (não regredir após consumação).
+        # ----------------------------------------------------------
+        else:
+            if consummated_with_janio:
+                virginity_rule = (
+                    "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                    "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
+                    "- Não volte a tratar como primeira vez.\n"
+                )
+            else:
+                if first_time_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                        "- Ainda não foi consumado com Janio nesta timeline.\n"
+                        "- Pode tratar como 'primeira vez com ele' se fizer sentido narrativo.\n"
+                        "- Nunca regrida após a consumação.\n"
+                    )
+                else:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                        "- Ainda não consumado com Janio nesta timeline.\n"
+                        "- Não force o tema de iniciação sem contexto explícito.\n"
+                    )
+
+        # ----------------------------------------------------------
+        # 🔒 REGRA ABSOLUTA (sempre anexada)
+        # ----------------------------------------------------------
+        virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
+            "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
+            "- _first_time_with_janio ≠ virgindade global.\n"
+            "- Se consumado em qualquer ponto desta timeline, nunca tratar como primeira vez novamente.\n"
+        )
 
         # 🔒 REGRA GLOBAL (todas as timelines)
         virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
