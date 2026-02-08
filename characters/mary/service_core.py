@@ -1308,7 +1308,8 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
     _save_rel_state(uk, tl, rel)
-    clear_user_cache(uk)# ==========================================================
+    clear_user_cache(uk)
+# ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
 _RE_PLACEHOLDER_REVEAL = re.compile(
@@ -2504,8 +2505,16 @@ class MaryService(BaseCharacter):
 
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+        
+        # ✅ SINCRONIZA rel_state COM FATOS + CANON (ABSOLUTO)
+        rel_state = _sync_rel_state_with_facts_canon(
+            facts=facts,
+            rel_state=rel_state,
+            timeline_final=timeline_final,
+        )
+        
+        # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
-
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
 
