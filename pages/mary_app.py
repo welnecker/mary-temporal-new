@@ -2184,11 +2184,29 @@ def main() -> None:
         # ======================================================
         st.markdown("---")
         st.subheader("🧠 Memórias permanentes (shared)")
-
-        shared_key = _shared_key_atual()
-        st.caption("Key compartilhada:")
+        
+        # Key default (calculada pelo app)
+        shared_default = _shared_key_atual()
+        
+        # ✅ Key editável SEM rerun a cada tecla (só aplica quando clicar)
+        with st.form("shared_key_form", clear_on_submit=False):
+            shared_in = st.text_input(
+                "Key compartilhada (editável):",
+                value=st.session_state.get("shared_key_override", shared_default),
+                help="Ex: Janio Donisete::mary::shared",
+            ).strip()
+            apply_shared = st.form_submit_button("✅ Aplicar key")
+        
+        if apply_shared:
+            st.session_state["shared_key_override"] = shared_in or shared_default
+        
+        # Key efetiva usada em tudo abaixo (salvar/listar/apagar)
+        shared_key = st.session_state.get("shared_key_override") or shared_default
+        
+        st.caption("Key efetiva:")
         st.code(shared_key)
-                # ➕ Inserir memória (shared)
+        
+        # ➕ Inserir memória (shared)
         st.markdown("**➕ Inserir memória (shared)**")
         mem_text = st.text_area(
             "Texto da memória",
@@ -2201,7 +2219,7 @@ def main() -> None:
             placeholder="Ex: amendoim 500 / evento quiosque",
             key="shared_mem_title",
         )
-
+        
         if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
             t = (mem_text or "").strip()
             if not t:
@@ -2210,36 +2228,37 @@ def main() -> None:
                 meta = {}
                 if (mem_title or "").strip():
                     meta["title"] = mem_title.strip()
-
+        
                 try:
-                    # append_memory já está importado no topo do mary_app.py
                     append_memory(shared_key, t, meta=(meta or None))
                     st.success("✅ Memória salva em (shared).")
-
-                    # Atualiza lista (se já estiver aberta) e limpa caches
+        
+                    # Atualiza lista e limpa caches
                     st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
                     _clear_mary_caches_all_related()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
-
-        if st.button("📜 Listar memórias", key="btn_list_mems"):
+        
+        # 🔄 Atualizar lista (substitui o antigo "📜 Listar memórias")
+        if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-
+            st.success("Lista atualizada ✅")
+        
         if st.button("🧽 Apagar última memória", key="btn_delete_last_mem"):
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             _clear_mary_caches_all_related()
             st.rerun()
-
+        
         if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
             n = delete_all_memories(shared_key)
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
             _clear_mary_caches_all_related()
             st.rerun()
-
+        
         mems_view = st.session_state.get("__mem_list")
         if mems_view is not None:
             st.json(mems_view)
