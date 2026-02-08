@@ -2386,6 +2386,46 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 
     return False
 # ==========================================================
+# RELATIONSHIP / CANON SYNC
+# ==========================================================
+def _sync_rel_state_with_facts_canon(
+    facts: Dict[str, Any],
+    rel_state: Dict[str, Any],
+    timeline_final: str,
+) -> Dict[str, Any]:
+    """
+    Sincroniza rel_state com o canon global.
+
+    Regras:
+    - Fonte ÚNICA do global: facts["mary"]["virginity"]
+    - first_time_with_janio ≠ virgindade global
+    - Se consumado com Janio, NUNCA manter _first_time_with_janio
+    """
+
+    rs = rel_state if isinstance(rel_state, dict) else {}
+    rs = dict(rs)  # cópia defensiva
+
+    mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
+    mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
+
+    global_v = (mary_fact.get("virginity") or "").strip().lower()
+
+    # Fonte global absoluta
+    if global_v:
+        rs["_global_virginity"] = global_v
+
+        # Se o mundo diz não virgem, não pode existir regressão
+        if global_v == "nao_virgem":
+            if str(rs.get("virginity") or "").strip().lower() == "virgem":
+                rs["virginity"] = "nao_virgem"
+
+    # Se já consumou com Janio, nunca pode continuar "primeira vez"
+    if bool(rs.get("consummated")):
+        rs["_first_time_with_janio"] = False
+
+    return rs
+
+# ==========================================================
 # DIAGNÓSTICOS (UI)
 # ==========================================================
 @dataclass
@@ -2419,60 +2459,6 @@ class _Diag:
             "scene_transition": self.scene_transition,
         }
 
-    def _sync_rel_state_with_facts_canon(
-        facts: Dict[str, Any],
-        rel_state: Dict[str, Any],
-        timeline_final: str,
-    ) -> Dict[str, Any]:
-        """Sincroniza rel_state com facts/canon (fonte única do global_v).
-    
-        - Fonte ÚNICA: facts["mary"]["virginity"]
-        - first_time_with_janio ≠ virgindade global
-        - Se consumado com Janio, nunca manter _first_time_with_janio
-        """
-        rs = rel_state if isinstance(rel_state, dict) else {}
-        rs = dict(rs)  # cópia defensiva
-    
-        mary_fact = facts.get("mary") if isinstance(facts, dict) else None
-        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-        gv = (mary_fact.get("virginity") or "").strip().lower()
-    
-        if gv:
-            rs["_global_virginity"] = gv
-            if gv == "nao_virgem" and str(rs.get("virginity") or "").strip().lower() == "virgem":
-                rs["virginity"] = "nao_virgem"
-    
-        if bool(rs.get("consummated")):
-            rs["_first_time_with_janio"] = False
-    
-        return rsdef _sync_rel_state_with_facts_canon(
-        *,
-        facts: Dict[str, Any],
-        rel_state: Dict[str, Any],
-        timeline_final: str,
-    ) -> Dict[str, Any]:
-        """Sincroniza rel_state com facts/canon (fonte única do global_v).
-    
-        - Fonte ÚNICA: facts["mary"]["virginity"]
-        - first_time_with_janio ≠ virgindade global
-        - Se consumado com Janio, nunca manter _first_time_with_janio
-        """
-        rs = rel_state if isinstance(rel_state, dict) else {}
-        rs = dict(rs)  # cópia defensiva
-    
-        mary_fact = facts.get("mary") if isinstance(facts, dict) else None
-        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-        gv = (mary_fact.get("virginity") or "").strip().lower()
-    
-        if gv:
-            rs["_global_virginity"] = gv
-            if gv == "nao_virgem" and str(rs.get("virginity") or "").strip().lower() == "virgem":
-                rs["virginity"] = "nao_virgem"
-    
-        if bool(rs.get("consummated")):
-            rs["_first_time_with_janio"] = False
-    
-        return rs
 # ==========================================================
 # SERVICE
 # ==========================================================
@@ -3415,7 +3401,7 @@ LEMBRETE:
     # ======================================================
     def _generate_with_repair(
         self,
-        *,
+        
         model: str,
         messages: List[Dict[str, str]],
         temperature: float,
