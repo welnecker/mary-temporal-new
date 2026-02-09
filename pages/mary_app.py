@@ -281,7 +281,14 @@ def _apply_dark_ui() -> None:
         unsafe_allow_html=True,
     )
 
-
+def _apply_dark_ui_once() -> None:
+    """
+    Aplica o CSS uma única vez por sessão para evitar repetição em reruns.
+    """
+    if st.session_state.get("_dark_ui_applied", False):
+        return
+    _apply_dark_ui()
+    st.session_state["_dark_ui_applied"] = True
 
 def _strip_persona_echo_if_any(text: str) -> str:
     t = (text or "").strip()
@@ -290,6 +297,7 @@ def _strip_persona_echo_if_any(text: str) -> str:
 
     # Se o modelo ecoar o prompt do fallback, corta tudo antes do marcador final.
     markers = [
+        "⟦MARY⟧",
         "RESPOSTA DA MARY:",
         "Resposta da Mary:",
     ]
@@ -352,7 +360,7 @@ def check_password() -> bool:
     if st.session_state["senha_ok"]:
         return True
 
-    _apply_dark_ui()
+    _apply_dark_ui_once()
     st.title("🔐 Acesso Restrito")
     with st.form("form_senha", clear_on_submit=False):
         senha = st.text_input("Digite a senha de acesso:", type="password")
@@ -448,7 +456,7 @@ def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, us
 
     rel["consummated"] = True
     rel["virginity"] = "nao_virgem"
-    rel.setdefault("allows_penetration", True)
+    rel["allows_penetration"] = True
 
     set_fact(usuario_key, rel_key, rel, {"fonte": "ui_button_canon"})
     set_fact(usuario_key, "mary.virginity", "nao_virgem", {"fonte": "ui_button_canon"})
@@ -501,7 +509,7 @@ def _get_persona_bundle(timeline: str) -> tuple[str, Any]:
 def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
     """
     Fallback: injeta persona no prompt quando o service não injeta.
-    IMPORTANTE: formato ANTI-ECHO (não usa rótulos "PERSONA (SYSTEM)" / "USER").
+    IMPORTANTE: formato ANTI-ECHO usando delimitadores raros.
     """
     system_text, boot = _get_persona_bundle(timeline)
     boot_txt = _flatten_boot_messages(boot, timeline)
@@ -510,15 +518,15 @@ def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
         return prompt
 
     return (
-        "INSTRUÇÕES INTERNAS (NÃO MOSTRAR, NÃO REPETIR, NÃO ECOAR):\n"
+        "⟦SYS⟧\n"
         f"{system_text}\n\n"
+        "⟦BOOT⟧\n"
         f"{boot_txt}\n\n"
-        "REGRA: responda APENAS como Mary. Não copie nada das instruções internas.\n"
-        "Comece sua resposta diretamente, sem títulos.\n\n"
-        f"MENSAGEM DO USUÁRIO: {prompt}\n"
-        "RESPOSTA DA MARY:"
+        "⟦RULE⟧ Responda APENAS como Mary. Não repita nada acima.\n\n"
+        "⟦USER⟧\n"
+        f"{prompt}\n"
+        "⟦MARY⟧"
     )
-
 
 # ==========================================================
 # HELPERS
@@ -1149,18 +1157,27 @@ def _extract_router_text(resp: Any) -> str:
 def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | None]:
     """
     Retorna (provider, used_model).
-    ✅ Suporta tuple(data, used_model, provider) (OpenRouter/Together/HF no seu projeto)
-    """
-    if isinstance(resp, tuple):
-        used_model = None
-        provider = None
 
+    ✅ Suporta tuple(data, used_model, provider) (OpenRouter/Together/HF no seu projeto)
+    ✅ Suporta dict com chaves em níveis diferentes:
+       - direto: provider/model/used_model/resolved_model...
+       - meta: meta.provider/meta.used_model...
+       - debug: debug.provider/debug.used_model...
+    """
+    # ----------------------------
+    # 1) Caso tuple: (data, used_model, provider)
+    # ----------------------------
+    if isinstance(resp, tuple):
+        used_model: str | None = None
+        provider: str | None = None
+
+        # formato padrão do seu router: (data, used_model, provider)
         if len(resp) >= 3:
             used_model = resp[1].strip() if isinstance(resp[1], str) and resp[1].strip() else None
             provider = resp[2].strip() if isinstance(resp[2], str) and resp[2].strip() else None
             return (provider, used_model)
 
-        # fallback defensivo
+        # fallback defensivo: tenta achar strings soltas
         for item in resp:
             if isinstance(item, str) and item.strip():
                 low = item.strip().lower()
@@ -1168,23 +1185,25 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
                     provider = item.strip()
                 else:
                     used_model = used_model or item.strip()
+
         return (provider, used_model)
 
+    # ----------------------------
+    # 2) Se não é dict, acabou
+    # ----------------------------
     if not isinstance(resp, dict):
         return (None, None)
 
-    # (quase nunca será usado no seu caso, mas deixo como fallback)
-    provider = resp.get("provider") if isinstance(resp.get("provider"), str) else None
-    model = resp.get("model") if isinstance(resp.get("model"), str) else None
-    return (provider, model)
-
-
+    # ----------------------------
+    # 3) Caso dict: procurar provider/model em múltiplos lugares
+    # ----------------------------
     provider_keys = ["provider", "used_provider", "provider_used", "last_used_provider"]
-    model_keys = ["model", "used_model", "resolved_model", "model_used", "last_used_model"]
+    model_keys = ["used_model", "resolved_model", "model_used", "last_used_model", "model"]
 
-    provider = None
-    model = None
+    provider: str | None = None
+    model: str | None = None
 
+    # (a) nível raiz
     for k in provider_keys:
         v = resp.get(k)
         if isinstance(v, str) and v.strip():
@@ -1197,81 +1216,155 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
             model = v.strip()
             break
 
+    # (b) meta.*
     meta = resp.get("meta")
     if isinstance(meta, dict):
         if provider is None:
-            v = meta.get("provider") or meta.get("used_provider")
+            v = meta.get("provider") or meta.get("used_provider") or meta.get("provider_used")
             if isinstance(v, str) and v.strip():
                 provider = v.strip()
+
         if model is None:
-            v = meta.get("model") or meta.get("used_model") or meta.get("resolved_model")
+            v = meta.get("used_model") or meta.get("resolved_model") or meta.get("model") or meta.get("model_used")
             if isinstance(v, str) and v.strip():
                 model = v.strip()
 
+    # (c) debug.*
     dbg = resp.get("debug")
     if isinstance(dbg, dict):
         if provider is None:
-            v = dbg.get("provider") or dbg.get("used_provider")
+            v = dbg.get("provider") or dbg.get("used_provider") or dbg.get("provider_used")
             if isinstance(v, str) and v.strip():
                 provider = v.strip()
+
         if model is None:
-            v = dbg.get("model") or dbg.get("used_model") or dbg.get("resolved_model")
+            v = dbg.get("used_model") or dbg.get("resolved_model") or dbg.get("model") or dbg.get("model_used")
             if isinstance(v, str) and v.strip():
                 model = v.strip()
 
     return (provider, model)
-
 def _summarize_raw(resp: Any) -> dict[str, Any]:
+    """
+    Resume o retorno do router/service sem vazar payload inteiro.
+    ✅ Captura provider/model/used_model em:
+      - tuple(data, used_model, provider)
+      - dict raiz
+      - dict.meta
+      - dict.debug
+      - preview do content/text
+    """
     info: dict[str, Any] = {"raw_type": type(resp).__name__}
 
+    # ----------------------------
     # tuple (data, used_model, provider)
+    # ----------------------------
     if isinstance(resp, tuple):
         info["tuple_len"] = len(resp)
         try:
-            info["tuple_1_type"] = type(resp[0]).__name__ if len(resp) > 0 else None
+            info["tuple_0_type"] = type(resp[0]).__name__ if len(resp) > 0 else None
             info["tuple_used_model"] = resp[1] if len(resp) > 1 else None
             info["tuple_provider"] = resp[2] if len(resp) > 2 else None
         except Exception:
             pass
-        # tenta resumir o "data" do tuple
+
+        # tenta resumir o "data" do tuple (primeiro item)
         data = resp[0] if len(resp) > 0 else None
         info["data_preview"] = _summarize_raw(data)
         return info
 
+    # ----------------------------
     # dict OpenAI-like
+    # ----------------------------
     if isinstance(resp, dict):
-        info["keys"] = list(resp.keys())[:30]
+        # keys principais
+        info["keys"] = list(resp.keys())[:40]
+
+        # tenta extrair provider/model em camadas (raiz/meta/debug)
+        def _pick_str(d: dict, *keys: str) -> str | None:
+            for k in keys:
+                v = d.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            return None
+
+        provider_root = _pick_str(resp, "provider", "used_provider", "provider_used", "last_used_provider")
+        model_root = _pick_str(resp, "used_model", "resolved_model", "model_used", "last_used_model", "model")
+
+        meta = resp.get("meta") if isinstance(resp.get("meta"), dict) else None
+        debug = resp.get("debug") if isinstance(resp.get("debug"), dict) else None
+
+        provider_meta = _pick_str(meta, "provider", "used_provider", "provider_used") if meta else None
+        model_meta = _pick_str(meta, "used_model", "resolved_model", "model", "model_used") if meta else None
+
+        provider_dbg = _pick_str(debug, "provider", "used_provider", "provider_used") if debug else None
+        model_dbg = _pick_str(debug, "used_model", "resolved_model", "model", "model_used") if debug else None
+
+        info["provider"] = provider_root or provider_meta or provider_dbg
+        info["used_model"] = model_root or model_meta or model_dbg
+        info["has_meta"] = bool(meta)
+        info["has_debug"] = bool(debug)
+
+        # choices/message preview
         choices = resp.get("choices")
         info["choices_type"] = type(choices).__name__
         try:
             if isinstance(choices, list) and choices:
                 c0 = choices[0] or {}
                 msg = c0.get("message") or {}
-                info["c0_keys"] = list(c0.keys())[:30]
-                info["msg_keys"] = list(msg.keys())[:30] if isinstance(msg, dict) else None
-                info["content_type"] = type(msg.get("content")).__name__ if isinstance(msg, dict) else None
+
+                info["c0_keys"] = list(c0.keys())[:40]
+                info["msg_keys"] = list(msg.keys())[:40] if isinstance(msg, dict) else None
+
                 ct = msg.get("content") if isinstance(msg, dict) else None
-                if isinstance(ct, str):
-                    info["content_preview"] = ct[:400]
+                info["content_type"] = type(ct).__name__
+
+                # preview do content
+                if isinstance(ct, str) and ct.strip():
+                    info["content_preview"] = ct[:500]
+                elif isinstance(ct, list):
+                    parts: list[str] = []
+                    for p in ct:
+                        if isinstance(p, dict):
+                            t = p.get("text")
+                            if isinstance(t, str) and t.strip():
+                                parts.append(t.strip())
+                        elif isinstance(p, str) and p.strip():
+                            parts.append(p.strip())
+                    if parts:
+                        info["content_preview"] = "\n".join(parts)[:500]
+
+                # fallback do provider antigo: text
                 txt2 = c0.get("text")
-                if isinstance(txt2, str) and not info.get("content_preview"):
-                    info["text_preview"] = txt2[:400]
+                if isinstance(txt2, str) and txt2.strip() and not info.get("content_preview"):
+                    info["text_preview"] = txt2[:500]
+
+                # reasoning (quando content vem vazio)
+                if isinstance(msg, dict):
+                    r = msg.get("reasoning")
+                    if isinstance(r, str) and r.strip():
+                        info["reasoning_preview"] = r[:500]
+
             else:
                 info["choices_len"] = len(choices) if isinstance(choices, list) else None
         except Exception as e:
             info["parse_error"] = f"{type(e).__name__}: {e}"
+
         return info
 
+    # ----------------------------
     # str
+    # ----------------------------
     if isinstance(resp, str):
-        info["text_preview"] = resp[:400]
+        info["text_preview"] = resp[:500]
         info["text_len"] = len(resp)
         return info
 
-    # fallback
+    # ----------------------------
+    # fallback genérico
+    # ----------------------------
     try:
         s = repr(resp)
-        info["repr_preview"] = s[:400]
+        info["repr_preview"] = s[:500]
     except Exception:
         pass
     return info
@@ -1469,35 +1562,52 @@ def _call_service_reply_safe(
     prompt: str,
     timeline: str,
     nsfw: bool | None,
+    allow_third_party_seduction: bool | None = None,
 ) -> str:
     """
     Chama svc.reply sem depender de assinatura fixa.
     E, se o service NÃO injeta persona, permite fallback opcional via UI.
+
+    ✅ Patch:
+    - allow_third_party_seduction explícito (não depender só do session_state)
+    - telemetria provider/model a partir do retorno OU do service
+    - debug raw + previews
     """
 
-    # fallback persona (opcional)
+    # ------------------------------------------------------
+    # 1) Fallback persona (opcional via UI)
+    # ------------------------------------------------------
     if bool(st.session_state.get("mary_ui_persona_fallback", False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
     else:
         prompt_to_send = prompt
 
-    # ✅ fonte única de NSFW:
-    # - se veio parâmetro, respeita
-    # - senão, lê do sidebar
+    # ------------------------------------------------------
+    # 2) Fonte única de NSFW
+    # ------------------------------------------------------
     if nsfw is None:
         nsfw_value = bool(st.session_state.get("mary_nsfw_on", False))
     else:
         nsfw_value = bool(nsfw)
 
+    # ------------------------------------------------------
+    # 3) Fonte única do toggle de terceiros (explícito > session_state)
+    # ------------------------------------------------------
+    if allow_third_party_seduction is None:
+        allow_3p = bool(st.session_state.get("mary_allow_third_party_seduction", False))
+    else:
+        allow_3p = bool(allow_third_party_seduction)
+
+    # ------------------------------------------------------
+    # 4) Monta kwargs “máximo possível” e filtra pela assinatura real
+    # ------------------------------------------------------
     kwargs = {
         "user": user,
         "model": model,
         "prompt": prompt_to_send,
         "timeline": timeline,
         "nsfw": nsfw_value,
-        "allow_third_party_seduction": bool(
-            st.session_state.get("mary_allow_third_party_seduction", False)
-        ),
+        "allow_third_party_seduction": allow_3p,  # ✅ agora é explícito e consistente
     }
 
     # ✅ filtra kwargs pela assinatura real do service (evita TypeError em services antigos)
@@ -1508,33 +1618,52 @@ def _call_service_reply_safe(
     except Exception:
         pass
 
+    # ------------------------------------------------------
+    # 5) Chama o service
+    # ------------------------------------------------------
     resp = svc.reply(**kwargs)  # pode vir str OU tuple/dict dependendo do service/router
 
-    # ✅ debug raw
-    st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
+    # ------------------------------------------------------
+    # 6) Debug raw (resumo) — SEM explodir rerun
+    # ------------------------------------------------------
+    try:
+        st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
+    except Exception:
+        st.session_state["mary_last_raw_resp"] = {"raw_type": type(resp).__name__}
 
-    # ✅ extrai texto UMA vez
-    txt = _extract_router_text(resp)
-    st.session_state["mary_last_extracted_text_preview"] = (txt or "")[:600]
+    # ------------------------------------------------------
+    # 7) Extrai texto UMA vez
+    # ------------------------------------------------------
+    txt = _extract_router_text(resp) or ""
+    st.session_state["mary_last_extracted_text_preview"] = txt[:600]
 
-    # ✅ telemetria (provider/model) — tenta do retorno; se não, tenta do service
-    prov, used_model = _extract_router_used_model_provider(resp)
+    # ------------------------------------------------------
+    # 8) Telemetria provider/model (preferir retorno; senão, service)
+    # ------------------------------------------------------
+    try:
+        prov, used_model = _extract_router_used_model_provider(resp)
+    except Exception:
+        prov, used_model = (None, None)
+
     if used_model or prov:
         st.session_state["mary_last_used_model"] = used_model
         st.session_state["mary_last_used_provider"] = prov
     else:
         _capture_used_model_provider_from_service(svc)
 
-    clean = _strip_persona_echo_if_any(txt)
-    st.session_state["mary_last_clean_text_preview"] = (clean or "")[:600]
-    return clean
+    # ------------------------------------------------------
+    # 9) Strip de echo da persona (se cair no fallback UI)
+    # ------------------------------------------------------
+    clean = _strip_persona_echo_if_any(txt) or ""
+    st.session_state["mary_last_clean_text_preview"] = clean[:600]
 
+    return clean
 
 # ==========================================================
 # APP
 # ==========================================================
 def main() -> None:
-    _apply_dark_ui()
+    _apply_dark_ui_once()
     _garantir_estado_inicial()
     _auto_unlock_if_sem_interacao()
 
@@ -1610,8 +1739,7 @@ def main() -> None:
     with st.sidebar.expander("🧩 Debug Persona Import", expanded=True):
         try:
             import importlib.util
-            import characters.mary.persona as mary_persona
-
+           
             st.write("📌 persona.py ativo:", getattr(mary_persona, "__file__", "—"))
 
             # mostra o último resultado do import (do seu persona.py)
@@ -1662,16 +1790,17 @@ def main() -> None:
         "🎭 Linha temporal da Mary",
         list(personas.keys()),
         index=list(personas.keys()).index(label_atual),
-        disabled=False,
+        disabled=bool(st.session_state.get("mary_timeline_locked", False)),
         key="persona_label",
         on_change=_on_timeline_change,
     )
-
-    if st.session_state["mary_timeline_locked"]:
+    
+    if st.session_state.get("mary_timeline_locked", False):
         st.caption("🔒 Persona travada após a 1ª mensagem do usuário.")
         st.caption("👉 Se travou sem você ter falado nada, use: Sidebar → 'Destravar timeline'.")
-
+    
     keys = _keys_para_mary()
+
 
     # ==========================================================
     # BACKEND RESET / DIAGNÓSTICO
@@ -1757,6 +1886,7 @@ def main() -> None:
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
                 st.session_state["mary_allow_third_party_seduction"] = False  # ✅ NOVO
+                st.session_state["persona_label"] = None  # ✅ NOVO (evita callback fantasma)
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
@@ -1884,12 +2014,25 @@ def main() -> None:
 
         st.markdown("---")
         st.subheader("🧨 Último erro (service)")
-        
-        if st.button("📌 Mostrar mary_last_error", key="btn_show_last_error"):
-            st.json(st.session_state.get("mary_last_error") or {})
-            st.json(st.session_state.get("mary_last_raw_preview") or {})
-            st.json(st.session_state.get("mary_last_diagnostics") or {})
 
+        if st.button("📌 Mostrar diagnóstico completo", key="btn_show_last_error"):
+            st.markdown("**Modelo/Provider capturados (última call):**")
+            st.write(
+                "Usado:",
+                f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
+            )
+        
+            st.markdown("**Preview extracted (antes do strip):**")
+            st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
+        
+            st.markdown("**Preview clean (depois do strip):**")
+            st.code(st.session_state.get("mary_last_clean_text_preview") or "")
+        
+            st.markdown("**RAW summary (resumo do retorno do router/service):**")
+            st.json(st.session_state.get("mary_last_raw_resp") or {})
+        
+            st.markdown("**Último erro registrado (se existir):**")
+            st.json(st.session_state.get("mary_last_error") or {})
 
 
         st.markdown("---")
@@ -2032,7 +2175,7 @@ def main() -> None:
 
         st.caption("Arquivo persona ativo:")
         try:
-            st.code(inspect.getfile(mary_persona.get_persona))
+            st.code(getattr(mary_persona, "__file__", "—"))
         except Exception:
             st.code("(não consegui resolver path)")
 
@@ -2052,9 +2195,12 @@ def main() -> None:
             with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
                 st.code((boot_txt or "")[:800])
 
+        tl = _timeline()
+        fb_key = f"mary_ui_persona_fallback::{tl}"
+        
         st.checkbox(
             "Fallback: injetar persona via UI no prompt (se service não injeta)",
-            key="mary_ui_persona_fallback",
+            key=fb_key,
         )
         st.caption("Dica: deixe ON até você confirmar que o service está montando messages com SYSTEM+BOOT.")
 
@@ -2156,17 +2302,6 @@ def main() -> None:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
 
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
-            importlib.reload(mary_persona)
-            import characters.mary.service as mary_service
-            import characters.mary.service_core as mary_service_core
-            import characters.mary.service_cumplice as mary_service_cumplice
-            import characters.mary.service_universitaria as mary_service_universitaria
-
-            importlib.reload(mary_service_core)
-            importlib.reload(mary_service_cumplice)
-            importlib.reload(mary_service_universitaria)
-            importlib.reload(mary_service)
-
             _kill_all_mary_services()
             st.session_state["mary_intro_done"] = False
             st.session_state["chat_history"] = []
@@ -2174,39 +2309,51 @@ def main() -> None:
             st.session_state["mary_rel_meta_last"] = None
             st.session_state["mary_last_used_model"] = None
             st.session_state["mary_last_used_provider"] = None
+        
+            # limpa caches do Streamlit (se você usa cache em algum lugar)
+            try:
+                st.cache_data.clear()
+            except Exception:
+                pass
+            try:
+                st.cache_resource.clear()
+            except Exception:
+                pass
+        
             _invalidate_backend_cache()
             _clear_mary_caches_all_related()
-            st.success("Persona + Service recarregados. Contexto reinjetado.")
+            st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
             st.rerun()
-
         # ======================================================
         # 🧠 MEMÓRIAS PERMANENTES (shared)
         # ======================================================
         st.markdown("---")
         st.subheader("🧠 Memórias permanentes (shared)")
         
-        # Key default (calculada pelo app)
         shared_default = _shared_key_atual()
         
-        # ✅ Key editável SEM rerun a cada tecla (só aplica quando clicar)
+        if "shared_key_override" not in st.session_state:
+            st.session_state["shared_key_override"] = ""
+        
         with st.form("shared_key_form", clear_on_submit=False):
             shared_in = st.text_input(
                 "Key compartilhada (editável):",
-                value=st.session_state.get("shared_key_override", shared_default),
+                value=st.session_state.get("shared_key_override") or shared_default,
                 help="Ex: Janio Donisete::mary::shared",
             ).strip()
             apply_shared = st.form_submit_button("✅ Aplicar key")
         
         if apply_shared:
             st.session_state["shared_key_override"] = shared_in or shared_default
+            st.session_state["__mem_list"] = None
+            st.rerun()
         
-        # Key efetiva usada em tudo abaixo (salvar/listar/apagar)
-        shared_key = st.session_state.get("shared_key_override") or shared_default
+        shared_key = (st.session_state.get("shared_key_override") or shared_default).strip() or shared_default
         
         st.caption("Key efetiva:")
         st.code(shared_key)
         
-       # ➕ Inserir memória (shared)
+        # ➕ Inserir memória (shared)
         st.markdown("**➕ Inserir memória (shared)**")
         mem_text = st.text_area(
             "Texto da memória",
@@ -2222,12 +2369,7 @@ def main() -> None:
         
         mem_kind = st.selectbox(
             "Tipo da memória",
-            [
-                "estado_ativo",   # ex: férias em andamento
-                "evento_passado", # ex: férias concluídas
-                "canon",          # verdades absolutas (você pode preferir manter só via botão de canon)
-                "nota",           # observação leve
-            ],
+            ["estado_ativo", "evento_passado", "canon", "nota"],
             index=0,
             key="shared_mem_kind",
         )
@@ -2248,13 +2390,13 @@ def main() -> None:
                     append_memory(shared_key, t, meta=meta)
                     st.success("✅ Memória salva em (shared).")
         
-                    # Atualiza lista e limpa caches
                     st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+                    _clear_service_caches_for_keys([shared_key])
                     _clear_mary_caches_all_related()
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")        
-        # 🔄 Atualizar lista (substitui o antigo "📜 Listar memórias")
+                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
+        
         if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             st.success("Lista atualizada ✅")
@@ -2263,6 +2405,7 @@ def main() -> None:
             ok = delete_last_memory(shared_key)
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+            _clear_service_caches_for_keys([shared_key])
             _clear_mary_caches_all_related()
             st.rerun()
         
@@ -2270,23 +2413,25 @@ def main() -> None:
             n = delete_all_memories(shared_key)
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
+            _clear_service_caches_for_keys([shared_key])
             _clear_mary_caches_all_related()
             st.rerun()
         
         mems_view = st.session_state.get("__mem_list")
         if mems_view is not None:
             st.json(mems_view)
-
         # ======================================================
         # 🗃️ LONG MEMORY (DB) — 1 doc por memória + Text Search
         # ======================================================
         st.markdown("---")
         st.subheader("🗃️ Long Memory (DB) — Text Search")
-
-        lm_userkey = _shared_key_atual()
+        
+        # ✅ usa a mesma key efetiva do shared (respeita override)
+        lm_userkey = (st.session_state.get("shared_key_override") or _shared_key_atual()).strip() or _shared_key_atual()
+        
         st.caption("Key usada na Long Memory:")
         st.code(lm_userkey)
-
+        
         col1, col2 = st.columns([1, 1])
         with col1:
             if st.button("🧱 Criar índices Long Memory (Mongo)", key="btn_lm_indexes"):
@@ -2295,7 +2440,7 @@ def main() -> None:
                     st.success("✅ Índices da long_memory garantidos (se backend=mongo).")
                 except Exception as e:
                     st.error(f"Falha ao criar índices: {type(e).__name__}: {e}")
-
+        
         with col2:
             if st.button("📚 Listar últimas 50 (DB)", key="btn_lm_list"):
                 try:
@@ -2303,22 +2448,19 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Falha ao listar: {type(e).__name__}: {e}")
                     st.session_state["__lm_list"] = []
-
+        
         col3, col4 = st.columns(2)
-
+        
         with col3:
             if st.button("🧽 Apagar última (DB)", key="btn_lm_delete_last"):
                 try:
                     ok = delete_last_long_memory(lm_userkey)
-                    if ok:
-                        st.success("✅ Última memória (DB) apagada.")
-                    else:
-                        st.info("Nada para apagar (DB).")
+                    st.success("✅ Última memória (DB) apagada." if ok else "Nada para apagar (DB).")
                     st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
                 except Exception as e:
                     st.error(f"Falha ao apagar última (DB): {type(e).__name__}: {e}")
                 st.rerun()
-
+        
         with col4:
             confirm_all = st.checkbox("Confirmo apagar TODAS (DB)", key="lm_confirm_delete_all")
             if st.button("💣 Apagar TODAS (DB)", key="btn_lm_delete_all", disabled=not confirm_all):
@@ -2331,62 +2473,57 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Falha ao apagar todas (DB): {type(e).__name__}: {e}")
                 st.rerun()
-
+        
         st.markdown("### ➕ Inserir memória (DB)")
         lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
         lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
-
+        
         if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
             try:
                 txt = (lm_text or "").strip()
                 if not txt:
                     st.warning("⚠️ Texto da memória está vazio.")
-                    st.stop()
+                else:
+                    kind_final = "pin" if bool(lm_pin) else "memory"
+                    tl_current = _timeline()
+                    timeline_at_save = "[all]" if kind_final == "pin" else tl_current
         
-                # ✅ kind FINAL: sem lm_kind (simplificado)
-                kind_final = "pin" if bool(lm_pin) else "memory"
+                    meta = {
+                        "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
+                        "kind": kind_final,
+                        "timeline_at_save": timeline_at_save,
+                        "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
+                        "source": "ui_long_memory",
+                    }
         
-                # ✅ PIN por padrão vale para todas as timelines
-                tl_current = _timeline()
-                timeline_at_save = "[all]" if kind_final == "pin" else tl_current
+                    doc = append_long_memory(lm_userkey, txt, meta=meta)
+                    st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')} kind={kind_final} tl={timeline_at_save}")
         
-                meta = {
-                    "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
-                    "kind": kind_final,
-                    "timeline_at_save": timeline_at_save,
-                    "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
-                    "source": "ui_long_memory",
-                }
-        
-                doc = append_long_memory(lm_userkey, txt, meta=meta)
-                st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')} kind={kind_final} tl={timeline_at_save}")
-        
-                # opcional: atualizar lista na tela
-                try:
                     st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                except Exception:
-                    pass
-        
+                    st.rerun()
             except Exception as e:
                 st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
-
-
+        
         st.markdown("### 🔎 Buscar (Mongo $text)")
         q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
         lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
-
+        
         if st.button("🔍 Buscar agora", key="btn_lm_search"):
-            try:
-                st.session_state["__lm_search"] = search_long_memory_text(lm_userkey, q, limit=int(lim)) or []
-            except Exception as e:
-                st.error(f"Falha na busca: {type(e).__name__}: {e}")
-                st.session_state["__lm_search"] = []
-
+            qq = (q or "").strip()
+            if not qq:
+                st.warning("Digite uma consulta antes de buscar.")
+            else:
+                try:
+                    st.session_state["__lm_search"] = search_long_memory_text(lm_userkey, qq, limit=int(lim)) or []
+                except Exception as e:
+                    st.error(f"Falha na busca: {type(e).__name__}: {e}")
+                    st.session_state["__lm_search"] = []
+        
         if st.session_state.get("__lm_search") is not None:
             st.caption("Resultados da busca:")
             st.json(st.session_state.get("__lm_search") or [])
-
+        
         if st.session_state.get("__lm_list") is not None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
@@ -2456,12 +2593,22 @@ def main() -> None:
                 prompt=prompt,
                 timeline=tl_active,
                 nsfw=nsfw_active,
+                allow_third_party_seduction=third_active,  # ✅ passa explicitamente
             )
         except Exception as e:
+            st.session_state["mary_last_error"] = {
+                "type": type(e).__name__,
+                "msg": str(e),
+                "timeline": tl_active,
+                "nsfw": nsfw_active,
+                "ui_model": st.session_state.get("model") or DEFAULT_MODEL,
+                "used_provider": st.session_state.get("mary_last_used_provider"),
+                "used_model": st.session_state.get("mary_last_used_model"),
+                "trace": traceback.format_exc()[:4000],
+            }
             st.error(f"💥 Erro real ao chamar o modelo: {type(e).__name__}: {e}")
-            st.code(traceback.format_exc())
+            st.code(st.session_state["mary_last_error"]["trace"])
             st.stop()
-
         if not (resposta or "").strip():
             st.error("⚠️ Resposta vazia. Diagnóstico abaixo (NÃO é 'mistério', é pipeline).")
         
