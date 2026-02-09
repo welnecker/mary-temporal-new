@@ -686,9 +686,10 @@ def _garantir_estado_inicial() -> None:
         st.session_state["__mem_list"] = None
 
     # fallback injection toggle (para provar persona)
-    if "mary_ui_persona_fallback" not in st.session_state:
-        st.session_state["mary_ui_persona_fallback"] = False
-
+for tl in ("cumplice", "universitaria"):
+    k = f"mary_ui_persona_fallback::{tl}"
+    if k not in st.session_state:
+        st.session_state[k] = False
     # telemetria do modelo real
     if "mary_last_used_model" not in st.session_state:
         st.session_state["mary_last_used_model"] = None
@@ -1490,70 +1491,6 @@ def _router_ping_once(user: str, model: str) -> dict:
         st.session_state["mary_ping_last_error"] = err_txt
         return {"ok": False, "status": None, "error": err_txt, "ui_model": model}
 
-
-    prompt = 'Responda APENAS com a palavra: PONG'
-    messages = [{"role": "user", "content": prompt}]
-
-    provider_guess = (
-        str(st.session_state.get("provider") or st.session_state.get("backend") or "openrouter").strip()
-        or "openrouter"
-    )
-
-    attempts: list[tuple[str, Any]] = []
-
-    # 1) Assinatura mais comum no teu projeto: chat(provider, model, mess, user)
-    attempts.append(("pos(provider, model, messages, user)", lambda: fn(provider_guess, model, messages, user)))
-    attempts.append(("pos(provider, model, prompt, user)",    lambda: fn(provider_guess, model, prompt, user)))
-
-    # 2) Assinaturas keyword (variam entre projetos)
-    attempts.append(("kw(provider, model, messages, user)",   lambda: fn(provider=provider_guess, model=model, messages=messages, user=user)))
-    attempts.append(("kw(provider, model, prompt, user)",     lambda: fn(provider=provider_guess, model=model, prompt=prompt, user=user)))
-    attempts.append(("kw(provider, model, message, user)",    lambda: fn(provider=provider_guess, model=model, message=prompt, user=user)))
-    attempts.append(("kw(provider, model, mess, user)",       lambda: fn(provider=provider_guess, model=model, mess=prompt, user=user)))
-    attempts.append(("kw(provider, model, mess=list, user)",  lambda: fn(provider=provider_guess, model=model, mess=messages, user=user)))
-
-    # 3) Variantes com 'user_id' / 'usuario'
-    attempts.append(("kw(provider, model, messages, user_id)", lambda: fn(provider=provider_guess, model=model, messages=messages, user_id=user)))
-    attempts.append(("kw(provider, model, prompt, user_id)",   lambda: fn(provider=provider_guess, model=model, prompt=prompt, user_id=user)))
-    attempts.append(("kw(provider, model, mess, user_id)",     lambda: fn(provider=provider_guess, model=model, mess=prompt, user_id=user)))
-    attempts.append(("kw(provider, model, messages, usuario)", lambda: fn(provider=provider_guess, model=model, messages=messages, usuario=user)))
-
-    # 4) Se teu router não exige provider/user, tenta minimalista
-    attempts.append(("kw(model, messages)", lambda: fn(model=model, messages=messages)))
-    attempts.append(("kw(model, prompt)",   lambda: fn(model=model, prompt=prompt)))
-    attempts.append(("pos(model, messages)", lambda: fn(model, messages)))
-    attempts.append(("pos(model, prompt)",   lambda: fn(model, prompt)))
-
-    last_err = None
-
-    for tag, call in attempts:
-        try:
-            raw = call()
-
-            txt = _extract_router_text(raw) or ""
-            prov, used_model = _extract_router_used_model_provider(raw)
-
-            ok = bool(txt.strip())
-            # exige "PONG" pra ser ping válido
-            pong_ok = "PONG" in txt.upper()
-
-            return {
-                "ok": ok and pong_ok,
-                "attempt": tag,
-                "ui_model": model,
-                "used_provider": prov or provider_guess,
-                "used_model": used_model,
-                "text": txt[:2000],
-                "raw_type": type(raw).__name__,
-            }
-        except Exception as e:
-            last_err = f"{type(e).__name__}: {e}"
-            continue
-
-    return {"ok": False, "error": last_err or "Falhou em todas as tentativas."}
-
-
-
 def _call_service_reply_safe(
     *,
     svc: Any,
@@ -1577,11 +1514,11 @@ def _call_service_reply_safe(
     # ------------------------------------------------------
     # 1) Fallback persona (opcional via UI)
     # ------------------------------------------------------
-    if bool(st.session_state.get("mary_ui_persona_fallback", False)):
+    fb_key = f"mary_ui_persona_fallback::{timeline}"
+    if bool(st.session_state.get(fb_key, False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
     else:
         prompt_to_send = prompt
-
     # ------------------------------------------------------
     # 2) Fonte única de NSFW
     # ------------------------------------------------------
