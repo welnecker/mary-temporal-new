@@ -1113,6 +1113,49 @@ def _inject_relevant_memories(
     else:
         messages.append({"role": "system", "content": block})
 
+def _inject_now_context(
+    messages: List[Dict[str, str]],
+    usuario_key: str,
+    timeline: str,
+):
+    """
+    Injeta o CONTEXTO ATUAL ABSOLUTO da cena.
+    Anti-teleporte: impede mudança de local/situação sem base no histórico.
+    """
+
+    try:
+        facts = cached_get_facts(usuario_key) or {}
+    except Exception:
+        facts = {}
+
+    local = facts.get("local_atual")
+    companhia = facts.get("companhia_atual")
+    momento = facts.get("momento_atual")
+
+    if not any([local, companhia, momento]):
+        return  # nada a injetar
+
+    blocos = []
+
+    if local:
+        blocos.append(f"Local atual: {local}.")
+    if companhia:
+        blocos.append(f"Companhia atual: {companhia}.")
+    if momento:
+        blocos.append(f"Situação atual: {momento}.")
+
+    texto = (
+        "CONTEXTO ATUAL — NÃO ASSUMA MUDANÇAS AUTOMÁTICAS:\n"
+        + " ".join(blocos)
+        + "\nMudanças de local ou situação só podem ocorrer se forem "
+          "explicitamente iniciadas na narrativa."
+    )
+
+    messages.append({
+        "role": "system",
+        "content": texto,
+    })
+
 
 def _inject_shared_soft_context(
     shared_key: str,
