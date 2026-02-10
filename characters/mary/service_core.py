@@ -1989,28 +1989,36 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
         )
     )
 # ==========================================================
-# ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS)
+# ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS) — versão consolidada
 # ==========================================================
-_RE_THIRD_PARTY_MARKERS = re.compile(
+
+# Terceiros (marcadores FRACOS — só indicam presença de outro)
+_RE_THIRD_PARTY_WEAK = re.compile(
     r"\b("
+    # Profissões / papéis comuns de interação
     r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
-    r"moreno|estrangeiro|dan[çc]arino|dan[çc]arina|"
-    r"garoto|cara|homem|rapaz|outro|terceiro|amante"
+    r"dan[çc]arino|dan[çc]arina|dj|m[uú]sico|seguran[cç]a|"
+    # Descrições genéricas (NÃO decisivas sozinhas)
+    r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
+    r"outro\s+cara|aquele\s+cara"
     r")\b",
     re.IGNORECASE,
 )
 
 
-# "passou do beijo" (qualquer avanço íntimo real)
+# "Passou do beijo" — avanço íntimo real
 _RE_BEYOND_KISS = re.compile(
     r"\b("
+    # Avanços físicos
     r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
     r"decote|seios?|peitos?|mamil|"
     r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
     r"tirar\s+.*roupa|abrir\s+.*roupa|"
     r"calcinha|suti[aã]|"
     r"encostar\s+.*(entre\s+as\s+pernas|virilha)|"
-    r"camarim|banheiro|corredor\s+escuro|"
+    # Locais — SOMENTE com convite ou movimento
+    r"(ir|entra(r)?|leva(r)?)\s+.*(camarim|banheiro|corredor\s+escuro)|"
+    # Sexual explícito
     r"volume\s+ro[cç]a|duro\s+na\s+minha\s+.*|"
     r"penetra[cç][aã]o|penetrar|meter|foder|chupar|boquete|"
     r"buceta|vagina|clit[oó]ris|pau|p[eê]nis|anal"
@@ -2018,9 +2026,12 @@ _RE_BEYOND_KISS = re.compile(
     re.IGNORECASE,
 )
 
+
+# Convite de fuga / isolamento com terceiro
 _RE_RUNAWAY_INVITE = re.compile(
     r"\b("
-    r"sumir|noite\s+fora|"
+    r"sumir\s+(com\s+voc[eê]|comigo)|"
+    r"noite\s+fora\s+com|"
     r"vamos\s+(pro|pra|para)\s+(hotel|motel|matagal|barraco|lugar\s+isolado)|"
     r"vem\s+comigo|"
     r"no\s+uber|entra\s+no\s+uber|"
@@ -2031,6 +2042,26 @@ _RE_RUNAWAY_INVITE = re.compile(
     re.IGNORECASE,
 )
 
+
+def _third_party_deviation(text: str) -> bool:
+    """
+    Regra FINAL:
+    TERCEIRO + (AVANÇO ÍNTIMO ou FUGA) = DESVIO
+    """
+    if not text:
+        return False
+
+    t = text.lower()
+
+    # Sem terceiro, não há desvio
+    if not _RE_THIRD_PARTY_WEAK.search(t):
+        return False
+
+    # Terceiro só vira problema com ação concreta
+    if _RE_BEYOND_KISS.search(t) or _RE_RUNAWAY_INVITE.search(t):
+        return True
+
+    return False
 # ==========================================================
 # TERCEIROS — CLASSIFICAÇÃO DE LOCAIS
 # ==========================================================
