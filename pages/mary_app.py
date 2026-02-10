@@ -534,6 +534,32 @@ def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
 def _service_key_for_userkey(userkey: str) -> str:
     return f"_mary_service::{userkey}"
 
+def _render_relationship_debug_panel() -> None:
+    """
+    Painel SOMENTE de debug do relationship_engine.
+    NÃO altera estado, NÃO grava facts.
+    """
+    st.markdown("---")
+    st.subheader("🔍 Relationship Engine — Debug")
+
+    try:
+        tl = _timeline()
+        uk = _usuario_key_atual()
+
+        facts = get_facts(uk) or {}
+        rel = facts.get(f"rel.state::{tl}") or {}
+
+        st.json(
+            {
+                "timeline": tl,
+                "rel_state": rel,
+                "nsfw": bool(st.session_state.get("mary_nsfw_on", False)),
+                "third_party": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
+            }
+        )
+    except Exception as e:
+        st.error(f"Falha ao renderizar painel Relationship: {type(e).__name__}: {e}")
+
 
 def _instantiate_mary_service(*, userkey: str, timeline: str):
     """
@@ -2467,6 +2493,10 @@ def main() -> None:
 
     # ===== BOOT =====
     _boot_visual_if_empty()
+
+    # ===== DEBUG VISUAL (opcional) =====
+    if st.session_state.get("mary_debug_rel_panel", False):
+        _render_relationship_debug_panel()
 
     # ===== RENDER =====
     hist = st.session_state.get("chat_history", [])
