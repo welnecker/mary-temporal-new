@@ -3734,52 +3734,176 @@ LEMBRETE:
     # ======================================================
     # Gerar + Repair
     # ======================================================
-    def _generate_with_repair(
-        self,
-        model: str,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: int,
-        top_p: float,
-        usuario_key: str,
-        ctx_lower: str,
-        user_text: str,
-        phase: int,
-        nsfw_on: bool,
-        nsfw_profile: str,  # ✅ NOVO
-        timeline: str,
-        allow_third_party_seduction: bool,
-        diag: _Diag,
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
+   def _generate_with_repair(
+    self,
+    model: str,
+    messages: List[Dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+    top_p: float,
+    usuario_key: str,
+    ctx_lower: str,
+    user_text: str,
+    phase: int,
+    nsfw_on: bool,
+    nsfw_profile: str,  # ✅ NOVO
+    timeline: str,
+    allow_third_party_seduction: bool,
+    diag: _Diag,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Tuple[str, str]:
 
-        data, used_model, _provider_meta = self._chat(
-            model,
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            extra=extra,
+    data, used_model, _provider_meta = self._chat(
+        model,
+        messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+        extra=extra,
+    )
+    used_model = used_model or model
+
+    # ✅ pega finish_reason + usage (quando existirem)
+    finish_reason, usage = _extract_finish_reason_and_usage(data)
+
+    try:
+        _ss_set(
+            "mary_last_raw_preview",
+            {
+                "used_model": used_model,
+                "raw_type": type(data).__name__,
+                "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
+                "finish_reason": finish_reason,
+                "usage": usage,
+                "raw_preview": (str(data)[:900] if data is not None else ""),
+            },
         )
-        used_model = used_model or model
+    except Exception:
+        pass
 
-        # ✅ pega finish_reason + usage (quando existirem)
-        finish_reason, usage = _extract_finish_reason_and_usage(data)
+    # --- extrai texto do payload ---
+    texto = self._extract_text(data) if data is not None else ""
+    texto = (texto or "").strip()
 
+    # ✅ Blindagem anti-truncamento / parêntese quebrado
+    # Aplica cedo para não "criar" violações por corte do provider
+    try:
+        if finish_reason in ("length", "max_tokens", "token_limit", "content_filter"):
+            texto = _seal_broken_ending(texto)
+        else:
+            # mesmo sem finish_reason confiável, sela se houver sinais típicos
+            texto = _seal_broken_ending(texto)
+    except Exception:
+        pass
+
+    # ✅ Se veio vazio, força erro para cair no try/except externo e entrar no plano seguinte
+    if not texto:
         try:
-            _ss_set(
-                "mary_last_raw_preview",
-                {
-                    "used_model": used_model,
-                    "raw_type": type(data).__name__,
-                    "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
-                    "finish_reason": finish_reason,
-                    "usage": usage,
-                    "raw_preview": (str(data)[:900] if data is not None else ""),
-                },
-            )
+            diag.violations = (diag.violations or []) + ["vazio"]
         except Exception:
             pass
+        raise RuntimeError("Model returned empty text")
+
+    # ======================================================
+    # ✅ Validações / violações (para repair)
+    # ======================================================
+    violations = _violations(
+        texto=texto,
+        ctx_lower=ctx_lower,
+        user_text=user_text,
+        phase=int(phase or 0),
+        nsfw_on=bool(nsfw_on),
+        nsfw_profile=str(nsfw_profile),
+        timeline=str(timeline or ""),
+        allow_third_party_seduction=bool(allow_third_party_seduction),
+    )
+
+    if violations:
+        try:
+            diag.violations = (diag.violations or []) + list(violations)
+        except Exception:
+            pass
+
+    # ✅ Sem violações → retorna direto
+    if not violations:
+        return texto, used_model
+
+    # ======================================================
+    # ✅ Repair (1 passada)
+    # ======================================================
+    try:
+        diag.repairs += 1
+    except Exception:
+        pass
+
+    repair_instr = _repair_instruction(violations)
+
+    repair_system = (
+        "Você está reescrevendo a última resposta da Mary.\n"
+        "A reescrita deve obedecer 100% as regras do system original.\n"
+        "NÃO explique regras.\n"
+        "NÃO mencione violações.\n"
+        "Apenas reescreva a resposta final.\n\n"
+        f"{repair_instr}"
+    )
+
+    repair_messages: List[Dict[str, str]] = []
+
+    # mantém o system original intacto (messages[0]) e injeta um system extra de repair
+    try:
+        if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+            repair_messages.append(messages[0])
+    except Exception:
+        pass
+
+    repair_messages.append({"role": "system", "content": repair_system})
+
+    # contexto mínimo: prompt do usuário + resposta atual
+    repair_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
+    repair_messages.append({"role": "assistant", "content": texto})
+
+    data2, used_model2, _provider_meta2 = self._chat(
+        used_model,
+        repair_messages,
+        temperature=max(0.40, float(temperature) - 0.10),
+        max_tokens=int(max_tokens),
+        top_p=min(0.98, float(top_p) + 0.02),
+        extra=extra,
+    )
+    used_model2 = used_model2 or used_model
+
+    # preview do repair (opcional)
+    try:
+        fr2, usage2 = _extract_finish_reason_and_usage(data2)
+        _ss_set(
+            "mary_last_raw_preview_repair",
+            {
+                "used_model": used_model2,
+                "raw_type": type(data2).__name__,
+                "raw_keys": list(data2.keys())[:20] if isinstance(data2, dict) else None,
+                "finish_reason": fr2,
+                "usage": usage2,
+                "raw_preview": (str(data2)[:900] if data2 is not None else ""),
+            },
+        )
+    except Exception:
+        pass
+
+    texto2 = self._extract_text(data2) if data2 is not None else ""
+    texto2 = (texto2 or "").strip()
+
+    # sela truncamento do repair também
+    try:
+        texto2 = _seal_broken_ending(texto2)
+    except Exception:
+        pass
+
+    # se repair falhar, devolve o original (melhor que vazio)
+    if not texto2:
+        return texto, used_model
+
+    # (opcional) revalidações — mantém 1 repair só (mais rápido / menos risco de loop)
+    return texto2, used_model2
 
         # ===========
         # Texto base
