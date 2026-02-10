@@ -2066,8 +2066,8 @@ def _third_party_deviation(text: str) -> bool:
 # TERCEIROS — CLASSIFICAÇÃO DE LOCAIS
 # ==========================================================
 
-# ✅ Locais SEGUROS (urbanos, realistas)
-_RE_SAFE_LOCATIONS = re.compile(
+# ✅ Locais URBANOS / PLAUSÍVEIS (não implica permissão moral)
+_RE_URBAN_LOCATIONS = re.compile(
     r"\b("
     r"hotel|motel|"
     r"apartamento|ap[eê]|flat|"
@@ -2086,11 +2086,12 @@ _RE_DANGEROUS_LOCATIONS = re.compile(
     r"matagal|mato|"
     r"barraco|barrac[aã]o|"
     r"lugar\s+(isolado|ermo|deserto|escuro)|"
+    r"(lugar|local|canto)\s+(escondido|isolado|escuro)|"
     r"beco|viela|"
     r"terreno\s+baldio|"
     r"estrada\s+(deserta|escura)|"
     r"meio\s+do\s+nada|"
-    r"escondido|esconderijo|"
+    r"esconderijo|"
     r"carro\s+(parado|estacionado)\s+(no|em)\s+(mato|escuro|lugar\s+isolado)"
     r")\b",
     re.IGNORECASE,
@@ -2099,7 +2100,7 @@ _RE_DANGEROUS_LOCATIONS = re.compile(
 # ⚠️ Convites vagos (dependem de confirmação de destino)
 _RE_VAGUE_INVITE = re.compile(
     r"\b("
-    r"sumir|"
+    r"sumir\s+(com\s+voc[eê]|comigo)|"
     r"vem\s+comigo\s+agora|"
     r"confia\s+em\s+mim|"
     r"n[aã]o\s+pergunta\s+pra\s+onde|"
@@ -2110,14 +2111,9 @@ _RE_VAGUE_INVITE = re.compile(
 )
 
 _RE_JANIO_ACTING = re.compile(
-    r"(?is)\bjanio\b.{0,60}\b("
-    r"beija|me\s+beija|"
-    r"toca|me\s+toca|"
-    r"agarra|me\s+agarra|"
-    r"puxa|me\s+puxa|"
-    r"leva|me\s+leva|"
-    r"encosta|me\s+encosta|"
-    r"transa|penetra|meter|foder|"
+    r"(?is)\bjanio\b\s+(me\s+)?("
+    r"beija|toca|agarra|puxa|leva|encosta|"
+    r"transa|penetra|mete|fode|"
     r"goza|orgasmo"
     r")\b"
 )
@@ -2173,6 +2169,16 @@ def _violations(
         # fallback seguro
         if _RE_CONFLICT_IMMINENT.search(t):
             out.append("conflito_extremo")
+    if _third_party_deviation(t):
+        if _RE_DANGEROUS_LOCATIONS.search(t):
+            out.append("terceiro_local_perigoso")
+        elif _RE_URBAN_LOCATIONS.search(t):
+            out.append("terceiro_local_urbano")
+        elif _RE_VAGUE_INVITE.search(t):
+            out.append("terceiro_convite_vago")
+        else:
+            # fallback: terceiro + ação sem local explícito
+            out.append("terceiro_desvio_generico")     
 
     # Finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
