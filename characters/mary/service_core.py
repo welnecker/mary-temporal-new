@@ -3656,11 +3656,23 @@ LEMBRETE:
         cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
 
         # Base tokens (fôlego)
-        base_tokens = 3200 if nsfw_on else 2200
+        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
+        base_tokens = 3000 if nsfw_on else 2000
+
+        # mais fôlego só quando realmente precisa
         if nsfw_on and phase >= 3:
-            base_tokens = 3600
+            base_tokens = 3400
+
+        # explicações: menor
         if looks_factual and not nsfw_on:
-            base_tokens = 1800
+            base_tokens = 1700
+
+        # aftercare: resposta costuma ser menor/mais controlada
+        if phase == 5:
+            base_tokens = 2200 if nsfw_on else 1800
+
+        # ✅ CAP defensivo
+        base_tokens = min(base_tokens, 3400)
 
         # Decoding por cena
         if conflict_now:
@@ -3691,11 +3703,26 @@ LEMBRETE:
                 base_temp = 0.74
                 base_top_p = 0.96
 
-        extra = {
-            "presence_penalty": 0.35,
-            "frequency_penalty": 0.15,
-            "repetition_penalty": 1.05,
-        }
+                # Penalidades: variam por tipo de cena
+        if looks_factual or conflict_now:
+            extra = {
+                "presence_penalty": 0.25,
+                "frequency_penalty": 0.10,
+                "repetition_penalty": 1.05,
+            }
+        elif nsfw_on and phase >= 4:
+            # clímax: permite repetição e foco no corpo/ritmo
+            extra = {
+                "presence_penalty": 0.15,
+                "frequency_penalty": 0.05,
+                "repetition_penalty": 1.03,
+            }
+        else:
+            extra = {
+                "presence_penalty": 0.30,
+                "frequency_penalty": 0.12,
+                "repetition_penalty": 1.05,
+            }
 
         return [
             {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
@@ -3704,7 +3731,7 @@ LEMBRETE:
         ]
 
 
-# ======================================================
+    # ======================================================
     # Gerar + Repair
     # ======================================================
     def _generate_with_repair(
