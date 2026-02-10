@@ -1397,11 +1397,10 @@ def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
 
 def _derive_rel_first_time_with_janio(
     timeline: str,
-    facts: Dict[str, Any],
     rel: Dict[str, Any],
 ) -> bool:
     """
-    Define um "derivado" seguro:
+    Derivado seguro:
     first_time_with_janio = True quando o relacionamento AINDA NÃO foi consumado.
     Isso é o que você quer usar no prompt da universitaria,
     sem confundir com a virginidade GLOBAL.
@@ -1410,12 +1409,9 @@ def _derive_rel_first_time_with_janio(
     consummated = bool(rel.get("consummated"))
 
     if tl == "universitaria":
-        # primeira vez com Janio = relacionamento ainda não consumado
         return (not consummated)
 
-    # Em outras timelines, não faz sentido
     return False
-
 
 def _load_rel_state(
     facts: Dict[str, Any],
@@ -1453,10 +1449,11 @@ def _load_rel_state(
     # "virginity" aqui deve ser tratado como ESTADO DO RELACIONAMENTO com Janio na timeline,
     # não como virginidade global.
     if timeline == "universitaria":
-        base.setdefault("virginity", "virgem")
+        if base.get("virginity") not in ("virgem", "nao_virgem"):
+            base["virginity"] = "virgem"
     else:
-        base.setdefault("virginity", "nao_virgem")
-
+        if base.get("virginity") not in ("virgem", "nao_virgem"):
+            base["virginity"] = "nao_virgem"
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
     base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
@@ -1478,11 +1475,20 @@ def _load_rel_state(
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
     # ==========================================================
     global_v = _get_global_virginity_from_facts(facts)
-    base["_global_virginity"] = global_v  # debug/uso em prompt se quiser
+    # _global_virginity é informativo (prompt/debug); por padrão NÃO governa o REL.
+    base["_global_virginity"] = global_v
+
+    # ✅ Fallback inteligente:
+    # fora da universitaria, se por algum motivo virginity vier vazio,
+    # tenta herdar do global (quando válido).
+    if timeline != "universitaria" and not base.get("virginity"):
+        if global_v in ("virgem", "nao_virgem"):
+            base["virginity"] = global_v
 
     # Primeira vez com Janio (derivado)
-    base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, facts, base)
-
+    base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, base)
+    # Regra mínima de consistência interna do REL:
+    # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
     # Regra mínima de consistência interna do REL:
     # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
     if bool(base.get("consummated")):
@@ -1491,8 +1497,12 @@ def _load_rel_state(
         base.setdefault("allows_extended_touch", True)
         base.setdefault("allows_mutual_relief", True)
 
-    return base
+    # ✅ REGRA DE COERÊNCIA (mesmo sem consummated=True):
+    # Se o relacionamento está "nao_virgem", então penetração não pode ficar False.
+    if base.get("virginity") == "nao_virgem":
+        base["allows_penetration"] = True
 
+    return base
 
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
@@ -1504,7 +1514,8 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     facts = cached_get_facts(uk) or {}
     key = _rel_fact_key(tl)
 
-    if isinstance((facts or {}).get(key), dict):
+    raw = (facts or {}).get(key)
+    if isinstance(raw, dict) and "consummated" in raw:
         return
 
     canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
@@ -1531,7 +1542,12 @@ _RE_USER_ACTION_BASE = re.compile(
     re.IGNORECASE,
 )
 _RE_USER_ACTION_CONTEXT_OK = re.compile(
-    r"(quando|enquanto|se|caso|depois que|antes que)\s*$",
+    r"(quando|enquanto|se|caso|depois que|antes que)[\s:,\-–—]*$",
+    re.IGNORECASE,
+)
+
+_RE_AFTERCARE_SIGNAL = re.compile(
+    r"\b(abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
     re.IGNORECASE,
 )
 
@@ -1555,7 +1571,7 @@ _RE_CLIMAX_SIGNAL = re.compile(
     re.IGNORECASE
 )
 _RE_AFTERCARE_SIGNAL = re.compile(
-    r"\b(depois|abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
+    r"\b(abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
     re.IGNORECASE
 )
 _RE_ESCALATE_0_TO_1 = re.compile(
@@ -1572,14 +1588,14 @@ _RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|n
 _RE_EXPLICIT_SEX = re.compile(
     r"\b("
     r"penetra[cç][aã]o|penetrar|penetrando|"
-    r"meter|meto|metendo|"
+    r"(meter|meto|metendo)\s+(em|dentro|na|no)|"
     r"foder|fode|fodi|fodendo|"
     r"chupar|chupa|chupando|boquete|"
     r"buceta|vagina|clit[oó]ris|clitoris|"
     r"pau|p[eê]nis|"
     r"goz(ar|o|ei|ando)|orgasmo|"
     r"fric[cç][aã]o|"
-    r"anal"
+    r"sexo\s+anal|anal\s+(com|em|no|na)"
     r")\b",
     re.IGNORECASE,
 )
@@ -1625,7 +1641,7 @@ def _cap_next_phase(current_phase: int, desired_next: int) -> int:
 
 # --- perto dos regex globais ---
 _RE_INTENSE_CUES = re.compile(
-    r"\b(slup+|chup+|pop+|smack+|ah+|hm+|mm+)\b|!{2,}|\b(tes[aã]o|agora|sem barreira|mais)\b",
+    r"\b(slup+|chup+|pop+|smack+|ah+|hm+|mm+)\b|!{2,}|\b(tes[aã]o|agora\s+sim|sem barreira|mais)\b",
     re.I
 )
 
