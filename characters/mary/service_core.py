@@ -1520,8 +1520,11 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 
     canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+
+    # ✅ carrega e normaliza via _load_rel_state (já aplica global fallback + coerências)
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
+    # ✅ salva o estado normalizado (para não ficar lixo persistido)
     _save_rel_state(uk, tl, rel)
     clear_user_cache(uk)
 # ==========================================================
@@ -2195,6 +2198,7 @@ def _violations(
     # ======================================================
     # Observação: isso é independente de fase; fase controla "clímax" dela,
     # mas aqui estamos bloqueando "finalizar o usuário" sem comando.
+    
     if re.search(
         r"\b(goz(a|ou)|ejacul(a|ou)|explodiu|jatos quentes|cl[ií]max dele)\b",
         t.lower(),
@@ -2202,34 +2206,45 @@ def _violations(
         if not _user_explicitly_allows_user_orgasm(user_text):
             out.append("mary_finalizou_orgasmo_do_usuario")
 
-    return out
+    # ======================================================
     # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
+    # ======================================================
     if (not nsfw_on) and _is_explicit(t):
         out.append("nsfw_off_explicito")
 
-    # ✅ NSFW: se está ON e o usuário foi explícito, não aceitar resposta sanitizada
-    if nsfw_on and (
-          _user_explicitly_allows_climax(user_text or "")
-        or _RE_EXPLICIT_SEX.search(user_text or "")
-    ) and (not _RE_EXPLICIT_SEX.search(t)) and (not _RE_SENSORY_SAFE.search(t)):
+    # ======================================================
+    # ✅ NSFW ON: usuário explícito → resposta não pode ser sanitizada
+    # ======================================================
+    if (
+        nsfw_on
+        and (
+            _user_explicitly_allows_climax(user_text or "")
+            or _RE_EXPLICIT_SEX.search(user_text or "")
+        )
+        and (not _RE_EXPLICIT_SEX.search(t))
+        and (not _RE_SENSORY_SAFE.search(t))
+    ):
         # Só marca violação se também não tiver densidade sensorial
         out.append("nsfw_on_suavizou")
 
-    # ✅ NSFW ON: se usuário está intenso e a resposta romantiza, isso é violação
-        # ✅ Romantização: no NSFW_RELAXED vira "soft" (não obriga repair)
+    # ======================================================
+    # ✅ NSFW ON: usuário intenso → romantização é violação
+    # ======================================================
     if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
         if nsfw_profile == "NSFW_RELAXED":
             out.append("tone_romantic_when_intense_soft")
         else:
             out.append("tone_romantic_when_intense")
-        # ✅ Sensorialidade: no NSFW_RELAXED não punimos diálogo rápido/intenso
-       # Sensorialidade: APENAS em SAFE ou quando for explicitamente forçado
+
+    # ======================================================
+    # ✅ Sensorialidade mínima (opcional / controlada por flag)
+    # ======================================================
     enforce_density = bool(_ss_get("mary_enforce_sensory_density", False))
+
     if enforce_density and _low_sensory_density(t):
         out.append("low_sensory_density")
 
-    # Em NSFW (perfil não relaxado), você pode continuar cobrando densidade quando o usuário está intenso,
-    # mas só se o enforce_density estiver ligado (pra evitar "repair por estilo").
+    # Em NSFW (perfil não relaxado), só reforça densidade se usuário estiver intenso
     if (
         nsfw_on
         and enforce_density
@@ -2237,6 +2252,8 @@ def _violations(
         and _low_sensory_density(t)
     ):
         out.append("low_sensory_density")
+
+    return out
     # ======================================================
     # ✅ DESVIO CURTO (terceiro): beijo pode, avanço íntimo NÃO
     # ======================================================
@@ -2731,29 +2748,55 @@ def _sync_rel_state_with_facts_canon(
     - first_time_with_janio ≠ virgindade global
     - Se consumado com Janio, NUNCA manter _first_time_with_janio
     """
-
     rs = rel_state if isinstance(rel_state, dict) else {}
     rs = dict(rs)  # cópia defensiva
 
     mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
     mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
 
-    global_v = (mary_fact.get("virginity") or "").strip().lower()
+    global_v = str(mary_fact.get("virginity") or "").strip().lower()
+    if global_v not in ("virgem", "nao_virgem"):
+        global_v = ""
 
-    # Fonte global absoluta
+    # Fonte global absoluta (informativa + coerência)
     if global_v:
         rs["_global_virginity"] = global_v
 
-        # Se o mundo diz não virgem, não pode existir regressão
-        if global_v == "nao_virgem":
+        # Se o mundo diz não virgem, não permitir regressão em timelines não-universitaria
+        if global_v == "nao_virgem" and (timeline_final or "").strip().lower() != "universitaria":
             if str(rs.get("virginity") or "").strip().lower() == "virgem":
                 rs["virginity"] = "nao_virgem"
+                # coerência mínima
+                rs["allows_penetration"] = True
 
     # Se já consumou com Janio, nunca pode continuar "primeira vez"
     if bool(rs.get("consummated")):
         rs["_first_time_with_janio"] = False
 
     return rs
+
+
+def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
+    tl = _normalize_timeline(timeline)
+    uk = _user_key(user_id, tl)
+    facts = cached_get_facts(uk) or {}
+    key = _rel_fact_key(tl)
+
+    # ✅ melhoria segura: se existir mas estiver quebrado/incompleto, recarrega
+    raw = (facts or {}).get(key)
+    if isinstance(raw, dict) and "consummated" in raw:
+        return
+
+    canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
+    canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+
+    rel = _load_rel_state(facts or {}, tl, canon_rel_default)
+
+    # ✅ AQUI: sincroniza com canon/global facts antes de salvar/usar
+    rel = _sync_rel_state_with_facts_canon(facts or {}, rel, tl)
+
+    _save_rel_state(uk, tl, rel)
+    clear_user_cache(uk)
 
 # ==========================================================
 # DIAGNÓSTICOS (UI)
