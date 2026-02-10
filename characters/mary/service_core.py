@@ -1786,7 +1786,7 @@ def _seal_broken_ending(text: str) -> str:
     """
     Blindagem contra finais quebrados/truncados:
     - termina com "("
-    - fragmento de parêntese aberto ("(Vou", "(Deus, ...") que o modelo cortou
+    - fragmento de parêntese aberto ("(Vou", "(Deus, ele...")
     - parênteses desbalanceados
     """
     if not text:
@@ -1798,16 +1798,17 @@ def _seal_broken_ending(text: str) -> str:
     t = _RE_TRAILING_OPEN_PAREN.sub("", t).rstrip()
 
     # 2) se acabou com fragmento de parêntese aberto, corta o fragmento
-    #    evita: "(Vou" + qualquer cauda que você adicione depois
     m = _RE_UNFINISHED_PAREN_FRAGMENT.search(t)
     if m and t.count("(") > t.count(")"):
-        t = t[: m.start()].rstrip()
+        frag = t[m.start():]
+        # evita cortar se o fragmento já parece frase completa
+        if not re.search(r"[\.!\?]\s*$", frag):
+            t = t[: m.start()].rstrip()
 
     # 3) se ainda está desbalanceado, fecha com reticências neutras
     opens = t.count("(")
     closes = t.count(")")
     if opens > closes:
-        # evita duplicar reticências se já termina em "..." ou "…"
         if re.search(r"(\.\.\.|…)\s*$", t):
             t = t + ")"
         else:
@@ -1816,7 +1817,6 @@ def _seal_broken_ending(text: str) -> str:
     # 4) limpa whitespace
     t = _RE_MULTI_SPACE_END.sub("", t).rstrip()
     return t
-
 
 
 # ==========================================================
