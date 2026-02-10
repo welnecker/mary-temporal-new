@@ -2735,46 +2735,6 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 # ==========================================================
 # RELATIONSHIP / CANON SYNC
 # ==========================================================
-def _sync_rel_state_with_facts_canon(
-    facts: Dict[str, Any],
-    rel_state: Dict[str, Any],
-    timeline_final: str,
-) -> Dict[str, Any]:
-    """
-    Sincroniza rel_state com o canon global.
-
-    Regras:
-    - Fonte ÚNICA do global: facts["mary"]["virginity"]
-    - first_time_with_janio ≠ virgindade global
-    - Se consumado com Janio, NUNCA manter _first_time_with_janio
-    """
-    rs = rel_state if isinstance(rel_state, dict) else {}
-    rs = dict(rs)  # cópia defensiva
-
-    mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
-    mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-
-    global_v = str(mary_fact.get("virginity") or "").strip().lower()
-    if global_v not in ("virgem", "nao_virgem"):
-        global_v = ""
-
-    # Fonte global absoluta (informativa + coerência)
-    if global_v:
-        rs["_global_virginity"] = global_v
-
-        # Se o mundo diz não virgem, não permitir regressão em timelines não-universitaria
-        if global_v == "nao_virgem" and (timeline_final or "").strip().lower() != "universitaria":
-            if str(rs.get("virginity") or "").strip().lower() == "virgem":
-                rs["virginity"] = "nao_virgem"
-                # coerência mínima
-                rs["allows_penetration"] = True
-
-    # Se já consumou com Janio, nunca pode continuar "primeira vez"
-    if bool(rs.get("consummated")):
-        rs["_first_time_with_janio"] = False
-
-    return rs
-
 
 def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     tl = _normalize_timeline(timeline)
@@ -2919,13 +2879,7 @@ class MaryService(BaseCharacter):
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
         
-        # ✅ SINCRONIZA rel_state COM FATOS + CANON (ABSOLUTO)
-        rel_state = _sync_rel_state_with_facts_canon(
-            facts=facts,
-            rel_state=rel_state,
-            timeline_final=timeline_final,
-        )
-        
+                
         # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
@@ -3158,7 +3112,7 @@ O usuario descreveu outro lugar/tempo.
             desvio_curto_rule = """
 [TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
 - Mary pode corresponder e avancar intimidade
-  com terceiros SOMENTE se o usuario conduzir explicitamente.
+  com terceiros SOMENTE se houver sinal explícito ou condução clara do usuário.
 - Mary e inteligente e cuidadosa:
   NAO aceita situacoes de risco fisico/social.
 
@@ -3240,29 +3194,7 @@ LOCAIS:
             else ""
         )
 
-        attribution_rule = """
-[ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
-- Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
-  omissão ou comportamento de Janio.
-- É PROIBIDO atribuir o desejo a:
-  • falta de iniciativa de Janio
-  • falta de pergunta, espaço ou escolha
-  • comunicação insuficiente
-  • rotina, previsibilidade ou conforto
-- Frases implicitamente proibidas:
-  • "ele nunca me perguntou"
-  • "com ele eu não posso escolher"
-  • "ele não percebe"
-- Quando houver conflito:
-  a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
-- A culpa pode doer, pesar ou queimar,
-  mas NÃO vira acusação projetada.
-- Janio permanece emocionalmente íntegro,
-  mesmo quando Mary decide errar.
-""".strip()
-
-
-
+       
         manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em desejo e escolha; não neutraliza com hesitação eterna.
