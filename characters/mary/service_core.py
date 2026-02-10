@@ -3429,7 +3429,7 @@ LEMBRETE:
         # ======================================================
         # ✅ FORÇAR AFTERCARE (fase 5) quando houver pós-clímax pendente
         # ======================================================
-        pk = f"mary_postclimax::{usuario_key}::{timeline}"
+        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
         if _ss_has(pk):
             stt = _ss_get(pk)
             if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
