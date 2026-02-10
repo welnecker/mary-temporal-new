@@ -542,7 +542,7 @@ def _render_relationship_debug_panel() -> None:
     st.markdown("---")
     st.subheader("🔍 Relationship Engine — Debug")
 
-        try:
+    try:
             tl = _timeline()
             uk = _usuario_key_atual()
     
@@ -576,7 +576,7 @@ def _render_relationship_debug_panel() -> None:
             )
         except Exception as e:
             st.error(f"Falha ao renderizar painel Relationship: {type(e).__name__}: {e}")
-
+    
 def _instantiate_mary_service(*, userkey: str, timeline: str):
     """
     Cria o service correto para a timeline (universitaria/cumplice) e tenta
