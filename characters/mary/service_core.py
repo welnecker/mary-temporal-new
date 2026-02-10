@@ -11,7 +11,7 @@ MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding din
 ⚠️ Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-
+import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
 import logging
 import re
 import hashlib
@@ -40,6 +40,7 @@ from core.relationship_engine import (
 from core.repositories import (
     get_facts,
     get_fact,
+    delete_fact,  # <-- ADICIONE
     get_history_docs,
     save_interaction,
     set_fact,
@@ -112,10 +113,21 @@ MAX_INTIMACY_PHASE = 5
 # ==========================================================
 # 🔑 USER / KEYS
 # ==========================================================
+_SS_PREFIX = "mary::"  # <-- ADICIONE perto dos wrappers de session_state
+
+def _get_or_create_anon_uid() -> str:
+    # evita que "anon" compartilhe memória entre usuários
+    k = f"{_SS_PREFIX}anon_uid"
+    v = _ss_get(k)
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    new_id = f"anon-{uuid.uuid4().hex[:12]}"
+    _ss_set(k, new_id)
+    return new_id
+
 def _normalize_user_id(user: Optional[str]) -> str:
     u = (user or "").strip()
-    return u or "anon"
-
+    return u or _get_or_create_anon_uid()
 def _current_user_id_fallback() -> str:
     uid = _ss_get("user_id") or _ss_get("usuario") or ""
     return _normalize_user_id(str(uid))
@@ -132,7 +144,8 @@ def _shared_key(user_id: str) -> str:
 
 def _current_user_key() -> str:
     uid = _current_user_id_fallback()
-    tl = _normalize_timeline(str(_ss_get("mary_timeline") or "cumplice"))
+    tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
+    tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
     return _user_key(uid, tl)
 
 def _shared_memory_key() -> str:
@@ -170,70 +183,106 @@ NSFW_TOGGLE_STYLE = """
 - FOCO: finalize com gesto/linha de tensão concreta (sem “encerramento abstrato” da cena).
 - Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
 
-EXEMPLO CORRETO (explícito e sensorial):
-Usuário: "tira essa blusa...seus seios lindos...que saudade...slup!!! chup!"
-Mary: "Eu gemo alto quando sua boca fecha no meu mamilo, a sucção quente me fazendo arquear. 
-'Janio... porra', eu sussurro, a voz rouca, as mãos agarrando seus cabelos. Você morde de leve 
-e eu tremo, as unhas cavando seus ombros. Sinto você duro pressionando contra mim, a fricção 
-me deixando molhada. 'Eu quero você... agora', eu peço, as mãos descendo para abrir seu cinto."
-
-EXEMPLO ERRADO (romantizado):
-"Seus lábios capturam meu mamilo como se fosse a primeira vez... Cada movimento é um voto 
-silencioso... esta verdade crua e linda que insistimos em chamar de amor."
 """.strip()
+def nsfw_style_block(nsfw_on: bool) -> str:
+    """
+    Retorna o estilo NSFW de forma econômica:
+    - 1ª injeção na sessão: bloco completo
+    - próximas: versão curta (economia de tokens)
+    """
+    k = f"{_SS_PREFIX}nsfw_style_injected::{'on' if nsfw_on else 'off'}"
+    if _ss_get(k) is True:
+        return "[Siga rigorosamente o estilo NSFW já definido nesta sessão. Mantenha fase/consentimento/realismo.]\n"
 
+    _ss_set(k, True)
+    return (NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE) + "\n"
+_CACHE_TTL_SECONDS = 300  # 5 minutos (ajuste se quiser)
+
+def _cache_get(key: str) -> Any:
+    v = _ss_get(key)
+    if not isinstance(v, dict):
+        return None
+    ts = v.get("_ts")
+    if not isinstance(ts, (int, float)):
+        return None
+    if (time.time() - float(ts)) > _CACHE_TTL_SECONDS:
+        _ss_del(key)
+        return None
+    return v.get("data")
+
+def _cache_set(key: str, data: Any) -> None:
+    _ss_set(key, {"_ts": time.time(), "data": data})
+    
 # ==========================================================
 # CACHE (facts/history/memories)
 # ==========================================================
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
-    ck = f"facts::{usuario_key}"
-    if _ss_has(ck):
-        v = _ss_get(ck)
-        return v if isinstance(v, dict) else {}
+    ck = f"{_SS_PREFIX}facts::{usuario_key}"
+    cached = _cache_get(ck)
+    if isinstance(cached, dict):
+        return cached
+
     f = get_facts(usuario_key) or {}
     if not isinstance(f, dict):
         f = {}
-    _ss_set(ck, f)
+    _cache_set(ck, f)
     return f
 
 def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any]]:
-    hk = f"history::{usuario_key}::{limit}"
-    if _ss_has(hk):
-        v = _ss_get(hk)
-        return v if isinstance(v, list) else []
+    hk = f"{_SS_PREFIX}history::{usuario_key}::{limit}"
+    cached = _cache_get(hk)
+    if isinstance(cached, list):
+        return cached
+
     docs = get_history_docs(usuario_key, limit=limit) or []
     if not isinstance(docs, list):
         docs = []
-    _ss_set(hk, docs)
+    _cache_set(hk, docs)
     return docs
 
 def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
-    mk = f"mem::{shared_key}::{limit}"
-    if _ss_has(mk):
-        v = _ss_get(mk)
-        return v if isinstance(v, list) else []
+    mk = f"{_SS_PREFIX}mem::{shared_key}::{limit}"
+    cached = _cache_get(mk)
+    if isinstance(cached, list):
+        return cached
+
     mems = list_memories(shared_key, limit=limit) or []
     if not isinstance(mems, list):
         mems = []
-    _ss_set(mk, mems)
+    _cache_set(mk, mems)
+    return memsmems)
     return mems
 
 def clear_user_cache(usuario_key: str) -> None:
-    fk = f"facts::{usuario_key}"
+    fk = f"{_SS_PREFIX}facts::{usuario_key}"
     _ss_del(fk)
-    prefix = f"history::{usuario_key}::"
+
+    prefix = f"{_SS_PREFIX}history::{usuario_key}::"
     for k in _ss_keys():
         if k.startswith(prefix):
             _ss_del(k)
 
 def clear_mem_cache_for_shared(shared_key: str) -> None:
-    prefix = f"mem::{shared_key}::"
+    prefix = f"{_SS_PREFIX}mem::{shared_key}::"
     for k in _ss_keys():
         if k.startswith(prefix):
             _ss_del(k)
 
 def clear_shared_memory_cache(user_id: str) -> None:
     clear_mem_cache_for_shared(_shared_key(user_id))
+
+def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
+    # limpa facts/history do usuário+timeline
+    usuario_key = _user_key(_normalize_user_id(user_id), _normalize_timeline(timeline))
+    clear_user_cache(usuario_key)
+
+    # limpa mem cache shared
+    clear_mem_cache_for_shared(_shared_key(_normalize_user_id(user_id)))
+
+    # limpa flags de injeção de estilo (para reinjetar corretamente)
+    for k in _ss_keys():
+        if k.startswith(f"{_SS_PREFIX}nsfw_style_injected::"):
+            _ss_del(k)
 
 # ==========================================================
 # WRAPPERS DE ESCRITA (invalida cache automaticamente)
@@ -246,11 +295,14 @@ def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, 
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
     if user_id:
-        tl = _normalize_timeline(str(_ss_get("mary_timeline", "cumplice") or "cumplice"))
+        tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
+        tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
         clear_user_cache(_user_key(user_id, tl))
 
 def append_long_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None) -> None:
     append_long_memory(shared_key, text, meta=meta or {})
+    # invalida caches relacionados
+    clear_mem_cache_for_shared(shared_key)
 
 def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
     save_interaction(usuario_key, prompt, texto, model_used)
@@ -263,28 +315,27 @@ def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timelin
     return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
 def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
-    """
-    Terceiros só liberam quando:
-      - NSFW_ON estiver True
-      - e algum dos toggles estiver ativo (compatível com UI antiga e nova)
-    """
     if not nsfw_on:
         return False
 
-    # ✅ 1) chave NOVA do sidebar (preferência)
-    v_new = _ss_get("mary_allow_third_party_seduction", None)
+    # 1) chave nova com namespace
+    v_new = _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", None)
     if isinstance(v_new, bool):
-        return bool(v_new)
+        return v_new
 
-    # ✅ 2) compat antigo (se algum lugar ainda usa)
-    v_old = _ss_get("mary_allow_third_party", None)
+    # 2) compat legado (sem namespace)
+    v_old = _ss_get("mary_allow_third_party_seduction", None)
     if isinstance(v_old, bool):
-        return bool(v_old)
+        return v_old
 
-    # ✅ 3) compat: modo antigo (bool ou string)
+    v_old2 = _ss_get("mary_allow_third_party", None)
+    if isinstance(v_old2, bool):
+        return v_old2
+
+    # 3) modo antigo (bool ou string)
     v_mode = _ss_get("mary_third_party_mode", None)
     if isinstance(v_mode, bool):
-        return bool(v_mode)
+        return v_mode
 
     if isinstance(v_mode, str):
         s = v_mode.strip().lower()
@@ -292,7 +343,6 @@ def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
             return True
 
     return False
-
 # ==========================================================
 # NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
 # ==========================================================
@@ -312,28 +362,42 @@ def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
-    local = str(facts.get("cena.local") or facts.get("local_cena_atual") or "—")
-    tempo = str(facts.get("cena.tempo") or "agora")
-    acao = str(facts.get("cena.acao") or "em andamento")
+    def _safe(v: Any, default: str) -> str:
+        return v if isinstance(v, str) and v.strip() else default
+
+    local = _safe(facts.get("cena.local"), None) or _safe(facts.get("local_cena_atual"), "—")
+    tempo = _safe(facts.get("cena.tempo"), "agora")
+    acao  = _safe(facts.get("cena.acao"), "em andamento")
     return local, tempo, acao
 
 def _scene_is_locked(facts: Dict[str, Any]) -> bool:
-    return bool(facts.get("cena.locked", True))
+    return bool(facts.get("cena.locked", False))
 
 def _lock_scene(usuario_key: str) -> None:
-    set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_lock"})
+    set_fact_safe(
+        usuario_key,
+        "cena.locked",
+        True,
+        {"fonte": "scene_lock", "ts": time.time()},
+    )
 
 def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -> None:
+    updates = []
     if local:
-        set_fact_safe(usuario_key, "cena.local", local, {"fonte": "scene"})
-        set_fact_safe(usuario_key, "local_cena_atual", local, {"fonte": "scene_compat"})
+        updates.append(("cena.local", local, {"fonte": "scene"}))
+        updates.append(("local_cena_atual", local, {"fonte": "scene_compat"}))
     if tempo:
-        set_fact_safe(usuario_key, "cena.tempo", tempo, {"fonte": "scene"})
+        updates.append(("cena.tempo", tempo, {"fonte": "scene"}))
     if acao:
-        set_fact_safe(usuario_key, "cena.acao", acao, {"fonte": "scene"})
+        updates.append(("cena.acao", acao, {"fonte": "scene"}))
 
-def _build_spatial_context(local: str, tempo: str, acao: str) -> str:
-    if not local or local == "—":
+    current = cached_get_facts(usuario_key)
+    for k, v, m in updates:
+        if current.get(k) != v:
+            set_fact_safe(usuario_key, k, v, m)
+
+def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
+    if not locked or not local or local == "—":
         return ""
     return f"""
 [CONTEXTO ESPACIAL — OBRIGATÓRIO]
@@ -347,9 +411,12 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     internal_movements = [
         r"\bbanco\s+(de\s+)?tr[aá]s\b",
         r"\bbanco\s+traseiro\b",
+        r"\bbanco\s+da\s+frente\b",
         r"\bcama\b",
         r"\bsof[aá]\b",
         r"\bchão\b",
+        r"\bno\s+colo\b",
+        r"\bentre\s+as\s+pernas\b",
         r"\bmesa\b",
         r"\bbalc[aã]o\b",
     ]
@@ -388,6 +455,8 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
         r"me leva (pro|pra|para o|para a)\s+([^\n\r,.!?]+)",
         r"vamos para\s+([^\n\r,.!?]+)",
         r"ir para\s+([^\n\r,.!?]+)",
+        r"\bacaba(mos)?\s+parando\s+(na|no|em)\s+([^\n\r,.!?]+)",
+        r"\btermina(mos)?\s+(na|no|em)\s+([^\n\r,.!?]+)",
     ]
     for p in patterns:
         m = re.search(p, msg)
@@ -426,25 +495,43 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 
 def _detect_scene_violation(user_text: str) -> bool:
-    txt = (user_text or "").lower()
-
-    if re.search(r"\bcorta\s+para\b", txt) or re.search(r"\bhoras\s+depois\b", txt):
+    """
+    Retorna True quando o usuário tenta forçar pulo temporal/narrativo
+    sem usar um comando explícito de transição (ex: "corta para", "horas depois")
+    ou sem pedir mudança de local (ex: "vamos pra", "me leva pra", "ir para").
+    """
+    txt = (user_text or "").strip().lower()
+    if not txt:
         return False
-    if re.search(r"\b(vamos|me leva|ir)\s+(pro|pra|para)\b", txt):
+
+    # 1) Se o usuário está usando comandos EXPLÍCITOS de transição, NÃO é violação.
+    if re.search(r"\bcorta\s+para\b", txt):
+        return False
+    if re.search(r"\bhoras\s+depois\b", txt):
         return False
 
+    # 2) Se o usuário está pedindo mudança de local, NÃO é violação (isso é tratado em outro lugar).
+    if re.search(r"\b(vamos|me\s+leva|ir)\s+(pro|pra|para)\b", txt):
+        return False
+
+    # 3) Elipses temporais / saltos narrativos que normalmente quebram a continuidade
+    #    (aqui é violação porque o usuário "pula" sem comando explícito).
     patterns = [
         r"\bap[oó]s\s+isso\b",
         r"\bdepois\s+disso\b",
         r"\bmais\s+tarde\b",
+        r"\bmais\s+noite\b",
         r"\bno\s+outro\s+dia\b",
         r"\bno\s+dia\s+seguinte\b",
+        r"\bna\s+manh[aã]\s+seguinte\b",
+        r"\bna\s+semana\s+seguinte\b",
         r"\benquanto\s+isso\b",
         r"\bdo\s+outro\s+lado\s+da\s+cidade\b",
         r"\bcena\s+seguinte\b",
+        r"\bcorta\b",  # "corta" sozinho (sem "para") costuma ser pulo também
     ]
-    return any(re.search(p, txt) for p in patterns)
 
+    return any(re.search(p, txt) for p in patterns)
 # ==========================================================
 # INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
@@ -453,20 +540,29 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(t).hexdigest()
 
 def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
-    _, history_boot = get_persona(timeline)
+    tl = _normalize_timeline(timeline)
+    _, history_boot = get_persona(tl)
+
     intro_text = ""
     if isinstance(history_boot, list):
         for msg in history_boot:
-            if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content"):
-                if msg.get("timeline") and str(msg.get("timeline")) != str(timeline):
+            if not (isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("content")):
+                continue
+
+            msg_tl_raw = msg.get("timeline")
+            if msg_tl_raw:
+                msg_tl = _normalize_timeline(str(msg_tl_raw))
+                if msg_tl != tl:
                     continue
-                intro_text = str(msg["content"]).strip()
-                break
+
+            intro_text = str(msg["content"]).strip()
+            break
+
     if not intro_text:
         intro_text = "Eu já estava ali quando você chegou. Eu te vejo e espero sua atitude."
+
     intro_id = _hash_text(intro_text)
     return intro_id, intro_text
-
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     prefix = f"mary.intro.{(timeline or '').strip() or 'cumplice'}"
     text_key = f"{prefix}.text"
@@ -481,8 +577,7 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
         set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
         set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
-        clear_user_cache(usuario_key)
-
+        
     return current_id, current_text
 
 # ==========================================================
@@ -491,15 +586,21 @@ def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
 def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
     tl = _normalize_timeline(timeline)
 
-    raw = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-    tms = _normalize_timeline(raw) if raw else ""
+    raw = (meta.get("timeline_at_save") or meta.get("timeline") or "")
+    raw_s = str(raw).strip()
+    raw_l = raw_s.lower()
 
-    # ✅ legado: memória canon antiga sem timeline -> vale só para cúmplice
+    # ✅ aceita ALL explicitamente (em qualquer formato comum)
+    if raw_l in ("[all]", "all", "*"):
+        return True
+
+    tms = _normalize_timeline(raw_s) if raw_s else ""
+
+    # ✅ legado: canon antigo sem timeline -> vale só para cúmplice
     if not tms:
         return tl == "cumplice"
 
-    return tms in (tl, "[all]")
-
+    return tms == tl
 
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
     mems = cached_list_memories(shared_key, limit=240)
@@ -541,7 +642,7 @@ def _inject_canon_memories_always(
 
     selected = canon[-max_items:] if len(canon) > max_items else canon
     try:
-        _ss_set("mary_debug_canon_injected_count", len(selected))
+        _ss_set(f"{_SS_PREFIX}debug_canon_injected_count", len(selected))
     except Exception:
         pass
 
@@ -610,18 +711,19 @@ def _inject_intro_as_context_once(
     try:
         use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
         if not use_fixed:
-            # formato antigo (string direta)
             delete_fact(usuario_key, "mary.intro.fixed")
 
-            # formato por timeline (schema híbrido)
             tl = str(timeline or "").strip()
             if tl:
                 delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
+
+            # garante que a remoção reflita imediatamente
+            clear_user_cache(usuario_key)
     except Exception:
         pass
 
     # ⛔ AGORA SIM vem o guard de sessão
-    flag = f"intro_ctx_injected::{usuario_key}"
+    flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
     if bool(_ss_get(flag, False)):
         return
 
@@ -651,6 +753,14 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     s = (user_prompt or "").strip().lower()
     if not s:
         return ""
+
+    # remove URLs e lixo comum (reduz ruído no $text)
+    s = re.sub(r"https?://\S+", " ", s)
+    s = re.sub(r"\bwww\.\S+", " ", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    if not s:
+        return ""
+
     toks = re.findall(r"[\w\u00C0-\u017F']+", s, flags=re.UNICODE)
     stop = {
         "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
@@ -660,8 +770,11 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
         "agora","hoje","ontem","amanhã","mesmo","assim","tipo","cara","garota"
     }
     keep = [t for t in toks if len(t) >= 4 and t not in stop]
+
     # query curta: melhora signal/noise no $text
-    return " ".join(keep[:14]) or s
+    q = " ".join(keep[:14]).strip()
+    q = re.sub(r"\s{2,}", " ", q).strip()
+    return q or s
 
 
 def _inject_long_memory_pins_always(
@@ -685,6 +798,21 @@ def _inject_long_memory_pins_always(
         return
 
     tl = _normalize_timeline(timeline)
+
+    def _is_all_marker(x: str) -> bool:
+        s = (x or "").strip().lower()
+        return s in ("[all]", "all", "*")
+
+    def _timeline_matches(tms_raw: str, tl_norm: str) -> bool:
+        if not tms_raw:
+            return True  # sem timeline -> considera all (para pins)
+        if _is_all_marker(tms_raw):
+            return True
+        try:
+            return _normalize_timeline(tms_raw) == tl_norm
+        except Exception:
+            return tms_raw.strip() == tl_norm
+
     picked: List[Dict[str, Any]] = []
 
     _RE_KIND_TAG = re.compile(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", re.IGNORECASE)
@@ -727,16 +855,27 @@ def _inject_long_memory_pins_always(
     # ✅ ordena por ts desc quando existir (mais recentes primeiro)
     try:
         def _ts_key(d: Dict[str, Any]) -> float:
-            v = d.get("ts")
-            # pode ser datetime, string, etc. Se falhar, joga 0.
+            v = d.get("ts") or (d.get("meta") or {}).get("ts") or (d.get("meta") or {}).get("date")
+            if v is None:
+                return 0.0
+            # datetime-like
             try:
-                return float(getattr(v, "timestamp", lambda: 0.0)())
+                ts_fn = getattr(v, "timestamp", None)
+                if callable(ts_fn):
+                    return float(ts_fn())
             except Exception:
-                try:
-                    # se já vier numérico
-                    return float(v)
-                except Exception:
-                    return 0.0
+                pass
+            # numeric
+            try:
+                return float(v)
+            except Exception:
+                pass
+            # iso-ish / other string (best-effort)
+            try:
+                return float(str(v).strip())
+            except Exception:
+                return 0.0
+
         rows = sorted(rows, key=_ts_key, reverse=True)
     except Exception:
         pass
@@ -755,14 +894,8 @@ def _inject_long_memory_pins_always(
 
         # respeita timeline_at_save se existir; senão tenta timeline do text; senão considera "all"
         tms = _infer_timeline(meta, raw_txt)
-        if tms:
-            tms_norm = tms.strip()
-            # normaliza também casos como "all" / "[all]"
-            tms_norm = tms_norm.replace("[", "").replace("]", "").strip()
-            if tms_norm.lower() in ("all",):
-                pass
-            elif tms_norm not in (tl, "[all]"):
-                continue
+        if not _timeline_matches(tms, tl):
+            continue
 
         txt = _clean_text(raw_txt)
         if not txt:
@@ -797,10 +930,7 @@ def _inject_long_memory_pins_always(
         lines.append(header)
 
         raw_txt = str(d.get("text") or "").strip()
-        # ✅ injeta texto limpo (sem tags)
-        txt = re.sub(r"\[[^\]]+\]", "", raw_txt).strip()
-        txt = re.sub(r"[ \t]+", " ", txt).strip()
-        txt = re.sub(r"\n{3,}", "\n\n", txt).strip()
+        txt = _clean_text(raw_txt)
 
         lines.append(txt)
         lines.append("")
@@ -839,6 +969,20 @@ def _inject_long_memory_textsearch(
     picked: List[Dict[str, Any]] = []
     tl = _normalize_timeline(timeline)
 
+    def _is_all_marker(x: str) -> bool:
+        s = (x or "").strip().lower()
+        return s in ("[all]", "all", "*")
+
+    def _timeline_matches(tms_raw: str, tl_norm: str) -> bool:
+        if not tms_raw:
+            return True
+        if _is_all_marker(tms_raw):
+            return True
+        try:
+            return _normalize_timeline(tms_raw) == tl_norm
+        except Exception:
+            return tms_raw.strip() == tl_norm
+
     for d in rows:
         txt = str(d.get("text") or "").strip()
         if not txt:
@@ -848,16 +992,23 @@ def _inject_long_memory_textsearch(
 
         # timeline
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-        if tms and tms not in (tl, "[all]"):
+        if not _timeline_matches(tms, tl):
             continue
 
         # kinds: NÃO trazer pins/guide/fixed aqui
         kind = str(meta.get("kind") or "").strip().lower()
+
+        # compat: se texto estiver tagueado como pin/guide/fixed, não trazer aqui
+        if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", txt, flags=re.IGNORECASE):
+            continue
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
+        # dedupe com texto "limpo" (evita duplicar com pins/itens tagueados)
+        txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
+
         if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
             dedupe_bucket.add(h)
@@ -886,6 +1037,7 @@ def _inject_long_memory_textsearch(
         if title:
             header += f" — {title}"
         lines.append(header)
+
         raw = str(d.get("text") or "").strip()
         best_chunks = _select_best_chunks(raw, user_prompt, max_pick=2)
         for j, ch in enumerate(best_chunks, 1):
@@ -900,7 +1052,6 @@ def _inject_long_memory_textsearch(
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
         messages.append({"role": "system", "content": block})
-
 
 # ==========================================================
 # BM25 (fallback leve)
@@ -935,11 +1086,12 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
 
     import math
 
-    def _idf_raw(w: str) -> float:
+    def _idf(w: str) -> float:
         n_q = df.get(w, 0)
-        return max(0.0, ((N - n_q + 0.5) / (n_q + 0.5)))
+        # BM25 clássico (Okapi): log((N - n + 0.5)/(n + 0.5) + 1)
+        return math.log(1.0 + (N - n_q + 0.5) / (n_q + 0.5))
 
-    idf_cache = {w: math.log(1.0 + _idf_raw(w)) for w in set(q)}
+    idf_cache = {w: _idf(w) for w in set(q)}
 
     scores: List[float] = []
     for i, tf in enumerate(tf_list):
@@ -1027,8 +1179,7 @@ def _inject_relevant_memories(
         return
 
     chunk_docs: List[str] = []
-    # (mem, chunk, hash_texto_inteiro)
-    chunk_map: List[Tuple[Dict[str, Any], str, str]] = []
+    chunk_map: List[Tuple[Dict[str, Any], str, str]] = []  # (mem, chunk, hash_full_dedupe)
 
     tl = _normalize_timeline(timeline)
 
@@ -1045,19 +1196,18 @@ def _inject_relevant_memories(
         if not text_full:
             continue
 
-        h_full = hashlib.sha1(text_full.encode("utf-8")).hexdigest()
+        text_dedupe = re.sub(r"\[[^\]]+\]", "", text_full).strip()
+        h_full = hashlib.sha1(text_dedupe.encode("utf-8")).hexdigest()
 
         if dedupe_bucket is not None and h_full in dedupe_bucket:
             continue
-
-        title = str(meta.get("title") or meta.get("key") or "").strip()
 
         chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
         if not chunks:
             continue
 
         for ch in chunks:
-            chunk_docs.append(f"{title}\n{ch}" if title else ch)
+            chunk_docs.append(ch)
             chunk_map.append((m, ch, h_full))
 
     if not chunk_docs:
@@ -1100,7 +1250,7 @@ def _inject_relevant_memories(
             header += f" — {title}"
         lines.append(header)
 
-        lines.append(str(ch or '').strip())
+        lines.append(str(ch or "").strip())
         lines.append("")
 
         if dedupe_bucket is not None and h_full:
@@ -1113,16 +1263,16 @@ def _inject_relevant_memories(
     else:
         messages.append({"role": "system", "content": block})
 
+
 def _inject_now_context(
     messages: List[Dict[str, str]],
     usuario_key: str,
     timeline: str,
-):
+) -> None:
     """
     Injeta o CONTEXTO ATUAL ABSOLUTO da cena.
     Anti-teleporte: impede mudança de local/situação sem base no histórico.
     """
-
     try:
         facts = cached_get_facts(usuario_key) or {}
     except Exception:
@@ -1133,10 +1283,9 @@ def _inject_now_context(
     momento = facts.get("momento_atual")
 
     if not any([local, companhia, momento]):
-        return  # nada a injetar
+        return
 
     blocos = []
-
     if local:
         blocos.append(f"Local atual: {local}.")
     if companhia:
@@ -1145,16 +1294,16 @@ def _inject_now_context(
         blocos.append(f"Situação atual: {momento}.")
 
     texto = (
-        "CONTEXTO ATUAL — NÃO ASSUMA MUDANÇAS AUTOMÁTICAS:\n"
+        "[CONTEXTO ATUAL — NÃO ASSUMA MUDANÇAS AUTOMÁTICAS]\n"
         + " ".join(blocos)
-        + "\nMudanças de local ou situação só podem ocorrer se forem "
-          "explicitamente iniciadas na narrativa."
-    )
+        + "\nMudanças de local ou situação só podem ocorrer se forem explicitamente iniciadas na narrativa."
+    ).strip()
 
-    messages.append({
-        "role": "system",
-        "content": texto,
-    })
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base + "\n\n" + texto).strip()
+    else:
+        messages.insert(0, {"role": "system", "content": texto})
 
 
 def _inject_shared_soft_context(
@@ -1177,13 +1326,17 @@ def _inject_shared_soft_context(
             continue
         if not _memory_timeline_ok(meta, timeline):
             continue
+
         txt = str(m.get("text") or "").strip()
         if not txt:
             continue
+
         if dedupe_bucket is not None:
             h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
+            dedupe_bucket.add(h)  # ✅ add aqui (dentro do loop), não fora
+
         soft.append(m)
 
     if not soft:
@@ -1191,7 +1344,12 @@ def _inject_shared_soft_context(
 
     selected = soft[-max_items:] if len(soft) > max_items else soft
 
-    lines = ["[MEMÓRIAS COMPARTILHADAS (suave)] — NÃO altera CENA ATIVA", "Use para coerência, sem citar literalmente.", ""]
+    lines = [
+        "[MEMÓRIAS COMPARTILHADAS (suave)] — NÃO altera CENA ATIVA",
+        "Use para coerência, sem citar literalmente.",
+        "",
+    ]
+
     for i, m in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
@@ -1199,9 +1357,11 @@ def _inject_shared_soft_context(
         if d:
             header += f" (data: {d})"
         lines.append(header)
+
         txt = str(m.get("text") or "").strip()
         lines.append(txt)
         lines.append("")
+
         if dedupe_bucket is not None and txt:
             dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
 
@@ -1210,7 +1370,7 @@ def _inject_shared_soft_context(
         base = str(messages[0].get("content") or "").rstrip()
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
-        messages.append({"role": "system", "content": block})
+        messages.append({"role": "system", "content": block})})
 
 # ==========================================================
 # RELATIONSHIP STATE
@@ -1223,20 +1383,20 @@ def _rel_fact_key(timeline: str) -> str:
 def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
     """
     Virginidade GLOBAL (histórico sexual da Mary no mundo).
-    Fonte de verdade: facts["mary"]["virginity"] (ou fallback raro).
-    Retorna: "virgem" | "nao_virgem" | "" (desconhecido)
+    Retorna: "virgem" | "nao_virgem" | ""
     """
     try:
         mary = (facts or {}).get("mary")
         if isinstance(mary, dict):
-            v = str(mary.get("virginity") or "").strip()
+            v = str(mary.get("virginity") or "").strip().lower()
+        else:
+            v = str((facts or {}).get("virginity") or "").strip().lower()
+
+        if v in ("virgem", "nao_virgem"):
             return v
-        # fallback raro
-        v2 = str((facts or {}).get("virginity") or "").strip()
-        return v2
+        return ""
     except Exception:
         return ""
-
 
 def _derive_rel_first_time_with_janio(
     timeline: str,
@@ -1253,6 +1413,7 @@ def _derive_rel_first_time_with_janio(
     consummated = bool(rel.get("consummated"))
 
     if tl == "universitaria":
+        # primeira vez com Janio = relacionamento ainda não consumado
         return (not consummated)
 
     # Em outras timelines, não faz sentido
@@ -1294,7 +1455,10 @@ def _load_rel_state(
     # ⚠️ IMPORTANTE:
     # "virginity" aqui deve ser tratado como ESTADO DO RELACIONAMENTO com Janio na timeline,
     # não como virginidade global.
-    base.setdefault("virginity", "virgem" if timeline == "universitaria" else "nao_virgem")
+    if timeline == "universitaria":
+        base.setdefault("virginity", "virgem")
+    else:
+        base.setdefault("virginity", "nao_virgem")
 
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
@@ -1340,7 +1504,7 @@ def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> Non
 def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     tl = _normalize_timeline(timeline)
     uk = _user_key(user_id, tl)
-    facts = cached_get_facts(uk)
+    facts = cached_get_facts(uk) or {}
     key = _rel_fact_key(tl)
 
     if isinstance((facts or {}).get(key), dict):
@@ -1566,20 +1730,39 @@ def _extract_finish_reason_and_usage(resp: Any) -> Tuple[Optional[str], Dict[str
     """
     fr: Optional[str] = None
     usage: Dict[str, Any] = {}
-    try:
-        if isinstance(resp, dict):
-            usage_raw = resp.get("usage")
-            if isinstance(usage_raw, dict):
-                usage = usage_raw
 
-            choices = resp.get("choices")
-            if isinstance(choices, list) and choices:
-                c0 = choices[0] or {}
+    try:
+        if not isinstance(resp, dict):
+            return fr, usage
+
+        # usage: tenta níveis comuns
+        for keypath in ("usage", "response.usage", "data.usage"):
+            cur: Any = resp
+            ok = True
+            for part in keypath.split("."):
+                if isinstance(cur, dict) and part in cur:
+                    cur = cur[part]
+                else:
+                    ok = False
+                    break
+            if ok and isinstance(cur, dict):
+                usage = cur
+                break
+
+        # finish_reason: tenta choices[0].finish_reason / native_finish_reason
+        choices = resp.get("choices")
+        if isinstance(choices, list) and choices:
+            c0 = choices[0] or {}
+            if isinstance(c0, dict):
                 fr = c0.get("finish_reason") or c0.get("native_finish_reason")
+
+        # fallback: alguns retornam "finish_reason" no topo
+        if not fr:
+            fr = resp.get("finish_reason") or resp.get("native_finish_reason")
     except Exception:
         pass
-    return fr, usage
 
+    return fr, usage
 
 def _seal_broken_ending(text: str) -> str:
     """
@@ -1606,7 +1789,11 @@ def _seal_broken_ending(text: str) -> str:
     opens = t.count("(")
     closes = t.count(")")
     if opens > closes:
-        t = t + " …)"
+        # evita duplicar reticências se já termina em "..." ou "…"
+        if re.search(r"(\.\.\.|…)\s*$", t):
+            t = t + ")"
+        else:
+            t = t + " …)"
 
     # 4) limpa whitespace
     t = _RE_MULTI_SPACE_END.sub("", t).rstrip()
@@ -1631,7 +1818,7 @@ _RE_CONFLICT_IMMINENT = re.compile(
     r"(te\s+)?(bater|arrebentar|matar)|"
     r"quebrar(\s+a)?\s+cara|"
     r"amea[cç]a(r|)|"
-    r"arma|faca|tiro|"
+    r"(arma|faca|tiro)\s+(na|no)\s+m[aã]o|"
     r"soco|chute"
     r")\b",
     re.IGNORECASE,
@@ -1650,12 +1837,12 @@ _RE_SCENE_FINALIZATION = re.compile(
 def _finalization_allowed(user_text: str, phase: int) -> bool:
     """
     Regra simplificada:
-    - Se a fase >= 3, o clímax é permitido no NSFW padrão.
-    - Se o usuário já descreveu clímax, sempre permitido.
+    - Se o usuário já descreveu finalização/clímax, permitido.
+    - Caso contrário, só permite finalização quando a fase >= 4 (climax).
     """
     if _RE_SCENE_FINALIZATION.search(user_text or ""):
         return True
-    if int(phase or 0) >= 3:
+    if int(phase or 0) >= 4:
         return True
     return False
 
