@@ -1904,10 +1904,14 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     hist = cached_get_history(usuario_key, limit=200) or []
     last_users: List[str] = []
     for d in hist[-12:]:
+        if not isinstance(d, dict):
+            continue
         u = (d.get("mensagem_usuario") or "").strip()
         if u:
             last_users.append(u)
-    return "\n".join(last_users + [prompt]).lower()
+
+    ctx = "\n".join(last_users + [prompt])
+    return ctx
 
 
 # ==========================================================
@@ -1921,18 +1925,13 @@ def _detect_climax_signal(
     nsfw_on: bool,
     phase: int,
 ) -> bool:
-    """
-    Heurística de detecção de clímax:
-    - só roda com NSFW on
-    - só considera fases altas OU densidade de sinais
-    """
     if not nsfw_on:
         return False
 
     t = (texto or "").lower()
     u = (user_text or "").lower()
 
-    if len(t) < 120:
+    if len(t) < 120 and phase < 4:
         return False
 
     signals = (
@@ -1947,9 +1946,6 @@ def _detect_climax_signal(
         "goz",
         "clímax",
         "chega lá",
-        "goza",
-        "gozou",
-        "gozar",
     )
 
     score = 0
@@ -1957,10 +1953,10 @@ def _detect_climax_signal(
         if s in t:
             score += 1
 
-    # Usuário pode forçar transição
-    for s in ("goza", "gozou", "gozar", "clímax", "finaliza", "finalizar"):
-        if s in u:
-            score += 1
+    if phase >= 3:
+        for s in ("goza", "gozou", "gozar", "clímax", "finaliza", "finalizar"):
+            if s in u:
+                score += 1
 
     if phase >= 4 and score >= 1:
         return True
@@ -1968,7 +1964,6 @@ def _detect_climax_signal(
         return True
 
     return False
-
 
 # ==========================================================
 # ✅ AUTORIZAÇÃO EXPLÍCITA — orgasmo do USUÁRIO
@@ -1984,14 +1979,11 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
     return bool(
         re.search(
             r"\b("
-            r"goza|"
-            r"pode gozar|"
-            r"eu vou gozar|"
-            r"vou gozar|"
-            r"t[oô]\s+gozando|"
-            r"estou\s+gozando|"
+            r"pode\s+gozar|"
             r"me\s+faz\s+gozar|"
-            r"me\s+faça\s+gozar"
+            r"me\s+faça\s+gozar|"
+            r"eu\s+vou\s+gozar|"
+            r"vou\s+gozar"
             r")\b",
             user_text.lower(),
         )
