@@ -542,24 +542,40 @@ def _render_relationship_debug_panel() -> None:
     st.markdown("---")
     st.subheader("🔍 Relationship Engine — Debug")
 
-    try:
-        tl = _timeline()
-        uk = _usuario_key_atual()
-
-        facts = get_facts(uk) or {}
-        rel = facts.get(f"rel.state::{tl}") or {}
-
-        st.json(
-            {
-                "timeline": tl,
-                "rel_state": rel,
-                "nsfw": bool(st.session_state.get("mary_nsfw_on", False)),
-                "third_party": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
-            }
-        )
-    except Exception as e:
-        st.error(f"Falha ao renderizar painel Relationship: {type(e).__name__}: {e}")
-
+        try:
+            tl = _timeline()
+            uk = _usuario_key_atual()
+    
+            facts = get_facts(uk) or {}
+            if not isinstance(facts, dict):
+                facts = {}
+    
+            # 1) schema novo/flat: rel.state::<timeline>
+            rel = facts.get(f"rel.state::{tl}")
+    
+            # 2) schema antigo/aninhado: rel -> state::<timeline>
+            if not isinstance(rel, dict):
+                rel_block = facts.get("rel")
+                if isinstance(rel_block, dict):
+                    rel = rel_block.get(f"state::{tl}")
+    
+            # 3) fallback final
+            if not isinstance(rel, dict):
+                rel = {}
+    
+            st.json(
+                {
+                    "timeline": tl,
+                    "usuario_key": uk,
+                    "rel_state": rel,
+                    "nsfw": bool(st.session_state.get("mary_nsfw_on", False)),
+                    "third_party": bool(st.session_state.get("mary_allow_third_party_seduction", False)),
+                    # ajuda a bater o olho no schema real
+                    "debug_rel_keys_found": [k for k in facts.keys() if str(k).startswith("rel")][:30],
+                }
+            )
+        except Exception as e:
+            st.error(f"Falha ao renderizar painel Relationship: {type(e).__name__}: {e}")
 
 def _instantiate_mary_service(*, userkey: str, timeline: str):
     """
