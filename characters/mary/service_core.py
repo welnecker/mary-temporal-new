@@ -1691,35 +1691,40 @@ def _fidelity_mode(timeline: str) -> str:
     soft: pode ceder UM beijo por impulso, mas bloqueia qualquer avanço íntimo
     """
     tl = _normalize_timeline(timeline)
-    # Ajuste aqui se quiser hard em alguma timeline específica
+
+    # exemplo seguro: universitária mais rígida; outras mais permissivas
+    if tl == "universitaria":
+        return "hard"
     return "soft"
 
 
 _RE_INTIMATE_ADVANCE = re.compile(
     r"\b("
     r"decote|"
-    r"m[aã]os?\s+sobe(m|ndo)?|"
+    r"m[aã]os?\s+(dele|dela|minhas|suas)?\s*sobe(m|ndo)?|"
     r"por\s+dentro|"
     r"por\s+baixo\s+da\s+roupa|"
     r"mais\s+que\s+um\s+beijo|"
     r"tirar\s+a\s+roupa|"
-    r"seios|peito|"
+    r"seios|peito|mamil|suti[aã]|calcinha|"
     r"quadril\s+subindo|"
     r"me\s+vira\s+de\s+costas|"
-    r"me\s+prende\s+contra"
+    r"me\s+prende\s+contra(\s+a\s+\w+)?"
     r")\b",
     re.IGNORECASE,
 )
 
 _RE_BLOCKING_LIMIT = re.compile(
     r"\b("
-    r"n[aã]o|para|chega|"
+    r"para|chega|"
     r"isso\s+n[aã]o|"
     r"foi\s+um\s+erro|"
     r"n[aã]o\s+vai\s+rolar|"
     r"n[aã]o\s+assim|"
     r"me\s+solta|"
-    r"agora\s+n[aã]o"
+    r"agora\s+n[aã]o|"
+    r"n[aã]o\s+quero|"
+    r"n[aã]o\s+faz\s+isso"
     r")\b",
     re.IGNORECASE,
 )
