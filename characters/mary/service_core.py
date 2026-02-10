@@ -250,7 +250,6 @@ def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, An
     if not isinstance(mems, list):
         mems = []
     _cache_set(mk, mems)
-    return memsmems)
     return mems
 
 def clear_user_cache(usuario_key: str) -> None:
@@ -1362,15 +1361,13 @@ def _inject_shared_soft_context(
         lines.append(txt)
         lines.append("")
 
-        if dedupe_bucket is not None and txt:
-            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
-
+        
     block = "\n".join(lines).strip()
     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
         base = str(messages[0].get("content") or "").rstrip()
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
-        messages.append({"role": "system", "content": block})})
+        messages.append({"role": "system", "content": block})
 
 # ==========================================================
 # RELATIONSHIP STATE
@@ -1852,25 +1849,38 @@ def _conflict_imminent(user_text: str) -> bool:
 # ==========================================================
 # ✅ FORMAT GUARD (flexível; sem estrutura fixa)
 # ==========================================================
+
 def _split_paragraphs(text: str) -> List[str]:
     raw = (text or "").strip()
     if not raw:
         return []
     return [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
 
+
 def _count_sentences(paragraph: str) -> int:
     p = (paragraph or "").strip()
     if not p:
         return 0
     parts = re.split(r"[.!?]+", p)
-    parts = [x.strip() for x in parts if x.strip()]
-    return len(parts)
+    return len([x for x in parts if x.strip()])
+
 
 def _format_ok(text: str) -> bool:
+    """
+    Formato mínimo aceitável:
+    - texto não vazio
+    - não meta
+    """
     return bool((text or "").strip())
 
+
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
-    hist = cached_get_history(usuario_key, limit=200)
+    """
+    Contexto recente do usuário para detecção de:
+    - mensagens coladas
+    - offscreen inventado
+    """
+    hist = cached_get_history(usuario_key, limit=200) or []
     last_users: List[str] = []
     for d in hist[-12:]:
         u = (d.get("mensagem_usuario") or "").strip()
@@ -1878,11 +1888,22 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
             last_users.append(u)
     return "\n".join(last_users + [prompt]).lower()
 
-def _detect_climax_signal(texto: str, user_text: str, *, nsfw_on: bool, phase: int) -> bool:
+
+# ==========================================================
+# ✅ DETECÇÃO DE CLÍMAX (heurística, não determinística)
+# ==========================================================
+
+def _detect_climax_signal(
+    texto: str,
+    user_text: str,
+    *,
+    nsfw_on: bool,
+    phase: int,
+) -> bool:
     """
     Heurística de detecção de clímax:
     - só roda com NSFW on
-    - só considera fases altas (>=3) OU sinais suficientes no texto
+    - só considera fases altas OU densidade de sinais
     """
     if not nsfw_on:
         return False
@@ -1893,36 +1914,65 @@ def _detect_climax_signal(texto: str, user_text: str, *, nsfw_on: bool, phase: i
     if len(t) < 120:
         return False
 
-    # sinais "estruturais" (sem depender de 1 palavra específica)
     signals = (
-        "espasmo", "contraç", "trem", "pernas", "corpo arque",
-        "perde o controle", "onda", "explod no corpo", "goz",
-        "clímax", "chega lá", "goza", "gozou", "gozar",
+        "espasmo",
+        "contraç",
+        "trem",
+        "pernas",
+        "corpo arque",
+        "perde o controle",
+        "onda",
+        "explod no corpo",
+        "goz",
+        "clímax",
+        "chega lá",
+        "goza",
+        "gozou",
+        "gozar",
     )
 
     score = 0
     for s in signals:
         if s in t:
             score += 1
-    # user_text pode disparar transição também
+
+    # Usuário pode forçar transição
     for s in ("goza", "gozou", "gozar", "clímax", "finaliza", "finalizar"):
         if s in u:
             score += 1
 
-    # regra final
     if phase >= 4 and score >= 1:
         return True
     if phase >= 3 and score >= 3:
         return True
+
     return False
 
+
+# ==========================================================
+# ✅ AUTORIZAÇÃO EXPLÍCITA — orgasmo do USUÁRIO
+# ==========================================================
+
 def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
+    """
+    Mary NUNCA finaliza o usuário sem autorização clara.
+    """
     if not user_text:
         return False
+
     return bool(
         re.search(
-            r"\b(goza|pode gozar|eu vou gozar|vou gozar|t[oô] gozando|estou gozando|me faz gozar|me faça gozar)\b",
-            (user_text or "").lower(),
+            r"\b("
+            r"goza|"
+            r"pode gozar|"
+            r"eu vou gozar|"
+            r"vou gozar|"
+            r"t[oô]\s+gozando|"
+            r"estou\s+gozando|"
+            r"me\s+faz\s+gozar|"
+            r"me\s+faça\s+gozar"
+            r")\b",
+            user_text.lower(),
         )
     )
 # ==========================================================
