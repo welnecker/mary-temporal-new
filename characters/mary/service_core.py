@@ -3734,7 +3734,7 @@ LEMBRETE:
     # ======================================================
     # Gerar + Repair
     # ======================================================
-   def _generate_with_repair(
+    def _generate_with_repair(
     self,
     model: str,
     messages: List[Dict[str, str]],
