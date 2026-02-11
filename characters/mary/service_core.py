@@ -186,6 +186,8 @@ NSFW_TOGGLE_STYLE = """
 
 """.strip()
 
+_CACHE_TTL_SECONDS = 60  # 60s (pode usar 120, 300 etc.)
+
 def _cache_get(key: str) -> Any:
     v = _ss_get(key)
     if not isinstance(v, dict):
