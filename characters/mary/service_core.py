@@ -11,8 +11,7 @@ MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding din
 ⚠️ Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-import math
-import uuid  
+import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
 import logging
 import re
 import hashlib
@@ -1084,7 +1083,7 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     k1 = 1.5
     b = 0.75
 
-  
+    import math
 
     def _idf(w: str) -> float:
         n_q = df.get(w, 0)
@@ -1574,7 +1573,10 @@ _RE_CLIMAX_SIGNAL = re.compile(
     r"\b(goza|orgasmo|gozar|goze|gozando|gozei|gozar\s+pra\s+mim)\b",
     re.IGNORECASE
 )
-
+_RE_AFTERCARE_SIGNAL = re.compile(
+    r"\b(abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
+    re.IGNORECASE
+)
 _RE_ESCALATE_0_TO_1 = re.compile(
     r"\b(beijo|beij[oa]|encosta|toque|abraço|aproxim\w*|"
     r"vem|chega\s+perto|vem\s+aqui|pega|bar|drink|dan[çc]a|cintura)\b",
@@ -2242,6 +2244,16 @@ def _violations(
     if enforce_density and _low_sensory_density(t):
         out.append("low_sensory_density")
 
+    # ✅ NSFW ON: evita poesia/metáforas quando o usuário veio explícito/intenso
+    if nsfw_on and _user_is_intense(user_text or ""):
+        if re.search(r"\b(reden[cç][aã]o|prece|voto|destino|para\s+sempre|etern|cicatriz\s+por\s+cicatriz)\b", t, re.IGNORECASE):
+            out.append("nsfw_poetizou")
+
+    # ✅ NSFW ON + usuário explícito: Mary deve demonstrar prazer físico (não só 'eu gosto')
+    if nsfw_on and _user_is_intense(user_text or "") and _RE_EXPLICIT_SEX.search((user_text or "")):
+        if not re.search(r"\b(gemid|geme|arfa|ofeg|trem(endo|or)|contra[cç][aã]o|espasm|meu\s+corpo\s+responde|minha\s+respira[cç][aã]o\s+falha)\b", t, re.IGNORECASE):
+            out.append("prazer_ausente")
+
     # Em NSFW (perfil não relaxado), só reforça densidade se usuário estiver intenso
     if (
         nsfw_on
@@ -2283,6 +2295,8 @@ def _repair_fewshot_example(violations: List[str]) -> str:
         "finalizou_cena",
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
+        "nsfw_poetizou",
+        "prazer_ausente",
         "low_sensory_density",
 
         # ✅ TERCEIROS — NOVAS PRIORIDADES (segurança realista)
@@ -2407,9 +2421,22 @@ def _repair_instruction(violations: List[str]) -> str:
     if "nsfw_on_suavizou" in violations:
         bullets.append(
             "- NSFW está ON e o usuário veio intenso: NÃO poetize e NÃO infantilize. "
-            "Responda com linguagem adulta e sensorial, direta e física, sem metáforas românticas. "
-            "Mantenha urgência e corpo presente COM descrição gráfica do ato. "
+            "Responda com linguagem adulta, direta e física. "
+            "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
+            "Inclua 1 iniciativa mais direta (puxar, prender, abraçar apertado, beijar com urgência) sem atribuir ação ao usuário. "
+            "Mostre prazer físico (respiração falhando, tremor, gemido/arquejo, contrações) quando couber. "
             "Respeite a fase: não conclua/clímax se não estiver permitido."
+        )
+
+
+    if "nsfw_poetizou" in violations:
+        bullets.append(
+            "- NSFW ON: remova poesia/metáforas e palavras românticas (redenção, destino, prece, voto, para sempre). Foque em ação curta + sensação física."
+        )
+
+    if "prazer_ausente" in violations:
+        bullets.append(
+            "- NSFW ON: inclua demonstração de prazer físico (ofegar/arfar, tremor involuntário, gemido/arquejo, contrações, pele arrepiando)."
         )
 
 
@@ -2429,7 +2456,19 @@ def _repair_instruction(violations: List[str]) -> str:
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-    
+    if "terceiro_local_perigoso" in violations:
+        bullets.append(
+            "- TERCEIRO: LOCAL PERIGOSO. Mary NÃO aceita matagal/barraco/beco/viela/lugar isolado. "
+            "Reescreva: recusa firme e realista, sem moralizar. Pode sugerir alternativa segura (apê/hotel) "
+            "APENAS se o usuário tiver proposto isso."
+        )
+
+    if "terceiro_convite_vago" in violations:
+        bullets.append(
+            "- TERCEIRO: CONVITE VAGO. Mary não aceita 'vem comigo/sumir/surpresa' sem destino. "
+            "Ela questiona 'pra onde?' ou recusa se o outro insistir em segredo."
+        )
+
     if "finalizou_cena_soft" in violations:
         bullets.append(
             "- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes."
@@ -2575,10 +2614,10 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
         self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
 
-        if desire >= (self_control * 0.65) and arousal >= 10:
+        if desire >= (self_control * 0.55) and arousal >= 10:
             return True
 
-        if cue and desire >= (self_control * 0.45):
+        if cue and desire >= (self_control * 0.35):
             return True
 
         if re.search(r"\bjanio\b", ut, re.IGNORECASE):
@@ -3358,9 +3397,8 @@ LEMBRETE:
                         rel_state = new_rel
 
                         if timeline_final == "universitaria":
-                            prompt_str = str(prompt or "").strip()
-                            texto_str = str(texto or "").strip()
-                            txt_all = f"{prompt_str}\n{texto_str}".lower()                        
+                            txt_all = f"{prompt}\n{texto}".lower()
+                        
                             transition = bool(
                                 re.search(
                                     r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
@@ -3762,246 +3800,6 @@ LEMBRETE:
         # (opcional) revalidações — mantém 1 repair só (mais rápido / menos risco de loop)
         return texto2, used_model2
 
-            # ===========
-            # Texto base
-            # ===========
-            extracted = (self._extract_text(data) or "")
-            extracted = _strip_internal_thought(extracted)
-            if not extracted.strip():
-                raise RuntimeError("modelo retornou vazio")
-
-            # ✅ PATCH 0 aplicado aqui: sela finais quebrados (parêntese aberto etc.)
-            sealed = _seal_broken_ending(extracted)
-            texto = sealed.strip()
-
-            # ======================================================
-            # 🔥 CLÍMAX DETECTADO → FORÇA AFTERCARE NO PRÓXIMO TURNO
-            # ======================================================
-            try:
-                climax_now = _detect_climax_signal(texto, user_text, nsfw_on=nsfw_on, phase=phase)
-            except Exception:
-                climax_now = False
-
-            if climax_now:
-                # Guarda por usuário/timeline (não vaza entre usuários)
-                pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
-                state = _ss_get(pk) if _ss_has(pk) else None
-                if not isinstance(state, dict):
-                    state = {}
-                # 2 turnos de aftercare costuma estabilizar bem
-                state["turns_left"] = int(state.get("turns_left") or 0)
-                state["turns_left"] = max(state["turns_left"], 2)
-                state["ts"] = time.time()
-                _ss_set(pk, state)
-
-            # sinaliza truncamento (para aumentar tokens no repair, se necessário)
-            was_truncated = str(finish_reason or "").lower() in ("length", "max_tokens", "token_limit")
-            was_paren_fixed = (sealed.strip() != extracted.strip())
-            needs_more_room = bool(was_truncated or was_paren_fixed)
-
-            # ===========
-            # Violações
-            # ===========
-            v = _violations(
-                texto,
-                ctx_lower,
-                user_text=user_text,
-                phase=phase,
-                nsfw_on=nsfw_on,
-                nsfw_profile=nsfw_profile,
-                timeline=timeline,
-                allow_third_party_seduction=allow_third_party_seduction,
-            )
-
-            # ✅ marca truncamento como violação "técnica" (força repair com mais tokens)
-            if needs_more_room:
-                v = list(v) + ["truncado_ou_corte_no_fim"]
-
-            # ✅ TERCEIROS LIBERADO: "desvio_curto_quebrado" não deve travar o sistema
-            if nsfw_on and allow_third_party_seduction:
-                v = [x for x in v if x != "desvio_curto_quebrado"]
-
-            # ✅ sem violações => retorna já selado (nunca termina em "(")
-            if not v:
-                return (texto, used_model)
-
-            diag.repairs += 1
-            diag.violations.extend(v)
-
-            # =========================
-            # Ajuste dinâmico de tokens
-            # =========================
-            # Se detectou truncamento/corte no fim, dá folga real pro repair concluir frase.
-            # (não muda seu pipeline, só esta execução)
-            max_tokens_repair = int(max_tokens or 0)
-
-            # Repair precisa manter criatividade suficiente para não "matar" a cena,
-            # mas com mais coerência (dinâmico).
-            # ✅ Repair: no NSFW_RELAXED, não “pasteuriza” a cena
-            if str(nsfw_profile) == "NSFW_RELAXED":
-                repair_temperature = max(0.65, min(0.85, float(temperature) * 0.95))
-            else:
-                repair_temperature = max(0.45, min(0.70, float(temperature) * 0.85))
-
-
-            if needs_more_room:
-                # Dá fôlego real para concluir frase/cena (evita truncamento).
-                max_tokens_repair = max(max_tokens_repair, 700)
-                max_tokens_repair = min(int(max_tokens_repair * 1.45) + 160, 4096)
-                # Nunca deixe o repair com menos espaço que o pedido original.
-                max_tokens_repair = max(max_tokens_repair, int(max_tokens or 0))
-
-          # ======================
-            # Prompt de repair (sys)
-            # ======================
-            repair_sys = (
-                "Você é um revisor de continuidade do roleplay.\n"
-                "TAREFA: reescrever a resposta da MARY corrigindo violações mantendo intensidade emocional e sensorial.\n"
-                "REGRA CRÍTICA DE CAUSALIDADE:\n"
-                "- Se a resposta atribuir desejo, impulso, escolha ou excitação\n"
-                "  a falha, ausência, limitação ou comportamento de Janio,\n"
-                "  REESCREVA a causa como INTERNA a Mary\n"
-                "  (fraqueza, curiosidade, vício, desejo, escolha consciente).\n"
-                "  Janio NÃO pode ser fonte causal do desejo.\n"
-                + (
-                    "NSFW_ON: é permitido vocabulário anatômico explícito (ex.: pênis, vagina, clitóris), desde que integrado à sensorialidade e sem concluir a cena.\n"
-                    if nsfw_on
-                    else "NSFW_OFF: evite termos explícitos/anatomia direta.\n"
-                )
-                + "PRIORIDADES:\n"
-                "1. Corrigir causalidade (culpa NÃO pode ser projetada em Janio).\n"
-                "2. Remover teleporte, invenção de ações do usuário ou meta.\n"
-                "3. Manter sensorialidade (respiração, tensão, toque, ritmo).\n"
-                "4. NÃO concluir a cena prematuramente.\n"
-                "5. NÃO terminar com parêntese aberto ou frase cortada.\n"
-                "FORMATO: Parágrafos livres, 100% in-character, sem listas ou títulos.\n"
-            )
-
-            repair_user = (
-                "Reescreva a resposta abaixo removendo violações.\n"
-                f"VIOLAÇÕES DETECTADAS: {', '.join(v)}\n"
-                f"INSTRUÇÕES DE CORREÇÃO:\n{_repair_instruction(v)}\n\n"
-                "REGRA EXTRA: se usar parênteses, FECHE. Não deixe a frase cortada no final.\n\n"
-                "[RESPOSTA ORIGINAL]\n"
-                f"{texto}\n"
-            )
-
-
-            for _i in range(2):
-                dataR, usedR, _ = self._chat(
-                    used_model,
-                    [
-                        {"role": "system", "content": repair_sys},
-                        {"role": "user", "content": repair_user},
-                    ],
-                    temperature=repair_temperature,
-                    max_tokens=max_tokens_repair,
-                    top_p=max(0.90, min(0.97, float(top_p))),
-                    extra=extra,
-                )
-
-                repaired_raw = (self._extract_text(dataR) or "")
-                repaired_raw = _strip_internal_thought(repaired_raw)
-                repaired = _seal_broken_ending(repaired_raw).strip()
-
-                if not repaired:
-                    diag.repairs += 1
-                    diag.violations.append("repair_vazio")
-                    continue
-
-                vr = _violations(
-                    repaired,
-                    ctx_lower,
-                    user_text=user_text,
-                    phase=phase,
-                    nsfw_on=nsfw_on,
-                    nsfw_profile=nsfw_profile,
-                    timeline=timeline,
-                    allow_third_party_seduction=allow_third_party_seduction,
-                )
-
-                # ✅ se ainda ficou truncado no repair, força nova rodada
-                fr2, _u2 = _extract_finish_reason_and_usage(dataR)
-                if str(fr2 or "").lower() in ("length", "max_tokens", "token_limit"):
-                    vr = list(vr) + ["truncado_ou_corte_no_fim"]
-
-                # =====================================================
-                # CASO 1: Sem violações → retorna
-                # =====================================================
-                if not vr:
-                    if _RE_SCENE_FINALIZATION.search(repaired or "") and (
-                        not _finalization_allowed(user_text or "", int(phase or 0))
-                    ):
-                        repaired = _trim_scene_finalization(repaired)
-
-                    repaired = _seal_broken_ending(repaired).strip()
-                    return (repaired, usedR or used_model)
-
-                # =====================================================
-                # ✅ NOVO: CASO 2: Apenas violações "suaves" → aceitar
-                # =====================================================
-                # NUNCA aceitar como "soft" se envolver segurança de terceiros
-                hard_never_soft = {"terceiro_local_perigoso", "terceiro_convite_vago", "terceiro_logistica_offscreen"}
-
-                # Violações realmente "suaves" (não quebram segurança/realismo estrutural)
-                soft_violations = {
-                    "low_sensory_density",
-                    "nsfw_on_suavizou",
-                    "finalizou_cena",
-                    "finalizou_cena_soft",
-                    "tone_romantic_when_intense_soft",
-                }
-
-
-                if vr and (not any(v in hard_never_soft for v in vr)) and all(v in soft_violations for v in vr):
-                    # Aceitar com ajuste final, em vez de ir pro fallback genérico
-                    if _RE_SCENE_FINALIZATION.search(repaired or "") and (
-                        not _finalization_allowed(user_text or "", int(phase or 0))
-                    ):
-                        repaired = _trim_scene_finalization(repaired)
-                    repaired = _seal_broken_ending(repaired).strip()
-                    return (repaired, usedR or used_model)
-
-
-                # =====================================================
-                # CASO 3: Violações graves → continua tentando
-                # =====================================================
-                diag.repairs += 1
-                diag.violations.extend(vr)
-
-                if any(x in {"terceiro_local_perigoso", "terceiro_convite_vago"} for x in vr):
-                    repair_user = (
-                        repair_user
-                        + "\n\nATENÇÃO: VIOLAÇÃO DE SEGURANÇA com terceiro. "
-                          "Mary deve recusar local perigoso OU exigir destino claro (\"Pra onde?\") "
-                          "antes de qualquer movimento. Sem aceitar convites vagos."
-                    )
-                else:
-                    repair_user = (
-                        repair_user
-                        + "\n\nATENÇÃO: ainda há violação. Reescreva MAIS LIMPO e MAIS DIRETO, "
-                          "sem meta e sem listas/títulos. E finalize sem frase cortada/parêntese aberto."
-                    )
-
-            # ================================
-            # Fallback seguro (sem derrubar app)
-            # ================================
-            safe = _seal_broken_ending(texto).strip()
-            try:
-                if _RE_SCENE_FINALIZATION.search(safe) and (
-                    not _finalization_allowed(user_text or "", int(phase or 0))
-                ):
-                    safe = _trim_scene_finalization(safe)
-
-                safe = _seal_broken_ending(safe).strip()
-            except Exception:
-                safe = _seal_broken_ending(safe).strip()
-
-            return (safe, used_model)
-
-        # ======================================================
-        # Fallback
-        # ======================================================
     @staticmethod
     def _fallback_text() -> str:
         return (
