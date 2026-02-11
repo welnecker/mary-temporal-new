@@ -2358,7 +2358,6 @@ def _repair_instruction(violations: List[str]) -> str:
             "- Terceiro está LIBERADO: Mary não pode só recusar e travar. Reescreva com 1 passo concreto (aproximar/aceitar drink/trocar toque/um beijo) mantendo segredo e sem romance/abandono de Janio."
         )
 
-
     if "desvio_curto_quebrado" in violations:
         bullets.append(
             "- Terceiro: permitido no máximo 1 beijo curto por impulso. Se houver mãos subindo/decote/por baixo da roupa/querer ir além do beijo: Mary BLOQUEIA na hora, se afasta e SAI (culpa/segredo, sem romance)."
@@ -2374,7 +2373,7 @@ def _repair_instruction(violations: List[str]) -> str:
             "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, sem confirmar mudança de local."
         )
 
-        # ✅ NOVAS VIOLAÇÕES (TERCEIROS) — SEGURANÇA REALISTA
+    # ✅ NOVAS VIOLAÇÕES (TERCEIROS) — SEGURANÇA REALISTA
     if "terceiro_local_perigoso" in violations:
         bullets.append(
             "- LOCAL PERIGOSO: Mary NÃO aceita ir para matagal, barraco, lugar isolado, beco, viela, terreno baldio, estrada deserta. "
@@ -2390,8 +2389,6 @@ def _repair_instruction(violations: List[str]) -> str:
             "Se o destino não for dito, Mary recusa ou mantém no mesmo ambiente."
         )
 
-
-
     # ✅ NSFW OFF: tirar termos explícitos
     if "nsfw_off_explicito" in violations:
         bullets.append("- NSFW está OFF: remova termos explícitos/anatomia direta; mantenha sensualidade sem ato explícito.")
@@ -2403,22 +2400,21 @@ def _repair_instruction(violations: List[str]) -> str:
             "Responda com linguagem adulta, direta e física. "
             "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
             "Inclua 1 iniciativa mais direta (puxar, prender, abraçar apertado, beijar com urgência) sem atribuir ação ao usuário. "
-            "Mostre prazer físico (respiração falhando, tremor, gemido/arquejo, contrações) quando couber. "
+            "Mostre prazer físico (respiração falhando, tremor, arquejo/voz rouca) quando couber. "
             "Respeite a fase: não conclua/clímax se não estiver permitido."
         )
 
-
     if "nsfw_poetizou" in violations:
         bullets.append(
-            "- NSFW ON: remova poesia/metáforas e palavras românticas (redenção, destino, prece, voto, para sempre). Foque em ação curta + sensação física."
+            "- NSFW ON: remova poesia/metáforas e palavras românticas (redenção, destino, prece, voto, para sempre, cicatriz por cicatriz). "
+            "Foque em ação curta + sensação física."
         )
 
     if "prazer_ausente" in violations:
-    bullets.append(
-        "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, arquejo/gemido, contração física, voz rouca). "
-        "Evite poesia/metáfora. Não descreva ato gráfico; mostre EFEITO no corpo."
-    )
-
+        bullets.append(
+            "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, arquejo/gemido, contração física, voz rouca). "
+            "Evite poesia/metáfora. Não descreva ato gráfico; mostre EFEITO no corpo."
+        )
 
     if "formato_invalido" in violations:
         bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
@@ -2426,7 +2422,7 @@ def _repair_instruction(violations: List[str]) -> str:
     if "tone_romantic_when_intense" in violations:
         bullets.append(
             "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
-            "Proibido: redenção/prece/voto/destino/‘pra sempre’. "
+            "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
             "Faça: gesto + sensação corporal + fala curta e quente."
         )
 
@@ -2436,31 +2432,14 @@ def _repair_instruction(violations: List[str]) -> str:
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-    if "terceiro_local_perigoso" in violations:
-        bullets.append(
-            "- TERCEIRO: LOCAL PERIGOSO. Mary NÃO aceita matagal/barraco/beco/viela/lugar isolado. "
-            "Reescreva: recusa firme e realista, sem moralizar. Pode sugerir alternativa segura (apê/hotel) "
-            "APENAS se o usuário tiver proposto isso."
-        )
-
-    if "terceiro_convite_vago" in violations:
-        bullets.append(
-            "- TERCEIRO: CONVITE VAGO. Mary não aceita 'vem comigo/sumir/surpresa' sem destino. "
-            "Ela questiona 'pra onde?' ou recusa se o outro insistir em segredo."
-        )
-
     if "finalizou_cena_soft" in violations:
-        bullets.append(
-            "- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes."
-        )
+        bullets.append("- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes.")
 
     if "tone_romantic_when_intense_soft" in violations:
         bullets.append(
             "- TOM (SOFT): reduza romantização exagerada, mas não precisa reescrever tudo. "
             "Mantenha físico direto + tensão adulta."
         )
-
-
 
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
     ex = _repair_fewshot_example(violations)
