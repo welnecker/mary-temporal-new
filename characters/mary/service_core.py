@@ -2790,6 +2790,34 @@ class MaryService(BaseCharacter):
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
+        # ==========================================================
+        # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
+        # ==========================================================
+        mood = str(rel_state.get("mood", "intensa") or "intensa")
+        energy = str(rel_state.get("energy", "energetica") or "energetica")
+        attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
+        
+        behavior_block = f"""
+        [DINÂMICA INTERNA ATIVA]
+        - HUMOR ATUAL: {mood}
+        - ENERGIA: {energy}
+        - ATITUDE DOMINANTE: {attitude}
+        
+        EFEITOS:
+        - Humor altera o tom emocional.
+        - Energia altera ritmo e intensidade (mais rápida/lenta).
+        - Atitude define postura (pode conduzir, ceder ou equilibrar).
+        
+        REAÇÕES DINÂMICAS (use 1 por turno quando couber):
+        - surpresa curta
+        - resistência momentânea (sem travar)
+        - mudança de ritmo
+        - provocação direta
+        
+        REGRA:
+        - Evite previsibilidade repetitiva.
+        """.strip()
+
         # 7) Regras
         fidelity_mode = _fidelity_mode(timeline_final)
 
@@ -3201,6 +3229,7 @@ NSFW_PROFILE: {nsfw_profile}
 {persona_text}
 
 {rel_block}
+{behavior_block}
 {scene_lock_rule}
 {parallel_scene_rule}
 
@@ -3356,7 +3385,7 @@ LEMBRETE:
                 if not conflict_now:
                     try:
                         assessor_model = diag.model_used or plan["model"]
-
+                
                         def _assessor(system_prompt: str, user_prompt: str) -> str:
                             data2, _, _ = self._chat(
                                 assessor_model,
@@ -3368,7 +3397,7 @@ LEMBRETE:
                                 max_tokens=280,
                             )
                             return self._extract_text(data2)
-
+                
                         new_rel, _assessment, meta = evolve_relationship(
                             rel_state,
                             prompt,
@@ -3377,11 +3406,64 @@ LEMBRETE:
                             _assessor,
                             cfg=EngineConfig(),
                         )
+                
                         rel_state = new_rel
-
+                
+                        # ==========================================================
+                        # 🔥 DINÂMICA 3.5 — MEMÓRIA DE PADRÕES + HUMOR DINÂMICO
+                        # ==========================================================
+                        try:
+                            t2 = (texto or "").lower()
+                
+                            # --- padrão de dominância física ---
+                            if any(k in t2 for k in [
+                                "puxo", "puxei", "puxar",
+                                "prendo", "prender",
+                                "abraço apertado",
+                                "beijo com urgência",
+                                "aperto contra"
+                            ]):
+                                rel_state["_last_success_pattern"] = "dominancia_fisica"
+                                rel_state["attitude"] = "dominante"
+                
+                            # --- padrão de prazer corporal ---
+                            if any(k in t2 for k in [
+                                "tremo", "tremor", "arfar",
+                                "ofegar", "respiração falha",
+                                "voz rouca", "arquejo",
+                                "contração", "aperto involuntário"
+                            ]):
+                                rel_state["_last_success_pattern"] = "prazer_corporal"
+                                rel_state["mood"] = "intensa"
+                
+                            # --- mudança de ritmo / surpresa ---
+                            if any(k in t2 for k in [
+                                "de repente", "sem aviso",
+                                "surpresa", "não esperava",
+                                "mudo o ritmo", "pauso e volto"
+                            ]):
+                                rel_state["_last_success_pattern"] = "mudanca_ritmo"
+                                rel_state["energy"] = "energetica"
+                
+                            # --- leve resistência momentânea ---
+                            if any(k in t2 for k in [
+                                "paro por um segundo",
+                                "respiro fundo antes",
+                                "hesito por um instante"
+                            ]):
+                                rel_state["mood"] = "melancolica"
+                
+                            rel_state["_last_updated_ts"] = int(time.time())
+                
+                        except Exception:
+                            pass
+                
+                        # ==========================================================
+                        # 🔒 VIRGINITY SYNC (NÃO REGREDIR)
+                        # ==========================================================
                         if timeline_final == "universitaria":
                             txt_all = f"{prompt}\n{texto}".lower()
-                        
+                
                             transition = bool(
                                 re.search(
                                     r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
@@ -3389,13 +3471,19 @@ LEMBRETE:
                                     re.IGNORECASE,
                                 )
                             )
-                        
-                            # 🔒 REGRA ABSOLUTA: virgindade NÃO regride
+                
                             if transition and rel_state.get("virginity") == "virgem":
                                 rel_state["virginity"] = "nao_virgem"
                                 rel_state["consummated"] = True
+                
+                        # ==========================================================
+                        # 💾 SALVA ESTADO ATUALIZADO
+                        # ==========================================================
                         _save_rel_state(usuario_key, timeline_final, rel_state)
-
+                
+                        # ==========================================================
+                        # 🔄 SUGESTÃO DE TIMELINE (se engine sinalizar)
+                        # ==========================================================
                         if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                             _ss_set(
                                 "mary_timeline_suggested",
@@ -3406,10 +3494,9 @@ LEMBRETE:
                                     "reason": meta.get("pattern") or "suggested_by_engine",
                                 },
                             )
-
+                
                     except Exception:
                         meta = meta or {}
-
                 _ss_set(
                     "mary_rel_meta_last",
                     {
