@@ -1483,6 +1483,13 @@ def _load_rel_state(
     base.setdefault("_last_pattern", "")
     base.setdefault("_last_updated_ts", 0)
 
+    # 🔥 NOVO — DINÂMICA 3.5 (estado comportamental seguro)
+    base.setdefault("mood", "intensa")
+    base.setdefault("energy", "energetica")
+    base.setdefault("attitude", "equilibrada")
+    base.setdefault("_last_success_pattern", "")
+    base.setdefault("self_awareness", 0.30)  # ← LINHA OPCIONAL ADICIONADA
+
     # 4) Defaults mínimos (apenas se não existir)
     base.setdefault("mature_turns", 0)
     base.setdefault("intimacy_level", 0 if timeline == "universitaria" else 3)
@@ -1497,6 +1504,7 @@ def _load_rel_state(
     else:
         if base.get("virginity") not in ("virgem", "nao_virgem"):
             base["virginity"] = "nao_virgem"
+
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
     base.setdefault("self_control", 40 if timeline == "universitaria" else 35)
@@ -1513,6 +1521,8 @@ def _load_rel_state(
 
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
+
+    return base
 
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
@@ -1732,6 +1742,31 @@ _RE_INTENSE_CUES = re.compile(
 
 _RE_ROMANCEY = re.compile(
     r"\b(reden[cç][aã]o|prece|voto|destino|pra sempre|verdade crua e linda|cicatriz por cicatriz)\b",
+    re.I
+)
+
+# ----------------------------------
+# Autoconsciência de Beleza/Sensualidade (Mary sabe o efeito que causa)
+# ----------------------------------
+_RE_SELF_AWARE_BEHAVIOR = re.compile(
+    r"\b("
+    r"sorrio sabendo|"
+    r"sorriso lento|"
+    r"olhar demorado|"
+    r"olhar provocador|"
+    r"movo o corpo devagar|"
+    r"mexo com propósito|"
+    r"me aproximo de propósito|"
+    r"aproximo de propósito|"
+    r"sei o que isso faz com você|"
+    r"eu sei o efeito que eu causo|"
+    r"sei o efeito que causo|"
+    r"deixo você perceber|"
+    r"faço questão de|"
+    r"não desvio o olhar|"
+    r"prendo seu olhar|"
+    r"sei que você está olhando"
+    r")\b",
     re.I
 )
 
@@ -2911,12 +2946,14 @@ class MaryService(BaseCharacter):
         mood = str(rel_state.get("mood", "intensa") or "intensa")
         energy = str(rel_state.get("energy", "energetica") or "energetica")
         attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
+        self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
         
         behavior_block = f"""
         [DINÂMICA INTERNA ATIVA]
         - HUMOR ATUAL: {mood}
         - ENERGIA: {energy}
         - ATITUDE DOMINANTE: {attitude}
+        - AUTOCONSCIÊNCIA (BELEZA/EFEITO): {round(self_awareness, 2)}
         
         EFEITOS:
         - Humor altera o tom emocional.
@@ -2928,6 +2965,12 @@ class MaryService(BaseCharacter):
         - resistência momentânea (sem travar)
         - mudança de ritmo
         - provocação direta
+
+        AUTOIMAGEM / EFEITO (quando couber, sem narrar pelo usuário):
+        - 0.00–0.30: sensualidade mais involuntária (atração aparece sem cálculo).
+        - 0.30–0.60: percebe o efeito e usa microgestos (sorriso sabendo, olhar que segura).
+        - 0.60–0.85: provoca com intenção (movimento com propósito, pausa provocadora).
+        - 0.85–1.00: controle alto do magnetismo (provocação fria, segura, deliberada).
         
         REGRA:
         - Evite previsibilidade repetitiva.
@@ -3577,8 +3620,17 @@ LEMBRETE:
                         # ==========================================================
                         try:
                             t2 = (texto or "").lower()
-                
-                            # --- padrão de dominância física ---
+                        
+                            # garante defaults seguros
+                            rel_state.setdefault("mood", "intensa")
+                            rel_state.setdefault("energy", "energetica")
+                            rel_state.setdefault("attitude", "equilibrada")
+                            rel_state.setdefault("_last_success_pattern", "")
+                            rel_state.setdefault("self_awareness", 0.30)
+                        
+                            # ------------------------------------------------------
+                            # 🔥 PADRÃO: dominância física
+                            # ------------------------------------------------------
                             if any(k in t2 for k in [
                                 "puxo", "puxei", "puxar",
                                 "prendo", "prender",
@@ -3588,8 +3640,11 @@ LEMBRETE:
                             ]):
                                 rel_state["_last_success_pattern"] = "dominancia_fisica"
                                 rel_state["attitude"] = "dominante"
-                
-                            # --- padrão de prazer corporal ---
+                                rel_state["energy"] = "energetica"
+                        
+                            # ------------------------------------------------------
+                            # 🔥 PADRÃO: prazer corporal / resposta física intensa
+                            # ------------------------------------------------------
                             if any(k in t2 for k in [
                                 "tremo", "tremor", "arfar",
                                 "ofegar", "respiração falha",
@@ -3598,8 +3653,10 @@ LEMBRETE:
                             ]):
                                 rel_state["_last_success_pattern"] = "prazer_corporal"
                                 rel_state["mood"] = "intensa"
-                
-                            # --- mudança de ritmo / surpresa ---
+                        
+                            # ------------------------------------------------------
+                            # 🔥 PADRÃO: mudança de ritmo / surpresa
+                            # ------------------------------------------------------
                             if any(k in t2 for k in [
                                 "de repente", "sem aviso",
                                 "surpresa", "não esperava",
@@ -3607,17 +3664,29 @@ LEMBRETE:
                             ]):
                                 rel_state["_last_success_pattern"] = "mudanca_ritmo"
                                 rel_state["energy"] = "energetica"
-                
-                            # --- leve resistência momentânea ---
+                        
+                            # ------------------------------------------------------
+                            # 🔥 PADRÃO: leve resistência emocional momentânea
+                            # ------------------------------------------------------
                             if any(k in t2 for k in [
                                 "paro por um segundo",
                                 "respiro fundo antes",
                                 "hesito por um instante"
                             ]):
                                 rel_state["mood"] = "melancolica"
-                
+                        
+                            # ------------------------------------------------------
+                            # 🔥 AUTOCONSCIÊNCIA DE BELEZA / EFEITO
+                            # ------------------------------------------------------
+                            if _RE_SELF_AWARE_BEHAVIOR.search(t2):
+                                rel_state["self_awareness"] = min(
+                                    1.0,
+                                    float(rel_state.get("self_awareness", 0.30)) + 0.05
+                                )
+                        
+                            # timestamp de atualização comportamental
                             rel_state["_last_updated_ts"] = int(time.time())
-                
+                        
                         except Exception:
                             pass
                 
