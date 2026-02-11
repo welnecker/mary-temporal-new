@@ -184,19 +184,6 @@ NSFW_TOGGLE_STYLE = """
 - Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
 
 """.strip()
-def nsfw_style_block(nsfw_on: bool) -> str:
-    """
-    Retorna o estilo NSFW de forma econômica:
-    - 1ª injeção na sessão: bloco completo
-    - próximas: versão curta (economia de tokens)
-    """
-    k = f"{_SS_PREFIX}nsfw_style_injected::{'on' if nsfw_on else 'off'}"
-    if _ss_get(k) is True:
-        return "[Siga rigorosamente o estilo NSFW já definido nesta sessão. Mantenha fase/consentimento/realismo.]\n"
-
-    _ss_set(k, True)
-    return (NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE) + "\n"
-_CACHE_TTL_SECONDS = 300  # 5 minutos (ajuste se quiser)
 
 def _cache_get(key: str) -> Any:
     v = _ss_get(key)
@@ -1507,26 +1494,6 @@ def _load_rel_state(
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
 
-
-def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
-    tl = _normalize_timeline(timeline)
-    uk = _user_key(user_id, tl)
-    facts = cached_get_facts(uk) or {}
-    key = _rel_fact_key(tl)
-
-    raw = (facts or {}).get(key)
-    if isinstance(raw, dict) and "consummated" in raw:
-        return
-
-    canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
-    canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
-
-    # ✅ carrega e normaliza via _load_rel_state (já aplica global fallback + coerências)
-    rel = _load_rel_state(facts or {}, tl, canon_rel_default)
-
-    # ✅ salva o estado normalizado (para não ficar lixo persistido)
-    _save_rel_state(uk, tl, rel)
-    clear_user_cache(uk)
 # ==========================================================
 # INTIMACY: sinais e travas
 # ==========================================================
@@ -1573,10 +1540,7 @@ _RE_CLIMAX_SIGNAL = re.compile(
     r"\b(goza|orgasmo|gozar|goze|gozando|gozei|gozar\s+pra\s+mim)\b",
     re.IGNORECASE
 )
-_RE_AFTERCARE_SIGNAL = re.compile(
-    r"\b(abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
-    re.IGNORECASE
-)
+
 _RE_ESCALATE_0_TO_1 = re.compile(
     r"\b(beijo|beij[oa]|encosta|toque|abraço|aproxim\w*|"
     r"vem|chega\s+perto|vem\s+aqui|pega|bar|drink|dan[çc]a|cintura)\b",
