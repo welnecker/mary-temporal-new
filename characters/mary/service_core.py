@@ -1456,8 +1456,7 @@ def _load_rel_state(
             base["virginity"] = "nao_virgem"
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
-        # ✅ menos travada por padrão (mantém progressão, só reduz o piso)
-    base.setdefault("self_control", 40 if timeline == "universitaria" else 35)
+    base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
 
     base.setdefault("allows_touch", True)
     base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
@@ -1555,23 +1554,6 @@ _RE_AFTERCARE_SIGNAL = re.compile(
     re.IGNORECASE,
 )
 
-
-
-# ✅ NSFW ON — sinais de prazer (pra não ficar "fria" mesmo quando intensa)
-_RE_PLEASURE_EXPRESSION = re.compile(
-    r"\b(gemo|gemid|grito|ofeg|arque|contor(c|ç)o|tremend|pulsand|"
-    r"molhad|úmid|escorrend|apert|contra(i|ç)[aã]o|respira[cç][aã]o\s+acelerada|"
-    r"voz\s+rouca|sussurr(o|a)\s+quent)\b",
-    re.IGNORECASE,
-)
-
-# ✅ Iniciativa física direta (sem “convite eterno”)
-_RE_PHYSICAL_AGGRESSION = re.compile(
-    r"\b(pux(o|a)\s+pra\s+si|pux(o|a)\s+para\s+mim|"
-    r"beij(o|a)\s+com\s+urg[eê]ncia|abra[cç]o\s+apertad|"
-    r"apert(o|a)\s+contra\s+o\s+corpo|sussurr(o|a)\s+quent(e|a)\s+no\s+ouvido)\b",
-    re.IGNORECASE,
-)
 def _has_user_action_violation(texto: str) -> bool:
     """
     Detecta se a resposta atribui ações/falas ao usuário (autoria do usuário),
@@ -2262,20 +2244,6 @@ def _violations(
     if enforce_density and _low_sensory_density(t):
         out.append("low_sensory_density")
 
-
-# ✅ NSFW ON + usuário intenso → exigir prazer e iniciativa (sem poesia)
-try:
-    ut = (user_text or "").lower()
-    user_intense = bool(re.search(r"\b(quero|agora|mais|forte|me\s+pega|me\s+come|penetra|goza|gozar)\b", ut))
-except Exception:
-    user_intense = False
-
-if nsfw_on and user_intense:
-    if not _RE_PLEASURE_EXPRESSION.search(t):
-        out.append("prazer_nao_demonstrado")
-    if not _RE_PHYSICAL_AGGRESSION.search(t):
-        out.append("iniciativa_fisica_fraca")
-
     # ✅ NSFW ON: evita poesia/metáforas quando o usuário veio explícito/intenso
     if nsfw_on and _user_is_intense(user_text or ""):
         if re.search(r"\b(reden[cç][aã]o|prece|voto|destino|para\s+sempre|etern|cicatriz\s+por\s+cicatriz)\b", t, re.IGNORECASE):
@@ -2470,21 +2438,6 @@ def _repair_instruction(violations: List[str]) -> str:
         bullets.append(
             "- NSFW ON: inclua demonstração de prazer físico (ofegar/arfar, tremor involuntário, gemido/arquejo, contrações, pele arrepiando)."
         )
-   
-
-    if "iniciativa_fisica_fraca" in violations:
-        bullets.append(
-            "- Mary deve tomar iniciativa física clara. "
-            "Use ações diretas: puxar, apertar, beijar com urgência. "
-            "Nada de só convidar ou esperar."
-        )
-    
-    if "prazer_nao_demonstrado" in violations:
-        bullets.append(
-            "- NSFW ON e usuário intenso: Mary precisa demonstrar prazer de forma adulta e sensorial "
-            "(ofegar, gemer baixo, tremor involuntário, contrações, respiração acelerada). "
-            "Sem metáforas poéticas e sem concluir a cena."
-        )
 
 
     if "formato_invalido" in violations:
@@ -2527,7 +2480,8 @@ def _repair_instruction(violations: List[str]) -> str:
             "Mantenha físico direto + tensão adulta."
         )
 
-    
+
+
     bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
     ex = _repair_fewshot_example(violations)
     out = "\n".join(bullets).strip()
@@ -2657,7 +2611,7 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 
     try:
         desire = float(rel.get("desire", 0))
-        self_control = float(rel.get("self_control", 40))
+        self_control = float(rel.get("self_control", 50))
         arousal = float(rel.get("arousal", 0))
 
         if desire >= (self_control * 0.55) and arousal >= 10:
@@ -2824,12 +2778,7 @@ class MaryService(BaseCharacter):
         # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
-            )
+        spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
 
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
