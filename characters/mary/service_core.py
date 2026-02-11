@@ -11,6 +11,7 @@ MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding din
 ⚠️ Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
+import random
 import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
 import logging
 import re
@@ -2245,7 +2246,7 @@ def _trim_scene_finalization(texto: str) -> str:
         "\n\nEu tremo, os dedos ainda agarrados em você, sem querer que esse momento acabe.",
         "\n\nO calor entre nós ainda pulsa, minha pele sensível a cada toque.",
     ]
-    import random
+    
     return trimmed + random.choice(hooks)
 
 def _repair_fewshot_example(violations: List[str]) -> str:
@@ -3690,10 +3691,10 @@ LEMBRETE:
             except Exception:
                 pass
 
-        # ✅ Sem violações → retorna direto
+        # ✅ Sem violações → aplica corte de finalização e retorna
         if not violations:
+            texto = _trim_scene_finalization(texto)
             return texto, used_model
-
         # ======================================================
         # ✅ Repair (1 passada)
         # ======================================================
@@ -3766,11 +3767,11 @@ LEMBRETE:
 
         # se repair falhar, devolve o original (melhor que vazio)
         if not texto2:
+            texto = _trim_scene_finalization(texto)
             return texto, used_model
-
-        # (opcional) revalidações — mantém 1 repair só (mais rápido / menos risco de loop)
+        
+        texto2 = _trim_scene_finalization(texto2)
         return texto2, used_model2
-
     @staticmethod
     def _fallback_text() -> str:
         return (
