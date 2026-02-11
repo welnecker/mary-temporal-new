@@ -1444,7 +1444,7 @@ def _load_rel_state(
             base["virginity"] = "nao_virgem"
     base.setdefault("desire", 25 if timeline == "universitaria" else 45)
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
-    base.setdefault("self_control", 72 if timeline == "universitaria" else 45)
+    base.setdefault("self_control", 40 if timeline == "universitaria" else 35)
 
     base.setdefault("allows_touch", True)
     base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
@@ -2086,6 +2086,17 @@ _RE_JANIO_ACTING = re.compile(
     r")\b"
 )
 
+_RE_PLEASURE_EXPRESSION = re.compile(
+    r"\b("
+    r"gemo|gemid|ofeg|arque|"
+    r"trem(endo|or)|puls(ando|a)|"
+    r"aperto|contrai|contra[cç][aã]o|"
+    r"respira[cç][aã]o\s+falh(a|ando)|respira[cç][aã]o\s+acelerada|"
+    r"voz\s+rouca|sussurro\s+quente"
+    r")\b",
+    re.IGNORECASE,
+)
+
 def _violations(
     texto: str,
     ctx_lower: str,
@@ -2214,9 +2225,10 @@ def _violations(
         if re.search(r"\b(reden[cç][aã]o|prece|voto|destino|para\s+sempre|etern|cicatriz\s+por\s+cicatriz)\b", t, re.IGNORECASE):
             out.append("nsfw_poetizou")
 
-    # ✅ NSFW ON + usuário explícito: Mary deve demonstrar prazer físico (não só 'eu gosto')
-    if nsfw_on and _user_is_intense(user_text or "") and _RE_EXPLICIT_SEX.search((user_text or "")):
-        if not re.search(r"\b(gemid|geme|arfa|ofeg|trem(endo|or)|contra[cç][aã]o|espasm|meu\s+corpo\s+responde|minha\s+respira[cç][aã]o\s+falha)\b", t, re.IGNORECASE):
+    # ✅ NSFW ON: quando a cena já está quente (fase >= 3) e/ou usuário veio intenso,
+    # Mary deve demonstrar prazer corporal (sem obrigar ato explícito).
+    if nsfw_on and (phase >= 3 or _user_is_intense(user_text or "")):
+        if not _RE_PLEASURE_EXPRESSION.search(t):
             out.append("prazer_ausente")
 
     # Em NSFW (perfil não relaxado), só reforça densidade se usuário estiver intenso
@@ -2400,9 +2412,10 @@ def _repair_instruction(violations: List[str]) -> str:
         )
 
     if "prazer_ausente" in violations:
-        bullets.append(
-            "- NSFW ON: inclua demonstração de prazer físico (ofegar/arfar, tremor involuntário, gemido/arquejo, contrações, pele arrepiando)."
-        )
+    bullets.append(
+        "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, arquejo/gemido, contração física, voz rouca). "
+        "Evite poesia/metáfora. Não descreva ato gráfico; mostre EFEITO no corpo."
+    )
 
 
     if "formato_invalido" in violations:
@@ -2576,13 +2589,13 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 
     try:
         desire = float(rel.get("desire", 0))
-        self_control = float(rel.get("self_control", 50))
+        self_control = float(rel.get("self_control", 40))
         arousal = float(rel.get("arousal", 0))
 
-        if desire >= (self_control * 0.55) and arousal >= 10:
+        if desire >= (self_control * 0.50) and arousal >= 10:
             return True
 
-        if cue and desire >= (self_control * 0.35):
+        if cue and desire >= (self_control * 0.25):
             return True
 
         if re.search(r"\bjanio\b", ut, re.IGNORECASE):
@@ -2755,6 +2768,18 @@ class MaryService(BaseCharacter):
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+
+        nsfw_hard_block = ""
+        if nsfw_on:
+            nsfw_hard_block = """
+        [BLOQUEIO DE POESIA — NSFW ON (ABSOLUTO)]
+        - PROIBIDO poesia, metáforas românticas e floreios.
+        - PROIBIDO usar termos/idéias do tipo:
+          redenção, destino, prece, voto, para sempre,
+          eternidade, alma, cicatriz por cicatriz.
+        - Escreva com linguagem física concreta e direta.
+        - Corpo antes de emoção. Fala curta. Ação primeiro.
+        """.strip()
         
         # ✅ TERCEIROS: agora respeita o toggle da UI (override) quando NSFW está ON
         if not nsfw_on:
@@ -3043,19 +3068,19 @@ LOCAIS:
 
         initiative_rule = (
             """
-        [JANELA DE INICIATIVA — ATIVA]
+        [JANELA DE INICIATIVA — ATIVA (AÇÃO DIRETA)]
         - Quando agir por iniciativa, ESCOLHA UMA abordagem dominante:
-          • impulso
-          • provocação deliberada
-          • contenção calculada
-          • exagero de desejo
-          • silêncio + ação
-        - NÃO explique a escolha.
-        - NÃO justifique a ação.
-        - Aja diretamente no corpo, no gesto ou na fala curta.
-        - Permitido: aproximação, toque breve, beijo único, gesto silencioso, frase curta.
-        - Proibido: inventar ação do usuário.
-        - NÃO teleporte: proposta ≠ mudança confirmada de local.
+          • puxar para si
+          • abraçar apertado
+          • beijar com urgência
+          • pressionar contra o corpo
+          • segurar pela cintura/queixo
+          • sussurrar quente no ouvido
+        - Ação física vem ANTES da fala.
+        - Fala curta, direta, adulta. Sem poesia.
+        - NÃO explique a escolha. NÃO justifique.
+        - Proibido inventar ação do usuário.
+        - Proposta ≠ mudança confirmada de local.
         """.strip()
             if initiative
             else ""
@@ -3068,6 +3093,10 @@ LOCAIS:
 - Evite metáforas de natureza como preenchimento emocional.
 - Substitua monólogo por micro-ação: olhar, aproximação, toque, frase curta e adulta.
 - OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
+- Em NSFW_ON, ordem obrigatória por parágrafo:
+  1) ação física curta
+  2) reação corporal
+  3) consequência emocional curta
 """.strip()
 
         intimacy_control_block = f"""
@@ -3215,6 +3244,7 @@ LEMBRETE:
 - Memorias NAO mudam a CENA ATIVA.
 
 {intimacy_control_block}
+{nsfw_hard_block}
 {nsfw_block}
 """.strip()
 
