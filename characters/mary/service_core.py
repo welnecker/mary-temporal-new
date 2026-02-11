@@ -230,18 +230,51 @@ def cached_get_history(usuario_key: str, limit: int = 400) -> List[Dict[str, Any
     _cache_set(hk, docs)
     return docs
 
-def cached_list_memories(shared_key: str, limit: int = 200) -> List[Dict[str, Any]]:
-    mk = f"{_SS_PREFIX}mem::{shared_key}::{limit}"
+# ==========================================================
+# MEMORIES (cache + lazy loading)
+# ==========================================================
+# ✅ padrão mais leve para o prompt (ajuste fino aqui)
+_MEM_PROMPT_LIMIT_DEFAULT = 140
+
+def cached_list_memories(
+    shared_key: str,
+    limit: int = _MEM_PROMPT_LIMIT_DEFAULT,
+) -> List[Dict[str, Any]]:
+    """
+    Compatível com chamadas antigas: retorna a 1ª página (offset=0).
+    """
+    return cached_list_memories_page(shared_key, offset=0, limit=limit)
+
+def cached_list_memories_page(
+    shared_key: str,
+    *,
+    offset: int = 0,
+    limit: int = _MEM_PROMPT_LIMIT_DEFAULT,
+) -> List[Dict[str, Any]]:
+    """
+    ✅ Lazy loading: permite paginação e evita carregar 200/360 sempre.
+    - offset: quantos itens pular (0 = mais recentes, se sua list_memories já vier em ordem)
+    - limit: quantos itens trazer nesta “página”
+    """
+    off = max(0, int(offset or 0))
+    lim = max(1, int(limit or _MEM_PROMPT_LIMIT_DEFAULT))
+
+    mk = f"{_SS_PREFIX}mem::{shared_key}::o{off}::l{lim}"
     cached = _cache_get(mk)
     if isinstance(cached, list):
         return cached
 
-    mems = list_memories(shared_key, limit=limit) or []
-    if not isinstance(mems, list):
-        mems = []
+    # 1) Busca um pouco a mais (off+lim) e fatia em memória
+    #    Mantém compatibilidade mesmo se list_memories NÃO suportar offset.
+    raw = list_memories(shared_key, limit=(off + lim)) or []
+    if not isinstance(raw, list):
+        raw = []
+
+    # 2) fatia
+    mems = raw[off : off + lim] if off else raw[:lim]
+
     _cache_set(mk, mems)
     return mems
-
 def clear_user_cache(usuario_key: str) -> None:
     fk = f"{_SS_PREFIX}facts::{usuario_key}"
     _ss_del(fk)
@@ -252,11 +285,11 @@ def clear_user_cache(usuario_key: str) -> None:
             _ss_del(k)
 
 def clear_mem_cache_for_shared(shared_key: str) -> None:
+    # limpa TUDO que for mem cache desse shared_key (paginado ou não)
     prefix = f"{_SS_PREFIX}mem::{shared_key}::"
-    for k in _ss_keys():
-        if k.startswith(prefix):
+    for k in list(_ss_keys()):
+        if isinstance(k, str) and k.startswith(prefix):
             _ss_del(k)
-
 def clear_shared_memory_cache(user_id: str) -> None:
     clear_mem_cache_for_shared(_shared_key(user_id))
 
@@ -613,21 +646,41 @@ def _inject_canon_memories_always(
     ✅ FIX: antes injetava repetidamente dentro do loop.
     Agora: monta bloco uma vez e injeta uma vez.
     """
-    mems = cached_list_memories(shared_key, limit=360)
-    if not mems:
-        return
+    # ==========================================================
+# ✅ CANON (lazy) — pagina até achar canon suficiente
+# - evita puxar 360 toda hora
+# - para quando já tem "max_items" canon válidos
+# ==========================================================
+canon: List[Dict[str, Any]] = []
 
-    canon: List[Dict[str, Any]] = []
-    for m in mems:
+# meta: pegar até max_items canon, mas pode precisar varrer mais porque canon pode ser raro.
+# Ajuste fino:
+PAGE = 120          # tamanho do “lote” (bom custo/benefício)
+HARD_CAP = 480      # teto máximo de varredura (segurança)
+
+scanned = 0
+offset = 0
+
+while scanned < HARD_CAP and len(canon) < int(max_items or 30):
+    batch = cached_list_memories_page(shared_key, offset=offset, limit=PAGE)
+    if not batch:
+        break
+
+    for m in batch:
         meta = m.get("meta") or {}
         if str(meta.get("kind") or "").strip().lower() != "canon":
             continue
         if not _memory_timeline_ok(meta, timeline):
             continue
         canon.append(m)
+        if len(canon) >= int(max_items or 30):
+            break
 
-    if not canon:
-        return
+    scanned += len(batch)
+    offset += PAGE
+
+if not canon:
+    return
 
     selected = canon[-max_items:] if len(canon) > max_items else canon
     try:
