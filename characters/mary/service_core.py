@@ -2817,6 +2817,53 @@ class MaryService(BaseCharacter):
         REGRA:
         - Evite previsibilidade repetitiva.
         """.strip()
+        # ==========================================================
+        # 🔥 DINÂMICA 3.5 — MEMÓRIA DE PADRÕES (hint para o prompt)
+        #   (NÃO altera estado aqui; só injeta orientação no SYSTEM)
+        #   O update do padrão acontece depois, quando você analisa o "texto" gerado.
+        # ==========================================================
+        last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
+        last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
+
+        pattern_hint = ""
+        if last_success:
+            if last_success == "dominancia_fisica":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: dominância física.\n"
+                    "  Preferir 1 ação direta: puxar para si, prender contra o corpo, abraço apertado, beijo com urgência.\n"
+                    "  Sem poesia; fala curta; corpo primeiro.\n"
+                )
+            elif last_success == "prazer_corporal":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
+                    "  Mostrar prazer no corpo: respiração falhando, tremor involuntário, arquejo/gemido, contrações, voz rouca.\n"
+                    "  Evitar metáforas; descreva efeito físico real.\n"
+                )
+            elif last_success == "mudanca_ritmo":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
+                    "  Use 1 variação: pausa curta + volta mais intensa, surpresa breve, mudança de cadência.\n"
+                    "  Sem travar; manter agência.\n"
+                )
+            else:
+                pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
+
+        # (fallback compat) se você ainda usa _last_pattern em algum lugar
+        if not pattern_hint and last_pattern:
+            pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
+
+        patterns_block = ""
+        if pattern_hint:
+            patterns_block = f"""
+[MEMÓRIA DE PADRÕES — DINÂMICA 3.5]
+Use isso como viés de estilo (não como obrigação):
+{pattern_hint.strip()}
+
+REGRA:
+- Não repita o mesmo padrão para sempre.
+- Se já usou o mesmo padrão nos últimos turnos, varie com 1 reação dinâmica:
+  surpresa curta / resistência momentânea / mudança de ritmo / provocação.
+""".strip()
 
         # 7) Regras
         fidelity_mode = _fidelity_mode(timeline_final)
@@ -3230,6 +3277,7 @@ NSFW_PROFILE: {nsfw_profile}
 
 {rel_block}
 {behavior_block}
+{patterns_block}
 {scene_lock_rule}
 {parallel_scene_rule}
 
