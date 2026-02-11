@@ -2824,7 +2824,12 @@ class MaryService(BaseCharacter):
         # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        spatial_context = _build_spatial_context(scene_loc, scene_time, scene_action)
+        spatial_context = _build_spatial_context(
+            scene_loc,
+            scene_time,
+            scene_action,
+            locked=scene_locked,
+            )
 
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
