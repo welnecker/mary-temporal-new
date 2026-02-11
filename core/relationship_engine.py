@@ -75,7 +75,7 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
 
             "desire": 18,
             "arousal": 10,
-            "self_control": 72,
+            "self_control": 40,  # ↓ reduzido para destravar emocionalmente
 
             "virginity": "virgem",
             "consummated": False,
@@ -87,6 +87,14 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
             "allows_masturbation": True,
             "allows_mutual_relief": False,
             "allows_penetration": False,
+
+            # 🔵 NOVO — DINÂMICA INTERNA
+            "humor": "equilibrada",      # alegre | melancolica | intensa | provocadora
+            "energia": "estavel",        # cansada | energetica | letargica
+            "attitude": "equilibrada",   # submissa | dominante | equilibrada
+
+            # 🔵 MEMÓRIA DE PADRÕES
+            "pattern_memory": [],
 
             "_promote_streak": 0,
             "_regress_streak": 0,
@@ -101,7 +109,7 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
 
         "desire": 42,
         "arousal": 35,
-        "self_control": 45,
+        "self_control": 35,  # ↓ também reduzido aqui
 
         "virginity": "nao_virgem",
         "consummated": True,
@@ -114,13 +122,20 @@ def default_relationship_state(timeline: str) -> Dict[str, Any]:
         "allows_mutual_relief": True,
         "allows_penetration": True,
 
+        # 🔵 NOVO — DINÂMICA INTERNA
+        "humor": "intensa",
+        "energia": "energetica",
+        "attitude": "equilibrada",
+
+        # 🔵 MEMÓRIA DE PADRÕES
+        "pattern_memory": [],
+
         "_promote_streak": 0,
         "_regress_streak": 0,
         "_loop_streak": 0,
         "_last_pattern": "",
         "_last_updated_ts": int(time.time()),
     }
-
 
 # ==========================================================
 # PROMPT BLOCK
