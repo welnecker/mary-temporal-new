@@ -1598,13 +1598,49 @@ _RE_CLIMAX_SIGNAL = re.compile(
 )
 
 _RE_ESCALATE_0_TO_1 = re.compile(
-    r"\b(beijo|beij[oa]|encosta|toque|abraço|aproxim\w*|"
-    r"vem|chega\s+perto|vem\s+aqui|pega|bar|drink|dan[çc]a|cintura)\b",
-    re.IGNORECASE
+    r"\b("
+    r"beijo|encosta|toque|abraço|aproxima|vem|chega perto|pega|"
+    r"bar|drink|dança|cintura|"
+    r"pux(a|o|ei|ar)|"
+    r"abraç(a|o|ei|ar)\s+apertad|"
+    r"sussurr(a|o|ei|ar)\s+no\s+ouvido|"
+    r"segur(a|o|ei|ar)\s+pela\s+cintura|"
+    r"cola\s+no\s+corpo"
+    r")\b",
+    re.IGNORECASE,
 )
 
-_RE_ESCALATE_1_TO_2 = re.compile(r"\b(pele|roupa|tirar|abrir|desliza|entre as pernas|boca|língua|calcinha|sutiã|mamil)\b", re.IGNORECASE)
-_RE_ESCALATE_2_TO_3 = re.compile(r"\b(quase|não ainda|segura|devagar|controle|nega|para|provoca|faz eu implorar)\b", re.IGNORECASE)
+RE_ESCALATE_1_TO_2 = re.compile(
+    r"\b("
+    r"pele|roupa|tirar|abrir|desliza|entre as pernas|"
+    r"boca|língua|calcinha|sutiã|mamilo|"
+    r"sucç(ão|a|o|ei|ar)|"
+    r"mord(ida|e|o|er)|"
+    r"chup(a|o|ei|ar)|"
+    r"beija\s+o\s+pescoço|"
+    r"ofeg|respira(ção)?\s+aceler|arrepia|tremor"
+    r")\b",
+    re.IGNORECASE,
+)
+_RE_ESCALATE_2_TO_3 = re.compile(
+    r"\b("
+    r"quase|não ainda|segura|devagar|controle|nega|para|provoca|"
+    r"faz eu implorar|"
+    r"gemid|arfa|ofeg|tremend|"
+    r"quadril|ritmo|"
+    r"mais forte|mais rápido|"
+    r"não aguento|preciso agora"
+    r")\b",
+    re.IGNORECASE,
+)
+_RE_ESCALATE_3_TO_4 = re.compile(
+    r"\b("
+    r"agora|por favor|entra|dentro|penetra|"
+    r"coloca|vai|não para|"
+    r"vou gozar|estou gozando|gozando"
+    r")\b",
+    re.IGNORECASE,
+)
 # ==========================================================
 # ✅ NSFW EXPLÍCITO: detecção (NÃO suprime nada por si só)
 # ==========================================================
@@ -1640,25 +1676,51 @@ def _should_advance_phase(
     *,
     engine_meta: Optional[Dict[str, Any]] = None,
 ) -> bool:
+    """
+    Decide se pode avançar 1 fase de intimidade.
+    Plano mínimo:
+    - Escalada textual controla 0→1→2→3→4
+    - Clímax (fase 4) pode ocorrer por progressão textual OU autorização explícita
+    - Aftercare (fase 5) só com sinal explícito do usuário
+    """
+
     meta = engine_meta or {}
+
+    # 🔵 Engine pode forçar progressão
     if isinstance(meta.get("intimacy_progressed"), bool):
         return bool(meta["intimacy_progressed"])
 
     ut = (user_text or "")
     mt = (mary_text or "")
+    txt_all = f"{ut}\n{mt}"
 
-    if current_phase == 0:
-        return bool(_RE_ESCALATE_0_TO_1.search(ut) or _RE_ESCALATE_0_TO_1.search(mt))
-    if current_phase == 1:
-        return bool(_RE_ESCALATE_1_TO_2.search(ut) or _RE_ESCALATE_1_TO_2.search(mt))
-    if current_phase == 2:
-        return bool(_RE_ESCALATE_2_TO_3.search(ut) or _RE_ESCALATE_2_TO_3.search(mt))
+    # ======================================================
+    # 🔥 ESCALADA POR PADRÃO TEXTUAL (PLANO MÍNIMO)
+    # ======================================================
+
+    if current_phase == 0 and _RE_ESCALATE_0_TO_1.search(txt_all):
+        return True
+
+    if current_phase == 1 and _RE_ESCALATE_1_TO_2.search(txt_all):
+        return True
+
+    if current_phase == 2 and _RE_ESCALATE_2_TO_3.search(txt_all):
+        return True
+
+    # 🔥 Fase 3 → 4 (pré-clímax → clímax)
+    # Pode ocorrer por padrão textual OU autorização explícita
     if current_phase == 3:
-        return _user_explicitly_allows_climax(ut)
+        if _RE_ESCALATE_3_TO_4.search(txt_all):
+            return True
+        if _user_explicitly_allows_climax(ut):
+            return True
+        return False
+
+    # 🔒 Aftercare só com sinal explícito
     if current_phase == 4:
         return _user_signals_aftercare(ut)
-    return False
 
+    return False
 def _cap_next_phase(current_phase: int, desired_next: int) -> int:
     return current_phase + 1 if desired_next > current_phase + 1 else desired_next
 
