@@ -646,43 +646,46 @@ def _inject_canon_memories_always(
     ✅ FIX: antes injetava repetidamente dentro do loop.
     Agora: monta bloco uma vez e injeta uma vez.
     """
+
     # ==========================================================
-# ✅ CANON (lazy) — pagina até achar canon suficiente
-# - evita puxar 360 toda hora
-# - para quando já tem "max_items" canon válidos
-# ==========================================================
-canon: List[Dict[str, Any]] = []
+    # ✅ CANON (lazy) — pagina até achar canon suficiente
+    # - evita puxar 360 toda hora
+    # - para quando já tem "max_items" canon válidos
+    # ==========================================================
+    canon: List[Dict[str, Any]] = []
 
-# meta: pegar até max_items canon, mas pode precisar varrer mais porque canon pode ser raro.
-# Ajuste fino:
-PAGE = 120          # tamanho do “lote” (bom custo/benefício)
-HARD_CAP = 480      # teto máximo de varredura (segurança)
+    # meta: pegar até max_items canon, mas pode precisar varrer mais porque canon pode ser raro.
+    # Ajuste fino:
+    PAGE = 120          # tamanho do “lote” (bom custo/benefício)
+    HARD_CAP = 480      # teto máximo de varredura (segurança)
 
-scanned = 0
-offset = 0
+    scanned = 0
+    offset = 0
+    want = int(max_items or 30)
 
-while scanned < HARD_CAP and len(canon) < int(max_items or 30):
-    batch = cached_list_memories_page(shared_key, offset=offset, limit=PAGE)
-    if not batch:
-        break
-
-    for m in batch:
-        meta = m.get("meta") or {}
-        if str(meta.get("kind") or "").strip().lower() != "canon":
-            continue
-        if not _memory_timeline_ok(meta, timeline):
-            continue
-        canon.append(m)
-        if len(canon) >= int(max_items or 30):
+    while scanned < HARD_CAP and len(canon) < want:
+        batch = cached_list_memories_page(shared_key, offset=offset, limit=PAGE)
+        if not batch:
             break
 
-    scanned += len(batch)
-    offset += PAGE
+        for m in batch:
+            meta = m.get("meta") or {}
+            if str(meta.get("kind") or "").strip().lower() != "canon":
+                continue
+            if not _memory_timeline_ok(meta, timeline):
+                continue
 
-if not canon:
-    return
+            canon.append(m)
+            if len(canon) >= want:
+                break
 
-    selected = canon[-max_items:] if len(canon) > max_items else canon
+        scanned += len(batch)
+        offset += PAGE
+
+    if not canon:
+        return
+
+    selected = canon[-want:] if len(canon) > want else canon
     try:
         _ss_set(f"{_SS_PREFIX}debug_canon_injected_count", len(selected))
     except Exception:
@@ -698,6 +701,7 @@ if not canon:
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
         title = meta.get("title") or meta.get("key") or ""
+
         header = f"- CANON {i}"
         if d:
             header += f" (data: {d})"
@@ -706,7 +710,8 @@ if not canon:
         lines.append(header)
 
         txt = str(m.get("text") or "").strip()
-        lines.append(txt)
+        if txt:
+            lines.append(txt)
         lines.append("")
 
         if dedupe_bucket is not None and txt:
