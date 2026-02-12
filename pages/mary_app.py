@@ -1721,6 +1721,17 @@ def main() -> None:
     _apply_dark_ui_once()
     _garantir_estado_inicial()
 
+    # ✅ MIGRAÇÃO DE MODELO (default novo)
+    # - se ainda estiver no antigo, troca automaticamente
+    # - se não existir "model" por algum motivo, seta o novo default
+    try:
+        if not st.session_state.get("model"):
+            st.session_state["model"] = DEFAULT_MODEL
+        elif st.session_state.get("model") == "tngtech/tng-r1t-chimera:free":
+            st.session_state["model"] = DEFAULT_MODEL  # "tngtech/deepseek-r1t2-chimera:free"
+    except Exception:
+        pass
+
     # ✅ Sync virgindade (GLOBAL <-> timeline) no boot
     try:
         res = _sync_virginity_global_timeline(
@@ -1732,7 +1743,6 @@ def main() -> None:
         pass
 
     _auto_unlock_if_sem_interacao()
-
     backend, detail = db_status()
 
     used_model = st.session_state.get("mary_last_used_model")
