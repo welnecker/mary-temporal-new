@@ -12,6 +12,7 @@ import inspect
 from typing import Any
 import streamlit as st
 import httpx
+import core.service_router as service_router
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
@@ -62,12 +63,10 @@ def _cleanup_broken_facts_schema_on_boot() -> None:
     - remove virgindade global conflitante (apenas universitaria)
     """
     try:
-        # ✅ não depende de _timeline() / _usuario_key_atual()
         tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
         user = str(st.session_state.get("user_id") or "Janio Donisete").strip()
         usuario_key = f"{user}::mary::{tl}"
 
-        # ✅ import local pra não depender da ordem dos imports do arquivo
         from core.repositories import delete_fact
 
         # --- limpar intro FIXO (2 schemas) ---
@@ -76,12 +75,10 @@ def _cleanup_broken_facts_schema_on_boot() -> None:
             delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
 
         # --- limpar conflito de virgindade (universitaria) ---
-        # você tem facts.virginity="nao_virgem" mas rel.state::universitaria diz "virgem"
         if tl == "universitaria":
             delete_fact(usuario_key, "virginity")
 
     except Exception:
-        # não deixa o boot quebrar
         pass
 
 
@@ -100,11 +97,10 @@ from core.repositories import (
     get_history_docs_multi,
     get_facts,
     set_fact,
-    append_memory,  # ✅ necessário para o botão "virgem"
+    append_memory,
     delete_fact,
     delete_last_interaction,
     delete_user_history,
-    # ✅ LONG MEMORY (Mongo text search)
     append_long_memory,
     list_long_memory,
     search_long_memory_text,
@@ -132,8 +128,12 @@ st.set_page_config(
 SENHA_CORRETA = "311071"
 DEFAULT_VISUAL_LIMIT = 80
 
+# ✅ TROCA AQUI (como você pediu)
 DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
 FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
+
+# ✅ MODELO ANTIGO (para migração automática de sessão)
+OLD_DEFAULT_MODEL = "tngtech/tng-r1t-chimera:free"
 
 
 # ==========================================================
@@ -150,14 +150,12 @@ def _apply_dark_ui() -> None:
 
         footer { visibility: hidden !important; height: 0 !important; }
 
-        /* espaço no fim para não esconder mensagens atrás do input fixo */
         .block-container {
             max-width: 980px !important;
             padding-top: 1rem !important;
             padding-bottom: 9rem !important;
         }
 
-        /* Card header */
         .rp-card {
             background: rgba(18,18,18,0.92);
             border: 1px solid rgba(255,255,255,0.10);
@@ -170,7 +168,6 @@ def _apply_dark_ui() -> None:
         .rp-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
         .rp-sub { font-size: 13px; margin-top: 6px; color: rgba(255,255,255,0.65); }
 
-        /* Chat bubbles */
         div[data-testid="stChatMessage"] > div{
             background: rgba(15,15,15,0.92) !important;
             border: 1px solid rgba(255,255,255,0.08) !important;
@@ -189,9 +186,6 @@ def _apply_dark_ui() -> None:
             color: #f2f2f2 !important;
         }
 
-        /* ==========================================================
-           INPUT FIXO — RESPONSIVO (FIX DEFINITIVO)
-           ========================================================== */
         div[data-testid="stChatInput"]{
           position: fixed !important;
           left: 0 !important;
@@ -205,7 +199,6 @@ def _apply_dark_ui() -> None:
           width: 100% !important;
         }
 
-        /* container interno centralizado, mas sem encolher */
         div[data-testid="stChatInput"] > div{
           width: 100% !important;
           max-width: 980px !important;
@@ -214,7 +207,6 @@ def _apply_dark_ui() -> None:
           box-sizing: border-box !important;
         }
 
-        /* o FORM era quem estava encolhendo */
         div[data-testid="stChatInput"] form{
           width: 100% !important;
           display: flex !important;
@@ -223,21 +215,18 @@ def _apply_dark_ui() -> None:
           box-sizing: border-box !important;
         }
 
-        /* ✅ só o wrapper do textarea expande */
         div[data-testid="stChatInput"] form > div:first-child{
           flex: 1 1 auto !important;
           width: 100% !important;
-          min-width: 0 !important;  /* crítico em flex */
+          min-width: 0 !important;
         }
 
-        /* ✅ wrapper do botão NÃO expande */
         div[data-testid="stChatInput"] form > div:last-child{
           flex: 0 0 auto !important;
           width: auto !important;
           min-width: 0 !important;
         }
 
-        /* textarea ocupa tudo */
         div[data-testid="stChatInput"] textarea{
           width: 100% !important;
           min-height: 96px !important;
@@ -249,32 +238,21 @@ def _apply_dark_ui() -> None:
           box-sizing: border-box !important;
         }
 
-        /* botão não rouba largura do textarea */
         div[data-testid="stChatInput"] button{
           flex: 0 0 auto !important;
         }
 
-        /* ==========================================================
-           FIX MOBILE: botão "Manage app" (Streamlit Cloud) sobrepondo input
-           ========================================================== */
         @media (max-width: 768px) {
-
-            /* Sobe a barra inteira do chat_input (libera o canto inferior direito) */
             div[data-testid="stChatInput"] {
                 bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
             }
-
-            /* Garante espaço extra no final para as mensagens não ficarem “atrás” da barra */
             .block-container {
                 padding-bottom: 13rem !important;
             }
-
-            /* Evita digitação sob overlays no canto direito */
             div[data-testid="stChatInput"] textarea {
                 padding-right: 96px !important;
             }
         }
-
         </style>
         """,
         unsafe_allow_html=True,
@@ -282,9 +260,6 @@ def _apply_dark_ui() -> None:
 
 
 def _apply_dark_ui_once() -> None:
-    """
-    Aplica o CSS uma única vez por sessão para evitar repetição em reruns.
-    """
     if st.session_state.get("_dark_ui_applied", False):
         return
     _apply_dark_ui()
@@ -296,29 +271,16 @@ def _strip_persona_echo_if_any(text: str) -> str:
     if not t:
         return t
 
-    # Se o modelo ecoar o prompt do fallback, corta tudo antes do marcador final.
-    markers = [
-        "⟦MARY⟧",
-        "RESPOSTA DA MARY:",
-        "Resposta da Mary:",
-    ]
+    markers = ["⟦MARY⟧", "RESPOSTA DA MARY:", "Resposta da Mary:"]
     for mk in markers:
         if mk in t:
             tail = t.split(mk, 1)[-1].strip()
             if tail:
                 return tail
 
-    # Se ainda assim vier com começo típico de echo, tenta remover blocos conhecidos
-    bad_starts = (
-        "PERSONA (SYSTEM)",
-        "### PERSONA",
-        "INSTRUÇÕES INTERNAS",
-        "MENSAGEM DO USUÁRIO:",
-    )
+    bad_starts = ("PERSONA (SYSTEM)", "### PERSONA", "INSTRUÇÕES INTERNAS", "MENSAGEM DO USUÁRIO:")
     if any(t.startswith(b) for b in bad_starts):
-        # não achou marcador; devolve vazio para não “colar persona” na tela
         return ""
-
     return t
 
 
@@ -407,7 +369,6 @@ def _shared_key_atual() -> str:
 
 
 def _keys_para_mary() -> list[str]:
-    # ✅ SEMPRE somente a timeline ativa
     return [_usuario_key_atual()]
 
 
@@ -419,11 +380,6 @@ def _today_iso() -> str:
 
 
 def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, user_id: str) -> None:
-    """
-    Marca no CANON que Mary NÃO é mais virgem (consumado).
-    - Grava na memória permanente shared como kind='canon' (fonte de verdade).
-    - Atualiza rel.state::<timeline> nos facts (camada derivada, para consistência imediata).
-    """
     date_iso = _today_iso()
 
     canon_text = (
@@ -444,14 +400,11 @@ def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, us
         "user_id": user_id,
     }
 
-    # 1) CANON (shared)
     append_memory(shared_key, canon_text, meta=meta)
 
-    # 2) FACTS (relationship_state) — derivado
     facts = get_facts(usuario_key) or {}
     rel_key = f"rel.state::{timeline}"
     rel = facts.get(rel_key) if isinstance(facts.get(rel_key), dict) else {}
-
     if not isinstance(rel, dict):
         rel = {}
 
@@ -467,20 +420,9 @@ def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, us
 # ✅ SYNC DEFINITIVO: virgindade GLOBAL <-> TIMELINE  (Modelo B)
 # ==========================================================
 def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
-    """
-    Sincroniza virgindade global e o rel.state::<timeline> (derivado).
-    Não depende do service. Boot-safe.
-
-    Retorna um dict com:
-      - global_before, global_after
-      - rel_before, rel_after (subcampos relevantes)
-      - changed (bool)
-      - notes (list[str])
-    """
     notes: list[str] = []
     changed = False
 
-    # imports locais pra não depender da ordem global
     from core.repositories import get_facts, set_fact, delete_fact
 
     tl = str(timeline or "").strip() or "cumplice"
@@ -492,30 +434,22 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
     if not isinstance(facts, dict):
         facts = {}
 
-    # ----------------------------
-    # 1) Lê GLOBAL
-    # ----------------------------
     g_key = "mary.virginity"
     g_before = (facts.get(g_key) if isinstance(facts.get(g_key), str) else None)
     g_before = (g_before or "").strip().lower() or None
 
-    # Normaliza valores aceitos
     def _norm(v: str | None) -> str | None:
         v = (v or "").strip().lower()
         if not v:
             return None
         if v in ("virgem", "nao_virgem"):
             return v
-        # tolerância: variantes
         if v in ("não_virgem", "naovirgem", "nao virgem", "não virgem"):
             return "nao_virgem"
         return None
 
     g_before = _norm(g_before)
 
-    # ----------------------------
-    # 2) Lê REL (derivado da timeline)
-    # ----------------------------
     rel_key = f"rel.state::{tl}"
     rel_obj = facts.get(rel_key)
     rel = rel_obj if isinstance(rel_obj, dict) else {}
@@ -528,9 +462,6 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
         "allows_penetration": bool(rel.get("allows_penetration")) if rel.get("allows_penetration") is not None else None,
     }
 
-    # ----------------------------
-    # 3) Decide GLOBAL se estiver ausente
-    # ----------------------------
     g_after = g_before
 
     if g_after is None:
@@ -542,10 +473,8 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
         except Exception:
             pass
 
-    # ----------------------------
-    # 4) Se GLOBAL é nao_virgem => força REL da timeline (todas)
-    # ----------------------------
-    rel_after = dict(rel)  # cópia mutável
+    rel_after = dict(rel)
+
     if g_after == "nao_virgem":
         if rel_before["virginity"] != "nao_virgem":
             rel_after["virginity"] = "nao_virgem"
@@ -558,11 +487,6 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
             rel_after["allows_penetration"] = True
             changed = True
 
-    # ----------------------------
-    # 5) Se GLOBAL é virgem:
-    #    - Universitária: força REL virgem (se ainda não consumou)
-    #    - Outras: mantém REL se já existe, senão alinha virgem
-    # ----------------------------
     if g_after == "virgem":
         if tl == "universitaria":
             if rel_before["virginity"] != "virgem":
@@ -581,9 +505,6 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
                 changed = True
                 notes.append(f"{tl} + GLOBAL='virgem' => REL.virginity ausente, setado 'virgem'")
 
-    # ----------------------------
-    # 6) Proteção: REL não pode reverter GLOBAL
-    # ----------------------------
     rel_v = _norm(rel_after.get("virginity") if isinstance(rel_after.get("virginity"), str) else None)
     if rel_v == "nao_virgem" and g_after != "nao_virgem":
         g_after = "nao_virgem"
@@ -594,9 +515,6 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
         except Exception:
             pass
 
-    # ----------------------------
-    # 7) Persistência final do REL (e limpeza de schemas antigos)
-    # ----------------------------
     if rel_after != rel:
         try:
             set_fact(uk, rel_key, rel_after, {"fonte": "virginity_sync_rel"})
@@ -605,7 +523,7 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
 
     try:
         if "virginity" in facts and tl == "universitaria":
-            delete_fact(uk, "virginity")  # legado que te assombrou
+            delete_fact(uk, "virginity")
             notes.append("Removido legado facts['virginity'] (conflito antigo)")
             changed = True
     except Exception:
@@ -633,10 +551,6 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
 # ✅ PERSONA DEBUG + FALLBACK INJECTION (quando service não injeta)
 # ==========================================================
 def _flatten_boot_messages(boot: Any, timeline: str) -> str:
-    """
-    Converte boot list[dict] em texto curto.
-    Não explode se o formato vier diferente.
-    """
     if not isinstance(boot, list):
         return ""
 
@@ -661,9 +575,6 @@ def _flatten_boot_messages(boot: Any, timeline: str) -> str:
 
 
 def _get_persona_bundle(timeline: str) -> tuple[str, Any]:
-    """
-    Retorna (system_text, boot_messages) da persona para a timeline.
-    """
     try:
         system_text, boot = mary_persona.get_persona(timeline)
     except Exception:
@@ -672,10 +583,6 @@ def _get_persona_bundle(timeline: str) -> tuple[str, Any]:
 
 
 def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
-    """
-    Fallback: injeta persona no prompt quando o service não injeta.
-    IMPORTANTE: formato ANTI-ECHO usando delimitadores raros.
-    """
     system_text, boot = _get_persona_bundle(timeline)
     boot_txt = _flatten_boot_messages(boot, timeline)
 
@@ -702,10 +609,6 @@ def _service_key_for_userkey(userkey: str) -> str:
 
 
 def _render_relationship_debug_panel() -> None:
-    """
-    Painel SOMENTE de debug do relationship_engine.
-    NÃO altera estado, NÃO grava facts.
-    """
     st.markdown("---")
     st.subheader("🔍 Relationship Engine — Debug")
 
@@ -742,15 +645,11 @@ def _render_relationship_debug_panel() -> None:
 
 
 def _instantiate_mary_service(*, userkey: str, timeline: str):
-    """
-    Cria o service correto para a timeline (universitaria/cumplice) e tenta
-    respeitar diferentes assinaturas de __init__ do service_core.
-    """
     cls = get_service_class(timeline)
 
     try:
         sig = inspect.signature(cls.__init__)
-        params = set(sig.parameters.keys())  # inclui "self"
+        params = set(sig.parameters.keys())
     except Exception:
         params = set()
 
@@ -761,6 +660,7 @@ def _instantiate_mary_service(*, userkey: str, timeline: str):
         kwargs["user_key"] = userkey
     if "timeline" in params:
         kwargs["timeline"] = timeline
+
     try:
         return cls(**kwargs) if kwargs else cls()
     except TypeError:
@@ -774,11 +674,6 @@ def _instantiate_mary_service(*, userkey: str, timeline: str):
 
 
 def _get_service():
-    """
-    ✅ FIX DO VAZAMENTO:
-    Service é isolado por usuario_key (que inclui timeline).
-    Trocar timeline => outro service.
-    """
     uk = _usuario_key_atual()
     tl = _timeline()
 
@@ -803,7 +698,6 @@ def _invalidate_backend_cache() -> None:
     st.session_state["backend_hist_cache_ts"] = 0.0
     st.session_state["backend_hist_cache_key"] = ""
 
-    # ✅ também derruba cache de memórias do service
     sk = _shared_key_atual()
     prefix_mem = f"mem::{sk}::"
     for k in list(st.session_state.keys()):
@@ -821,7 +715,6 @@ def _choose_default_model(available: list[str]) -> str:
 
 
 def _garantir_estado_inicial() -> None:
-    # timeline precisa existir ANTES de qualquer key
     if "mary_timeline" not in st.session_state:
         st.session_state["mary_timeline"] = "cumplice"
     if "mary_timeline_locked" not in st.session_state:
@@ -833,25 +726,25 @@ def _garantir_estado_inicial() -> None:
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
 
-    # ✅ se a timeline ficou travada por reidratação do Streamlit, mas NÃO há mensagens,
-    # destrava para permitir escolher a persona (ex: Mary Universitária)
     if st.session_state.get("mary_timeline_locked") and not st.session_state.get("chat_history"):
         st.session_state["mary_timeline_locked"] = False
 
     if "backend_hist_cache_key" not in st.session_state:
         st.session_state["backend_hist_cache_key"] = ""
 
-    # Relationship Debug
     if "mary_debug_rel_panel" not in st.session_state:
         st.session_state["mary_debug_rel_panel"] = False
     if "mary_rel_meta_last" not in st.session_state:
         st.session_state["mary_rel_meta_last"] = None
 
-    # modelos disponíveis
     try:
         modelos = service_router.list_models() or []
     except Exception:
         modelos = []
+
+    # ✅ MIGRAÇÃO: se sessão está presa no modelo antigo, troca para o novo
+    if str(st.session_state.get("model") or "").strip() == OLD_DEFAULT_MODEL:
+        st.session_state["model"] = DEFAULT_MODEL
 
     if "model" not in st.session_state or not st.session_state["model"]:
         st.session_state["model"] = _choose_default_model(modelos)
@@ -859,11 +752,9 @@ def _garantir_estado_inicial() -> None:
         if modelos and st.session_state["model"] not in modelos:
             st.session_state["model"] = _choose_default_model(modelos)
 
-    # NSFW default por timeline
     if "mary_nsfw_on" not in st.session_state:
         st.session_state["mary_nsfw_on"] = (_timeline() != "universitaria")
 
-    # para detectar mudança e persistir sem loop
     if "mary_nsfw_last_saved" not in st.session_state:
         st.session_state["mary_nsfw_last_saved"] = None
 
@@ -876,23 +767,21 @@ def _garantir_estado_inicial() -> None:
     if "backend_hist_cache_ts" not in st.session_state:
         st.session_state["backend_hist_cache_ts"] = 0.0
 
-    # debounce
     if "last_submit_ts" not in st.session_state:
         st.session_state["last_submit_ts"] = 0.0
     if "last_submit_text" not in st.session_state:
         st.session_state["last_submit_text"] = ""
 
-    # view de memórias
     if "__mem_list" not in st.session_state:
         st.session_state["__mem_list"] = None
 
-    # fallback injection toggle (para provar persona) — por timeline
+    # ✅ fallback injection toggle (para provar persona)
     for tl in ("cumplice", "universitaria"):
         k = f"mary_ui_persona_fallback::{tl}"
         if k not in st.session_state:
             st.session_state[k] = False
 
-    # telemetria do modelo real
+    # ✅ telemetria do modelo real (fora do loop!)
     if "mary_last_used_model" not in st.session_state:
         st.session_state["mary_last_used_model"] = None
     if "mary_last_used_provider" not in st.session_state:
@@ -900,7 +789,6 @@ def _garantir_estado_inicial() -> None:
 
 
 def _clear_service_caches_for_keys(keys: list[str]) -> None:
-    # ✅ remove facts + TODOS history::<key>::<limit> + mem::<key>::<limit>
     for k in keys:
         fk = f"facts::{k}"
         if fk in st.session_state:
@@ -924,10 +812,6 @@ def _reset_intro_flags_for_keys(keys: list[str]) -> None:
 
 
 def _clear_mary_caches_all_related(*, also_clear_other_timeline: bool = True) -> None:
-    """
-    Limpa caches do usuario_key atual E do shared_key.
-    Para evitar “vazamento visual” na troca de timeline, também limpa a OUTRA timeline.
-    """
     uk = _usuario_key_atual()
     sk = _shared_key_atual()
 
@@ -942,10 +826,6 @@ def _clear_mary_caches_all_related(*, also_clear_other_timeline: bool = True) ->
 
 
 def _persist_nsfw_for_current_timeline_if_needed_inline() -> None:
-    """
-    Persistência NSFW INLINE (não depende de helper fora do callback).
-    Evita NameError em callback antigo preso na sessão.
-    """
     uk = _usuario_key_atual()
     current = bool(st.session_state.get("mary_nsfw_on", False))
     last = st.session_state.get("mary_nsfw_last_saved", None)
@@ -960,10 +840,6 @@ def _persist_nsfw_for_current_timeline_if_needed_inline() -> None:
 
 
 def _sort_backend_docs(docs: list[dict]) -> list[dict]:
-    """
-    ✅ Corrige “não retorna na posição correta”.
-    Ordena pelo melhor timestamp disponível, mantendo estabilidade.
-    """
     if not docs:
         return docs
 
@@ -1088,10 +964,6 @@ def _delete_last_turn_active() -> bool:
 
 
 def _reset_chapter_current_timeline() -> int:
-    """
-    Reset de capítulo: apaga history da timeline atual,
-    mantém memórias permanentes (shared).
-    """
     uk = _usuario_key_atual()
     n = 0
     try:
@@ -1111,12 +983,6 @@ def _reset_chapter_current_timeline() -> int:
 
 
 def _on_timeline_change() -> None:
-    """
-    ✅ Anti-vazamento + anti-NameError:
-    - Limpa caches do backend + service + visual.
-    - Persiste NSFW inline (sem depender de helper externo no callback).
-    - MATA services isolados por usuario_key (para garantir troca limpa).
-    """
     personas = {
         "Mary – Esposa Cúmplice": "cumplice",
         "Mary – Universitária (linha alternativa)": "universitaria",
@@ -1125,45 +991,31 @@ def _on_timeline_change() -> None:
     old_tl = str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
     new_tl = personas.get(st.session_state.get("persona_label") or "", "cumplice")
 
-    # troca timeline
     st.session_state["mary_timeline"] = new_tl
 
     # ✅ Sync virgindade (GLOBAL <-> timeline) ao trocar timeline
     try:
-        res = _sync_virginity_global_timeline(
-            usuario_key=_usuario_key_atual(),
-            timeline=new_tl,
-        )
+        res = _sync_virginity_global_timeline(usuario_key=_usuario_key_atual(), timeline=new_tl)
         st.session_state["mary_virginity_sync_last"] = res
     except Exception:
         pass
 
-    # default NSFW por timeline
     st.session_state["mary_nsfw_on"] = (new_tl != "universitaria")
-
-    # ✅ Persistência NSFW (inline)
     _persist_nsfw_for_current_timeline_if_needed_inline()
 
-    # limpa visual + caches (inclui timeline antiga para matar vazamento)
     st.session_state["chat_history"] = []
     st.session_state["mary_intro_done"] = False
     _invalidate_backend_cache()
     _clear_mary_caches_all_related(also_clear_other_timeline=True)
     _clear_service_caches_for_keys([_usuario_key_for_timeline(old_tl), _usuario_key_for_timeline(new_tl)])
 
-    # telemetria
     st.session_state["mary_last_used_model"] = None
     st.session_state["mary_last_used_provider"] = None
 
-    # 🔥 ponto crítico: matar instâncias de service para não reaproveitar estado
     _kill_all_mary_services()
 
 
 def _get_intro_persona_text(timeline: str) -> str:
-    """
-    Busca a primeira mensagem 'assistant' da persona para a timeline.
-    Retorna fallback se não achar.
-    """
     try:
         _, boot = mary_persona.get_persona(timeline)
     except Exception:
@@ -1191,10 +1043,6 @@ def _get_intro_persona_text(timeline: str) -> str:
 
 
 def _inject_intro_visual_if_needed() -> None:
-    """
-    Injeta a intro visual somente se backend não tem histórico
-    e chat_history está vazio.
-    """
     if st.session_state.get("mary_intro_done", False):
         return
 
@@ -1216,11 +1064,6 @@ def _inject_intro_visual_if_needed() -> None:
 
 
 def _boot_visual_if_empty() -> None:
-    """
-    Boot visual do app.
-    IMPORTANTE: NÃO renderiza persona (SYSTEM/BOOT) na tela.
-    Persona deve ficar só no service (ou no fallback de UI), mas invisível pro usuário.
-    """
     if bool(st.session_state.get("mary_intro_done", False)):
         return
 
@@ -1236,11 +1079,6 @@ def _boot_visual_if_empty() -> None:
 
 
 def _auto_unlock_if_sem_interacao() -> None:
-    """
-    ✅ Resolve o teu caso: menu já abre travado na 'cumplice'.
-    Se NÃO há nenhuma mensagem do usuário (nem no visual, nem no backend),
-    destrava automaticamente para permitir escolher 'universitaria'.
-    """
     if not st.session_state.get("mary_timeline_locked", False):
         return
 
@@ -1260,49 +1098,7 @@ def _auto_unlock_if_sem_interacao() -> None:
     st.session_state["mary_timeline_locked"] = False
 
 
-def _capture_used_model_provider_from_service(svc: Any) -> None:
-    """
-    Tenta capturar modelo/provedor REAL usado pelo service, se ele expõe isso.
-    Não quebra se não existir.
-    """
-    model = None
-    provider = None
-
-    for attr in ("used_model", "last_used_model", "model_used", "resolved_model", "last_model"):
-        if hasattr(svc, attr):
-            try:
-                v = getattr(svc, attr)
-                if isinstance(v, str) and v.strip():
-                    model = v.strip()
-                    break
-            except Exception:
-                pass
-
-    for attr in ("provider", "used_provider", "last_used_provider", "provider_used", "last_provider"):
-        if hasattr(svc, attr):
-            try:
-                v = getattr(svc, attr)
-                if isinstance(v, str) and v.strip():
-                    provider = v.strip()
-                    break
-            except Exception:
-                pass
-
-    st.session_state["mary_last_used_model"] = model
-    st.session_state["mary_last_used_provider"] = provider
-
-
 def _extract_router_text(resp: Any) -> str:
-    """
-    Extrai texto de:
-      - tuple(data, used_model, provider)
-      - dict (OpenAI-like)
-      - str
-
-    FIX CRÍTICO:
-      Alguns providers/modelos retornam o texto em message.reasoning
-      e deixam message.content vazio. Nesse caso, usamos reasoning.
-    """
     if resp is None:
         return ""
 
@@ -1350,15 +1146,6 @@ def _extract_router_text(resp: Any) -> str:
 
 
 def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | None]:
-    """
-    Retorna (provider, used_model).
-
-    ✅ Suporta tuple(data, used_model, provider) (OpenRouter/Together/HF no seu projeto)
-    ✅ Suporta dict com chaves em níveis diferentes:
-       - direto: provider/model/used_model/resolved_model...
-       - meta: meta.provider/meta.used_model...
-       - debug: debug.provider/debug.used_model...
-    """
     if isinstance(resp, tuple):
         used_model: str | None = None
         provider: str | None = None
@@ -1405,7 +1192,6 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
             v = meta.get("provider") or meta.get("used_provider") or meta.get("provider_used")
             if isinstance(v, str) and v.strip():
                 provider = v.strip()
-
         if model is None:
             v = meta.get("used_model") or meta.get("resolved_model") or meta.get("model") or meta.get("model_used")
             if isinstance(v, str) and v.strip():
@@ -1417,7 +1203,6 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
             v = dbg.get("provider") or dbg.get("used_provider") or dbg.get("provider_used")
             if isinstance(v, str) and v.strip():
                 provider = v.strip()
-
         if model is None:
             v = dbg.get("used_model") or dbg.get("resolved_model") or dbg.get("model") or dbg.get("model_used")
             if isinstance(v, str) and v.strip():
@@ -1427,15 +1212,6 @@ def _extract_router_used_model_provider(resp: Any) -> tuple[str | None, str | No
 
 
 def _summarize_raw(resp: Any) -> dict[str, Any]:
-    """
-    Resume o retorno do router/service sem vazar payload inteiro.
-    ✅ Captura provider/model/used_model em:
-      - tuple(data, used_model, provider)
-      - dict raiz
-      - dict.meta
-      - dict.debug
-      - preview do content/text
-    """
     info: dict[str, Any] = {"raw_type": type(resp).__name__}
 
     if isinstance(resp, tuple):
@@ -1469,11 +1245,11 @@ def _summarize_raw(resp: Any) -> dict[str, Any]:
         meta = resp.get("meta") if isinstance(resp.get("meta"), dict) else None
         debug = resp.get("debug") if isinstance(resp.get("debug"), dict) else None
 
-        provider_meta = _pick_str(meta, "provider", "used_provider", "provider_used") if meta else None
-        model_meta = _pick_str(meta, "used_model", "resolved_model", "model", "model_used") if meta else None
+        provider_meta = _pick_str(meta, "provider", "used_provider", "provider_used")
+        model_meta = _pick_str(meta, "used_model", "resolved_model", "model", "model_used")
 
-        provider_dbg = _pick_str(debug, "provider", "used_provider", "provider_used") if debug else None
-        model_dbg = _pick_str(debug, "used_model", "resolved_model", "model", "model_used") if debug else None
+        provider_dbg = _pick_str(debug, "provider", "used_provider", "provider_used")
+        model_dbg = _pick_str(debug, "used_model", "resolved_model", "model", "model_used")
 
         info["provider"] = provider_root or provider_meta or provider_dbg
         info["used_model"] = model_root or model_meta or model_dbg
@@ -1651,10 +1427,6 @@ def _call_service_reply_safe(
     nsfw: bool | None,
     allow_third_party_seduction: bool | None = None,
 ) -> str:
-    """
-    Chama svc.reply sem depender de assinatura fixa.
-    E, se o service NÃO injeta persona, permite fallback opcional via UI.
-    """
     fb_key = f"mary_ui_persona_fallback::{timeline}"
     if bool(st.session_state.get(fb_key, False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
@@ -1705,12 +1477,9 @@ def _call_service_reply_safe(
     if used_model or prov:
         st.session_state["mary_last_used_model"] = used_model
         st.session_state["mary_last_used_provider"] = prov
-    else:
-        _capture_used_model_provider_from_service(svc)
 
     clean = _strip_persona_echo_if_any(txt) or ""
     st.session_state["mary_last_clean_text_preview"] = clean[:600]
-
     return clean
 
 
@@ -1720,17 +1489,6 @@ def _call_service_reply_safe(
 def main() -> None:
     _apply_dark_ui_once()
     _garantir_estado_inicial()
-
-    # ✅ MIGRAÇÃO DE MODELO (default novo)
-    # - se ainda estiver no antigo, troca automaticamente
-    # - se não existir "model" por algum motivo, seta o novo default
-    try:
-        if not st.session_state.get("model"):
-            st.session_state["model"] = DEFAULT_MODEL
-        elif st.session_state.get("model") == "tngtech/tng-r1t-chimera:free":
-            st.session_state["model"] = DEFAULT_MODEL  # "tngtech/deepseek-r1t2-chimera:free"
-    except Exception:
-        pass
 
     # ✅ Sync virgindade (GLOBAL <-> timeline) no boot
     try:
@@ -1743,6 +1501,8 @@ def main() -> None:
         pass
 
     _auto_unlock_if_sem_interacao()
+
+    # ===== Header técnico =====
     backend, detail = db_status()
 
     used_model = st.session_state.get("mary_last_used_model")
@@ -1751,9 +1511,12 @@ def main() -> None:
     if used_model or used_provider:
         used_str = f" • Usado: <b>{(used_provider or '—')}</b> / <b>{(used_model or '—')}</b>"
 
-    st.caption("🧩 mary_app.py v3.14 (debug persona + fallback persona UI + telemetria modelo/provedor)")
+    st.caption("🧩 mary_app.py (default model migrado + debug persona + telemetria)")
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
 
+    # ==========================================================
+    # 🗄️ DEBUG — BANCO DE DADOS (db_status + ping_db)
+    # ==========================================================
     with st.expander("🗄️ Banco de Dados — Debug (db_status + ping_db)", expanded=False):
         b_kind, b_detail = db_status()
         st.write("**db_status():**")
@@ -1813,9 +1576,14 @@ def main() -> None:
             import importlib.util
 
             st.write("📌 persona.py ativo:", getattr(mary_persona, "__file__", "—"))
-
-            st.write("✅ import OK:", (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
-            st.write("❌ import ERR:", (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
+            st.write(
+                "✅ import OK:",
+                (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+            )
+            st.write(
+                "❌ import ERR:",
+                (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+            )
 
             spec = importlib.util.find_spec("characters.mary.persona_universitaria")
             st.write("🔎 find_spec(persona_universitaria):", "ENCONTRADO" if spec else "NÃO ENCONTRADO")
@@ -1829,6 +1597,7 @@ def main() -> None:
         except Exception as e:
             st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
 
+    # ===== Header visual =====
     st.markdown(
         f"""
         <div class="rp-card">
@@ -1865,6 +1634,9 @@ def main() -> None:
 
     keys = _keys_para_mary()
 
+    # ==========================================================
+    # BACKEND RESET / DIAGNÓSTICO
+    # ==========================================================
     with st.expander("🧨 BACKEND — apagar histórico de verdade + diagnóstico", expanded=False):
         st.write("Chaves usadas:", keys)
 
@@ -1887,9 +1659,7 @@ def main() -> None:
                 key="chk_confirm_total_reset",
             )
             delete_events = st.checkbox("Também apagar facts mary.evento.*", value=False, key="chk_total_del_events")
-            delete_shared = st.checkbox(
-                "Também apagar TODAS memórias permanentes (shared)", value=False, key="chk_total_del_shared"
-            )
+            delete_shared = st.checkbox("Também apagar TODAS memórias permanentes (shared)", value=False, key="chk_total_del_shared")
 
             if st.button("🔥 RESET TOTAL AGORA", type="primary", key="btn_total_reset_now"):
                 if not confirm_total:
@@ -1953,25 +1723,19 @@ def main() -> None:
 
         try:
             all_models = service_router.list_models() or []
-            st.session_state["models_debug"] = {
-                "ok": True,
-                "len": len(all_models),
-                "head": all_models[:10],
-                "providers": (service_router.available_providers() if hasattr(service_router, "available_providers") else "—"),
-                "err": None,
-            }
-        except Exception as e:
+        except Exception:
             all_models = []
-            st.session_state["models_debug"] = {
-                "ok": False,
-                "len": 0,
-                "head": [],
-                "providers": "—",
-                "err": f"{type(e).__name__}: {e}",
-            }
 
         if not all_models:
-            all_models = [FALLBACK_MODEL]
+            all_models = [DEFAULT_MODEL, FALLBACK_MODEL]
+
+        # ✅ garante que o DEFAULT_MODEL apareça como opção mesmo se list_models falhar/omitir
+        if DEFAULT_MODEL not in all_models:
+            all_models = [DEFAULT_MODEL] + [m for m in all_models if m != DEFAULT_MODEL]
+
+        # ✅ se estava no antigo, troca automaticamente
+        if str(st.session_state.get("model") or "").strip() == OLD_DEFAULT_MODEL:
+            st.session_state["model"] = DEFAULT_MODEL
 
         if st.session_state.get("model") not in all_models:
             st.session_state["model"] = _choose_default_model(all_models)
@@ -1979,36 +1743,7 @@ def main() -> None:
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
 
-        st.selectbox(
-            "🧠 Modelo",
-            all_models,
-            index=idx,
-            key="model",
-        )
-
-        with st.expander("🧪 Debug imports (service_router)", expanded=True):
-            try:
-                st.json(service_router.import_errors())
-            except Exception as e:
-                st.write(f"falhou: {type(e).__name__}: {e}")
-
-        try:
-            prov_detected = None
-            if hasattr(service_router, "_provider_for"):
-                prov_detected = service_router._provider_for(str(st.session_state.get("model") or "").strip())
-
-            if not prov_detected:
-                msel = str(st.session_state.get("model") or "").strip().lower()
-                if msel.startswith("together/"):
-                    prov_detected = "Together"
-                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
-                    prov_detected = "HuggingFace"
-                else:
-                    prov_detected = "OpenRouter"
-
-            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
-        except Exception:
-            st.caption("🔌 Provider detectado: **—**")
+        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         st.markdown("---")
         st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
@@ -2024,61 +1759,18 @@ def main() -> None:
         if isinstance(ping, dict):
             if ping.get("ok"):
                 st.success("✅ Ping executado (router confirmou provider/model).")
-
                 if not ping.get("pong_ok"):
                     st.warning(
                         "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
-                        "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
+                        "Isso não impede confirmar o roteamento (provider/model)."
                     )
                 st.write("Modelo (UI):", ping.get("ui_model") or "—")
-
-                used_p = ping.get("used_provider")
-                used_m = ping.get("used_model")
-
-                if not used_p:
-                    try:
-                        if hasattr(service_router, "_provider_for"):
-                            used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
-                    except Exception:
-                        used_p = None
-
-                st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
-
+                st.write("Usado (router):", f"{ping.get('used_provider') or '—'} / {ping.get('used_model') or '—'}")
                 st.caption("PONG (trecho retornado):")
                 st.code(ping.get("text") or "")
-
-                if not used_m:
-                    st.warning(
-                        "⚠️ O router NÃO retornou o modelo usado no payload. "
-                        "Nesse caso, a confirmação vale por: Provider detectado + Modelo(UI). "
-                        "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
-                    )
             else:
                 st.error("❌ Falha no ping.")
-                err = ping.get("error")
-                st.code(err if isinstance(err, str) and err.strip() else str(ping))
-
-        st.markdown("---")
-        st.subheader("🧨 Último erro (service)")
-
-        if st.button("📌 Mostrar diagnóstico completo", key="btn_show_last_error"):
-            st.markdown("**Modelo/Provider capturados (última call):**")
-            st.write(
-                "Usado:",
-                f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
-            )
-
-            st.markdown("**Preview extracted (antes do strip):**")
-            st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
-
-            st.markdown("**Preview clean (depois do strip):**")
-            st.code(st.session_state.get("mary_last_clean_text_preview") or "")
-
-            st.markdown("**RAW summary (resumo do retorno do router/service):**")
-            st.json(st.session_state.get("mary_last_raw_resp") or {})
-
-            st.markdown("**Último erro registrado (se existir):**")
-            st.json(st.session_state.get("mary_last_error") or {})
+                st.code(ping.get("error") or str(ping))
 
         st.markdown("---")
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
@@ -2100,132 +1792,8 @@ def main() -> None:
                 key="mary_allow_third_party_seduction",
                 help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
             )
-            st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
 
-        st.markdown("---")
-        st.subheader("🧾 Estado Atual (facts → service_core)")
-
-        try:
-            _uk = _usuario_key_atual()
-            _facts_now = get_facts(_uk) or {}
-            if not isinstance(_facts_now, dict):
-                _facts_now = {}
-        except Exception:
-            _uk = _usuario_key_atual()
-            _facts_now = {}
-
-        def _f(k: str) -> str:
-            v = _facts_now.get(k, "")
-            return "" if v is None else str(v).strip()
-
-        _horarios_default = _f("state.horarios") or _f("state.horario")
-
-        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
-            st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
-            st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
-            st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
-            st.text_input("4) Desculpa oficial", value=_f("state.desculpa"), key="sb_state_desculpa")
-
-            st.markdown("**Opcionais**")
-            st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
-            st.text_area("(+) Pendências", value=_f("state.pendencias"), key="sb_state_pendencias", height=90)
-
-            c1, c2 = st.columns(2)
-
-            with c1:
-                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                    updates = {
-                        "state.local": st.session_state.get("sb_state_local", "").strip(),
-                        "state.roupa": st.session_state.get("sb_state_roupa", "").strip(),
-                        "state.cabelo": st.session_state.get("sb_state_cabelo", "").strip(),
-                        "state.desculpa": st.session_state.get("sb_state_desculpa", "").strip(),
-                        "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
-                        "state.pendencias": st.session_state.get("sb_state_pendencias", "").strip(),
-                    }
-
-                    for k, v in updates.items():
-                        if v:
-                            set_fact(_uk, k, v, {"fonte": "sidebar_state"})
-                        else:
-                            set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
-
-                    try:
-                        set_fact(_uk, "state.horario", "", {"fonte": "sidebar_state_migrate"})
-                    except Exception:
-                        pass
-
-                    _invalidate_backend_cache()
-                    _clear_mary_caches_all_related(also_clear_other_timeline=False)
-                    _kill_all_mary_services()
-                    st.success("✅ Estado aplicado no facts.")
-                    st.rerun()
-
-            with c2:
-                if st.button("🧹 Limpar Estado", key="btn_clear_state"):
-                    for k in (
-                        "state.local",
-                        "state.roupa",
-                        "state.cabelo",
-                        "state.desculpa",
-                        "state.horarios",
-                        "state.pendencias",
-                        "state.horario",
-                    ):
-                        try:
-                            delete_fact(_uk, k)
-                        except Exception:
-                            pass
-
-                    for k in (
-                        "local_cena_atual",
-                        "cena",
-                    ):
-                        try:
-                            delete_fact(_uk, k)
-                        except Exception:
-                            pass
-
-                    try:
-                        set_fact(_uk, "cena.locked", False, {"fonte": "sidebar_state_unlock_scene"})
-                    except Exception:
-                        pass
-
-                    _invalidate_backend_cache()
-                    _clear_mary_caches_all_related(also_clear_other_timeline=False)
-                    _kill_all_mary_services()
-                    st.success("✅ Estado limpo (remoção real) + cena destravada.")
-                    st.rerun()
-
-        st.markdown("---")
-        st.subheader("🧬 Persona — Debug / Injeção")
-
-        sys_txt, boot = _get_persona_bundle(_timeline())
-        boot_txt = _flatten_boot_messages(boot, _timeline())
-
-        st.caption("Arquivo persona ativo:")
-        try:
-            st.code(getattr(mary_persona, "__file__", "—"))
-        except Exception:
-            st.code("(não consegui resolver path)")
-
-        st.write({"system_len": len(sys_txt or ""), "boot_len": len(boot_txt or ""), "timeline": _timeline()})
-
-        if not sys_txt and not boot_txt:
-            st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
-        else:
-            with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
-                st.code((sys_txt or "")[:500])
-            with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
-                st.code((boot_txt or "")[:800])
-
-        tl = _timeline()
-        fb_key = f"mary_ui_persona_fallback::{tl}"
-        st.checkbox(
-            "Fallback: injetar persona via UI no prompt (se service não injeta)",
-            key=fb_key,
-        )
-        st.caption("Dica: deixe ON até você confirmar que o service está montando messages com SYSTEM+BOOT.")
-
+        # ✅ BOTÃO CANON (corrigido)
         st.markdown("---")
         st.subheader("🧬 Canon — Estado íntimo")
 
@@ -2239,11 +1807,7 @@ def main() -> None:
         except Exception:
             facts_now = {}
 
-        rel_now = (
-            facts_now.get(f"rel.state::{tl_now}")
-            if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict)
-            else {}
-        )
+        rel_now = facts_now.get(f"rel.state::{tl_now}") if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict) else {}
         is_consumado = bool(rel_now.get("consummated")) or (str(rel_now.get("virginity") or "") == "nao_virgem")
 
         label_btn = "✅ Virgem (marcar CONSUMADO)" if not is_consumado else "🔥 Consumado (manter)"
@@ -2260,10 +1824,7 @@ def main() -> None:
 
                     # ✅ garante que GLOBAL e REL ficam alinhados imediatamente
                     try:
-                        res = _sync_virginity_global_timeline(
-                            usuario_key=uk_now,
-                            timeline=tl_now,
-                        )
+                        res = _sync_virginity_global_timeline(usuario_key=uk_now, timeline=tl_now)
                         st.session_state["mary_virginity_sync_last"] = res
                     except Exception:
                         pass
@@ -2282,283 +1843,9 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
 
-        st.caption("Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga.")
-
-        st.markdown("---")
-        st.subheader("🔍 Debug")
-        st.caption(
-            f"NSFW={bool(st.session_state.get('mary_nsfw_on', False))} | "
-            f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
-        )
-
-        st.session_state["mary_debug_rel_panel"] = st.checkbox(
-            "Mostrar painel Relationship",
-            value=bool(st.session_state.get("mary_debug_rel_panel", False)),
-            key="mary_debug_rel_panel__ui",
-        )
-
-        st.markdown("---")
-        st.subheader("Turnos")
-
-        if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
-            ok = _delete_last_turn_active()
-            if ok:
-                st.session_state["chat_history"] = []
-                st.session_state["mary_intro_done"] = False
-                st.success("✅ Último turno apagado (timeline ativa).")
-            else:
-                st.warning("Nada para apagar (backend não retornou sucesso).")
-            st.rerun()
-
-        st.markdown("---")
-        st.subheader("Limpar tela")
-        if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
-            st.session_state["chat_history"] = []
-            st.rerun()
-
-        st.markdown("---")
-        st.subheader("🎭 Persona")
-        st.caption("repositories.py ativo:")
-        st.code(inspect.getfile(crep.delete_last_interaction))
-
-        if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
-            uk = _usuario_key_atual()
-            st.write("usuario_key:", uk)
-            try:
-                st.json(get_facts(uk) or {})
-            except Exception as e:
-                st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
-
-        if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
-            _kill_all_mary_services()
-            st.session_state["mary_intro_done"] = False
-            st.session_state["chat_history"] = []
-            st.session_state["mary_timeline_locked"] = False
-            st.session_state["mary_rel_meta_last"] = None
-            st.session_state["mary_last_used_model"] = None
-            st.session_state["mary_last_used_provider"] = None
-
-            try:
-                st.cache_data.clear()
-            except Exception:
-                pass
-            try:
-                st.cache_resource.clear()
-            except Exception:
-                pass
-
-            _invalidate_backend_cache()
-            _clear_mary_caches_all_related()
-            st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
-            st.rerun()
-
-        # ======================================================
-        # 🧠 MEMÓRIAS PERMANENTES (shared)
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🧠 Memórias permanentes (shared)")
-
-        shared_default = _shared_key_atual()
-
-        if "shared_key_override" not in st.session_state:
-            st.session_state["shared_key_override"] = ""
-
-        with st.form("shared_key_form", clear_on_submit=False):
-            shared_in = st.text_input(
-                "Key compartilhada (editável):",
-                value=st.session_state.get("shared_key_override") or shared_default,
-                help="Ex: Janio Donisete::mary::shared",
-            ).strip()
-            apply_shared = st.form_submit_button("✅ Aplicar key")
-
-        if apply_shared:
-            st.session_state["shared_key_override"] = shared_in or shared_default
-            st.session_state["__mem_list"] = None
-            st.rerun()
-
-        shared_key = (st.session_state.get("shared_key_override") or shared_default).strip() or shared_default
-
-        st.caption("Key efetiva:")
-        st.code(shared_key)
-
-        st.markdown("**➕ Inserir memória (shared)**")
-        mem_text = st.text_area(
-            "Texto da memória",
-            placeholder="Ex: Mary e Janio moram em Vitória.\nEx: Estão de férias em Balneário Camboriú.\nEx: Evento no quiosque com Canobio (não altera a cena ativa).",
-            height=120,
-            key="shared_mem_text",
-        )
-        mem_title = st.text_input(
-            "Título (opcional)",
-            placeholder="Ex: Moradia / Férias em BC / Evento quiosque",
-            key="shared_mem_title",
-        )
-
-        mem_kind = st.selectbox(
-            "Tipo da memória",
-            ["estado_ativo", "evento_passado", "canon", "nota"],
-            index=0,
-            key="shared_mem_kind",
-        )
-
-        if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
-            t = (mem_text or "").strip()
-            if not t:
-                st.warning("Escreva o texto da memória antes de salvar.")
-            else:
-                meta = {
-                    "kind": str(st.session_state.get("shared_mem_kind") or mem_kind).strip(),
-                    "source": "ui_shared_memory",
-                }
-                if (mem_title or "").strip():
-                    meta["title"] = mem_title.strip()
-
-                try:
-                    append_memory(shared_key, t, meta=meta)
-                    st.success("✅ Memória salva em (shared).")
-
-                    st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-                    _clear_service_caches_for_keys([shared_key])
-                    _clear_mary_caches_all_related()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
-
-        if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
-            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-            st.success("Lista atualizada ✅")
-
-        if st.button("🧽 Apagar última memória", key="btn_delete_last_mem"):
-            ok = delete_last_memory(shared_key)
-            st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
-            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-            _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
-            st.rerun()
-
-        if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
-            n = delete_all_memories(shared_key)
-            st.success(f"✅ Apaguei {n} memórias.")
-            st.session_state["__mem_list"] = []
-            _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
-            st.rerun()
-
-        mems_view = st.session_state.get("__mem_list")
-        if mems_view is not None:
-            st.json(mems_view)
-
-        # ======================================================
-        # 🗃️ LONG MEMORY (DB) — 1 doc por memória + Text Search
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🗃️ Long Memory (DB) — Text Search")
-
-        lm_userkey = (st.session_state.get("shared_key_override") or _shared_key_atual()).strip() or _shared_key_atual()
-
-        st.caption("Key usada na Long Memory:")
-        st.code(lm_userkey)
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🧱 Criar índices Long Memory (Mongo)", key="btn_lm_indexes"):
-                try:
-                    ensure_long_memory_indexes()
-                    st.success("✅ Índices da long_memory garantidos (se backend=mongo).")
-                except Exception as e:
-                    st.error(f"Falha ao criar índices: {type(e).__name__}: {e}")
-
-        with col2:
-            if st.button("📚 Listar últimas 50 (DB)", key="btn_lm_list"):
-                try:
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                except Exception as e:
-                    st.error(f"Falha ao listar: {type(e).__name__}: {e}")
-                    st.session_state["__lm_list"] = []
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            if st.button("🧽 Apagar última (DB)", key="btn_lm_delete_last"):
-                try:
-                    ok = delete_last_long_memory(lm_userkey)
-                    st.success("✅ Última memória (DB) apagada." if ok else "Nada para apagar (DB).")
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                except Exception as e:
-                    st.error(f"Falha ao apagar última (DB): {type(e).__name__}: {e}")
-                st.rerun()
-
-        with col4:
-            confirm_all = st.checkbox("Confirmo apagar TODAS (DB)", key="lm_confirm_delete_all")
-            if st.button("💣 Apagar TODAS (DB)", key="btn_lm_delete_all", disabled=not confirm_all):
-                try:
-                    n = delete_all_long_memory(lm_userkey)
-                    st.success(f"✅ Apaguei {n} memórias (DB).")
-                    st.session_state["__lm_list"] = []
-                    st.session_state["__lm_search"] = []
-                    st.session_state["lm_confirm_delete_all"] = False
-                except Exception as e:
-                    st.error(f"Falha ao apagar todas (DB): {type(e).__name__}: {e}")
-                st.rerun()
-
-        st.markdown("### ➕ Inserir memória (DB)")
-        lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
-        lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
-        lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
-
-        if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
-            try:
-                txt = (lm_text or "").strip()
-                if not txt:
-                    st.warning("⚠️ Texto da memória está vazio.")
-                else:
-                    kind_final = "pin" if bool(lm_pin) else "memory"
-                    tl_current = _timeline()
-                    timeline_at_save = "[all]" if kind_final == "pin" else tl_current
-
-                    meta = {
-                        "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
-                        "kind": kind_final,
-                        "timeline_at_save": timeline_at_save,
-                        "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
-                        "source": "ui_long_memory",
-                    }
-
-                    doc = append_long_memory(lm_userkey, txt, meta=meta)
-                    st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')} kind={kind_final} tl={timeline_at_save}")
-
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
-
-        st.markdown("### 🔎 Buscar (Mongo $text)")
-        q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
-        lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
-
-        if st.button("🔍 Buscar agora", key="btn_lm_search"):
-            qq = (q or "").strip()
-            if not qq:
-                st.warning("Digite uma consulta antes de buscar.")
-            else:
-                try:
-                    st.session_state["__lm_search"] = search_long_memory_text(lm_userkey, qq, limit=int(lim)) or []
-                except Exception as e:
-                    st.error(f"Falha na busca: {type(e).__name__}: {e}")
-                    st.session_state["__lm_search"] = []
-
-        if st.session_state.get("__lm_search") is not None:
-            st.caption("Resultados da busca:")
-            st.json(st.session_state.get("__lm_search") or [])
-
-        if st.session_state.get("__lm_list") is not None:
-            st.caption("Últimas memórias (DB):")
-            st.json(st.session_state.get("__lm_list") or [])
-
     # ===== BOOT =====
     _boot_visual_if_empty()
 
-    # ===== DEBUG VISUAL (opcional) =====
     if st.session_state.get("mary_debug_rel_panel", False):
         _render_relationship_debug_panel()
 
@@ -2640,8 +1927,7 @@ def main() -> None:
             st.stop()
 
         if not (resposta or "").strip():
-            st.error("⚠️ Resposta vazia. Diagnóstico abaixo (NÃO é 'mistério', é pipeline).")
-
+            st.error("⚠️ Resposta vazia. Diagnóstico abaixo.")
             with st.expander("🧪 Diagnóstico do retorno vazio", expanded=True):
                 st.write("Timeline:", tl_active)
                 st.write("NSFW:", nsfw_active)
@@ -2650,16 +1936,12 @@ def main() -> None:
                     "Usado (capturado):",
                     f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
                 )
-
                 st.write("Preview extracted (antes do strip):")
                 st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
-
                 st.write("Preview clean (depois do strip):")
                 st.code(st.session_state.get("mary_last_clean_text_preview") or "")
-
                 st.write("RAW summary:")
                 st.json(st.session_state.get("mary_last_raw_resp") or {})
-
             st.stop()
 
         with st.chat_message("assistant"):
