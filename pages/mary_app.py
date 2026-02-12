@@ -132,7 +132,7 @@ st.set_page_config(
 SENHA_CORRETA = "311071"
 DEFAULT_VISUAL_LIMIT = 80
 
-DEFAULT_MODEL = "tngtech/tng-r1t-chimera:free"
+DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
 FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
