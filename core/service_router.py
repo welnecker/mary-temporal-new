@@ -46,6 +46,15 @@ except Exception as e:
 SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 MODEL_ALIASES: Dict[str, str] = {}
 
+# ============================================================
+# Modelos fixos (OpenRouter) — sempre no menu
+# ============================================================
+PINNED_OPENROUTER_MODELS: List[str] = [
+    "arcee-ai/trinity-large-preview:free",
+    "minimax/minimax-m2.5",
+    "tngtech/deepseek-r1t-chimera:free",
+]
+
 
 # ============================================================
 # Utils
@@ -156,24 +165,48 @@ def list_models(provider: str | None = None) -> List[str]:
     """
     Nunca estoura exceção. Se algum provider não estiver disponível,
     simplesmente retorna lista vazia dele.
+
+    Além disso, garante que modelos OpenRouter "pinned" apareçam sempre no menu.
     """
     prov = (provider or "").strip()
 
-    if prov == "OpenRouter":
-        return list(OR_MODELS or [])
-    if prov == "Together":
-        return list(TG_MODELS or [])
-    if prov == "HuggingFace":
-        return list(HF_MODELS or [])
+    def _dedupe_keep_order(items: List[str]) -> List[str]:
+        out: List[str] = []
+        seen: set[str] = set()
+        for x in items:
+            s = str(x or "").strip()
+            if not s:
+                continue
+            k = s.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(s)
+        return out
 
+    if prov == "OpenRouter":
+        base = list(OR_MODELS or [])
+        base.extend(PINNED_OPENROUTER_MODELS)
+        return _dedupe_keep_order(base)
+
+    if prov == "Together":
+        return _dedupe_keep_order(list(TG_MODELS or []))
+
+    if prov == "HuggingFace":
+        return _dedupe_keep_order(list(HF_MODELS or []))
+
+    # todos
     out: List[str] = []
     for lst in (OR_MODELS or [], TG_MODELS or [], HF_MODELS or []):
         for m in lst:
             if m and m not in out:
                 out.append(m)
 
-    return out or [SAFE_FALLBACK_MODEL]
+    # garante os pinned no resultado geral também
+    out.extend(PINNED_OPENROUTER_MODELS)
 
+    out = _dedupe_keep_order(out)
+    return out or [SAFE_FALLBACK_MODEL]
 
 # -----------------------------------------
 # Identificação do provedor
