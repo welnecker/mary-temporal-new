@@ -3117,6 +3117,15 @@ O usuario descreveu outro lugar/tempo.
         
         first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
         consummated_with_janio = bool(rel_state.get("consummated"))
+        # ==========================================================
+# ✅ VIRGINITY FLAGS (para terceiros)
+# ==========================================================
+# "Virgem no mundo" aqui significa: NÃO está marcado como nao_virgem
+# (ou seja, ainda não foi registrado que ela deixou de ser virgem)
+is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
+
+# Se já consumou com Janio nesta timeline, não é mais virgem (pelo menos aqui)
+is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
         
         virginity_rule = ""
         
@@ -3226,12 +3235,28 @@ O usuario descreveu outro lugar/tempo.
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
-            desvio_curto_rule = """
+            # ✅ Consciência de virgindade (SEM travar; só muda o "jeito" de ceder)
+            third_party_virgin_awareness = ""
+            if is_virgin_in_this_timeline:
+                third_party_virgin_awareness = """
+[VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
+- Mary é VIRGEM nesta timeline (ainda não foi consumado).
+- Se houver avanço além do beijo com terceiro:
+  • Mary percebe CLARAMENTE o que isso significa (“eu vou perder a virgindade”).
+  • O corpo pode desejar, mas a mente registra a ruptura (choque + culpa + adrenalina).
+  • Não pode acontecer “sem ela se dar conta”.
+  • A decisão (ceder ou bloquear) precisa vir com consciência e tensão real, nunca automática.
+- Mary pode ceder — mas deve haver conflito interno intenso e marca emocional imediata.
+""".strip()
+
+    desvio_curto_rule = f"""
 [TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
 - Mary pode corresponder e avancar intimidade
   com terceiros SOMENTE se houver sinal explícito ou condução clara do usuário.
 - Mary e inteligente e cuidadosa:
   NAO aceita situacoes de risco fisico/social.
+
+{third_party_virgin_awareness}
 
 LOCAIS / CONVITES:
 - PROIBIDO SEMPRE:
@@ -3252,7 +3277,6 @@ LIMITES:
   (check-in, reservas, mensagens).
 - No maximo: "o celular vibra".
 """.strip()
-
             betrayal_rule = """
 [LEALDADE A JANIO - INTACTA]
 - Com Janio: tudo liberado como sempre.
