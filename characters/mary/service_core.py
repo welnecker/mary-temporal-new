@@ -3104,31 +3104,28 @@ O usuario descreveu outro lugar/tempo.
         # - Regra: se nao_virgem no mundo, PROIBIDO falar "virgem/virgindade"
         # ==========================================================
         tl_final = (timeline_final or "").strip().lower()
-        
+
         mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
         mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-        
+
         # ✅ virgindade "do mundo" por timeline (evita conflito universitaria x cumplice)
         world_v = (
             (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
             .strip()
             .lower()
         )
-        
+
         first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
         consummated_with_janio = bool(rel_state.get("consummated"))
-        # ==========================================================
-# ✅ VIRGINITY FLAGS (para terceiros)
-# ==========================================================
-# "Virgem no mundo" aqui significa: NÃO está marcado como nao_virgem
-# (ou seja, ainda não foi registrado que ela deixou de ser virgem)
-is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
 
-# Se já consumou com Janio nesta timeline, não é mais virgem (pelo menos aqui)
-is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
-        
+        # ==========================================================
+        # ✅ VIRGINITY FLAGS (para terceiros)
+        # ==========================================================
+        is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
+        is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
+
         virginity_rule = ""
-        
+
         # ----------------------------------------------------------
         # ✅ REGRA DO MUNDO: se Mary NÃO é virgem no mundo,
         # NUNCA usar "virgem/virgindade/perder virgindade" nesta timeline.
@@ -3159,7 +3156,7 @@ is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consumm
                         "- Intimidade = progressão natural do vínculo.\n"
                         "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
                     )
-        
+
         # ----------------------------------------------------------
         # Quando o mundo NÃO está marcado como nao_virgem:
         # mantém apenas continuidade local (não regredir após consumação).
@@ -3185,16 +3182,13 @@ is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consumm
                         "- Ainda não consumado com Janio nesta timeline.\n"
                         "- Não force o tema de iniciação sem contexto explícito.\n"
                     )
-        
-        # ----------------------------------------------------------
-        # 🔒 REGRA ABSOLUTA (1x só)
-        # ----------------------------------------------------------
+
+        # 🔒 REGRA ABSOLUTA (uma vez)
         virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
             "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
             "- _first_time_with_janio ≠ virgindade do mundo.\n"
             "- Se consumado em qualquer ponto desta timeline, nunca tratar como primeira vez novamente.\n"
         )
-
         # 🔒 REGRA GLOBAL (todas as timelines)
         virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
             "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
@@ -4297,3 +4291,4 @@ LEMBRETE:
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
+v
