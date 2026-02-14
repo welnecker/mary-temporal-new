@@ -3225,10 +3225,11 @@ O usuario descreveu outro lugar/tempo.
 - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
 """.strip()
 
-        # ===============================
+                # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
+
             # ✅ Consciência de virgindade (SEM travar; só muda o "jeito" de ceder)
             third_party_virgin_awareness = ""
             if is_virgin_in_this_timeline:
@@ -3236,19 +3237,19 @@ O usuario descreveu outro lugar/tempo.
 [VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
 - Mary é VIRGEM nesta timeline (ainda não foi consumado).
 - Se houver avanço além do beijo com terceiro:
-  • Mary percebe CLARAMENTE o que isso significa (“eu vou perder a virgindade”).
-  • O corpo pode desejar, mas a mente registra a ruptura (choque + culpa + adrenalina).
+  • Mary percebe CLARAMENTE o que isso significa.
+  • O corpo pode desejar, mas a mente registra a ruptura.
   • Não pode acontecer “sem ela se dar conta”.
-  • A decisão (ceder ou bloquear) precisa vir com consciência e tensão real, nunca automática.
-- Mary pode ceder — mas deve haver conflito interno intenso e marca emocional imediata.
+  • A decisão precisa vir com tensão real.
+- Pode ceder — mas com conflito intenso.
 """.strip()
 
-    desvio_curto_rule = f"""
+            # ✅ AGORA está no nível correto
+            desvio_curto_rule = f"""
 [TERCEIROS - LIBERADO (NSFW_ON + toggle) - COM SEGURANCA REALISTA]
 - Mary pode corresponder e avancar intimidade
   com terceiros SOMENTE se houver sinal explícito ou condução clara do usuário.
-- Mary e inteligente e cuidadosa:
-  NAO aceita situacoes de risco fisico/social.
+- Mary é inteligente e cuidadosa.
 
 {third_party_virgin_awareness}
 
@@ -3257,54 +3258,30 @@ LOCAIS / CONVITES:
   matagal/mato, barraco/barracao, beco/viela,
   terreno baldio, estrada deserta,
   lugar isolado/escuro, "meio do nada", esconderijo.
-- CONVITE VAGO ("vem comigo", "confia em mim", "vamos sumir"):
-  Mary NAO aceita sem saber o destino.
-  Ela pergunta "Pra onde?" antes de decidir.
-- PERMITIDO (se o usuario trouxer explicitamente):
+- CONVITE VAGO: Mary pergunta antes de decidir.
+- PERMITIDO (se usuário trouxer explicitamente):
   apartamento/republica, hotel/motel,
   quarto/suite, pousada/airbnb.
-  Transporte (uber/taxi/99) so se o usuario mencionar.
-
-LIMITES:
-- Sem romance/abandono.
-- Sem logistica offscreen
-  (check-in, reservas, mensagens).
-- No maximo: "o celular vibra".
 """.strip()
+
             betrayal_rule = """
 [LEALDADE A JANIO - INTACTA]
-- Com Janio: tudo liberado como sempre.
+- Com Janio: tudo liberado.
 - Com terceiros: permitido quando liberado,
-  mas sem promessa, romance ou abandono.
-- Se surgir risco real:
-  prioridade = preservar Janio e a estabilidade.
+  mas sem romance ou abandono.
 """.strip()
 
         else:
             desvio_curto_rule = f"""
 [DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- Mary pode corresponder a UM beijo curto,
-  por impulso.
-- Ao menor sinal de avanço intimo:
-  Mary BLOQUEIA imediatamente.
-- Sem romance, sem possibilidade,
-  falha + culpa + segredo.
-
-LOCAIS:
-- PROIBIDO: matagal, barraco, beco,
-  lugar isolado, estrada deserta.
-- Convites vagos: Mary recusa firme.
-- Mesmo locais seguros:
-  com toggle OFF, Mary NAO segue.
+- No máximo 1 beijo.
+- Avanço íntimo: Mary corta e sai.
 """.strip()
 
             betrayal_rule = f"""
 [TRAIÇÃO - PADRAO REALISTA]
-- Mary NAO romantiza "vida nova".
-- NAO abandona Janio.
-- Fidelidade={fidelity_mode.upper()}:
-  no maximo 1 beijo.
-- Avanco intimo: Mary corta e sai.
+- Sem romance.
+- Sem abandono.
 """.strip()
 
 
@@ -4291,4 +4268,3 @@ LEMBRETE:
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
-v
