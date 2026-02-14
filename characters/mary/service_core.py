@@ -1673,6 +1673,45 @@ _RE_EXPLICIT_SEX = re.compile(
     r")\b",
     re.IGNORECASE,
 )
+# ==========================================================
+# 🔥 ORGASM / PROVOCAÇÃO CONTROL LAYER
+# (cola após os regex existentes, antes de _violations)
+# ==========================================================
+
+_RE_MARY_ORGASM_DECLARATION = re.compile(
+    r"\b("
+    r"vou\s+gozar|"
+    r"estou\s+gozando|"
+    r"t[oô]\s+gozando|"
+    r"eu\s+vou\s+gozar|"
+    r"eu\s+to\s+gozando"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_EROTIC_PROVOCATION = re.compile(
+    r"\b("
+    r"vai\s+me\s+fazer|"
+    r"me\s+faz\s+gozar|"
+    r"me\s+faz\s+perder\s+o\s+controle|"
+    r"me\s+mostra|"
+    r"quero\s+ver|"
+    r"aguenta|"
+    r"não\s+para"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_ORGASM_INTENSITY = re.compile(
+    r"\b("
+    r"perco\s+o\s+controle|"
+    r"não\s+aguento|"
+    r"meu\s+corpo\s+treme|"
+    r"minhas\s+pernas\s+falham|"
+    r"meu\s+corpo\s+arqueia"
+    r")\b",
+    re.IGNORECASE,
+)
 
 def _is_explicit(text: str) -> bool:
     return bool(_RE_EXPLICIT_SEX.search(text or ""))
@@ -2397,6 +2436,45 @@ def _violations(
     ):
         out.append("low_sensory_density")
 
+        # ======================================================
+    # 🔥 CONTROLE DE ORGASMO DA MARY
+    # ======================================================
+
+    # ❌ Orgasmo precoce (antes da fase permitida)
+    if (
+        nsfw_on
+        and phase < 4
+        and _RE_MARY_ORGASM_DECLARATION.search(t)
+    ):
+        out.append("orgasmo_precoce")
+
+    # ❌ Cena claramente em clímax mas Mary não verbalizou
+    if (
+        nsfw_on
+        and phase >= 4
+        and _detect_climax_signal(t, user_text, nsfw_on=nsfw_on, phase=phase)
+        and not _RE_MARY_ORGASM_DECLARATION.search(t)
+    ):
+        out.append("mary_nao_verbalizou_orgasmo")
+
+    # ❌ Fase quente mas sem intensidade corporal suficiente
+    if (
+        nsfw_on
+        and phase >= 4
+        and not _RE_ORGASM_INTENSITY.search(t)
+    ):
+        out.append("intensidade_orgasmo_baixa")
+
+    # ❌ Clima quente mas Mary não provoca de forma ativa
+    if (
+        nsfw_on
+        and phase >= 3
+        and not _RE_EROTIC_PROVOCATION.search(t)
+        and _user_is_intense(user_text or "")
+    ):
+        out.append("provocacao_ausente")
+
+    
     return out
 def _trim_scene_finalization(texto: str) -> str:
     """Corta finalizações de cena e devolve um gancho sensorial."""
@@ -2601,6 +2679,31 @@ def _repair_instruction(violations: List[str]) -> str:
     out = "\n".join(bullets).strip()
     if ex:
         out = (out + "\n\n" + ex).strip()
+
+        if "orgasmo_precoce" in violations:
+        bullets.append(
+            "- Mary não pode atingir clímax antes da fase 4. "
+            "Mantenha tensão e intensidade corporal sem verbalizar finalização."
+        )
+
+    if "mary_nao_verbalizou_orgasmo" in violations:
+        bullets.append(
+            "- Quando Mary estiver claramente em clímax (fase >= 4), "
+            "ela deve verbalizar explicitamente o próprio prazer "
+            "de forma direta e adulta."
+        )
+
+    if "intensidade_orgasmo_baixa" in violations:
+        bullets.append(
+            "- Clímax exige intensidade corporal clara: tremor, contração, "
+            "respiração falhando ou perda de controle físico."
+        )
+
+    if "provocacao_ausente" in violations:
+        bullets.append(
+            "- Quando o clima estiver quente (fase >= 3), Mary pode provocar "
+            "de forma direta e adulta, instigando a continuidade da cena."
+        )
     return out
 
 # ==========================================================
