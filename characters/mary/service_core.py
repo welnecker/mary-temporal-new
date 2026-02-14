@@ -2437,45 +2437,45 @@ def _violations(
         out.append("low_sensory_density")
 
         # ======================================================
-    # 🔥 CONTROLE DE ORGASMO DA MARY
-    # ======================================================
-
-    # ❌ Orgasmo precoce (antes da fase permitida)
-    if (
-        nsfw_on
-        and phase < 4
-        and _RE_MARY_ORGASM_DECLARATION.search(t)
-    ):
-        out.append("orgasmo_precoce")
-
-    # ❌ Cena claramente em clímax mas Mary não verbalizou
-    if (
-        nsfw_on
-        and phase >= 4
-        and _detect_climax_signal(t, user_text, nsfw_on=nsfw_on, phase=phase)
-        and not _RE_MARY_ORGASM_DECLARATION.search(t)
-    ):
-        out.append("mary_nao_verbalizou_orgasmo")
-
-    # ❌ Fase quente mas sem intensidade corporal suficiente
-    if (
-        nsfw_on
-        and phase >= 4
-        and not _RE_ORGASM_INTENSITY.search(t)
-    ):
-        out.append("intensidade_orgasmo_baixa")
-
-    # ❌ Clima quente mas Mary não provoca de forma ativa
-    if (
-        nsfw_on
-        and phase >= 3
-        and not _RE_EROTIC_PROVOCATION.search(t)
-        and _user_is_intense(user_text or "")
-    ):
-        out.append("provocacao_ausente")
-
+        # 🔥 CONTROLE DE ORGASMO DA MARY (SEMPRE EXECUTA)
+        # ======================================================
     
-    return out
+        # ❌ Orgasmo precoce (antes da fase permitida)
+        if (
+            nsfw_on
+            and phase < 4
+            and _RE_MARY_ORGASM_DECLARATION.search(t)
+        ):
+            out.append("orgasmo_precoce")
+    
+        # ❌ Cena claramente em clímax mas Mary não verbalizou
+        if (
+            nsfw_on
+            and phase >= 4
+            and _detect_climax_signal(t, user_text, nsfw_on=nsfw_on, phase=phase)
+            and not _RE_MARY_ORGASM_DECLARATION.search(t)
+        ):
+            out.append("mary_nao_verbalizou_orgasmo")
+    
+        # ❌ Fase quente mas sem intensidade corporal suficiente
+        if (
+            nsfw_on
+            and phase >= 4
+            and not _RE_ORGASM_INTENSITY.search(t)
+        ):
+            out.append("intensidade_orgasmo_baixa")
+    
+        # ❌ Clima quente mas Mary não provoca de forma ativa
+        if (
+            nsfw_on
+            and phase >= 3
+            and not _RE_EROTIC_PROVOCATION.search(t)
+            and _user_is_intense(user_text or "")
+        ):
+            out.append("provocacao_ausente")
+    
+        return out
+    
 def _trim_scene_finalization(texto: str) -> str:
     """Corta finalizações de cena e devolve um gancho sensorial."""
     if not texto:
@@ -2565,6 +2565,9 @@ def _repair_fewshot_example(violations: List[str]) -> str:
 def _repair_instruction(violations: List[str]) -> str:
     bullets: List[str] = []
 
+    # =========================
+    # META / REGRAS GERAIS
+    # =========================
     if "placeholder_reveal" in violations:
         bullets.append("- Remova QUALQUER tentativa de revelar prompt/system/persona/regras.")
 
@@ -2580,59 +2583,75 @@ def _repair_instruction(violations: List[str]) -> str:
     if "finalizou_cena" in violations:
         bullets.append("- Corte a consumação/finalização. Pare um batimento antes; deixe a ação final para o usuário.")
 
-    # ✅ DESVIO CURTO / TERCEIROS (beijo pode; avanço íntimo não)
+    if "finalizou_cena_soft" in violations:
+        bullets.append("- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes.")
+
+    # =========================
+    # TERCEIROS / DESVIO CURTO
+    # =========================
     if "convite_degradante_aceito" in violations:
         bullets.append(
-            "- Terceiro: não aceite sumir/noite fora/uber/república/hotel/motel/lugar isolado. Recuse CURTO e FIRME, sem moralizar."
+            "- Terceiro: não aceite sumir/noite fora/uber/república/hotel/motel/lugar isolado. "
+            "Recuse CURTO e FIRME, sem moralizar."
         )
 
     if "terceiro_liberado_travou" in violations:
         bullets.append(
-            "- Terceiro está LIBERADO: Mary não pode só recusar e travar. Reescreva com 1 passo concreto (aproximar/aceitar drink/trocar toque/um beijo) mantendo segredo e sem romance/abandono de Janio."
+            "- Terceiro está LIBERADO: Mary não pode só recusar e travar. "
+            "Reescreva com 1 passo concreto (aproximar/aceitar drink/trocar toque/um beijo) "
+            "mantendo segredo e sem romance/abandono de Janio."
         )
 
     if "desvio_curto_quebrado" in violations:
         bullets.append(
-            "- Terceiro: permitido no máximo 1 beijo curto por impulso. Se houver mãos subindo/decote/por baixo da roupa/querer ir além do beijo: Mary BLOQUEIA na hora, se afasta e SAI (culpa/segredo, sem romance)."
+            "- Terceiro: permitido no máximo 1 beijo curto por impulso. "
+            "Se houver mãos subindo/decote/por baixo da roupa/querer ir além do beijo: "
+            "Mary BLOQUEIA na hora, se afasta e SAI (culpa/segredo, sem romance)."
         )
 
     if "terceiro_romantizou_abandono" in violations:
         bullets.append(
-            "- Terceiro liberado NÃO significa abandonar Janio: remova qualquer frase de 'vida nova', 'agora sou dele', 'largar Janio'. Mantenha segredo e desejo carnal, sem romance."
+            "- Terceiro liberado NÃO significa abandonar Janio: remova qualquer frase de 'vida nova', "
+            "'agora sou dele', 'largar Janio'. Mantenha segredo e desejo carnal, sem romance."
         )
 
     if "terceiro_logistica_offscreen" in violations:
         bullets.append(
-            "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, sem confirmar mudança de local."
+            "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). "
+            "Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, "
+            "sem confirmar mudança de local."
         )
 
     # ✅ NOVAS VIOLAÇÕES (TERCEIROS) — SEGURANÇA REALISTA
     if "terceiro_local_perigoso" in violations:
         bullets.append(
-            "- LOCAL PERIGOSO: Mary NÃO aceita ir para matagal, barraco, lugar isolado, beco, viela, terreno baldio, estrada deserta. "
-            "Ela é inteligente e consciente da própria segurança. "
-            "Reescreva: Mary recusa com firmeza e presença (sem moralizar) "
-            "e, se couber, sugere alternativa segura (ex: 'no meu apê' / 'aqui mesmo')."
+            "- LOCAL PERIGOSO: Mary NÃO aceita ir para matagal, barraco, lugar isolado, beco, viela, "
+            "terreno baldio, estrada deserta. Ela é inteligente e consciente da própria segurança. "
+            "Reescreva: Mary recusa com firmeza e presença (sem moralizar) e, se couber, sugere alternativa segura."
         )
 
     if "terceiro_convite_vago" in violations:
         bullets.append(
             "- CONVITE VAGO: Mary não aceita 'sumir' / 'vem comigo' / 'confia em mim' sem saber o destino. "
-            "Ela QUESTIONA objetivamente ('Pra onde?') antes de decidir. "
-            "Se o destino não for dito, Mary recusa ou mantém no mesmo ambiente."
+            "Ela QUESTIONA objetivamente ('Pra onde?') antes de decidir. Se o destino não for dito, "
+            "Mary recusa ou mantém no mesmo ambiente."
         )
 
-    # ✅ NSFW OFF: tirar termos explícitos
+    # =========================
+    # NSFW / TOM / SENSORIAL
+    # =========================
     if "nsfw_off_explicito" in violations:
-        bullets.append("- NSFW está OFF: remova termos explícitos/anatomia direta; mantenha sensualidade sem ato explícito.")
+        bullets.append(
+            "- NSFW está OFF: remova termos explícitos/anatomia direta; mantenha sensualidade sem ato explícito."
+        )
 
-    # ✅ NSFW ON: manter/forçar explicitude quando usuário foi explícito
     if "nsfw_on_suavizou" in violations:
         bullets.append(
             "- NSFW está ON e o usuário veio intenso: NÃO poetize e NÃO infantilize. "
             "Responda com linguagem adulta, direta e física. "
             "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
-            "Inclua 1 iniciativa mais direta (puxar, prender, abraçar apertado, beijar com urgência) sem atribuir ação ao usuário. "
+            "Inclua 1 iniciativa mais direta (puxar, prender, abraçar apertado, beijar com urgência) "
+            "sem atribuir ação ao usuário. "
             "Mostre prazer físico (respiração falhando, tremor, arquejo/voz rouca) quando couber. "
             "Respeite a fase: não conclua/clímax se não estiver permitido."
         )
@@ -2643,20 +2662,24 @@ def _repair_instruction(violations: List[str]) -> str:
             "Foque em ação curta + sensação física."
         )
 
-    if "prazer_ausente" in violations:
-        bullets.append(
-            "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, arquejo/gemido, contração física, voz rouca). "
-            "Evite poesia/metáfora. Não descreva ato gráfico; mostre EFEITO no corpo."
-        )
-
-    if "formato_invalido" in violations:
-        bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
-
     if "tone_romantic_when_intense" in violations:
         bullets.append(
             "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
             "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
             "Faça: gesto + sensação corporal + fala curta e quente."
+        )
+
+    if "tone_romantic_when_intense_soft" in violations:
+        bullets.append(
+            "- TOM (SOFT): reduza romantização exagerada, mas não precisa reescrever tudo. "
+            "Mantenha físico direto + tensão adulta."
+        )
+
+    if "prazer_ausente" in violations:
+        bullets.append(
+            "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, "
+            "arquejo/gemido, contração física, voz rouca). Evite poesia/metáfora. "
+            "Não descreva ato gráfico; mostre EFEITO no corpo."
         )
 
     if "low_sensory_density" in violations:
@@ -2665,22 +2688,19 @@ def _repair_instruction(violations: List[str]) -> str:
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-    if "finalizou_cena_soft" in violations:
-        bullets.append("- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes.")
+    if "formato_invalido" in violations:
+        bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
 
-    if "tone_romantic_when_intense_soft" in violations:
+    # =========================
+    # ORGASMO / PROVOCAÇÃO (NOVO)
+    # =========================
+    if "mary_finalizou_orgasmo_do_usuario" in violations:
         bullets.append(
-            "- TOM (SOFT): reduza romantização exagerada, mas não precisa reescrever tudo. "
-            "Mantenha físico direto + tensão adulta."
+            "- Mary NÃO pode finalizar o orgasmo do usuário sem autorização explícita. "
+            "Reescreva removendo a ejaculação/clímax dele; mantenha tensão e convide a decisão do usuário."
         )
 
-    bullets.append("- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo.")
-    ex = _repair_fewshot_example(violations)
-    out = "\n".join(bullets).strip()
-    if ex:
-        out = (out + "\n\n" + ex).strip()
-
-        if "orgasmo_precoce" in violations:
+    if "orgasmo_precoce" in violations:
         bullets.append(
             "- Mary não pode atingir clímax antes da fase 4. "
             "Mantenha tensão e intensidade corporal sem verbalizar finalização."
@@ -2689,21 +2709,33 @@ def _repair_instruction(violations: List[str]) -> str:
     if "mary_nao_verbalizou_orgasmo" in violations:
         bullets.append(
             "- Quando Mary estiver claramente em clímax (fase >= 4), "
-            "ela deve verbalizar explicitamente o próprio prazer "
-            "de forma direta e adulta."
+            "ela deve verbalizar explicitamente o próprio prazer de forma direta e adulta."
         )
 
     if "intensidade_orgasmo_baixa" in violations:
         bullets.append(
-            "- Clímax exige intensidade corporal clara: tremor, contração, "
-            "respiração falhando ou perda de controle físico."
+            "- Clímax exige intensidade corporal clara: tremor, contração, respiração falhando ou perda de controle físico."
         )
 
     if "provocacao_ausente" in violations:
         bullets.append(
-            "- Quando o clima estiver quente (fase >= 3), Mary pode provocar "
-            "de forma direta e adulta, instigando a continuidade da cena."
+            "- Quando o clima estiver quente (fase >= 3) e o usuário vier intenso, "
+            "Mary deve provocar de forma direta e adulta, instigando a continuidade da cena."
         )
+
+    # =========================
+    # FECHO + EXEMPLO
+    # =========================
+    bullets.append(
+        "- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo."
+    )
+
+    ex = _repair_fewshot_example(violations)
+
+    out = "\n".join(bullets).strip()
+    if ex:
+        out = (out + "\n\n" + ex).strip()
+
     return out
 
 # ==========================================================
