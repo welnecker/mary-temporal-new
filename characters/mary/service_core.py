@@ -1706,9 +1706,8 @@ _RE_ORGASM_INTENSITY = re.compile(
     r"\b("
     r"perco\s+o\s+controle|"
     r"não\s+aguento|"
-    r"meu\s+corpo\s+treme|"
-    r"minhas\s+pernas\s+falham|"
-    r"meu\s+corpo\s+arqueia"
+    r"me\s+faz\s+gozar|"
+    r"goza\s+comigo"
     r")\b",
     re.IGNORECASE,
 )
@@ -2709,9 +2708,9 @@ def _repair_instruction(violations: List[str]) -> str:
     if "mary_nao_verbalizou_orgasmo" in violations:
         bullets.append(
             "- Quando Mary estiver claramente em clímax (fase >= 4), "
-            "ela deve verbalizar explicitamente o próprio prazer de forma direta e adulta."
+            "ela deve verbalizar explicitamente o próprio prazer "
+            "('Vou gozar', 'Estou gozando') de forma adulta e direta."
         )
-
     if "intensidade_orgasmo_baixa" in violations:
         bullets.append(
             "- Clímax exige intensidade corporal clara: tremor, contração, respiração falhando ou perda de controle físico."
