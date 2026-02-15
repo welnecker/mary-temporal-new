@@ -741,7 +741,8 @@ def _choose_intro_text(usuario_key: str, timeline: str) -> str:
     # padrão: sempre usar o intro da timeline (sincronizado)
     _, intro_text = _sync_intro_fact(usuario_key, timeline)
     return str(intro_text or "").strip()
-    
+
+
 def _inject_intro_as_context_once(
     usuario_key: str,
     timeline: str,
@@ -753,27 +754,41 @@ def _inject_intro_as_context_once(
     mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
     """
 
-    # 🔥 LIMPEZA DEFINITIVA — SEMPRE EXECUTADA
-    # (não pode ficar atrás de guard de sessão)
-    try:
-        use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
-        if not use_fixed:
-            delete_fact(usuario_key, "mary.intro.fixed")
+    # ✅ flag SEMPRE definido antes do uso (conserta NameError)
+    flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
 
-            tl = str(timeline or "").strip()
+    # 🔥 LIMPEZA DEFINITIVA — SEMPRE EXECUTADA (antes do guard)
+    try:
+        tl = str(timeline or "").strip()
+        use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
+
+        if not use_fixed:
+            # remove qualquer intro fixo (global e por timeline)
+            delete_fact(usuario_key, "mary.intro.fixed")
             if tl:
                 delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
 
-            # garante que a remoção reflita imediatamente
+            # ✅ remove o intro sincronizado que ficou persistido em facts (o seu "As férias...")
+            # formato atual que você mostrou: mary.intro.universitaria.{text/hash/id}
+            if tl:
+                delete_fact(usuario_key, f"mary.intro.{tl}")
+
+            # remove legado que às vezes “trava” a timeline
+            delete_fact(usuario_key, "mary.timeline.fixed")
+
+            # garante refletir imediatamente
             clear_user_cache(usuario_key)
+
+            # ✅ derruba o guard de sessão (para permitir reinjeção limpa 1x após limpeza)
+            _ss_set(flag, False)
     except Exception:
         pass
 
-    # ⛔ AGORA SIM vem o guard de sessão
-    _ss_set(f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}", False)
+    # ⛔ Guard de sessão (UMA VEZ)
     if bool(_ss_get(flag, False)):
         return
 
+    # canon vence e dispensa intro
     if _has_canon_memories(shared_key, timeline):
         _ss_set(flag, True)
         return
@@ -784,6 +799,7 @@ def _inject_intro_as_context_once(
     if intro_text:
         block = f"[QUADRO ZERO — INTRO DA PERSONA]\n{intro_text}".strip()
 
+        # injeta no system base (messages[0]) se existir
         if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
             base = str(messages[0].get("content") or "").rstrip()
             messages[0]["content"] = (base + "\n\n" + block).strip()
