@@ -421,12 +421,19 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
 def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
     if not locked or not local or local == "—":
         return ""
-    return f"""
-[CONTEXTO ESPACIAL — OBRIGATÓRIO]
-Local: {local}
-Tempo: {tempo}
-Ação: {acao}
-""".strip()
+
+    lines = ["[CONTEXTO ESPACIAL — OBRIGATÓRIO]"]
+
+    lines.append(f"Local: {local}")
+
+    if tempo and tempo != "—":
+        lines.append(f"Tempo: {tempo}")
+
+    # 🔒 Não mostrar ação técnica
+    if acao and acao not in ("—", "transição", "transicao", "transition"):
+        lines.append(f"Ação: {acao}")
+
+    return "\n".join(lines).strip()
 
 def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
     # Exceções: movimentações internas que NÃO são mudanças de local
