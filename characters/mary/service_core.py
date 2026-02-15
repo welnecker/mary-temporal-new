@@ -2890,6 +2890,29 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     if isinstance(raw, dict) and "consummated" in raw:
         return
 
+# ==========================================================
+# HELPERS (misc)
+# ==========================================================
+
+def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
+    ck = f"mary_summary_counter::{usuario_key}"
+    n = int(_ss_get(ck) or 0) + 1
+    _ss_set(ck, n)
+    return (n % every_n) == 1
+
+def _should_inject_long_memory(prompt: str) -> bool:
+    triggers = (
+        "lembra", "antes", "daquele dia",
+        "você disse", "promessa", "quiosque",
+        "viagem", "motorhome", "porto seguro"
+    )
+    p = (prompt or "").lower()
+    return any(t in p for t in triggers)
+
+def _should_inject_soft_context(prompt: str) -> bool:
+    return "segredo" in (prompt or "").lower()
+
+
     canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
 
@@ -3607,12 +3630,17 @@ LEMBRETE:
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
         
-        # 🔒 8.5) CONTEXTO ATUAL ABSOLUTO (ANTI-TELEPORTE) — entra ANTES das memórias
+        # 🔒 CONTEXTO ABSOLUTO
         _inject_now_context(messages, usuario_key, timeline_final)
         
-        # 9) Injeções de memória
+        # 🔁 INTRO (1x)
         _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
         
+        # ==========================================
+        # 🔥 NOVA HIERARQUIA DE MEMÓRIA
+        # ==========================================
+        
+        # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
         _inject_canon_memories_always(
             shared_key,
             timeline_final,
@@ -3621,6 +3649,8 @@ LEMBRETE:
             dedupe_bucket=dedupe_hashes,
         )
         
+        # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
+        # só as marcadas como "pin" ou "estado_ativo"
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
@@ -3629,9 +3659,21 @@ LEMBRETE:
             dedupe_bucket=dedupe_hashes,
         )
         
-        # 10) Histórico curto
+        # 3️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
+        if _should_inject_summary(usuario_key, every_n=6):
+            _inject_consolidated_summary(
+                shared_key,
+                timeline_final,
+                messages,
+                dedupe_bucket=dedupe_hashes,
+            )
+        
+        # ==========================================
+        # 4️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
+        # ==========================================
+        
         history = cached_get_history(usuario_key, limit=200)
-        for d in history[-12:]:
+        for d in history[-24:]:  # aumentamos para 24–30
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
@@ -3639,32 +3681,40 @@ LEMBRETE:
             if a:
                 messages.append({"role": "assistant", "content": a})
         
-        _inject_long_memory_textsearch(
-            shared_key,
-            timeline_final,
-            prompt,
-            messages,
-            limit=10,
-            dedupe_bucket=dedupe_hashes,
-        )
+        # ==========================================
+        # 5️⃣ LONG MEMORY SOB DEMANDA
+        # ==========================================
         
-        _inject_relevant_memories(
-            shared_key,
-            timeline_final,
-            prompt,
-            messages,
-            k=4,
-            dedupe_bucket=dedupe_hashes,
-        )
+        if _should_inject_long_memory(prompt):
+            _inject_long_memory_textsearch(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                limit=8,
+                dedupe_bucket=dedupe_hashes,
+            )
         
-        _inject_shared_soft_context(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=4,
-            dedupe_bucket=dedupe_hashes,
-        )
+            _inject_relevant_memories(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                k=4,
+                dedupe_bucket=dedupe_hashes,
+            )
         
+        # soft context só se necessário
+        if _should_inject_soft_context(prompt):
+            _inject_shared_soft_context(
+                shared_key,
+                timeline_final,
+                messages,
+                max_items=4,
+                dedupe_bucket=dedupe_hashes,
+            )
+        
+        # Prompt atual sempre por último
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})        
         # Fase efetiva usada no decoding (pode ser forçada para aftercare)
         phase = int(intimacy_phase)
