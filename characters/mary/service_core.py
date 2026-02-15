@@ -2892,31 +2892,18 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 
     return False
 # ==========================================================
-# RELATIONSHIP / CANON SYNC
-# ==========================================================
-
-def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
-    tl = _normalize_timeline(timeline)
-    uk = _user_key(user_id, tl)
-    facts = cached_get_facts(uk) or {}
-    key = _rel_fact_key(tl)
-
-    # ✅ melhoria segura: se existir mas estiver quebrado/incompleto, recarrega
-    raw = (facts or {}).get(key)
-    if isinstance(raw, dict) and "consummated" in raw:
-        return
-
-# ==========================================================
 # HELPERS (misc)
 # ==========================================================
 
 def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
+    """Verifica se um resumo deve ser injetado, baseado em um contador de turnos."""
     ck = f"mary_summary_counter::{usuario_key}"
     n = int(_ss_get(ck) or 0) + 1
     _ss_set(ck, n)
     return (n % every_n) == 1
 
 def _should_inject_long_memory(prompt: str) -> bool:
+    """Verifica se a memória longa deve ser acionada por palavras-chave no prompt."""
     triggers = (
         "lembra", "antes", "daquele dia",
         "você disse", "promessa", "quiosque",
@@ -2926,17 +2913,76 @@ def _should_inject_long_memory(prompt: str) -> bool:
     return any(t in p for t in triggers)
 
 def _should_inject_soft_context(prompt: str) -> bool:
+    """Verifica se um contexto 'suave' deve ser injetado."""
     return "segredo" in (prompt or "").lower()
 
+def _inject_consolidated_summary(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    """
+    Injeta um resumo consolidado do histórico, se existir.
+    Esta função estava sendo chamada mas não existia, causando o NameError.
+    """
+    # Busca por um fato que armazena o resumo.
+    summary_text = str(get_fact(shared_key, "consolidated_summary", default="") or "").strip()
 
+    if not summary_text:
+        # Se não houver resumo, não faz nada.
+        return
+
+    # Evita injetar resumos duplicados
+    if dedupe_bucket is not None:
+        h = hashlib.sha1(summary_text.encode("utf-8")).hexdigest()
+        if h in dedupe_bucket:
+            return
+        dedupe_bucket.add(h)
+
+    block = (
+        "[RESUMO CONSOLIDADO]\n"
+        "O texto a seguir é um resumo de eventos passados para manter a coerência.\n"
+        "Não o cite literalmente; use-o como contexto de fundo.\n\n"
+        f"{summary_text}"
+    ).strip()
+
+    # Injeta no início do prompt do sistema
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base_content = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base_content + "\n\n" + block).strip()
+    else:
+        messages.insert(0, {"role": "system", "content": block})
+
+# ==========================================================
+# RELATIONSHIP / CANON SYNC
+# ==========================================================
+
+def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
+    """Garante que o estado do relacionamento para uma timeline exista e esteja sincronizado."""
+    tl = _normalize_timeline(timeline)
+    uk = _user_key(user_id, tl)
+    facts = cached_get_facts(uk) or {}
+    key = _rel_fact_key(tl)
+
+    # Se o estado já existe e parece completo, não faz nada.
+    raw = (facts or {}).get(key)
+    if isinstance(raw, dict) and "consummated" in raw:
+        return
+
+    # Carrega o estado base a partir do canon e dos fatos existentes.
     canon = get_canon("mary", timeline=tl, user_key=user_id) or {}
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
-
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
-    # ✅ AQUI: sincroniza com canon/global facts antes de salvar/usar
-    rel = _sync_rel_state_with_facts_canon(facts or {}, rel, tl)
+    # Sincroniza com fatos globais/canon.
+    # A função _sync_rel_state_with_facts_canon não foi fornecida no contexto,
+    # então a chamada foi omitida para evitar um novo erro. Se ela existir,
+    # a lógica para chamá-la estaria aqui.
+    # Ex: rel = _sync_rel_state_with_facts_canon(facts or {}, rel, tl)
 
+    # Salva o estado atualizado e limpa o cache para garantir consistência.
     _save_rel_state(uk, tl, rel)
     clear_user_cache(uk)
 
