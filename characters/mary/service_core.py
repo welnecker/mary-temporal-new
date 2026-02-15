@@ -2991,6 +2991,7 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
 # ==========================================================
 @dataclass
 class _Diag:
+    # ... (código da classe _Diag permanece o mesmo)
     ts: int
     timeline: str
     model_requested: str
@@ -3035,9 +3036,8 @@ class MaryService(BaseCharacter):
         prompt: Optional[str] = None,
         timeline: Optional[str] = None,
         nsfw: Optional[bool] = None,
-        allow_third_party_seduction: Optional[bool] = None,  # ✅ NOVO
+        allow_third_party_seduction: Optional[bool] = None,
     ) -> str:
-
         # 1) Prompt
         if prompt is None:
             prompt = str(_ss_get("chat_input", "") or "").strip()
