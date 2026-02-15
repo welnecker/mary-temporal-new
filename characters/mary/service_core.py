@@ -770,7 +770,7 @@ def _inject_intro_as_context_once(
         pass
 
     # ⛔ AGORA SIM vem o guard de sessão
-    flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
+    _ss_set(f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}", False)
     if bool(_ss_get(flag, False)):
         return
 
