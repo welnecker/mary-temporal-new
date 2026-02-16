@@ -1548,7 +1548,7 @@ def _load_rel_state(
     base.setdefault("allows_penetration", False if timeline == "universitaria" else True)
 
     if not base.get("stage"):
-    base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
+        base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
