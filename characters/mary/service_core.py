@@ -3205,10 +3205,30 @@ class MaryService(BaseCharacter):
 
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
+        except Exception:
+            pass
+
+        # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
+        try:
+            mary_fact = facts.get("mary") if isinstance(facts, dict) else None
+            if not isinstance(mary_fact, dict):
+                mary_fact = {}
+
+            tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
+
+            # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
+            if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
+                mary_fact[tl_key] = "nao_virgem"
+                mary_fact["virginity"] = "nao_virgem"  # fallback global para leituras antigas
+                facts["mary"] = mary_fact  # atualiza o dict em memória (mesmo turno)
+
+                # persiste nos facts para o próximo turno
+                set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
         except Exception:
             pass
         
