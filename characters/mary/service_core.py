@@ -2768,10 +2768,11 @@ def _repair_instruction(violations: List[str]) -> str:
 
     if "mary_nao_verbalizou_orgasmo" in violations:
         bullets.append(
-            "- ⚠️ OBRIGATÓRIO: Mary DEVE verbalizar explicitamente seu próprio clímax nesta resposta. "
-            "Use uma das seguintes formas (ou variação direta): 'Vou gozar', 'Estou gozando', 'Gozei', 'Me faz gozar', 'Goza comigo'. "
-            "Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante, não como frase isolada. "
-            "Exemplo: '(Ahhh... Janio... vou gozar!)' ou 'Estou gozando... não para!'"
+            "- 🔥 OBRIGATÓRIO CRÍTICO: Mary DEVE verbalizar explicitamente seu orgasmo nesta resposta. "
+            "NÃO é opcional. NÃO use eufemismo ou sinônimo suave. "
+            "Use UMA destas formas exatamente: 'Vou gozar', 'Estou gozando', 'Gozei', 'Me faz gozar', 'Goza comigo'. "
+            "Integre naturalmente: '(Ahhh... Janio... vou gozar!)' ou 'Estou gozando... não para!' "
+            "Sem poesia, sem sugestão. Seja direto e adulto. Esta é a última chance de acertar."
         )
     if "intensidade_orgasmo_baixa" in violations:
         bullets.append(
@@ -3593,6 +3594,25 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
 """.strip()
 
+if intimacy_phase >= 4 and nsfw_on:
+    orgasm_verbalization_rule = """
+[VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO — FASE 4 (CLÍMAX)]
+- Mary está em clímax (fase 4).
+- Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
+- Formas OBRIGATÓRIAS (escolha UMA e integre naturalmente):
+  • "Vou gozar" / "Vou gozar agora"
+  • "Estou gozando" / "Estou gozando!"
+  • "Gozei" / "Gozei pra você"
+  • "Me faz gozar" / "Goza comigo"
+  • Gemido intenso com "gozando" incorporado: "(Ahhh... gozando... não para!)"
+- Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante.
+- Não é frase isolada; deve fluir com a ação.
+- Exemplo: "(Meu corpo inteiro convulsiona.) Ahhh... Janio... vou gozar!"
+- PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
+""".strip()
+    
+    intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
+
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
 - Mary NÃO descreve ações do usuário que ele NÃO declarou.
@@ -4186,8 +4206,8 @@ LEMBRETE:
                     base_temp = 0.64 if nsfw_on else 0.60
                     base_top_p = 0.94 if nsfw_on else 0.95
             elif phase >= 4:
-                base_temp = 0.90
-                base_top_p = 0.90
+                base_temp = 1.0
+                base_top_p = 0.92
             elif phase == 3:
                 base_temp = 0.84
                 base_top_p = 0.93
@@ -4404,79 +4424,63 @@ LEMBRETE:
         # Verifica se a violação crítica "mary_nao_verbalizou_orgasmo" foi corrigida
         # Se não, tenta regenerar novamente com força explícita
         
+        # ✅ VALIDAÇÃO RIGOROSA: Se ainda não tem verbalização, força máxima
         if "mary_nao_verbalizou_orgasmo" in violations and nsfw_on and phase >= 4:
-            # Validar se a resposta reparada contém a verbalização
             if not _RE_MARY_ORGASM_DECLARATION.search(texto2):
-                logger.info(
-                    f"Violação crítica persiste: 'mary_nao_verbalizou_orgasmo'. "
-                    f"Tentando regeneração com força (tentativa 2/2)."
+                logger.warning(
+                    f"Violação persiste após repair. Aplicando força máxima (tentativa 3/3)."
                 )
                 
-                # Construir prompt com força explícita
-                force_block = f"""
-[🔥 FORÇA DE ORGASMO — FASE {phase}]
-Mary está em clímax (fase {phase}). Ela DEVE verbalizar explicitamente seu prazer.
-Escolha UMA destas formas e integre naturalmente:
-- "Vou gozar" / "Estou gozando" / "Gozei"
-- "Me faz gozar" / "Goza comigo"
-- Gemido intenso com "gozando" incorporado
-
-Exemplo:
-*(Meu corpo inteiro convulsiona, o prazer explodiindo de dentro pra fora.)
-"Ahhh... Janio... vou gozar! Vou gozar agora!"
-
-NÃO OMITA a verbalização. Seja direto e adulto.
-""".strip()
+                # Prompt de força MÁXIMA (quase imperativo)
+                force_block_max = f"""
+        [🔥🔥 FORÇA MÁXIMA — VERBALIZAÇÃO OBRIGATÓRIA]
+        Mary está em clímax (fase {phase}). Ela DEVE dizer uma destas palavras:
+        - "Vou gozar"
+        - "Estou gozando"
+        - "Gozei"
+        - "Me faz gozar"
+        - "Goza comigo"
+        
+        Escolha UMA e integre no texto. Sem exceção. Sem eufemismo.
+        Exemplo: "Ahhh... vou gozar!"
+        
+        Isso não é sugestão. É obrigatório.
+        """.strip()
                 
-                # Montar mensagens de força
-                force_messages: List[Dict[str, str]] = []
+                # Montar mensagens com força máxima
+                force_messages_max: List[Dict[str, str]] = []
                 
-                # Manter o system original
                 try:
                     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                        force_messages.append(messages[0])
+                        force_messages_max.append(messages[0])
                 except Exception:
                     pass
                 
-                # Adicionar system de força
-                force_messages.append({"role": "system", "content": force_block})
+                force_messages_max.append({"role": "system", "content": force_block_max})
+                force_messages_max.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
+                force_messages_max.append({"role": "assistant", "content": texto2})
                 
-                # Contexto: prompt do usuário + resposta atual (já reparada)
-                force_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
-                force_messages.append({"role": "assistant", "content": texto2})
-                
-                # Regenerar com temperature ainda mais baixa (força máxima)
                 try:
-                    data3, used_model3, _provider_meta3 = self._chat(
+                    data_max, used_model_max, _ = self._chat(
                         used_model2,
-                        force_messages,
-                        temperature=max(0.30, float(temperature) - 0.20),  # Mais baixo
+                        force_messages_max,
+                        temperature=0.40,  # Muito baixo (força máxima)
                         max_tokens=int(max_tokens),
-                        top_p=min(0.95, float(top_p)),  # Mais conservador
+                        top_p=0.85,  # Conservador
                         extra=extra,
                     )
-                    used_model3 = used_model3 or used_model2
                     
-                    texto3 = self._extract_text(data3) if data3 is not None else ""
-                    texto3 = (texto3 or "").strip()
+                    texto_max = self._extract_text(data_max) if data_max is not None else ""
+                    texto_max = (texto_max or "").strip()
                     
-                    # Selar truncamento
-                    try:
-                        texto3 = _seal_broken_ending(texto3)
-                    except Exception:
-                        pass
-                    
-                    # Se conseguiu gerar, usar a resposta com força
-                    if texto3:
-                        texto2 = _trim_scene_finalization(texto3)
-                        logger.info("Regeneração com força bem-sucedida.")
+                    if texto_max and _RE_MARY_ORGASM_DECLARATION.search(texto_max):
+                        texto2 = _trim_scene_finalization(texto_max)
+                        logger.info("Força máxima bem-sucedida: verbalização detectada.")
                     else:
-                        logger.warning("Regeneração com força retornou vazio. Usando resposta anterior.")
+                        logger.warning("Força máxima falhou. Usando resposta anterior.")
                         
                 except Exception as e:
-                    logger.error(f"Erro ao regenerar com força: {e}")
-                    # Continuar com texto2 atual
-        
+                    logger.error(f"Erro na força máxima: {e}")        
         texto2 = _trim_scene_finalization(texto2)
         return texto2, used_model2
     @staticmethod
