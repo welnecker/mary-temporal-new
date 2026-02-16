@@ -3187,15 +3187,16 @@ class MaryService(BaseCharacter):
         canon_txt = canon_to_text(canon)
 
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+
+        # 1) Carrega REL (facts por cima do canon_default)
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
 
-        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
+        # 2) ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
         except Exception:
             pass
-
         # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
