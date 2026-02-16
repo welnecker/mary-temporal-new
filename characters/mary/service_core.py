@@ -1548,9 +1548,7 @@ def _load_rel_state(
     base.setdefault("allows_penetration", False if timeline == "universitaria" else True)
 
     if not base.get("stage"):
-        base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
-
-    return base
+    base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
@@ -1568,8 +1566,7 @@ def _load_rel_state(
 
     # Primeira vez com Janio (derivado)
     base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, base)
-    # Regra mínima de consistência interna do REL:
-    # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
+    
     # Regra mínima de consistência interna do REL:
     # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
     if bool(base.get("consummated")):
@@ -1584,7 +1581,6 @@ def _load_rel_state(
         base["allows_penetration"] = True
 
     return base
-
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
 
