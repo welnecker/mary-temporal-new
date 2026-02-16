@@ -1550,6 +1550,8 @@ def _load_rel_state(
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
+    # (sem return prematuro: DERIVADOS precisam rodar)
+
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
     # ==========================================================
@@ -1581,6 +1583,59 @@ def _load_rel_state(
         base["allows_penetration"] = True
 
     return base
+
+# ==========================================================
+# CANON/FACTS SYNC (virginity)
+# ==========================================================
+def _sync_rel_state_with_facts_canon(
+    facts: Dict[str, Any],
+    rel: Dict[str, Any],
+    timeline: str,
+    user_id: str,
+) -> Dict[str, Any]:
+    """
+    Sincroniza REL com memória CANON (shared) de virgindade.
+    Regra: se existir CANON virginity=nao_virgem, isso governa o REL (não regride).
+    """
+    shared_key = _shared_key(user_id)
+
+    try:
+        mems = cached_list_memories(shared_key, limit=200)
+    except Exception:
+        mems = []
+
+    canon_val = None
+    canon_ts = None
+
+    # pega a ocorrência MAIS RECENTE de canon/virginity
+    for m in mems:
+        if not isinstance(m, dict):
+            continue
+        meta = m.get("meta") or {}
+        if not isinstance(meta, dict):
+            continue
+        if meta.get("kind") == "canon" and meta.get("key") == "virginity":
+            v = meta.get("value")
+            ts = m.get("ts")
+            if canon_ts is None:
+                canon_val, canon_ts = v, ts
+            else:
+                try:
+                    if ts and ts > canon_ts:
+                        canon_val, canon_ts = v, ts
+                except Exception:
+                    # ts não comparável: usa a última ocorrência válida
+                    canon_val, canon_ts = v, ts
+
+    if canon_val == "nao_virgem":
+        rel["virginity"] = "nao_virgem"
+        rel["consummated"] = True
+        rel["allows_penetration"] = True
+        rel.setdefault("allows_extended_touch", True)
+        rel.setdefault("allows_mutual_relief", True)
+
+    return rel
+
 def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> None:
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
 
@@ -3023,13 +3078,10 @@ def _ensure_rel_state_for_timeline(user_id: str, timeline: str) -> None:
     canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
     rel = _load_rel_state(facts or {}, tl, canon_rel_default)
 
-    # Sincroniza com fatos globais/canon.
-    # A função _sync_rel_state_with_facts_canon não foi fornecida no contexto,
-    # então a chamada foi omitida para evitar um novo erro. Se ela existir,
-    # a lógica para chamá-la estaria aqui.
-    # Ex: rel = _sync_rel_state_with_facts_canon(facts or {}, rel, tl)
+    # ✅ Sincroniza REL com CANON(shared) — evita "virgem" local sobrescrever "nao_virgem" canônico
+    rel = _sync_rel_state_with_facts_canon(facts or {}, rel, tl, user_id)
 
-    # Salva o estado atualizado e limpa o cache para garantir consistência.
+    # Salva o estado atualizado e limpa o cache para garantir consistência.ncia.
     _save_rel_state(uk, tl, rel)
     clear_user_cache(uk)
 
@@ -3153,6 +3205,12 @@ class MaryService(BaseCharacter):
 
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
+        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
+        try:
+            _save_rel_state(usuario_key, timeline_final, rel_state)
+        except Exception:
+            pass
         
                 
         # só agora gera o bloco de relacionamento
