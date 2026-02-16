@@ -1550,40 +1550,23 @@ def _load_rel_state(
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
-    # (sem return prematuro: DERIVADOS precisam rodar)
-
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
     # ==========================================================
     global_v = _get_global_virginity_from_facts(facts)
-    # _global_virginity é informativo (prompt/debug); por padrão NÃO governa o REL.
     base["_global_virginity"] = global_v
 
-    # ✅ Fallback inteligente:
-    # fora da universitaria, se por algum motivo virginity vier vazio,
-    # tenta herdar do global (quando válido).
     if timeline != "universitaria" and not base.get("virginity"):
         if global_v in ("virgem", "nao_virgem"):
             base["virginity"] = global_v
 
-    # Primeira vez com Janio (derivado)
     base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, base)
-    
-    # Regra mínima de consistência interna do REL:
-    # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
-    if bool(base.get("consummated")):
-        base["virginity"] = "nao_virgem"
-        base["allows_penetration"] = True
-        base.setdefault("allows_extended_touch", True)
-        base.setdefault("allows_mutual_relief", True)
 
-    # ✅ REGRA DE COERÊNCIA (mesmo sem consummated=True):
-    # Se o relacionamento está "nao_virgem", então penetração não pode ficar False.
-    if base.get("virginity") == "nao_virgem":
-        base["allows_penetration"] = True
+    # Consistência mínima: se consumou, não pode ficar virgem no REL
+    if bool(base.get("consummated")) and base.get("virginity") == "virgem":
+        base["virginity"] = "nao_virgem"
 
     return base
-
 # ==========================================================
 # CANON/FACTS SYNC (virginity)
 # ==========================================================
