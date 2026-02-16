@@ -3594,8 +3594,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
 """.strip()
 
-if intimacy_phase >= 4 and nsfw_on:
-    orgasm_verbalization_rule = """
+        # 🔥 VERBALIZAÇÃO OBRIGATÓRIA (CORRETAMENTE INDENTADO)
+        if intimacy_phase >= 4 and nsfw_on:
+            orgasm_verbalization_rule = """
 [VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO — FASE 4 (CLÍMAX)]
 - Mary está em clímax (fase 4).
 - Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
@@ -3607,11 +3608,10 @@ if intimacy_phase >= 4 and nsfw_on:
   • Gemido intenso com "gozando" incorporado: "(Ahhh... gozando... não para!)"
 - Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante.
 - Não é frase isolada; deve fluir com a ação.
-- Exemplo: "(Meu corpo inteiro convulsiona.) Ahhh... Janio... vou gozar!"
 - PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
 """.strip()
-    
-    intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
+
+            intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
