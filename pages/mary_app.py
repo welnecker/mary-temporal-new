@@ -460,7 +460,15 @@ def _set_virginity_canon(*, usuario_key: str, shared_key: str, timeline: str, us
     rel["allows_penetration"] = True
 
     set_fact(usuario_key, rel_key, rel, {"fonte": "ui_button_canon"})
-    set_fact(usuario_key, "mary.virginity", "nao_virgem", {"fonte": "ui_button_canon"})
+        # 3) FACTS (mary) — virgindade GLOBAL do mundo (camada que o service lê)
+    facts2 = get_facts(usuario_key) or {}
+    mary_obj = facts2.get("mary") if isinstance(facts2.get("mary"), dict) else {}
+    if not isinstance(mary_obj, dict):
+        mary_obj = {}
+
+    mary_obj["virginity"] = "nao_virgem"
+    mary_obj[f"virginity::{timeline}"] = "nao_virgem"
+    set_fact(usuario_key, "mary", mary_obj, {"fonte": "ui_button_canon"})
 
 
 # ==========================================================
@@ -491,57 +499,63 @@ def _sync_virginity_global_timeline(*, usuario_key: str, timeline: str) -> dict:
     facts = get_facts(uk) or {}
     if not isinstance(facts, dict):
         facts = {}
-
     # ----------------------------
-    # 1) Lê GLOBAL
+    # 1) Lê GLOBAL (do dict mary, que o service usa)
     # ----------------------------
-    g_key = "mary.virginity"
-    g_before = (facts.get(g_key) if isinstance(facts.get(g_key), str) else None)
-    g_before = (g_before or "").strip().lower() or None
+    mary_obj = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    if not isinstance(mary_obj, dict):
+        mary_obj = {}
 
-    # Normaliza valores aceitos
-    def _norm(v: str | None) -> str | None:
-        v = (v or "").strip().lower()
-        if not v:
-            return None
-        if v in ("virgem", "nao_virgem"):
-            return v
-        # tolerância: variantes
-        if v in ("não_virgem", "naovirgem", "nao virgem", "não virgem"):
-            return "nao_virgem"
-        return None
+    tl = (tl or "").strip().lower()
+
+    g_before = mary_obj.get("virginity")
+    if isinstance(g_before, str):
+        g_before = g_before.strip().lower()
+    else:
+        g_before = None
 
     g_before = _norm(g_before)
 
-    # ----------------------------
-    # 2) Lê REL (derivado da timeline)
-    # ----------------------------
-    rel_key = f"rel.state::{tl}"
-    rel_obj = facts.get(rel_key)
-    rel = rel_obj if isinstance(rel_obj, dict) else {}
-    if not isinstance(rel, dict):
-        rel = {}
-
-    rel_before = {
-        "virginity": _norm(rel.get("virginity") if isinstance(rel.get("virginity"), str) else None),
-        "consummated": bool(rel.get("consummated")) if rel.get("consummated") is not None else None,
-        "allows_penetration": bool(rel.get("allows_penetration")) if rel.get("allows_penetration") is not None else None,
-    }
+    # Também verifica se há marcação específica por timeline
+    g_tl = mary_obj.get(f"virginity::{tl}")
+    if isinstance(g_tl, str):
+        g_tl = _norm(g_tl.strip().lower())
+    else:
+        g_tl = None
 
     # ----------------------------
     # 3) Decide GLOBAL se estiver ausente
     # ----------------------------
     g_after = g_before
 
+    # Se existir marcação por timeline, ela tem prioridade
+    if g_tl in ("virgem", "nao_virgem"):
+        g_after = g_tl
+
     if g_after is None:
         g_after = "virgem"
-        notes.append("GLOBAL ausente => inicializado como 'virgem'")
+        notes.append("GLOBAL ausente (mary.virginity) => inicializado como 'virgem'")
         changed = True
-        try:
-            set_fact(uk, g_key, g_after, {"fonte": "virginity_sync_init"})
-        except Exception:
-            pass
 
+    # ----------------------------
+    # 4) Persistência (somente se necessário)
+    # ----------------------------
+    try:
+        # Nunca regride se já estiver nao_virgem
+        if mary_obj.get("virginity") != "nao_virgem" and g_after == "nao_virgem":
+            mary_obj["virginity"] = "nao_virgem"
+            mary_obj[f"virginity::{tl}"] = "nao_virgem"
+            set_fact(uk, "mary", mary_obj, {"fonte": "virginity_sync"})
+            changed = True
+
+        elif mary_obj.get("virginity") is None:
+            mary_obj["virginity"] = g_after
+            mary_obj[f"virginity::{tl}"] = g_after
+            set_fact(uk, "mary", mary_obj, {"fonte": "virginity_sync"})
+            changed = True
+
+    except Exception:
+        pass
     # ----------------------------
     # 4) Se GLOBAL é nao_virgem => força REL da timeline (todas)
     # ----------------------------
