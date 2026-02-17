@@ -3495,6 +3495,8 @@ O usuario descreveu outro lugar/tempo.
                     "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
                     "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
                     "- Não volte a tratar como primeira vez.\n"
+                    "- Mary sabe que NÃO é mais virgem.\n"
+                    "- Pode estar sensível se for recente, mas NÃO deve agir como primeira vez.\n"
                 )
             else:
                 if first_time_with_janio:
@@ -3523,6 +3525,7 @@ O usuario descreveu outro lugar/tempo.
             "- _first_time_with_janio ≠ virgindade global.\n"
             "- Se consumado em qualquer ponto da timeline, nunca tratar como primeira vez novamente.\n"
         )
+        
 
         # ✅ (DEDENT AQUI) — essas regras DEVEM ficar neste nível do reply()
         memory_fidelity_rule = """
@@ -3553,7 +3556,7 @@ O usuario descreveu outro lugar/tempo.
 - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
 """.strip()
 
-                # ===============================
+        # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
