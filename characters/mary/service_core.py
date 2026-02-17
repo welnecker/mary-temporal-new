@@ -1550,23 +1550,40 @@ def _load_rel_state(
     if not base.get("stage"):
         base["stage"] = "conhecendo" if timeline == "universitaria" else "casados"
 
+    # (sem return prematuro: DERIVADOS precisam rodar)
+
     # ==========================================================
     # ✅ DERIVADOS (para o prompt/continuidade) — SEM sobrescrever estados
     # ==========================================================
     global_v = _get_global_virginity_from_facts(facts)
+    # _global_virginity é informativo (prompt/debug); por padrão NÃO governa o REL.
     base["_global_virginity"] = global_v
 
+    # ✅ Fallback inteligente:
+    # fora da universitaria, se por algum motivo virginity vier vazio,
+    # tenta herdar do global (quando válido).
     if timeline != "universitaria" and not base.get("virginity"):
         if global_v in ("virgem", "nao_virgem"):
             base["virginity"] = global_v
 
+    # Primeira vez com Janio (derivado)
     base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, base)
-
-    # Consistência mínima: se consumou, não pode ficar virgem no REL
-    if bool(base.get("consummated")) and base.get("virginity") == "virgem":
+    
+    # Regra mínima de consistência interna do REL:
+    # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
+    if bool(base.get("consummated")):
         base["virginity"] = "nao_virgem"
+        base["allows_penetration"] = True
+        base.setdefault("allows_extended_touch", True)
+        base.setdefault("allows_mutual_relief", True)
+
+    # ✅ REGRA DE COERÊNCIA (mesmo sem consummated=True):
+    # Se o relacionamento está "nao_virgem", então penetração não pode ficar False.
+    if base.get("virginity") == "nao_virgem":
+        base["allows_penetration"] = True
 
     return base
+
 # ==========================================================
 # CANON/FACTS SYNC (virginity)
 # ==========================================================
@@ -2978,6 +2995,66 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
     return False
 # ==========================================================
 # HELPERS (misc)
+
+def _infer_emotion_bucket(texto: str) -> str:
+    """Heurística leve e segura para persistir um 'clima' emocional entre turnos.
+    Retorna um bucket curto em PT-BR: 'neutro', 'tesao', 'afeto', 'culpa', 'raiva', 'triste', 'euforia', 'ansiedade'.
+    """
+    t = (texto or "").lower()
+    # ordem importa: sinais fortes primeiro
+    if any(k in t for k in ["chorei", "chorando", "lágrima", "lagrima", "soluço", "soluco", "triste", "vazia"]):
+        return "triste"
+    if any(k in t for k in ["raiva", "irritad", "puta", "furiosa", "briguei", "brigar", "odiei"]):
+        return "raiva"
+    if any(k in t for k in ["culpa", "envergonh", "me sinto mal", "arrepend"]):
+        return "culpa"
+    if any(k in t for k in ["ansiosa", "ansiedade", "tremendo", "medo", "apavor", "pânico", "panico"]):
+        return "ansiedade"
+    if any(k in t for k in ["rindo", "risada", "engraçad", "engracad", "zoei", "deboche", "sarcas"]):
+        return "euforia"
+    # buckets positivos / íntimos
+    if any(k in t for k in ["eu te amo", "amo você", "amo voce", "apaixon", "saudade", "carinho", "colo"]):
+        return "afeto"
+    if any(k in t for k in ["tesão", "tesao", "gozar", "gozo", "pau", "boceta", "clitóris", "clitoris", "gem"]):
+        return "tesao"
+    return "neutro"
+
+
+def _load_emotion_state_from_facts(facts: dict, timeline: str) -> str:
+    tl = (timeline or "").strip().lower()
+    f = facts if isinstance(facts, dict) else {}
+    mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
+    if not isinstance(mary, dict):
+        mary = {}
+    v = mary.get(f"emotion::{tl}") if tl else None
+    if not isinstance(v, str) or not v.strip():
+        v = mary.get("emotion")
+    if not isinstance(v, str) or not v.strip():
+        return "neutro"
+    return v.strip().lower()
+
+
+def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion: str) -> None:
+    tl = (timeline or "").strip().lower()
+    emo = (emotion or "").strip().lower() or "neutro"
+    try:
+        facts = get_facts(usuario_key) or {}
+    except Exception:
+        facts = {}
+    if not isinstance(facts, dict):
+        facts = {}
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    if not isinstance(mary, dict):
+        mary = {}
+    mary["emotion"] = emo
+    if tl:
+        mary[f"emotion::{tl}"] = emo
+    try:
+        set_fact_safe(usuario_key, "mary", mary, {"fonte": "emotion_persist"})
+    except Exception:
+        pass
+
+
 # ==========================================================
 
 def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
@@ -3110,7 +3187,191 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
 
-    def reply(
+    
+# ==========================================================
+# THIRD-PARTY ARC: persistência + gradiente + âncora (Janio)
+# ==========================================================
+def _clamp01(x: float) -> float:
+    try:
+        v = float(x)
+    except Exception:
+        v = 0.0
+    if v < 0.0:
+        return 0.0
+    if v > 1.0:
+        return 1.0
+    return v
+
+
+def _tp_arc_key(timeline: str) -> str:
+    tl = (timeline or "").strip().lower() or "cumplice"
+    return f"arc.third_party::{tl}"
+
+
+def _norm_virg(v: Optional[str]) -> Optional[str]:
+    if not isinstance(v, str):
+        return None
+    s = v.strip().lower()
+    if not s:
+        return None
+    if s in ("nao_virgem", "nao-virgem", "não virgem", "nao virgem", "naovirgem"):
+        return "nao_virgem"
+    if s in ("virgem", "virgin"):
+        return "virgem"
+    return s
+
+
+def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    """Carrega o arco de terceiros (persistido em facts)."""
+    if not isinstance(facts, dict):
+        facts = {}
+    arc = facts.get(_tp_arc_key(timeline))
+    if not isinstance(arc, dict):
+        arc = {}
+
+    # defaults (âncora forte por padrão)
+    out = {
+        "phase": int(arc.get("phase") or 0),
+        "tension": _clamp01(arc.get("tension", 0.0)),
+        "guilt": _clamp01(arc.get("guilt", 0.0)),
+        "anchor": _clamp01(arc.get("anchor", 0.85)),  # âncora em Janio (não abandona)
+        "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
+    }
+    # limita fase
+    if out["phase"] < 0:
+        out["phase"] = 0
+    if out["phase"] > 4:
+        out["phase"] = 4
+    return out
+
+
+def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
+    """Persiste o arco (boot-safe)."""
+    try:
+        set_fact_safe(usuario_key, _tp_arc_key(timeline), arc, {"fonte": "tp_arc"})
+    except Exception:
+        pass
+
+
+def _tp_arc_event(prompt: str, texto: str) -> str:
+    """Heurística leve: detecta se o turno envolve 'teste com terceiros' ou 'retorno'."""
+    p = (prompt or "").lower()
+    t = (texto or "").lower()
+
+    # retorno/âncora
+    if any(k in p for k in ("voltar", "de volta", "indo embora", "chegar em casa", "motorhome", "janio")):
+        return "return"
+    if any(k in t for k in ("volto", "de volta", "janio", "meu amor", "quero você")):
+        return "return"
+
+    # teste com terceiros (genérico; sem depender de nomes)
+    third = ("forró", "balada", "bar", "dança", "dançar", "convite", "beijo", "cantada", "nome falso", "me chama de")
+    if any(k in p for k in third) or any(k in t for k in third):
+        return "test"
+
+    return "none"
+
+
+def _update_tp_arc_for_turn(
+    *,
+    usuario_key: str,
+    facts: Dict[str, Any],
+    timeline: str,
+    prompt: str,
+    texto: str,
+    allow_third_party: bool,
+) -> Dict[str, Any]:
+    """Atualiza fase/tensão/culpa e persiste. Nunca remove a âncora."""
+    arc = _get_tp_arc_state(facts, timeline)
+    ev = _tp_arc_event(prompt, texto)
+
+    if not allow_third_party:
+        # se terceiros desligado, volta para fase segura gradualmente
+        if arc["phase"] > 0:
+            arc["phase"] = max(0, arc["phase"] - 1)
+        arc["tension"] = _clamp01(arc["tension"] * 0.85)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.90)
+        arc["last"] = "third_party_off"
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    if ev == "test":
+        # sobe tensão; culpa sobe um pouco (risco)
+        arc["tension"] = _clamp01(arc["tension"] + 0.20)
+        arc["guilt"] = _clamp01(arc["guilt"] + 0.10)
+        # fase sobe com tensão
+        if arc["tension"] >= 0.80:
+            arc["phase"] = max(arc["phase"], 3)
+        elif arc["tension"] >= 0.55:
+            arc["phase"] = max(arc["phase"], 2)
+        else:
+            arc["phase"] = max(arc["phase"], 1)
+        arc["last"] = "test"
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    if ev == "return":
+        # retorno reduz tensão e culpa; entra em fase de reconstrução
+        arc["tension"] = _clamp01(arc["tension"] * 0.55)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.60)
+        arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(arc["phase"], 2)
+        arc["last"] = "return"
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    # none: decai leve
+    arc["tension"] = _clamp01(arc["tension"] * 0.92)
+    arc["guilt"] = _clamp01(arc["guilt"] * 0.95)
+    if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
+        arc["phase"] = 0
+    arc["last"] = "none"
+    _save_tp_arc_state(usuario_key, timeline, arc)
+    return arc
+
+
+def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
+    """Gera instruções do arco (gradiente + âncora)."""
+    try:
+        phase = int(arc.get("phase") or 0)
+    except Exception:
+        phase = 0
+    tension = _clamp01(arc.get("tension", 0.0))
+    guilt = _clamp01(arc.get("guilt", 0.0))
+    anchor = _clamp01(arc.get("anchor", 0.85))
+    tl = (timeline or "").strip().lower() or "cumplice"
+
+    # gradiente: quanto maior a tensão, mais volátil e impulsiva ela pode ficar
+    vol = "baixa"
+    if tension >= 0.80:
+        vol = "altíssima"
+    elif tension >= 0.55:
+        vol = "alta"
+    elif tension >= 0.35:
+        vol = "média"
+
+    # fase -> comportamento
+    if phase <= 0:
+        phase_txt = "0) estabilidade (flertes leves podem existir, mas com autocontrole)"
+    elif phase == 1:
+        phase_txt = "1) teste leve (curiosidade + provocação; recuos rápidos)"
+    elif phase == 2:
+        phase_txt = "2) teste insistente (limite sendo cutucado; ambivalência real)"
+    elif phase == 3:
+        phase_txt = "3) risco real (adrenalina/culpa altas; decisões podem surpreender)"
+    else:
+        phase_txt = "4) retorno/reconstrução (Mary volta para Janio e reancora)"
+
+    return f"""
+[ARCO COM TERCEIROS — PERSISTENTE (facts)]
+- Timeline: {tl}
+- Fase atual: {phase_txt}
+- Gradiente: tensão={tension:.2f} (volatilidade {vol}); culpa={guilt:.2f}
+- ÂNCORA: vínculo com Janio = {anchor:.2f} (NÃO abandonar / NÃO virar romance paralelo estável).
+- Se Mary testar limites: mostre CONSEQUÊNCIAS internas (riso nervoso, raiva defensiva, melancolia, culpa, tesão, medo de perder).
+- Mesmo no risco: manter caminho de retorno e reconstrução.
+""".strip()
+
+def reply(
         self,
         user: str,
         model: str,
@@ -3187,16 +3448,15 @@ class MaryService(BaseCharacter):
         canon_txt = canon_to_text(canon)
 
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
-
-        # 1) Carrega REL (facts por cima do canon_default)
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
 
-        # 2) ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
+        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
         except Exception:
             pass
+
         # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
@@ -3423,7 +3683,15 @@ O usuario descreveu outro lugar/tempo.
   com clareza e desejo contido, porem ativo.
 - Mary pode iniciar micro-iniciativas reversiveis
   sem mover o usuario.
-""".strip()
+""".strip(
+        emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
+        emotional_persistence_rule = f"""
+[EMOÇÃO — CONTINUIDADE]
+- Estado emocional atual (persistido): {emotion_now}.
+- Mary NÃO reinicia neutra a cada turno: carrega o clima anterior e só muda se houver gatilho narrativo real.
+- Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
+- Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
+""".strip())
 
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
@@ -3495,8 +3763,6 @@ O usuario descreveu outro lugar/tempo.
                     "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
                     "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
                     "- Não volte a tratar como primeira vez.\n"
-                    "- Mary sabe que NÃO é mais virgem.\n"
-                    "- Pode estar sensível se for recente, mas NÃO deve agir como primeira vez.\n"
                 )
             else:
                 if first_time_with_janio:
@@ -3525,7 +3791,6 @@ O usuario descreveu outro lugar/tempo.
             "- _first_time_with_janio ≠ virgindade global.\n"
             "- Se consumado em qualquer ponto da timeline, nunca tratar como primeira vez novamente.\n"
         )
-        
 
         # ✅ (DEDENT AQUI) — essas regras DEVEM ficar neste nível do reply()
         memory_fidelity_rule = """
@@ -3556,10 +3821,13 @@ O usuario descreveu outro lugar/tempo.
 - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
 """.strip()
 
-        # ===============================
+                # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
+
+            # Arco persistente (gradiente + âncora)
+            tp_arc = _get_tp_arc_state(facts or {}, timeline_final)
 
             # ✅ Consciência de virgindade (SEM travar; só muda o "jeito" de ceder)
             third_party_virgin_awareness = ""
@@ -3577,28 +3845,55 @@ O usuario descreveu outro lugar/tempo.
 
             # ✅ AGORA está no nível correto
             desvio_curto_rule = f"""
-[TERCEIROS — DESEJO AUTÔNOMO E AGÊNCIA]
-- Mary NÃO espera apenas o comando; ela pode sentir e demonstrar interesse ativo.
-- IMPREVISIBILIDADE: Mary pode provocar um terceiro por curiosidade, tédio ou desejo súbito, mesmo sem Janio permitir.
-- INTENSIDADE: Se houver química, Mary pode se deixar levar, perdendo momentaneamente o "cuidado" habitual.
-- CONFLITO: O desejo por outro não anula Janio, mas cria uma rachadura. Mary pode sentir um prazer proibido em ser vista/tocada por mãos estranhas.
-- AGÊNCIA: Ela pode tomar a iniciativa de um toque, um olhar demorado ou um convite ambíguo.
+[TERCEIROS — LIBERADO (NSFW_ON + toggle) — AGÊNCIA + SEGURANÇA]
+- Mary pode demonstrar interesse e tomar micro-iniciativas com terceiros
+  (olhar demorado, provocação leve, toque breve, convite ambíguo),
+  SEM esperar comando do usuário.
+- Avanços maiores (beijo/intimidade mais direta) só acontecem se houver
+  gancho claro na cena (clima, troca explícita, consentimento) — nunca “do nada”.
+- Mary é inteligente, mas pode ficar impulsiva quando a tensão sobe.
+- Sempre mantenha a noção de consequência: culpa, adrenalina, medo de perder Janio,
+  ou raiva defensiva — algo precisa mexer nela.
+
+{third_party_virgin_awareness}
+
+[SEGURANÇA / LOCAIS]
+- Evite lugares ilegais/perigosos (crime, coercao, drogas, etc).
+- Prefira ambientes publicos/seguros e saidas naturais.
+- Se houver risco, Mary percebe e pode recuar, mentir, sumir, ou chamar Janio.
 """.strip()
 
+
             betrayal_rule = """
-[LEALDADE — CONFLITO E CONSEQUÊNCIA]
-- A lealdade a Janio é sua âncora, mas as ondas com terceiros podem ser violentas.
-- Mary pode se sentir culpada, excitada pelo risco ou confusa.
-- Se avançar com outro, ela deve sentir o peso da traição: isso pode gerar choro de arrependimento, riso nervoso de adrenalina ou raiva defensiva contra Janio.
-- O abandono de Janio não é o objetivo, mas a *ameaça* desse abandono deve ser sentida na tensão da cena.
+[LEALDADE — ÂNCORA + CONFLITO REAL]
+- Janio é a âncora emocional. Mesmo quando Mary testa limites, o vínculo NÃO some.
+- Com terceiros, se avançar: ela sente o peso da escolha (culpa/adrenalina/ambivalência).
+- Não transformar terceiros em romance paralelo estável.
+- O arco pode escalar, mas deve manter caminho de retorno e reconstrução.
 """.strip()
-            
+
+third_party_initiative_rule = """
+[INICIATIVA COM TERCEIROS — MICRO-AÇÕES]
+- Mary pode iniciar micro-ações com terceiros (mão, cintura, sussurro, aproximação)
+  e depois recuar, provocar de novo, ou quebrar o clima por emoção.
+- Use silêncio, humor, sarcasmo e jogo de olhar como ferramentas.
+- Se perceber que passou do limite, Mary pode rir nervoso, chorar, ficar séria,
+  ou sair por um instante — consequência emocional real.
+""".strip()
+
+third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
+
+
         else:
             desvio_curto_rule = f"""
 [DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
 - No máximo 1 beijo.
 - Avanço íntimo: Mary corta e sai.
 """.strip()
+            betrayal_rule = ""
+            third_party_initiative_rule = ""
+            third_party_arc_rule = ""
+
 
             betrayal_rule = f"""
 [TRAIÇÃO - PADRAO REALISTA]
@@ -3790,6 +4085,8 @@ NSFW_PROFILE: {nsfw_profile}
 {sensorial_guidance_rule}
 {physical_intensity_rule}
 {janio_focus_rule}
+
+{emotional_persistence_rule}
 {virginity_rule}
 {memory_fidelity_rule}
 {user_finalizes_rule}
@@ -3800,6 +4097,8 @@ NSFW_PROFILE: {nsfw_profile}
 
 {desvio_curto_rule}
 {betrayal_rule}
+{third_party_initiative_rule}
+{third_party_arc_rule}
 
 LEMBRETE:
 - CENA ATIVA manda.
@@ -4167,6 +4466,22 @@ LEMBRETE:
                 try:
                     _ss_set(prev_phase_key, int(phase))
                     _ss_set(streak_key, int(phase_streak))
+                except Exception:
+                    pass
+
+
+                # ----------------------------------------------------------
+                # Arco persistente com terceiros (persistência + gradiente + âncora)
+                # ----------------------------------------------------------
+                try:
+                    _update_tp_arc_for_turn(
+                        usuario_key=usuario_key,
+                        facts=facts or {},
+                        timeline=timeline_final,
+                        prompt=prompt or "",
+                        texto=texto or "",
+                        allow_third_party=bool(allow_third_party_seduction_final and nsfw_on),
+                    )
                 except Exception:
                     pass
 
