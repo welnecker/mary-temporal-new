@@ -113,6 +113,70 @@ def delete_fact(usuario: str, key: str) -> bool:
     _invalidate_cache_for_user(usuario)
     return True
 
+def force_reset_virginity_universitaria(usuario: str) -> None:
+    """
+    Força a timeline UNIVERSITÁRIA a voltar para VIRGEM, mexendo nas chaves
+    que você mostrou no debug:
+      fatos.mary.virginity::universitaria = "virgem"
+      fatos.rel.state::universitaria.*    = ...
+    Também zera flags de consumação/permissões e (opcional) fase íntima.
+    """
+    # --- "mary" (facts) ---
+    set_fact(
+        usuario,
+        "mary.virginity::universitaria",
+        "virgem",
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+
+    # compat/fallback (se alguma parte do código ainda lê global)
+    set_fact(
+        usuario,
+        "mary.virginity",
+        "virgem",
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+
+    # --- rel_state da timeline ---
+    set_fact(
+        usuario,
+        "rel.state::universitaria.virginity",
+        "virgem",
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+    set_fact(
+        usuario,
+        "rel.state::universitaria.consummated",
+        False,
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+    set_fact(
+        usuario,
+        "rel.state::universitaria.allows_penetration",
+        False,
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+    set_fact(
+        usuario,
+        "rel.state::universitaria.allows_extended_touch",
+        False,
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+    set_fact(
+        usuario,
+        "rel.state::universitaria.allows_mutual_relief",
+        False,
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+
+    # --- (opcional mas recomendado) fase íntima da timeline ---
+    set_fact(
+        usuario,
+        "intimacy.phase::universitaria",
+        0,
+        {"fonte": "force_reset_virginity_universitaria"},
+    )
+
 
 # ---------- Histórico ----------
 def save_interaction(usuario: str, mensagem_usuario: str, resposta_mary: str, model_tag: str) -> None:
