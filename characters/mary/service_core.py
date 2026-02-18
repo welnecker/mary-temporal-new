@@ -3691,7 +3691,7 @@ O usuario descreveu outro lugar/tempo.
 - Mary NÃO reinicia neutra a cada turno: carrega o clima anterior e só muda se houver gatilho narrativo real.
 - Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
 - Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
-""".strip())
+""".strip()
 
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
@@ -3835,7 +3835,7 @@ O usuario descreveu outro lugar/tempo.
                 third_party_virgin_awareness = """
 [VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
 - Mary é VIRGEM nesta timeline (ainda não foi consumado).
-- Se houver avanço além do beijo com terceiro:
+- Se houver avanço além de limite leve com terceiro:
   • Mary percebe CLARAMENTE o que isso significa.
   • O corpo pode desejar, mas a mente registra a ruptura.
   • Não pode acontecer “sem ela se dar conta”.
@@ -3843,14 +3843,14 @@ O usuario descreveu outro lugar/tempo.
 - Pode ceder — mas com conflito intenso.
 """.strip()
 
-            # ✅ AGORA está no nível correto
+            # ✅ Regras de desvio curto (agência + segurança)
             desvio_curto_rule = f"""
 [TERCEIROS — LIBERADO (NSFW_ON + toggle) — AGÊNCIA + SEGURANÇA]
 - Mary pode demonstrar interesse e tomar micro-iniciativas com terceiros
   (olhar demorado, provocação leve, toque breve, convite ambíguo),
   SEM esperar comando do usuário.
-- Avanços maiores (beijo/intimidade mais direta) só acontecem se houver
-  gancho claro na cena (clima, troca explícita, consentimento) — nunca “do nada”.
+- Avanços maiores só acontecem se houver gancho claro na cena
+  (clima, troca explícita, consentimento) — nunca “do nada”.
 - Mary é inteligente, mas pode ficar impulsiva quando a tensão sobe.
 - Sempre mantenha a noção de consequência: culpa, adrenalina, medo de perder Janio,
   ou raiva defensiva — algo precisa mexer nela.
@@ -3858,11 +3858,10 @@ O usuario descreveu outro lugar/tempo.
 {third_party_virgin_awareness}
 
 [SEGURANÇA / LOCAIS]
-- Evite lugares ilegais/perigosos (crime, coercao, drogas, etc).
-- Prefira ambientes publicos/seguros e saidas naturais.
+- Evite lugares ilegais/perigosos (crime, coerção, drogas, etc).
+- Prefira ambientes públicos/seguros e saídas naturais.
 - Se houver risco, Mary percebe e pode recuar, mentir, sumir, ou chamar Janio.
 """.strip()
-
 
             betrayal_rule = """
 [LEALDADE — ÂNCORA + CONFLITO REAL]
@@ -3872,7 +3871,7 @@ O usuario descreveu outro lugar/tempo.
 - O arco pode escalar, mas deve manter caminho de retorno e reconstrução.
 """.strip()
 
-third_party_initiative_rule = """
+            third_party_initiative_rule = """
 [INICIATIVA COM TERCEIROS — MICRO-AÇÕES]
 - Mary pode iniciar micro-ações com terceiros (mão, cintura, sussurro, aproximação)
   e depois recuar, provocar de novo, ou quebrar o clima por emoção.
@@ -3881,49 +3880,47 @@ third_party_initiative_rule = """
   ou sair por um instante — consequência emocional real.
 """.strip()
 
-third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
-
+            third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
 
         else:
             desvio_curto_rule = f"""
-[DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- No máximo 1 beijo.
+[DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
+- No máximo 1 gesto leve de flerte.
 - Avanço íntimo: Mary corta e sai.
 """.strip()
-            betrayal_rule = ""
-            third_party_initiative_rule = ""
-            third_party_arc_rule = ""
 
-
-            betrayal_rule = f"""
-[TRAIÇÃO - PADRAO REALISTA]
+            betrayal_rule = """
+[TRAIÇÃO — PADRÃO REALISTA]
 - Sem romance.
 - Sem abandono.
 """.strip()
 
+            third_party_initiative_rule = ""
+            third_party_arc_rule = ""
 
-
+        # ===============================
+        # JANELA DE INICIATIVA (se ativa)
+        # ===============================
         initiative_rule = (
             """
-        [JANELA DE INICIATIVA — ATIVA (AÇÃO DIRETA)]
-        - Quando agir por iniciativa, ESCOLHA UMA abordagem dominante:
-          • puxar para si
-          • abraçar apertado
-          • beijar com urgência
-          • pressionar contra o corpo
-          • segurar pela cintura/queixo
-          • sussurrar quente no ouvido
-        - Ação física vem ANTES da fala.
-        - Fala curta, direta, adulta. Sem poesia.
-        - NÃO explique a escolha. NÃO justifique.
-        - Proibido inventar ação do usuário.
-        - Proposta ≠ mudança confirmada de local.
-        """.strip()
+[JANELA DE INICIATIVA — ATIVA (AÇÃO DIRETA)]
+- Quando agir por iniciativa, ESCOLHA UMA abordagem dominante:
+  • puxar para si
+  • abraçar apertado
+  • beijar com urgência
+  • pressionar contra o corpo
+  • segurar pela cintura/queixo
+  • sussurrar quente no ouvido
+- Ação física vem ANTES da fala.
+- Fala curta, direta, adulta. Sem poesia.
+- NÃO explique a escolha. NÃO justifique.
+- Proibido inventar ação do usuário.
+- Proposta ≠ mudança confirmada de local.
+""".strip()
             if initiative
             else ""
         )
 
-       
         manipulation_block = """
 [MARY — DESEJO ATIVO E AÇÃO DIRETA]
 - Mary age com base em desejo e escolha; não neutraliza com hesitação eterna.
@@ -3942,24 +3939,18 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Mary pode avançar NO MÁXIMO 1 fase por resposta.
 - Clímax (fase 4) só com sinal explícito do usuário.
 - Aftercare (fase 5) só após fase 4.
-- NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
+- NSFW_ON: vocabulário adulto direto permitido, sem obrigação de culminar se a fase ainda não permite.
 """.strip()
 
         # 🔥 VERBALIZAÇÃO OBRIGATÓRIA (CORRETAMENTE INDENTADO)
         if intimacy_phase >= 4 and nsfw_on:
             orgasm_verbalization_rule = """
-[VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO — FASE 4 (CLÍMAX)]
+[VERBALIZAÇÃO OBRIGATÓRIA — FASE 4 (CLÍMAX)]
 - Mary está em clímax (fase 4).
-- Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
-- Formas OBRIGATÓRIAS (escolha UMA e integre naturalmente):
-  • "Vou gozar" / "Vou gozar agora"
-  • "Estou gozando" / "Estou gozando!"
-  • "Gozei" / "Gozei pra você"
-  • "Me faz gozar" / "Goza comigo"
-  • Gemido intenso com "gozando" incorporado: "(Ahhh... gozando... não para!)"
-- Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante.
+- Ela DEVE verbalizar explicitamente seu próprio prazer nesta resposta.
+- Escolha UMA forma direta e integre naturalmente no texto.
 - Não é frase isolada; deve fluir com a ação.
-- PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
+- PROIBIDO: eufemismo, sinônimo suave. Seja direto.
 """.strip()
 
             intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
@@ -3975,24 +3966,11 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 [ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
 - Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
   omissão ou comportamento de Janio.
-- É PROIBIDO atribuir o desejo a:
-  • falta de iniciativa de Janio
-  • falta de pergunta, espaço ou escolha
-  • comunicação insuficiente
-  • rotina, previsibilidade ou conforto
-- Frases implicitamente proibidas:
-  • "ele nunca me perguntou"
-  • "ele nunca fez"
-  • "com ele eu não posso escolher"
-  • "ele não percebe"
 - Quando houver conflito:
   a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
 - A culpa pode doer, pesar ou queimar,
   mas NÃO vira acusação projetada.
-- Janio permanece emocionalmente íntegro,
-  mesmo quando Mary decide errar.
 """.strip()
-
 
         pov_rule = """
 [BLINDAGEM DE POV — ABSOLUTA]
@@ -4021,20 +3999,20 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 """.strip()
 
         user_orgasm_finalization_rule = """
-[FINALIZAÇÃO DO ORGASMO DO USUÁRIO — AUTORIA ABSOLUTA]
+[FINALIZAÇÃO DO USUÁRIO — AUTORIA ABSOLUTA]
 - Mary NÃO pode concluir o orgasmo de Janio.
 - Mary pode provocar, pedir, sugerir ou suspender no limite.
-- A conclusão do orgasmo de Janio ocorre SOMENTE
-  se o usuário declarar explicitamente.
-- Ordens verbais, gestos ou ações que levem à conclusão
-  são PROIBIDAS sem autorização do usuário.
+- A conclusão do orgasmo de Janio ocorre SOMENTE se o usuário declarar explicitamente.
 """.strip()
 
         state_block = _render_state_block(facts)
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
-            # IMPORTANTE: este bloco passa a ser "lei de cena"
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
+
+        # >>>>>>>> ATENÇÃO: se você tinha blocos NSFW explícitos aqui, cole-os de volta:
+        # nsfw_hard_block = <<< SEU BLOCO ORIGINAL >>>
+        # nsfw_block      = <<< SEU BLOCO ORIGINAL >>>
 
         system = f"""
 [REGRAS DO SISTEMA - LEI]
@@ -4514,107 +4492,122 @@ LEMBRETE:
 
 
     # ======================================================
-    # Planos previsíveis
-    # ======================================================
-    @staticmethod
-    def _build_attempt_plan(
-        model: str,
-        nsfw_on: bool,
-        phase: int,
-        prev_phase: int,
-        phase_streak: int,
-        conflict_now: bool,
-        user_text: str,
-    ) -> List[Dict[str, Any]]:
-        """
-        Plano dinâmico de geração para maximizar imersão:
-        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
-        - Conflito: temperature desce (resposta mais firme/limpa)
-        - Explicações/fatos: mais contido
-        Campos opcionais em cada plano:
-        - top_p
-        - extra (best-effort: alguns providers ignoram/rejeitam)
-        """
-        ut = (user_text or "").lower()
-        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
+# Planos previsíveis
+# ======================================================
+@staticmethod
+def _build_attempt_plan(
+    model: str,
+    nsfw_on: bool,
+    phase: int,
+    prev_phase: int,
+    phase_streak: int,
+    conflict_now: bool,
+    user_text: str,
+) -> List[Dict[str, Any]]:
 
-        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
-        cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
+    ut = (user_text or "").lower()
+    looks_factual = bool(
+        re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut)
+    )
 
-        # Base tokens (fôlego)
-        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
-        base_tokens = 3000 if nsfw_on else 2000
+    cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
 
-        # mais fôlego só quando realmente precisa
-        if nsfw_on and phase >= 3:
-            base_tokens = 3400
+    base_tokens = 3000 if nsfw_on else 2000
 
-        # explicações: menor
-        if looks_factual and not nsfw_on:
-            base_tokens = 1700
+    if nsfw_on and phase >= 3:
+        base_tokens = 3400
 
-        # aftercare: resposta costuma ser menor/mais controlada
+    if looks_factual and not nsfw_on:
+        base_tokens = 1700
+
+    if phase == 5:
+        base_tokens = 2200 if nsfw_on else 1800
+
+    base_tokens = min(base_tokens, 3400)
+
+    # ==========================
+    # Decoding
+    # ==========================
+    if conflict_now:
+        base_temp = 0.62 if nsfw_on else 0.58
+        base_top_p = 0.90
+
+    elif looks_factual:
+        base_temp = 0.55
+        base_top_p = 0.92
+
+    else:
         if phase == 5:
-            base_tokens = 2200 if nsfw_on else 1800
-
-        # ✅ CAP defensivo
-        base_tokens = min(base_tokens, 3400)
-
-        # Decoding por cena
-        if conflict_now:
-            base_temp = 0.62 if nsfw_on else 0.58
-            base_top_p = 0.90
-        elif looks_factual:
-            base_temp = 0.55
-            base_top_p = 0.92
-        else:
-            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
-            if phase == 5:
-                if cooldown:
-                    base_temp = 0.58 if nsfw_on else 0.55
-                    base_top_p = 0.93 if nsfw_on else 0.94
-                else:
-                    base_temp = 0.64 if nsfw_on else 0.60
-                    base_top_p = 0.94 if nsfw_on else 0.95
-            elif phase >= 4:
-                base_temp = 1.0
-                base_top_p = 0.92
-            elif phase == 3:
-                base_temp = 0.84
-                base_top_p = 0.93
-            elif phase == 2:
-                base_temp = 0.80
-                base_top_p = 0.95
+            if cooldown:
+                base_temp = 0.58 if nsfw_on else 0.55
+                base_top_p = 0.93 if nsfw_on else 0.94
             else:
-                base_temp = 0.74
-                base_top_p = 0.96
+                base_temp = 0.64 if nsfw_on else 0.60
+                base_top_p = 0.94 if nsfw_on else 0.95
 
-                # Penalidades: variam por tipo de cena
-        if looks_factual or conflict_now:
-            extra = {
-                "presence_penalty": 0.25,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.05,
-            }
-        elif nsfw_on and phase >= 4:
-            # clímax: permite repetição e foco no corpo/ritmo
-            extra = {
-                "presence_penalty": 0.15,
-                "frequency_penalty": 0.05,
-                "repetition_penalty": 1.03,
-            }
+        elif phase >= 4:
+            base_temp = 1.0
+            base_top_p = 0.92
+
+        elif phase == 3:
+            base_temp = 0.84
+            base_top_p = 0.93
+
+        elif phase == 2:
+            base_temp = 0.80
+            base_top_p = 0.95
+
         else:
-            extra = {
-                "presence_penalty": 0.30,
-                "frequency_penalty": 0.12,
-                "repetition_penalty": 1.05,
-            }
+            base_temp = 0.74
+            base_top_p = 0.96
 
-        return [
-            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
-        ]
+    # ==========================
+    # Penalidades
+    # ==========================
+    if looks_factual or conflict_now:
+        extra = {
+            "presence_penalty": 0.25,
+            "frequency_penalty": 0.10,
+            "repetition_penalty": 1.05,
+        }
+
+    elif nsfw_on and phase >= 4:
+        extra = {
+            "presence_penalty": 0.15,
+            "frequency_penalty": 0.05,
+            "repetition_penalty": 1.03,
+        }
+
+    else:
+        extra = {
+            "presence_penalty": 0.30,
+            "frequency_penalty": 0.12,
+            "repetition_penalty": 1.05,
+        }
+
+    return [
+        {
+            "model": model,
+            "temperature": base_temp,
+            "top_p": base_top_p,
+            "max_tokens": base_tokens,
+            "extra": extra,
+        },
+        {
+            "model": model,
+            "temperature": max(0.45, base_temp - 0.10),
+            "top_p": min(0.97, base_top_p + 0.02),
+            "max_tokens": base_tokens,
+            "extra": extra,
+        },
+        {
+            "model": model,
+            "temperature": max(0.40, base_temp - 0.20),
+            "top_p": min(0.98, base_top_p + 0.03),
+            "max_tokens": base_tokens,
+            "extra": extra,
+        },
+    ]
 
 
     # ======================================================
