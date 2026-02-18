@@ -3371,7 +3371,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - Mesmo no risco: manter caminho de retorno e reconstrução.
 """.strip()
 
-def reply(
+    def reply(
         self,
         user: str,
         model: str,
@@ -4499,10 +4499,9 @@ LEMBRETE:
         _ss_set("mary_last_diagnostics", diag.as_dict())
         return self._fallback_text()
 
-
-# ======================================================
-# Planos previsíveis
-# ======================================================
+    # ======================================================
+    # Planos previsíveis
+    # ======================================================
     @staticmethod
     def _build_attempt_plan(
         model: str,
