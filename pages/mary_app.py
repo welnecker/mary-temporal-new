@@ -1687,7 +1687,14 @@ def _call_service_reply_safe(
     """
     Chama svc.reply sem depender de assinatura fixa.
     E, se o service NÃO injeta persona, permite fallback opcional via UI.
+
+    ✅ Robustez:
+    - tenta prompt=...
+    - se der TypeError (unexpected keyword 'prompt'), re-tenta com text=...
+    - se der TypeError, re-tenta com user_text=...
+    - filtra kwargs por assinatura quando possível
     """
+
     fb_key = f"mary_ui_persona_fallback::{timeline}"
     if bool(st.session_state.get(fb_key, False)):
         prompt_to_send = _build_prompt_with_persona_fallback(prompt=prompt, timeline=timeline)
@@ -1704,7 +1711,10 @@ def _call_service_reply_safe(
     else:
         allow_3p = bool(allow_third_party_seduction)
 
-    kwargs = {
+    # -------------------------
+    # Base kwargs "completos"
+    # -------------------------
+    base_kwargs = {
         "user": user,
         "model": model,
         "prompt": prompt_to_send,
@@ -1713,15 +1723,97 @@ def _call_service_reply_safe(
         "allow_third_party_seduction": allow_3p,
     }
 
-    try:
-        sig = inspect.signature(svc.reply)
-        params = set(sig.parameters.keys())
-        kwargs = {k: v for k, v in kwargs.items() if k in params}
-    except Exception:
-        pass
+    # -------------------------
+    # Helper: filtra por assinatura
+    # - se tiver **kwargs, pode mandar tudo
+    # -------------------------
+    def _filter_kwargs_by_signature(func: Any, kw: dict) -> dict:
+        try:
+            sig = inspect.signature(func)
+            params = sig.parameters
 
-    resp = svc.reply(**kwargs)
+            # Se aceita **kwargs, não filtra
+            for p in params.values():
+                if p.kind == inspect.Parameter.VAR_KEYWORD:
+                    return kw
 
+            allowed = set(params.keys())
+            return {k: v for k, v in kw.items() if k in allowed}
+        except Exception:
+            # assinatura indisponível → devolve como está (vamos tratar via tentativas)
+            return kw
+
+    # -------------------------
+    # Candidatos de chamada
+    # (ordem importa)
+    # -------------------------
+    candidates: list[dict] = []
+
+    # 1) Tenta como você queria (prompt)
+    candidates.append(dict(base_kwargs))
+
+    # 2) Tenta "text" (mais comum em BaseCharacter)
+    kw2 = dict(base_kwargs)
+    kw2.pop("prompt", None)
+    kw2["text"] = prompt_to_send
+    candidates.append(kw2)
+
+    # 3) Tenta "user_text" (alguns cores usam isso)
+    kw3 = dict(base_kwargs)
+    kw3.pop("prompt", None)
+    kw3["user_text"] = prompt_to_send
+    candidates.append(kw3)
+
+    # 4) Alguns services não aceitam timeline no reply() → tenta sem timeline
+    kw4 = dict(kw2)
+    kw4.pop("timeline", None)
+    candidates.append(kw4)
+
+    kw5 = dict(kw3)
+    kw5.pop("timeline", None)
+    candidates.append(kw5)
+
+    # 5) Alguns services usam nsfw_on em vez de nsfw
+    kw6 = dict(kw2)
+    if "nsfw" in kw6:
+        kw6["nsfw_on"] = kw6.pop("nsfw")
+    candidates.append(kw6)
+
+    kw7 = dict(kw4)
+    if "nsfw" in kw7:
+        kw7["nsfw_on"] = kw7.pop("nsfw")
+    candidates.append(kw7)
+
+    # -------------------------
+    # Executa tentativas
+    # -------------------------
+    last_err: Exception | None = None
+    resp = None
+
+    for i, kw in enumerate(candidates, start=1):
+        # filtra se der (quando signature funciona)
+        kw = _filter_kwargs_by_signature(svc.reply, kw)
+
+        try:
+            resp = svc.reply(**kw)
+            last_err = None
+            break
+        except TypeError as e:
+            # guarda e tenta próximo
+            last_err = e
+            continue
+        except Exception as e:
+            # erro real do provider/service → não é problema de assinatura
+            last_err = e
+            break
+
+    if last_err is not None and resp is None:
+        # re-levanta com contexto mínimo (pra você ver no log)
+        raise last_err
+
+    # -------------------------
+    # Debug raw
+    # -------------------------
     try:
         st.session_state["mary_last_raw_resp"] = _summarize_raw(resp)
     except Exception:
@@ -1745,7 +1837,6 @@ def _call_service_reply_safe(
     st.session_state["mary_last_clean_text_preview"] = clean[:600]
 
     return clean
-
 
 # ==========================================================
 # APP
