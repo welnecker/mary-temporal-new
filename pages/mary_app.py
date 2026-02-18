@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.repositories import force_reset_virginity_universitaria
 # pages/mary_app.py
 
 # ==========================================================
@@ -12,6 +13,7 @@ import inspect
 from typing import Any
 import streamlit as st
 import httpx
+
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
@@ -2402,6 +2404,38 @@ def main() -> None:
 
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
+                
+        st.markdown("---")
+        st.subheader("🔁 Reset rápido")
+
+        # ✅ Botão extra: SEMPRE reverte a UNIVERSITÁRIA para VIRGEM (facts/rel/intimacy)
+        # Obs: só faz sentido quando tl_now == "universitaria"
+        is_uni = (str(tl_now or "").strip().lower() == "universitaria")
+
+        if st.button(
+            "🟢 Forçar VIRGEM (Universitária)",
+            key="btn_force_virginity_universitaria",
+            disabled=not is_uni,
+            help="Reverte virginity/consummated/permissões e zera intimacy.phase::universitaria.",
+        ):
+            try:
+                force_reset_virginity_universitaria(uk_now)
+
+                # limpa caches/serviços pra refletir na hora
+                st.session_state["chat_history"] = []
+                st.session_state["mary_intro_done"] = False
+                st.session_state["mary_last_used_model"] = None
+                st.session_state["mary_last_used_provider"] = None
+
+                _invalidate_backend_cache()
+                _clear_mary_caches_all_related(also_clear_other_timeline=True)
+                _kill_all_mary_services()
+
+                st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")                
 
             except Exception as e:
                 st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
