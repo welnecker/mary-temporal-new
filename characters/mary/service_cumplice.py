@@ -7,30 +7,39 @@ from typing import Optional
 from .service_core import MaryService
 
 
-class MaryCumpliceService(MaryService):
+class MaryServiceCumplice(_MaryServiceCore):
     """
-    Wrapper da timeline 'cumplice'.
-    Mantém assinatura compatível com mary_app.py e com MaryService.reply.
+    Service da timeline 'cumplice'.
+    Mantém assinatura compatível com mary_app.py (_call_service_reply_safe)
+    e com service.py (import MaryServiceCumplice).
     """
 
-    id = "mary_cumplice"
-    display_name = "Mary (Cúmplice)"
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # garante timeline padrão
+        self.timeline = "cumplice"
 
     def reply(
         self,
+        *,
         user: str,
         model: str,
-        *,
-        prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
-        nsfw: Optional[bool] = None,
-        allow_third_party_seduction: Optional[bool] = None,
-    ) -> str:
+        prompt: str,
+        timeline: str = "cumplice",
+        nsfw=None,
+        allow_third_party_seduction=None,
+        **kwargs,
+    ):
+        # força timeline correta se vier vazia
+        timeline = (timeline or "cumplice").strip().lower()
+        if timeline != "cumplice":
+            timeline = "cumplice"
+
         return super().reply(
             user=user,
             model=model,
             prompt=prompt,
-            timeline="cumplice",
+            timeline=timeline,
             nsfw=nsfw,
             allow_third_party_seduction=allow_third_party_seduction,
         )
