@@ -2404,12 +2404,14 @@ def main() -> None:
 
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
-                
+
+            except Exception as e:
+                st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
+
         st.markdown("---")
         st.subheader("🔁 Reset rápido")
 
         # ✅ Botão extra: SEMPRE reverte a UNIVERSITÁRIA para VIRGEM (facts/rel/intimacy)
-        # Obs: só faz sentido quando tl_now == "universitaria"
         is_uni = (str(tl_now or "").strip().lower() == "universitaria")
 
         if st.button(
@@ -2435,7 +2437,7 @@ def main() -> None:
                 st.rerun()
 
             except Exception as e:
-                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")                
+                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")              
 
             except Exception as e:
                 st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
