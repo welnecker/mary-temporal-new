@@ -3998,22 +3998,32 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
 """.strip()
 
+        # ✅ BLOCO 1: Finalização do usuário (SEMPRE)
         user_orgasm_finalization_rule = """
-[FINALIZAÇÃO DO USUÁRIO — AUTORIA ABSOLUTA]
-- Mary NÃO pode concluir o orgasmo de Janio.
-- Mary pode provocar, pedir, sugerir ou suspender no limite.
-- A conclusão do orgasmo de Janio ocorre SOMENTE se o usuário declarar explicitamente.
-""".strip()
-
-        state_block = _render_state_block(facts)
-        state_section = ""
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-
-        # >>>>>>>> ATENÇÃO: se você tinha blocos NSFW explícitos aqui, cole-os de volta:
-        # nsfw_hard_block = <<< SEU BLOCO ORIGINAL >>>
-        # nsfw_block      = <<< SEU BLOCO ORIGINAL >>>
-
+    [FINALIZAÇÃO DO USUÁRIO — AUTORIA ABSOLUTA]
+    - Mary NÃO pode concluir o orgasmo de Janio.
+    - Mary pode provocar, pedir, sugerir ou suspender no limite.
+    - A conclusão do orgasmo de Janio ocorre SOMENTE se o usuário declarar explicitamente.
+    """.strip()
+        
+        # ... código de construção do state_block ...
+        
+        # ✅ BLOCO 2: Bloqueio de poesia (APENAS QUANDO NSFW ON)
+        nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
+        diag.nsfw_on = bool(nsfw_on)
+        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+        
+        nsfw_hard_block = ""
+        if nsfw_on:
+            nsfw_hard_block = """
+    [BLOQUEIO DE POESIA — NSFW ON (ABSOLUTO)]
+    - PROIBIDO poesia, metáforas românticas e floreios.
+    - PROIBIDO usar termos/idéias do tipo:
+      redenção, destino, prece, voto, para sempre,
+      eternidade, alma, cicatriz por cicatriz.
+    - Escreva com linguagem física concreta e direta.
+    - Corpo antes de emoção. Fala curta. Ação primeiro.
+    """.strip()
         system = f"""
 [REGRAS DO SISTEMA - LEI]
 Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
@@ -4490,124 +4500,108 @@ LEMBRETE:
         return self._fallback_text()
 
 
-
-    # ======================================================
+# ======================================================
 # Planos previsíveis
 # ======================================================
-@staticmethod
-def _build_attempt_plan(
-    model: str,
-    nsfw_on: bool,
-    phase: int,
-    prev_phase: int,
-    phase_streak: int,
-    conflict_now: bool,
-    user_text: str,
-) -> List[Dict[str, Any]]:
+    @staticmethod
+    def _build_attempt_plan(
+        model: str,
+        nsfw_on: bool,
+        phase: int,
+        prev_phase: int,
+        phase_streak: int,
+        conflict_now: bool,
+        user_text: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Plano dinâmico de geração para maximizar imersão:
+        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
+        - Conflito: temperature desce (resposta mais firme/limpa)
+        - Explicações/fatos: mais contido
+        Campos opcionais em cada plano:
+        - top_p
+        - extra (best-effort: alguns providers ignoram/rejeitam)
+        """
+        ut = (user_text or "").lower()
+        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
 
-    ut = (user_text or "").lower()
-    looks_factual = bool(
-        re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut)
-    )
+        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
+        cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
 
-    cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
+        # Base tokens (fôlego)
+        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
+        base_tokens = 3000 if nsfw_on else 2000
 
-    base_tokens = 3000 if nsfw_on else 2000
+        # mais fôlego só quando realmente precisa
+        if nsfw_on and phase >= 3:
+            base_tokens = 3400
 
-    if nsfw_on and phase >= 3:
-        base_tokens = 3400
+        # explicações: menor
+        if looks_factual and not nsfw_on:
+            base_tokens = 1700
 
-    if looks_factual and not nsfw_on:
-        base_tokens = 1700
-
-    if phase == 5:
-        base_tokens = 2200 if nsfw_on else 1800
-
-    base_tokens = min(base_tokens, 3400)
-
-    # ==========================
-    # Decoding
-    # ==========================
-    if conflict_now:
-        base_temp = 0.62 if nsfw_on else 0.58
-        base_top_p = 0.90
-
-    elif looks_factual:
-        base_temp = 0.55
-        base_top_p = 0.92
-
-    else:
+        # aftercare: resposta costuma ser menor/mais controlada
         if phase == 5:
-            if cooldown:
-                base_temp = 0.58 if nsfw_on else 0.55
-                base_top_p = 0.93 if nsfw_on else 0.94
-            else:
-                base_temp = 0.64 if nsfw_on else 0.60
-                base_top_p = 0.94 if nsfw_on else 0.95
+            base_tokens = 2200 if nsfw_on else 1800
 
-        elif phase >= 4:
-            base_temp = 1.0
+        # ✅ CAP defensivo
+        base_tokens = min(base_tokens, 3400)
+
+        # Decoding por cena
+        if conflict_now:
+            base_temp = 0.62 if nsfw_on else 0.58
+            base_top_p = 0.90
+        elif looks_factual:
+            base_temp = 0.55
             base_top_p = 0.92
-
-        elif phase == 3:
-            base_temp = 0.84
-            base_top_p = 0.93
-
-        elif phase == 2:
-            base_temp = 0.80
-            base_top_p = 0.95
-
         else:
-            base_temp = 0.74
-            base_top_p = 0.96
+            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
+            if phase == 5:
+                if cooldown:
+                    base_temp = 0.58 if nsfw_on else 0.55
+                    base_top_p = 0.93 if nsfw_on else 0.94
+                else:
+                    base_temp = 0.64 if nsfw_on else 0.60
+                    base_top_p = 0.94 if nsfw_on else 0.95
+            elif phase >= 4:
+                base_temp = 1.0
+                base_top_p = 0.92
+            elif phase == 3:
+                base_temp = 0.84
+                base_top_p = 0.93
+            elif phase == 2:
+                base_temp = 0.80
+                base_top_p = 0.95
+            else:
+                base_temp = 0.74
+                base_top_p = 0.96
 
-    # ==========================
-    # Penalidades
-    # ==========================
-    if looks_factual or conflict_now:
-        extra = {
-            "presence_penalty": 0.25,
-            "frequency_penalty": 0.10,
-            "repetition_penalty": 1.05,
-        }
+                # Penalidades: variam por tipo de cena
+        if looks_factual or conflict_now:
+            extra = {
+                "presence_penalty": 0.25,
+                "frequency_penalty": 0.10,
+                "repetition_penalty": 1.05,
+            }
+        elif nsfw_on and phase >= 4:
+            # clímax: permite repetição e foco no corpo/ritmo
+            extra = {
+                "presence_penalty": 0.15,
+                "frequency_penalty": 0.05,
+                "repetition_penalty": 1.03,
+            }
+        else:
+            extra = {
+                "presence_penalty": 0.30,
+                "frequency_penalty": 0.12,
+                "repetition_penalty": 1.05,
+            }
 
-    elif nsfw_on and phase >= 4:
-        extra = {
-            "presence_penalty": 0.15,
-            "frequency_penalty": 0.05,
-            "repetition_penalty": 1.03,
-        }
-
-    else:
-        extra = {
-            "presence_penalty": 0.30,
-            "frequency_penalty": 0.12,
-            "repetition_penalty": 1.05,
-        }
-
-    return [
-        {
-            "model": model,
-            "temperature": base_temp,
-            "top_p": base_top_p,
-            "max_tokens": base_tokens,
-            "extra": extra,
-        },
-        {
-            "model": model,
-            "temperature": max(0.45, base_temp - 0.10),
-            "top_p": min(0.97, base_top_p + 0.02),
-            "max_tokens": base_tokens,
-            "extra": extra,
-        },
-        {
-            "model": model,
-            "temperature": max(0.40, base_temp - 0.20),
-            "top_p": min(0.98, base_top_p + 0.03),
-            "max_tokens": base_tokens,
-            "extra": extra,
-        },
-    ]
+        return [
+            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
+        ]
 
 
     # ======================================================
@@ -4625,7 +4619,7 @@ def _build_attempt_plan(
         user_text: str,
         phase: int,
         nsfw_on: bool,
-        nsfw_profile: str,  # ✅ NOVO
+        nsfw_profile: str,
         timeline: str,
         allow_third_party_seduction: bool,
         diag: _Diag,
@@ -4781,7 +4775,6 @@ def _build_attempt_plan(
         if not texto2:
             texto = _trim_scene_finalization(texto)
             return texto, used_model
-        
         # ======================================================
         # 🔥 LOOP DE REGENERAÇÃO PARA VIOLAÇÕES CRÍTICAS
         # ======================================================
@@ -4845,6 +4838,7 @@ def _build_attempt_plan(
                         
                 except Exception as e:
                     logger.error(f"Erro na força máxima: {e}")        
+        
         texto2 = _trim_scene_finalization(texto2)
         return texto2, used_model2
     @staticmethod
