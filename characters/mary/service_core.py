@@ -2895,17 +2895,25 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
 # ==========================================================
 # ✅ Estado Atual (4 fixas + 2 opcionais)
 # ==========================================================
-def _fact_str(facts: Dict[str, Any], key: str) -> str:
+def _fact_str(facts: Dict[str, Any], dotted_key: str) -> str:
     try:
-        v = (facts or {}).get(key, "")
-        if v is None:
+        cur: Any = facts or {}
+        for part in (dotted_key or "").split("."):
+            if not isinstance(cur, dict) or part not in cur:
+                return ""
+            cur = cur[part]
+
+        if cur is None:
             return ""
-        if isinstance(v, (list, tuple)):
-            v = ", ".join(str(x).strip() for x in v if str(x).strip())
-        return str(v).strip()
+
+        if isinstance(cur, (list, tuple)):
+            cur = ", ".join(str(x).strip() for x in cur if str(x).strip())
+
+        return str(cur).strip()
+
     except Exception:
         return ""
-
+        
 def _render_state_block(facts: Dict[str, Any]) -> str:
     local = _fact_str(facts, "state.local")
     roupa = _fact_str(facts, "state.roupa")
@@ -3526,6 +3534,10 @@ class MaryService(BaseCharacter):
 
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
+        state_block = _render_state_block(facts)
+        state_section = ""
+        if isinstance(state_block, str) and state_block.strip():
+            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
 
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
