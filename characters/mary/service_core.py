@@ -333,63 +333,60 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
-def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
+def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
     """
-    Prioridade:
-    1) override explícito (param)
-    2) toggle do sidebar/session_state (novo e legado)
-    3) fallback para implementação unificada do core
+    Fonte única (ordem de prioridade):
+    1) override explícito (parâmetro)
+    2) session_state (sidebar) -> mary_nsfw_on
+    3) facts persistido -> mary.nsfw (ou mary.nsfw::<timeline>)
     """
-    # 1) override do chamador
-    if isinstance(nsfw_override, bool):
-        return nsfw_override
+    tl = (timeline or "").strip().lower()
 
-    # 2) session_state (novo com namespace)
-    v_new = _ss_get(f"{_SS_PREFIX}nsfw", None)
-    if isinstance(v_new, bool):
-        return v_new
+    # 1) override vence tudo, mas não deveria "desligar" sem querer.
+    if nsfw_override is not None:
+        return bool(nsfw_override)
 
-    # 2b) compat legado (sem namespace)
-    v_old = _ss_get("mary_nsfw", None)
-    if isinstance(v_old, bool):
-        return v_old
+    # 2) sidebar (estado vivo)
+    try:
+        if "mary_nsfw_on" in st.session_state:
+            return bool(st.session_state.get("mary_nsfw_on", False))
+    except Exception:
+        pass
 
-    v_old2 = _ss_get("nsfw", None)
-    if isinstance(v_old2, bool):
-        return v_old2
-
-    # 3) fallback core
-    return nsfw_enabled_unified(usuario_key, nsfw_override=None, timeline=timeline)
-    
-def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
-    if not nsfw_on:
+    # 3) facts persistido
+    facts = get_facts(usuario_key) or {}
+    if not isinstance(facts, dict):
         return False
 
-    # 1) chave nova com namespace
-    v_new = _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", None)
-    if isinstance(v_new, bool):
-        return v_new
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
 
-    # 2) compat legado (sem namespace)
-    v_old = _ss_get("mary_allow_third_party_seduction", None)
-    if isinstance(v_old, bool):
-        return v_old
+    # se você quiser chave por timeline, habilite esta leitura:
+    if tl:
+        k_tl = f"nsfw::{tl}"
+        if k_tl in mary:
+            return bool(mary.get(k_tl))
 
-    v_old2 = _ss_get("mary_allow_third_party", None)
-    if isinstance(v_old2, bool):
-        return v_old2
+    # fallback global
+    return bool(mary.get("nsfw", False))
 
-    # 3) modo antigo (bool ou string)
-    v_mode = _ss_get("mary_third_party_mode", None)
-    if isinstance(v_mode, bool):
-        return v_mode
 
-    if isinstance(v_mode, str):
-        s = v_mode.strip().lower()
-        if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
-            return True
+def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
+    """
+    Se NSFW OFF, terceiros NÃO pode ficar True persistido.
+    """
+    facts = get_facts(usuario_key) or {}
+    if not isinstance(facts, dict):
+        return
 
-    return False
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    changed = False
+
+    if not nsfw_on and bool(mary.get("allow_third_party_seduction", False)):
+        mary["allow_third_party_seduction"] = False
+        changed = True
+
+    if changed:
+        set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_enforce_consistency"})
 # ==========================================================
 # NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
 # ==========================================================
@@ -3312,55 +3309,90 @@ def _update_tp_arc_for_turn(
     prompt: str,
     texto: str,
     allow_third_party: bool,
+    nsfw_on: bool,
 ) -> Dict[str, Any]:
-    """
-    Atualiza fase/tensão/culpa e persiste.
-    Agora: respeita anchor dinâmico.
-      - anchor alto  -> mais difícil subir tensão/fase; decay mais forte
-      - anchor baixo -> mais fácil subir tensão/fase; decay mais fraco (mais permissiva)
-    """
+    """Atualiza fase/tensão/culpa e persiste. Respeita anchor dinâmico."""
     arc = _get_tp_arc_state(facts, timeline)
     ev = _tp_arc_event(prompt, texto)
 
-    anchor = _clamp01(arc.get("anchor", 0.85))
-    freedom = _clamp01(1.0 - anchor)  # 0.15 quando anchor=0.85, até ~0.55 quando anchor=0.45
+    # Estado efetivo
+    allow_eff = bool(nsfw_on and allow_third_party)
 
-    # “boost” de escalada com terceiros ON
-    # (anchor menor => sobe mais rápido)
-    boost = 1.0 + (freedom * 1.6)  # 1.24 .. 1.88 aprox
+    anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
+    # liberdade cresce quando anchor cai
+    freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.55 (livre)
 
-    # thresholds mais baixos quando anchor cai (fase sobe antes)
-    th3 = max(0.55, 0.80 - (freedom * 0.25))  # para fase >=3
-    th2 = max(0.35, 0.55 - (freedom * 0.20))  # para fase >=2
+    # limites por anchor (travamento “lógico”)
+    if anchor >= 0.75:
+        max_phase_allowed = 2   # não deixa ir pra “risco real” fácil
+        test_gain = 0.12        # tensão sobe menos
+        guilt_gain = 0.08
+    elif anchor >= 0.60:
+        max_phase_allowed = 3
+        test_gain = 0.18
+        guilt_gain = 0.10
+    else:
+        max_phase_allowed = 4
+        test_gain = 0.24
+        guilt_gain = 0.12
 
-    if not allow_third_party:
-        # OFF => volta para seguro, e também reancora tensão/culpa
+    # OFF: volta ao seguro e reduz tudo
+    if not allow_eff:
         if arc["phase"] > 0:
             arc["phase"] = max(0, arc["phase"] - 1)
-
-        arc["tension"] = _clamp01(arc["tension"] * 0.80)
-        arc["guilt"] = _clamp01(arc["guilt"] * 0.85)
-
+        arc["tension"] = _clamp01(float(arc["tension"]) * 0.85)
+        arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.90)
         arc["last"] = "third_party_off"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
+    # ON:
     if ev == "test":
-        # sobe tensão; culpa sobe menos quando anchor está baixo (mais “solta”, menos “aftercare moral” automático)
-        arc["tension"] = _clamp01(arc["tension"] + (0.20 * boost))
-        arc["guilt"] = _clamp01(arc["guilt"] + (0.10 * (1.0 - freedom * 0.5)))
+        # ganho depende do freedom (quanto mais livre, mais rápido sobe)
+        arc["tension"] = _clamp01(float(arc["tension"]) + test_gain * (0.75 + freedom))
+        arc["guilt"] = _clamp01(float(arc["guilt"]) + guilt_gain * (0.65 + freedom))
 
-        if arc["tension"] >= th3:
+        t = float(arc["tension"])
+        if t >= 0.80:
             arc["phase"] = max(arc["phase"], 3)
-        elif arc["tension"] >= th2:
+        elif t >= 0.55:
             arc["phase"] = max(arc["phase"], 2)
         else:
             arc["phase"] = max(arc["phase"], 1)
+
+        # respeita o teto por anchor
+        arc["phase"] = min(int(arc["phase"]), int(max_phase_allowed))
 
         arc["last"] = "test"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
+    if ev == "return":
+        # retorno reduz tudo; se anchor estiver alto, “reconstrução” é mais forte
+        k_t = 0.55 if anchor < 0.70 else 0.45
+        k_g = 0.60 if anchor < 0.70 else 0.50
+        arc["tension"] = _clamp01(float(arc["tension"]) * k_t)
+        arc["guilt"] = _clamp01(float(arc["guilt"]) * k_g)
+
+        # fase 4 só faz sentido se houver tensão baixa E anchor alto o bastante
+        if float(arc["tension"]) <= 0.35 and anchor >= 0.70:
+            arc["phase"] = 4
+        else:
+            arc["phase"] = max(int(arc["phase"]), 2)
+
+        arc["last"] = "return"
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    # none: decai leve, mas sem “teleporte”
+    arc["tension"] = _clamp01(float(arc["tension"]) * 0.92)
+    arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.95)
+    if float(arc["tension"]) < 0.25 and int(arc["phase"]) in (1, 2):
+        arc["phase"] = 0
+
+    arc["last"] = "none"
+    _save_tp_arc_state(usuario_key, timeline, arc)
+    return arc
     if ev == "return":
         # retorno reduz, mas quanto mais “solta” (anchor baixo), menos o retorno “apaga” tensão/culpa
         t_mul = min(0.80, 0.55 + (freedom * 0.30))
@@ -3576,38 +3608,90 @@ class MaryService(BaseCharacter):
         _ss_set("mary_nsfw_profile", nsfw_profile)
 
         # ==========================================================
-        # 🔒 ANCHOR DINÂMICO (toggle terceiros ON/OFF) — NO ARCO CERTO
-        # - ON: reduz anchor automaticamente (Mary mais permissiva)
-        # - OFF: restaura anchor original
-        # Persistência real: "arc.third_party::<timeline>"
+        # ✅ CONSISTÊNCIA: se NSFW OFF, terceiros OFF (facts)
+        # (evita mary.nsfw=false e allow_third_party=true)
         # ==========================================================
         try:
-            tp_arc = _get_tp_arc_state(facts, timeline_final)
+            from core.nsfw import enforce_third_party_consistency
+            enforce_third_party_consistency(usuario_key, timeline=timeline_final, nsfw_on=bool(nsfw_on))
+        except Exception:
+            pass
 
-            # defaults
+        # ==========================================================
+        # 🔒 ARCO TERCEIROS (1 BLOCO SÓ): anchor dinâmico + anti "fase fantasma"
+        # Regras:
+        # - NSFW OFF OU terceiros OFF => phase=0, tension=0, guilt=0, anchor restaurado
+        # - NSFW ON + terceiros ON   => anchor cai suavemente até target (mais permissiva)
+        #                              e se phase>=4 sem evidência => degrada para phase=1
+        # ==========================================================
+        try:
+            tl_norm = (timeline_final or "").strip().lower() or "cumplice"
+            arc_key = f"third_party::{tl_norm}"
+
+            arc_root = facts.get("arc") if isinstance(facts, dict) else None
+            if not isinstance(arc_root, dict):
+                arc_root = {}
+
+            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
+
+            # defaults (não remove âncora)
             if "anchor" not in tp_arc:
                 tp_arc["anchor"] = 0.85
 
-            # Backup do anchor original (1x)
+            # backup do anchor original (1x)
             if "anchor_backup" not in tp_arc:
                 tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
 
+            # estado efetivo do toggle
             allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
 
-            if allow_tp:
-                target = 0.45
-                current = float(tp_arc.get("anchor", 0.85) or 0.85)
-                new_anchor = max(target, current - 0.10)  # cai 0.10 por reply até o mínimo
-                tp_arc["anchor"] = round(new_anchor, 2)
-                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
-            else:
+            # evidência mínima de ato real com terceiro NO PROMPT ATUAL
+            _re_thirdparty_act = re.compile(
+                r"(?is)\b("
+                r"massagista|barman|gar[çc]om|seguran[çc]a|ficante|ex|"
+                r"beijei\s+ele|ele\s+me\s+beijou|me\s+pegou|me\s+tocou|"
+                r"tran(sei|sar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu"
+                r")\b"
+            )
+            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
+
+            # --- OFF: limpa e restaura anchor ---
+            if not allow_tp:
+                tp_arc["phase"] = 0
+                tp_arc["tension"] = 0
+                tp_arc["guilt"] = 0
+                tp_arc["last"] = "third_party_off"
+
                 backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
                 tp_arc["anchor"] = round(backup, 2)
                 tp_arc["last_anchor_mode"] = "tp_off_restore"
 
-            _save_tp_arc_state(usuario_key, timeline_final, tp_arc)
+            # --- ON: anchor cai suave + anti-fantasma ---
+            else:
+                # anchor dinâmico
+                target = 0.45
+                current = float(tp_arc.get("anchor", 0.85) or 0.85)
+                new_anchor = max(target, current - 0.10)
+                tp_arc["anchor"] = round(new_anchor, 2)
+                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
+
+                # anti "pós-ato" fantasma:
+                cur_phase = int(tp_arc.get("phase", 0) or 0)
+                if cur_phase >= 4 and not thirdparty_evidence_now:
+                    tp_arc["phase"] = 1
+                    # mantém tensão se já existe, mas zera culpa (sem aftermath)
+                    tp_arc["tension"] = float(tp_arc.get("tension", 0) or 0)
+                    tp_arc["guilt"] = 0
+                    tp_arc["last"] = "degraded_no_evidence"
+
+            # persiste 1 vez
+            arc_root[arc_key] = tp_arc
+            facts["arc"] = arc_root
+            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_arc_master"})
         except Exception:
             pass
+
+        # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
@@ -4573,11 +4657,12 @@ class MaryService(BaseCharacter):
                 try:
                     _update_tp_arc_for_turn(
                         usuario_key=usuario_key,
-                        facts=facts or {},
+                        facts=facts,
                         timeline=timeline_final,
-                        prompt=prompt or "",
-                        texto=texto or "",
-                        allow_third_party=bool(allow_third_party_seduction_final and nsfw_on),
+                        prompt=prompt,
+                        texto=texto,
+                        allow_third_party=allow_third_party_seduction_final,
+                        nsfw_on=nsfw_on,
                     )
                 except Exception:
                     pass
