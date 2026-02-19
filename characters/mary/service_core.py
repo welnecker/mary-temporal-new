@@ -3229,7 +3229,7 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
         "phase": int(arc.get("phase") or 0),
         "tension": _clamp01(arc.get("tension", 0.0)),
         "guilt": _clamp01(arc.get("guilt", 0.0)),
-        "anchor": _clamp01(arc.get("anchor", 0.85)),
+        "anchor": _clamp01(arc.get("anchor", 0.45)),
         "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
     }
 
@@ -3348,13 +3348,18 @@ def _update_tp_arc_for_turn(
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # 🔄 NONE (decay leve)
+    # none: decai leve
     arc["tension"] = _clamp01(arc["tension"] * 0.92)
     arc["guilt"] = _clamp01(arc["guilt"] * 0.95)
-
+    
+    # 🔥 CORREÇÃO REAL
     if arc["tension"] < 0.25:
-        arc["phase"] = 0
-
+        if arc["phase"] in (1, 2):
+            arc["phase"] = 0
+        elif arc["phase"] >= 3:
+            # fase alta sem tensão não faz sentido
+            arc["phase"] = 1
+    
     arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
