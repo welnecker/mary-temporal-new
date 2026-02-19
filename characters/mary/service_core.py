@@ -3550,6 +3550,54 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=bool(allow_third_party_seduction_final),
         )
         _ss_set("mary_nsfw_profile", nsfw_profile)
+
+        # ==========================================================
+        # 🔒 ANCHOR DINÂMICO (toggle terceiros ON/OFF)
+        # - ON: reduz anchor automaticamente (Mary mais permissiva)
+        # - OFF: restaura anchor original
+        # ==========================================================
+        try:
+            tl_norm = (timeline_final or "").strip().lower() or "cumplice"
+            arc_key = f"third_party::{tl_norm}"
+        
+            arc_root = facts.get("arc") if isinstance(facts, dict) else None
+            if not isinstance(arc_root, dict):
+                arc_root = {}
+        
+            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
+            # defaults
+            if "anchor" not in tp_arc:
+                tp_arc["anchor"] = 0.85
+        
+            # Backup do anchor original (1x)
+            if "anchor_backup" not in tp_arc:
+                tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
+        
+            # Regras
+            allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
+        
+            if allow_tp:
+                # alvo de liberdade (ajuste se quiser)
+                target = 0.45
+        
+                # queda suave por turno (evita "teleporte emocional")
+                current = float(tp_arc.get("anchor", 0.85) or 0.85)
+                new_anchor = max(target, current - 0.10)  # cai 0.10 por reply até o mínimo target
+        
+                tp_arc["anchor"] = round(new_anchor, 2)
+                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
+        
+            else:
+                # restaura ao original
+                backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
+                tp_arc["anchor"] = round(backup, 2)
+                tp_arc["last_anchor_mode"] = "tp_off_restore"
+        
+            arc_root[arc_key] = tp_arc
+            facts["arc"] = arc_root
+            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_anchor_auto"})
+        except Exception:
+            pass
         
         # ==========================================================
         # 🔒 BLOCO ROBUSTO — CONTROLE ABSOLUTO DO ARCO DE TERCEIROS
