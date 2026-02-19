@@ -3441,66 +3441,56 @@ class MaryService(BaseCharacter):
 
         # 5) Cena paralela (✅ NÃO se o usuário mudou a cena explicitamente)
         facts_pre = cached_get_facts(usuario_key)
-        scene_locked = _scene_is_locked(facts_pre)
-        scene_parallel = bool(scene_locked and _detect_scene_violation(prompt) and not user_explicit_scene_change)
-
+        scene_locked_pre = _scene_is_locked(facts_pre)
+        scene_parallel = bool(scene_locked_pre and _detect_scene_violation(prompt) and not user_explicit_scene_change)
+        
         # 6) Contexto base
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
-
+        
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
-
+        
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
-
+        
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-
+        
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
         except Exception:
             pass
-
+        
         # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
             if not isinstance(mary_fact, dict):
                 mary_fact = {}
-
+        
             tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-
+        
             # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
             if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
                 mary_fact[tl_key] = "nao_virgem"
                 mary_fact["virginity"] = "nao_virgem"  # fallback global para leituras antigas
                 facts["mary"] = mary_fact  # atualiza o dict em memória (mesmo turno)
-
+        
                 # persiste nos facts para o próximo turno
                 set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
         except Exception:
             pass
         
-                
-        # só agora gera o bloco de relacionamento
-        rel_block = rel_state_to_prompt_block(rel_state)
-        scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        scene_locked = _scene_is_locked(facts)
-        
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
-        )
-
+        # ==========================================================
+        # ✅ NSFW + TOGGLE TERCEIROS (calcular ANTES de usar)
+        # ==========================================================
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
-
+        
         nsfw_hard_block = ""
         if nsfw_on:
             nsfw_hard_block = """
@@ -3513,7 +3503,7 @@ class MaryService(BaseCharacter):
         - Corpo antes de emoção. Fala curta. Ação primeiro.
         """.strip()
         
-        # ✅ TERCEIROS: agora respeita o toggle da UI (override) quando NSFW está ON
+        # ✅ TERCEIROS: respeita o toggle da UI (override) quando NSFW está ON
         if not nsfw_on:
             allow_third_party_seduction_final = False
         elif allow_third_party_seduction is None:
@@ -3521,27 +3511,101 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
         else:
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
-
+        
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
-
+        
         nsfw_profile = _nsfw_profile(
             nsfw_on=bool(nsfw_on),
             allow_third_party_seduction=bool(allow_third_party_seduction_final),
         )
         _ss_set("mary_nsfw_profile", nsfw_profile)
-
-
-
+        
+        # ==========================================================
+        # 🔒 BLOCO ROBUSTO — CONTROLE ABSOLUTO DO ARCO DE TERCEIROS
+        # Regras:
+        # - Toggle OFF (ou NSFW OFF) => phase=0 + zera tensões (não pode "clima pós-ato")
+        # - Toggle ON => NÃO inventa passado. Não sobe fase aqui. Só impede "fase alta fantasma".
+        # - Se fase estiver alta sem evidência recente, degrada para um nível seguro (tensão) em vez de "pós-ato".
+        # ==========================================================
+        try:
+            tl_norm = (timeline_final or "").strip().lower()
+            arc_key = f"third_party::{tl_norm}"
+        
+            arc_root = facts.get("arc") if isinstance(facts, dict) else None
+            if not isinstance(arc_root, dict):
+                arc_root = {}
+        
+            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
+            current_tp_phase = int(tp_arc.get("phase", 0) or 0)
+        
+            # Evidência "recente" (somente no prompt atual) de ato real com terceiro.
+            # (sem depender de função externa)
+            _re_thirdparty_act = re.compile(
+                r"(?is)\b("
+                r"com\s+ele|com\s+outro|com\s+um\s+cara|com\s+um\s+homem|"
+                r"massagista|barman|gar[çc]om|seguran[çc]a|ex|ficante|"
+                r"ele\s+me\s+beijou|beijei\s+ele|me\s+pegou|me\s+tocou|"
+                r"trans(ei|ar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu|"
+                r"m[eê]n(stru|s)??\b"  # (leve; pode remover se quiser)
+                r")\b"
+            )
+        
+            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
+        
+            # 1) Toggle OFF (ou NSFW OFF) => trava e limpa
+            if (not nsfw_on) or (not allow_third_party_seduction_final):
+                if current_tp_phase != 0 or any(tp_arc.get(k) for k in ("tension", "guilt")):
+                    tp_arc["phase"] = 0
+                    tp_arc["tension"] = 0
+                    tp_arc["guilt"] = 0
+                    tp_arc["last"] = "third_party_off"
+                    arc_root[arc_key] = tp_arc
+                    facts["arc"] = arc_root
+                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_auto_lock"})
+        
+            # 2) Toggle ON + NSFW ON => liberdade, mas sem “passado fantasma”
+            else:
+                # Se veio fase alta (>=4) sem evidência NO prompt atual,
+                # isso costuma causar "clima pós-ato". Então degradamos.
+                if current_tp_phase >= 4 and not thirdparty_evidence_now:
+                    # degrade para fase 1 (tensão/curiosidade) e zera culpa (sem aftermath)
+                    tp_arc["phase"] = 1
+                    tp_arc["tension"] = int(tp_arc.get("tension", 0) or 0)  # mantém se existir
+                    tp_arc["guilt"] = 0
+                    tp_arc["last"] = "degraded_no_evidence"
+                    arc_root[arc_key] = tp_arc
+                    facts["arc"] = arc_root
+                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_degrade_no_evidence"})
+        
+                # Se fase está 2/3 sem evidência, mantém (é só tensão).
+                # Se houver evidência, NÃO sobe fase aqui: quem sobe é o updater do arco no fim do turno.
+        except Exception:
+            pass
+        
+        # só agora gera o bloco de relacionamento
+        rel_block = rel_state_to_prompt_block(rel_state)
+        
+        scene_loc, scene_time, scene_action = _get_scene_state(facts)
+        scene_locked = _scene_is_locked(facts)
+        
+        spatial_context = _build_spatial_context(
+            scene_loc,
+            scene_time,
+            scene_action,
+            locked=scene_locked,
+        )
+        
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
+        
         state_block = _render_state_block(facts)
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-
+        
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
-
+        
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
