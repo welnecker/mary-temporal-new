@@ -334,8 +334,33 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
 def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
-    return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
+    """
+    Prioridade:
+    1) override explícito (param)
+    2) toggle do sidebar/session_state (novo e legado)
+    3) fallback para implementação unificada do core
+    """
+    # 1) override do chamador
+    if isinstance(nsfw_override, bool):
+        return nsfw_override
 
+    # 2) session_state (novo com namespace)
+    v_new = _ss_get(f"{_SS_PREFIX}nsfw", None)
+    if isinstance(v_new, bool):
+        return v_new
+
+    # 2b) compat legado (sem namespace)
+    v_old = _ss_get("mary_nsfw", None)
+    if isinstance(v_old, bool):
+        return v_old
+
+    v_old2 = _ss_get("nsfw", None)
+    if isinstance(v_old2, bool):
+        return v_old2
+
+    # 3) fallback core
+    return nsfw_enabled_unified(usuario_key, nsfw_override=None, timeline=timeline)
+    
 def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
     if not nsfw_on:
         return False
@@ -3213,32 +3238,30 @@ def _tp_arc_key(timeline: str) -> str:
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    """Carrega o arco de terceiros (persistido em facts). Preserva chaves extras (ex: anchor_backup)."""
     if not isinstance(facts, dict):
         facts = {}
 
-    arc_root = facts.get("arc")
-    if not isinstance(arc_root, dict):
-        arc_root = {}
+    raw = facts.get(_tp_arc_key(timeline))
+    if not isinstance(raw, dict):
+        raw = {}
 
-    arc_key = _tp_arc_key(timeline)
-    arc = arc_root.get(arc_key)
-    if not isinstance(arc, dict):
-        arc = {}
+    out = dict(raw)  # preserva extras (anchor_backup, last_anchor_mode, etc.)
 
-    out = {
-        "phase": int(arc.get("phase") or 0),
-        "tension": _clamp01(arc.get("tension", 0.0)),
-        "guilt": _clamp01(arc.get("guilt", 0.0)),
-        "anchor": _clamp01(arc.get("anchor", 0.45)),
-        "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
-    }
+    # defaults / normalização
+    out["phase"] = int(out.get("phase") or 0)
+    out["tension"] = _clamp01(out.get("tension", 0.0))
+    out["guilt"] = _clamp01(out.get("guilt", 0.0))
+    out["anchor"] = _clamp01(out.get("anchor", 0.85))
+    out["last"] = out.get("last") if isinstance(out.get("last"), str) else ""
 
+    # limites
     if out["phase"] < 0:
         out["phase"] = 0
     if out["phase"] > 4:
         out["phase"] = 4
-    return out
 
+    return out
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
     try:
@@ -3292,143 +3315,79 @@ def _update_tp_arc_for_turn(
 ) -> Dict[str, Any]:
     """
     Atualiza fase/tensão/culpa e persiste.
-    ✅ Respeita anchor dinâmico (quanto menor, mais permissiva/volátil).
-    ✅ Nunca remove a âncora.
-    ✅ Usa storage correto via _get_tp_arc_state / _save_tp_arc_state.
+    Agora: respeita anchor dinâmico.
+      - anchor alto  -> mais difícil subir tensão/fase; decay mais forte
+      - anchor baixo -> mais fácil subir tensão/fase; decay mais fraco (mais permissiva)
     """
-    arc = _get_tp_arc_state(facts or {}, timeline)
+    arc = _get_tp_arc_state(facts, timeline)
     ev = _tp_arc_event(prompt, texto)
 
-    # ----------------------------
-    # Defaults / saneamento
-    # ----------------------------
-    try:
-        arc["phase"] = int(arc.get("phase", 0) or 0)
-    except Exception:
-        arc["phase"] = 0
+    anchor = _clamp01(arc.get("anchor", 0.85))
+    freedom = _clamp01(1.0 - anchor)  # 0.15 quando anchor=0.85, até ~0.55 quando anchor=0.45
 
-    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
-    arc["guilt"]   = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
+    # “boost” de escalada com terceiros ON
+    # (anchor menor => sobe mais rápido)
+    boost = 1.0 + (freedom * 1.6)  # 1.24 .. 1.88 aprox
 
-    # Anchor e backup (não remove)
-    anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
-    arc.setdefault("anchor", anchor)
-    if "anchor_backup" not in arc:
-        arc["anchor_backup"] = anchor
+    # thresholds mais baixos quando anchor cai (fase sobe antes)
+    th3 = max(0.55, 0.80 - (freedom * 0.25))  # para fase >=3
+    th2 = max(0.35, 0.55 - (freedom * 0.20))  # para fase >=2
 
-    # ----------------------------
-    # Fatores derivados do anchor
-    # ----------------------------
-    # liberdade: 0 (anchor=1) → contida; 1 (anchor=0) → solta
-    freedom = _clamp01(1.0 - anchor)
-
-    # Quanto a tensão sobe por evento "test"
-    # anchor alto => sobe pouco; anchor baixo => sobe mais
-    test_tension_gain = 0.12 + 0.18 * freedom      # 0.12 .. 0.30
-
-    # Culpa sobe mais quando anchor é alto (ela sente mais o vínculo)
-    test_guilt_gain = 0.06 + 0.14 * anchor         # 0.06 .. 0.20
-
-    # Decaimento quando não tem evento: anchor alto tende a reancorar e reduzir mais rápido
-    none_tension_decay = 0.90 - 0.08 * anchor       # 0.82 .. 0.90
-    none_guilt_decay   = 0.92 - 0.10 * anchor       # 0.82 .. 0.92
-
-    # Ao "return": anchor alto reduz ainda mais rápido (reancora forte)
-    return_tension_mul = 0.65 - 0.25 * anchor       # 0.40 .. 0.65
-    return_guilt_mul   = 0.70 - 0.25 * anchor       # 0.45 .. 0.70
-
-    # Escalada de fase: com anchor alto, precisa de mais tensão para subir
-    # (thresholds ficam mais exigentes)
-    th1 = 0.30 + 0.15 * anchor   # fase>=1
-    th2 = 0.55 + 0.15 * anchor   # fase>=2
-    th3 = 0.80 + 0.10 * anchor   # fase>=3
-
-    # Cap "soft" de fase: com anchor alto, não deixa ir para 3 sem tensão muito alta
-    # (evita “clima pós-ato” sem sustentação)
-    # anchor>=0.80 -> fase máxima 2, a menos que tension>=0.92
-    def _cap_phase_by_anchor(phase: int, tension: float) -> int:
-        if anchor >= 0.80 and tension < 0.92:
-            return min(phase, 2)
-        return phase
-
-    # ----------------------------
-    # Toggle OFF: volta seguro (gradual)
-    # ----------------------------
     if not allow_third_party:
-        # desliga terceiros => regressão + reancoragem forte
+        # OFF => volta para seguro, e também reancora tensão/culpa
         if arc["phase"] > 0:
             arc["phase"] = max(0, arc["phase"] - 1)
 
-        arc["tension"] = _clamp01(arc["tension"] * (0.80 - 0.15 * anchor))  # 0.65..0.80
-        arc["guilt"]   = _clamp01(arc["guilt"] * (0.85 - 0.20 * anchor))    # 0.65..0.85
+        arc["tension"] = _clamp01(arc["tension"] * 0.80)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.85)
 
         arc["last"] = "third_party_off"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # ----------------------------
-    # Evento: TEST (cutucada / provocação / risco leve)
-    # ----------------------------
     if ev == "test":
-        arc["tension"] = _clamp01(arc["tension"] + test_tension_gain)
-        arc["guilt"]   = _clamp01(arc["guilt"] + test_guilt_gain)
+        # sobe tensão; culpa sobe menos quando anchor está baixo (mais “solta”, menos “aftercare moral” automático)
+        arc["tension"] = _clamp01(arc["tension"] + (0.20 * boost))
+        arc["guilt"] = _clamp01(arc["guilt"] + (0.10 * (1.0 - freedom * 0.5)))
 
-        # fase sobe com tensão, mas respeita thresholds dependentes do anchor
-        t = arc["tension"]
-        if t >= th3:
+        if arc["tension"] >= th3:
             arc["phase"] = max(arc["phase"], 3)
-        elif t >= th2:
+        elif arc["tension"] >= th2:
             arc["phase"] = max(arc["phase"], 2)
-        elif t >= th1:
-            arc["phase"] = max(arc["phase"], 1)
         else:
-            arc["phase"] = max(arc["phase"], 0)
+            arc["phase"] = max(arc["phase"], 1)
 
-        arc["phase"] = _cap_phase_by_anchor(arc["phase"], arc["tension"])
         arc["last"] = "test"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # ----------------------------
-    # Evento: RETURN (volta/reconstrução com Janio)
-    # ----------------------------
     if ev == "return":
-        arc["tension"] = _clamp01(arc["tension"] * return_tension_mul)
-        arc["guilt"]   = _clamp01(arc["guilt"] * return_guilt_mul)
+        # retorno reduz, mas quanto mais “solta” (anchor baixo), menos o retorno “apaga” tensão/culpa
+        t_mul = min(0.80, 0.55 + (freedom * 0.30))
+        g_mul = min(0.85, 0.60 + (freedom * 0.25))
 
-        # Com anchor alto, o retorno tende a puxar phase para baixo (reancora).
-        # Com anchor baixo, pode manter "fase de tensão" (ela ainda está inquieta).
-        if anchor >= 0.70:
-            # reancora forte -> fase tende a 0/1
-            if arc["tension"] <= 0.25:
-                arc["phase"] = 0
-            else:
-                arc["phase"] = min(arc["phase"], 1)
-        else:
-            # anchor baixo: retorno não "cura" tudo
-            if arc["tension"] <= 0.20:
-                arc["phase"] = 1  # inquieta baixa, mas ainda permissiva
-            else:
-                arc["phase"] = max(arc["phase"], 1)
+        arc["tension"] = _clamp01(arc["tension"] * t_mul)
+        arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
 
+        arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(arc["phase"], 2)
         arc["last"] = "return"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # ----------------------------
-    # none: decai leve, mas anchor controla o ritmo
-    # ----------------------------
-    arc["tension"] = _clamp01(arc["tension"] * none_tension_decay)
-    arc["guilt"]   = _clamp01(arc["guilt"] * none_guilt_decay)
+    # none: decay leve (anchor baixo => decay menor)
+    d_mul = min(0.98, 0.92 + (freedom * 0.08))
+    g_mul = min(0.99, 0.95 + (freedom * 0.06))
 
-    # Se caiu muito, volta phase para estabilidade
+    arc["tension"] = _clamp01(arc["tension"] * d_mul)
+    arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
+
     if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
         arc["phase"] = 0
 
-    arc["phase"] = _cap_phase_by_anchor(arc["phase"], arc["tension"])
     arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
+    
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
     try:
@@ -3617,67 +3576,36 @@ class MaryService(BaseCharacter):
         _ss_set("mary_nsfw_profile", nsfw_profile)
 
         # ==========================================================
-        # 🔒 CONTROLE COMPLETO DO ARCO DE TERCEIROS + ANCHOR DINÂMICO
-        # - Compatível com formato real: arc.third_party::<timeline>
-        # - Nunca grava em facts["arc"]
+        # 🔒 ANCHOR DINÂMICO (toggle terceiros ON/OFF) — NO ARCO CERTO
+        # - ON: reduz anchor automaticamente (Mary mais permissiva)
+        # - OFF: restaura anchor original
+        # Persistência real: "arc.third_party::<timeline>"
         # ==========================================================
         try:
+            tp_arc = _get_tp_arc_state(facts, timeline_final)
+
+            # defaults
+            if "anchor" not in tp_arc:
+                tp_arc["anchor"] = 0.85
+
+            # Backup do anchor original (1x)
+            if "anchor_backup" not in tp_arc:
+                tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
+
             allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
 
-            # 🔎 Lê arco no formato correto
-            tp_arc = _get_tp_arc_state(facts or {}, timeline_final)
-
-            # -------- defaults seguros --------
-            tp_arc.setdefault("phase", 0)
-            tp_arc.setdefault("tension", 0.0)
-            tp_arc.setdefault("guilt", 0.0)
-            tp_arc.setdefault("anchor", 0.85)
-
-            # Backup único do anchor original
-            if "anchor_backup" not in tp_arc:
-                tp_arc["anchor_backup"] = float(tp_arc["anchor"])
-
-            # ======================================================
-            # 1️⃣ Toggle OFF
-            # ======================================================
-            if not allow_tp:
-                tp_arc["phase"] = 0
-                tp_arc["tension"] = 0.0
-                tp_arc["guilt"] = 0.0
-
-                tp_arc["anchor"] = round(float(tp_arc["anchor_backup"]), 2)
-                tp_arc["last"] = "third_party_off"
-                tp_arc["last_anchor_mode"] = "restore"
-
-            # ======================================================
-            # 2️⃣ Toggle ON
-            # ======================================================
-            else:
-                # 🔽 Anchor cai progressivamente
+            if allow_tp:
                 target = 0.45
-                step = 0.10
-
-                current = float(tp_arc.get("anchor", 0.85))
-                new_anchor = max(target, current - step)
-
+                current = float(tp_arc.get("anchor", 0.85) or 0.85)
+                new_anchor = max(target, current - 0.10)  # cai 0.10 por reply até o mínimo
                 tp_arc["anchor"] = round(new_anchor, 2)
-                tp_arc["last_anchor_mode"] = "auto_drop"
+                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
+            else:
+                backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
+                tp_arc["anchor"] = round(backup, 2)
+                tp_arc["last_anchor_mode"] = "tp_off_restore"
 
-                # Evita fase fantasma alta
-                if tp_arc["phase"] >= 4:
-                    tp_arc["phase"] = 1
-                    tp_arc["guilt"] = 0.0
-                    tp_arc["last"] = "degraded_no_evidence"
-
-            # 💾 Persiste corretamente
             _save_tp_arc_state(usuario_key, timeline_final, tp_arc)
-
-            # Atualiza facts em memória no mesmo turno
-            facts[_tp_arc_key(timeline_final)] = tp_arc
-
-            # Debug opcional
-            _ss_set("debug_tp_arc", tp_arc)
-
         except Exception:
             pass
         rel_block = rel_state_to_prompt_block(rel_state)
