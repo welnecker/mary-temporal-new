@@ -3209,39 +3209,30 @@ def _clamp01(x: float) -> float:
 
 def _tp_arc_key(timeline: str) -> str:
     tl = (timeline or "").strip().lower() or "cumplice"
-    return f"arc.third_party::{tl}"
-
-
-def _norm_virg(v: Optional[str]) -> Optional[str]:
-    if not isinstance(v, str):
-        return None
-    s = v.strip().lower()
-    if not s:
-        return None
-    if s in ("nao_virgem", "nao-virgem", "não virgem", "nao virgem", "naovirgem"):
-        return "nao_virgem"
-    if s in ("virgem", "virgin"):
-        return "virgem"
-    return s
+    return f"third_party::{tl}"
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
-    """Carrega o arco de terceiros (persistido em facts)."""
     if not isinstance(facts, dict):
         facts = {}
-    arc = facts.get(_tp_arc_key(timeline))
+
+    arc_root = facts.get("arc")
+    if not isinstance(arc_root, dict):
+        arc_root = {}
+
+    arc_key = _tp_arc_key(timeline)
+    arc = arc_root.get(arc_key)
     if not isinstance(arc, dict):
         arc = {}
 
-    # defaults (âncora forte por padrão)
     out = {
         "phase": int(arc.get("phase") or 0),
         "tension": _clamp01(arc.get("tension", 0.0)),
         "guilt": _clamp01(arc.get("guilt", 0.0)),
-        "anchor": _clamp01(arc.get("anchor", 0.85)),  # âncora em Janio (não abandona)
+        "anchor": _clamp01(arc.get("anchor", 0.85)),
         "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
     }
-    # limita fase
+
     if out["phase"] < 0:
         out["phase"] = 0
     if out["phase"] > 4:
@@ -3250,9 +3241,23 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
-    """Persiste o arco (boot-safe)."""
     try:
-        set_fact_safe(usuario_key, _tp_arc_key(timeline), arc, {"fonte": "tp_arc"})
+        arc_key = _tp_arc_key(timeline)
+
+        facts_now = cached_get_facts(usuario_key) or {}
+        if not isinstance(facts_now, dict):
+            facts_now = {}
+
+        arc_root = facts_now.get("arc")
+        if not isinstance(arc_root, dict):
+            arc_root = {}
+
+        # mantém anchor se já existir e vier vazio
+        if "anchor" not in arc and isinstance(arc_root.get(arc_key), dict) and "anchor" in arc_root.get(arc_key):
+            arc["anchor"] = arc_root[arc_key].get("anchor", 0.85)
+
+        arc_root[arc_key] = arc
+        set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "tp_arc"})
     except Exception:
         pass
 
@@ -3284,54 +3289,75 @@ def _update_tp_arc_for_turn(
     prompt: str,
     texto: str,
     allow_third_party: bool,
+    nsfw_on: bool,
 ) -> Dict[str, Any]:
-    """Atualiza fase/tensão/culpa e persiste. Nunca remove a âncora."""
+    """
+    Atualiza fase/tensão/culpa e persiste.
+    Só evolui se:
+    - NSFW ON
+    - Toggle ON
+    Nunca mantém fase 4 sem evidência real.
+    """
+
     arc = _get_tp_arc_state(facts, timeline)
     ev = _tp_arc_event(prompt, texto)
 
-    if not allow_third_party:
-        # se terceiros desligado, volta para fase segura gradualmente
-        if arc["phase"] > 0:
-            arc["phase"] = max(0, arc["phase"] - 1)
-        arc["tension"] = _clamp01(arc["tension"] * 0.85)
-        arc["guilt"] = _clamp01(arc["guilt"] * 0.90)
+    # 🔒 BLOQUEIO TOTAL
+    if (not nsfw_on) or (not allow_third_party):
+        arc["phase"] = 0
+        arc["tension"] = 0
+        arc["guilt"] = 0
         arc["last"] = "third_party_off"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
+    # 🔍 evidência real no turno
+    real_evidence = ev in ("test", "return")
+
+    # 🟡 Se fase 4 mas sem evidência real → degrada
+    if arc["phase"] >= 4 and not real_evidence:
+        arc["phase"] = 1
+        arc["tension"] = min(arc.get("tension", 0.0), 0.30)
+        arc["guilt"] = 0
+        arc["last"] = "degraded_no_evidence"
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    # 🔺 TESTE
     if ev == "test":
-        # sobe tensão; culpa sobe um pouco (risco)
         arc["tension"] = _clamp01(arc["tension"] + 0.20)
         arc["guilt"] = _clamp01(arc["guilt"] + 0.10)
-        # fase sobe com tensão
+
         if arc["tension"] >= 0.80:
-            arc["phase"] = max(arc["phase"], 3)
+            arc["phase"] = 3
         elif arc["tension"] >= 0.55:
-            arc["phase"] = max(arc["phase"], 2)
+            arc["phase"] = 2
         else:
-            arc["phase"] = max(arc["phase"], 1)
+            arc["phase"] = 1
+
         arc["last"] = "test"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
+    # 🔻 RETURN
     if ev == "return":
-        # retorno reduz tensão e culpa; entra em fase de reconstrução
         arc["tension"] = _clamp01(arc["tension"] * 0.55)
         arc["guilt"] = _clamp01(arc["guilt"] * 0.60)
-        arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(arc["phase"], 2)
+        arc["phase"] = 4
         arc["last"] = "return"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # none: decai leve
+    # 🔄 NONE (decay leve)
     arc["tension"] = _clamp01(arc["tension"] * 0.92)
     arc["guilt"] = _clamp01(arc["guilt"] * 0.95)
-    if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
+
+    if arc["tension"] < 0.25:
         arc["phase"] = 0
+
     arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
-
 
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
