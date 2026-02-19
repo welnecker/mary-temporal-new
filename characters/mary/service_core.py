@@ -2895,25 +2895,17 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
 # ==========================================================
 # ✅ Estado Atual (4 fixas + 2 opcionais)
 # ==========================================================
-def _fact_str(facts: Dict[str, Any], dotted_key: str) -> str:
+def _fact_str(facts: Dict[str, Any], key: str) -> str:
     try:
-        cur: Any = facts or {}
-        for part in (dotted_key or "").split("."):
-            if not isinstance(cur, dict) or part not in cur:
-                return ""
-            cur = cur[part]
-
-        if cur is None:
+        v = (facts or {}).get(key, "")
+        if v is None:
             return ""
-
-        if isinstance(cur, (list, tuple)):
-            cur = ", ".join(str(x).strip() for x in cur if str(x).strip())
-
-        return str(cur).strip()
-
+        if isinstance(v, (list, tuple)):
+            v = ", ".join(str(x).strip() for x in v if str(x).strip())
+        return str(v).strip()
     except Exception:
         return ""
-        
+
 def _render_state_block(facts: Dict[str, Any]) -> str:
     local = _fact_str(facts, "state.local")
     roupa = _fact_str(facts, "state.roupa")
@@ -3191,6 +3183,10 @@ class _Diag:
 # ==========================================================
 # SERVICE
 # ==========================================================
+class MaryService(BaseCharacter):
+    id = "mary"
+    display_name = "Mary"
+
     
 # ==========================================================
 # THIRD-PARTY ARC: persistência + gradiente + âncora (Janio)
@@ -3209,30 +3205,39 @@ def _clamp01(x: float) -> float:
 
 def _tp_arc_key(timeline: str) -> str:
     tl = (timeline or "").strip().lower() or "cumplice"
-    return f"third_party::{tl}"
+    return f"arc.third_party::{tl}"
+
+
+def _norm_virg(v: Optional[str]) -> Optional[str]:
+    if not isinstance(v, str):
+        return None
+    s = v.strip().lower()
+    if not s:
+        return None
+    if s in ("nao_virgem", "nao-virgem", "não virgem", "nao virgem", "naovirgem"):
+        return "nao_virgem"
+    if s in ("virgem", "virgin"):
+        return "virgem"
+    return s
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    """Carrega o arco de terceiros (persistido em facts)."""
     if not isinstance(facts, dict):
         facts = {}
-
-    arc_root = facts.get("arc")
-    if not isinstance(arc_root, dict):
-        arc_root = {}
-
-    arc_key = _tp_arc_key(timeline)
-    arc = arc_root.get(arc_key)
+    arc = facts.get(_tp_arc_key(timeline))
     if not isinstance(arc, dict):
         arc = {}
 
+    # defaults (âncora forte por padrão)
     out = {
         "phase": int(arc.get("phase") or 0),
         "tension": _clamp01(arc.get("tension", 0.0)),
         "guilt": _clamp01(arc.get("guilt", 0.0)),
-        "anchor": _clamp01(arc.get("anchor", 0.45)),
+        "anchor": _clamp01(arc.get("anchor", 0.85)),  # âncora em Janio (não abandona)
         "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
     }
-
+    # limita fase
     if out["phase"] < 0:
         out["phase"] = 0
     if out["phase"] > 4:
@@ -3241,23 +3246,9 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
+    """Persiste o arco (boot-safe)."""
     try:
-        arc_key = _tp_arc_key(timeline)
-
-        facts_now = cached_get_facts(usuario_key) or {}
-        if not isinstance(facts_now, dict):
-            facts_now = {}
-
-        arc_root = facts_now.get("arc")
-        if not isinstance(arc_root, dict):
-            arc_root = {}
-
-        # mantém anchor se já existir e vier vazio
-        if "anchor" not in arc and isinstance(arc_root.get(arc_key), dict) and "anchor" in arc_root.get(arc_key):
-            arc["anchor"] = arc_root[arc_key].get("anchor", 0.85)
-
-        arc_root[arc_key] = arc
-        set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "tp_arc"})
+        set_fact_safe(usuario_key, _tp_arc_key(timeline), arc, {"fonte": "tp_arc"})
     except Exception:
         pass
 
@@ -3289,61 +3280,50 @@ def _update_tp_arc_for_turn(
     prompt: str,
     texto: str,
     allow_third_party: bool,
-    nsfw_on: bool,
 ) -> Dict[str, Any]:
-    """
-    Atualiza fase/tensão/culpa e persiste.
-    Só evolui se:
-    - NSFW ON
-    - Toggle ON
-    Nunca mantém fase 4 sem evidência real.
-    """
-
+    """Atualiza fase/tensão/culpa e persiste. Nunca remove a âncora."""
     arc = _get_tp_arc_state(facts, timeline)
     ev = _tp_arc_event(prompt, texto)
 
-    # 🔒 BLOQUEIO TOTAL
-    if (not nsfw_on) or (not allow_third_party):
-        arc["phase"] = 0
-        arc["tension"] = 0
-        arc["guilt"] = 0
+    if not allow_third_party:
+        # se terceiros desligado, volta para fase segura gradualmente
+        if arc["phase"] > 0:
+            arc["phase"] = max(0, arc["phase"] - 1)
+        arc["tension"] = _clamp01(arc["tension"] * 0.85)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.90)
         arc["last"] = "third_party_off"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # 🔍 evidência real no turno
-    real_evidence = ev in ("test", "return")
-
-    # 🟡 Se fase 4 mas sem evidência real → degrada
-    if arc["phase"] >= 4 and not real_evidence:
-        arc["phase"] = 1
-        arc["tension"] = min(arc.get("tension", 0.0), 0.30)
-        arc["guilt"] = 0
-        arc["last"] = "degraded_no_evidence"
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
-
-    # 🔺 TESTE
     if ev == "test":
+        # sobe tensão; culpa sobe um pouco (risco)
         arc["tension"] = _clamp01(arc["tension"] + 0.20)
         arc["guilt"] = _clamp01(arc["guilt"] + 0.10)
-
+        # fase sobe com tensão
         if arc["tension"] >= 0.80:
-            arc["phase"] = 3
+            arc["phase"] = max(arc["phase"], 3)
         elif arc["tension"] >= 0.55:
-            arc["phase"] = 2
+            arc["phase"] = max(arc["phase"], 2)
         else:
-            arc["phase"] = 1
-
+            arc["phase"] = max(arc["phase"], 1)
         arc["last"] = "test"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # 🔻 RETURN
     if ev == "return":
+        # retorno reduz tensão e culpa; MAS "fase 4" só faz sentido
+        # se houve arco real com terceiros antes (fase >=2 ou culpa/tensão relevantes).
         arc["tension"] = _clamp01(arc["tension"] * 0.55)
         arc["guilt"] = _clamp01(arc["guilt"] * 0.60)
-        arc["phase"] = 4
+
+        had_real_tp = bool(int(arc.get("phase", 0) or 0) >= 2 or arc["tension"] >= 0.20 or arc["guilt"] >= 0.15 or arc.get("last") in ("test", "risk", "act"))
+        if had_real_tp:
+            # reconstrução pós-arco
+            arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(int(arc.get("phase", 0) or 0), 2)
+        else:
+            # sem histórico real: retorno = estabilidade
+            arc["phase"] = 0
+
         arc["last"] = "return"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
@@ -3351,18 +3331,12 @@ def _update_tp_arc_for_turn(
     # none: decai leve
     arc["tension"] = _clamp01(arc["tension"] * 0.92)
     arc["guilt"] = _clamp01(arc["guilt"] * 0.95)
-    
-    # 🔥 CORREÇÃO REAL
-    if arc["tension"] < 0.25:
-        if arc["phase"] in (1, 2):
-            arc["phase"] = 0
-        elif arc["phase"] >= 3:
-            # fase alta sem tensão não faz sentido
-            arc["phase"] = 1
-    
+    if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
+        arc["phase"] = 0
     arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
+
 
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
@@ -3406,11 +3380,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - Mesmo no risco: manter caminho de retorno e reconstrução.
 """.strip()
 
-class MaryService(BaseCharacter):
-    id = "mary"
-    display_name = "Mary"
-
-    def reply(
+def reply(
         self,
         user: str,
         model: str,
@@ -3472,56 +3442,66 @@ class MaryService(BaseCharacter):
 
         # 5) Cena paralela (✅ NÃO se o usuário mudou a cena explicitamente)
         facts_pre = cached_get_facts(usuario_key)
-        scene_locked_pre = _scene_is_locked(facts_pre)
-        scene_parallel = bool(scene_locked_pre and _detect_scene_violation(prompt) and not user_explicit_scene_change)
-        
+        scene_locked = _scene_is_locked(facts_pre)
+        scene_parallel = bool(scene_locked and _detect_scene_violation(prompt) and not user_explicit_scene_change)
+
         # 6) Contexto base
         persona_text, _ = get_persona(timeline_final)
         facts = cached_get_facts(usuario_key)
-        
+
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
-        
+
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
-        
+
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-        
+
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
         except Exception:
             pass
-        
+
         # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
             if not isinstance(mary_fact, dict):
                 mary_fact = {}
-        
+
             tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-        
+
             # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
             if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
                 mary_fact[tl_key] = "nao_virgem"
                 mary_fact["virginity"] = "nao_virgem"  # fallback global para leituras antigas
                 facts["mary"] = mary_fact  # atualiza o dict em memória (mesmo turno)
-        
+
                 # persiste nos facts para o próximo turno
                 set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
         except Exception:
             pass
         
-        # ==========================================================
-        # ✅ NSFW + TOGGLE TERCEIROS (calcular ANTES de usar)
-        # ==========================================================
+                
+        # só agora gera o bloco de relacionamento
+        rel_block = rel_state_to_prompt_block(rel_state)
+        scene_loc, scene_time, scene_action = _get_scene_state(facts)
+        scene_locked = _scene_is_locked(facts)
+        
+        spatial_context = _build_spatial_context(
+            scene_loc,
+            scene_time,
+            scene_action,
+            locked=scene_locked,
+        )
+
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
-        
+
         nsfw_hard_block = ""
         if nsfw_on:
             nsfw_hard_block = """
@@ -3534,7 +3514,7 @@ class MaryService(BaseCharacter):
         - Corpo antes de emoção. Fala curta. Ação primeiro.
         """.strip()
         
-        # ✅ TERCEIROS: respeita o toggle da UI (override) quando NSFW está ON
+        # ✅ TERCEIROS: agora respeita o toggle da UI (override) quando NSFW está ON
         if not nsfw_on:
             allow_third_party_seduction_final = False
         elif allow_third_party_seduction is None:
@@ -3542,149 +3522,105 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
         else:
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
-        
+
         _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
-        
+
         nsfw_profile = _nsfw_profile(
             nsfw_on=bool(nsfw_on),
             allow_third_party_seduction=bool(allow_third_party_seduction_final),
         )
         _ss_set("mary_nsfw_profile", nsfw_profile)
 
-        # ==========================================================
-        # 🔒 ANCHOR DINÂMICO (toggle terceiros ON/OFF)
-        # - ON: reduz anchor automaticamente (Mary mais permissiva)
-        # - OFF: restaura anchor original
-        # ==========================================================
+
+# ==========================================================
+# 🔒 TERCEIROS — NORMALIZAÇÃO + ANCHOR DINÂMICO (PRE-PROMPT)
+# Regras:
+# - NSFW OFF ou Toggle OFF => phase/tension/guilt = 0 e ANCHOR restaurado
+# - NSFW ON + Toggle ON    => ANCHOR cai automaticamente (mais permissiva),
+#                            mas nunca inventa passado: fase alta "fantasma" é rebaixada.
+# - Sempre atualiza o cache `facts::{usuario_key}` no mesmo turno.
+# ==========================================================
+try:
+    tl_norm = (timeline_final or "").strip().lower() or "cumplice"
+    arc_key = f"third_party::{tl_norm}"
+
+    arc_root = facts.get("arc") if isinstance(facts, dict) else None
+    if not isinstance(arc_root, dict):
+        arc_root = {}
+
+    tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
+
+    # defaults
+    tp_arc.setdefault("phase", 0)
+    tp_arc.setdefault("tension", 0.0)
+    tp_arc.setdefault("guilt", 0.0)
+    tp_arc.setdefault("anchor", 0.85)
+
+    # backup do anchor original (1x)
+    if "anchor_backup" not in tp_arc:
+        tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
+
+    allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
+
+    if not allow_tp:
+        # OFF: limpa e restaura âncora original
+        tp_arc["phase"] = 0
+        tp_arc["tension"] = 0.0
+        tp_arc["guilt"] = 0.0
+        tp_arc["anchor"] = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
+        tp_arc["last"] = "third_party_off"
+        tp_arc["last_anchor_mode"] = "tp_off_restore"
+    else:
+        # ON: rebaixa fase alta fantasma (evita "clima pós-ato" sem evento)
         try:
-            tl_norm = (timeline_final or "").strip().lower() or "cumplice"
-            arc_key = f"third_party::{tl_norm}"
-        
-            arc_root = facts.get("arc") if isinstance(facts, dict) else None
-            if not isinstance(arc_root, dict):
-                arc_root = {}
-        
-            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
-            # defaults
-            if "anchor" not in tp_arc:
-                tp_arc["anchor"] = 0.85
-        
-            # Backup do anchor original (1x)
-            if "anchor_backup" not in tp_arc:
-                tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
-        
-            # Regras
-            allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
-        
-            if allow_tp:
-                # alvo de liberdade (ajuste se quiser)
-                target = 0.45
-        
-                # queda suave por turno (evita "teleporte emocional")
-                current = float(tp_arc.get("anchor", 0.85) or 0.85)
-                new_anchor = max(target, current - 0.10)  # cai 0.10 por reply até o mínimo target
-        
-                tp_arc["anchor"] = round(new_anchor, 2)
-                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
-        
-            else:
-                # restaura ao original
-                backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
-                tp_arc["anchor"] = round(backup, 2)
-                tp_arc["last_anchor_mode"] = "tp_off_restore"
-        
-            arc_root[arc_key] = tp_arc
-            facts["arc"] = arc_root
-            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_anchor_auto"})
+            cur_phase = int(tp_arc.get("phase", 0) or 0)
         except Exception:
-            pass
-        
-        # ==========================================================
-        # 🔒 BLOCO ROBUSTO — CONTROLE ABSOLUTO DO ARCO DE TERCEIROS
-        # Regras:
-        # - Toggle OFF (ou NSFW OFF) => phase=0 + zera tensões (não pode "clima pós-ato")
-        # - Toggle ON => NÃO inventa passado. Não sobe fase aqui. Só impede "fase alta fantasma".
-        # - Se fase estiver alta sem evidência recente, degrada para um nível seguro (tensão) em vez de "pós-ato".
-        # ==========================================================
+            cur_phase = 0
+
+        # Se vier >=4 com tensão/culpa zeradas, é quase sempre resquício/bug -> rebaixa
+        if cur_phase >= 4 and float(tp_arc.get("tension", 0.0) or 0.0) <= 0.05 and float(tp_arc.get("guilt", 0.0) or 0.0) <= 0.05:
+            tp_arc["phase"] = 1
+            tp_arc["guilt"] = 0.0
+            tp_arc["last"] = "degraded_no_evidence"
+
+        # ANCHOR cai automaticamente enquanto ON (queda suave)
+        target = 0.45
         try:
-            tl_norm = (timeline_final or "").strip().lower()
-            arc_key = f"third_party::{tl_norm}"
-        
-            arc_root = facts.get("arc") if isinstance(facts, dict) else None
-            if not isinstance(arc_root, dict):
-                arc_root = {}
-        
-            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
-            current_tp_phase = int(tp_arc.get("phase", 0) or 0)
-        
-            # Evidência "recente" (somente no prompt atual) de ato real com terceiro.
-            # (sem depender de função externa)
-            _re_thirdparty_act = re.compile(
-                r"(?is)\b("
-                r"com\s+ele|com\s+outro|com\s+um\s+cara|com\s+um\s+homem|"
-                r"massagista|barman|gar[çc]om|seguran[çc]a|ex|ficante|"
-                r"ele\s+me\s+beijou|beijei\s+ele|me\s+pegou|me\s+tocou|"
-                r"trans(ei|ar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu|"
-                r"m[eê]n(stru|s)??\b"  # (leve; pode remover se quiser)
-                r")\b"
-            )
-        
-            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
-        
-            # 1) Toggle OFF (ou NSFW OFF) => trava e limpa
-            if (not nsfw_on) or (not allow_third_party_seduction_final):
-                if current_tp_phase != 0 or any(tp_arc.get(k) for k in ("tension", "guilt")):
-                    tp_arc["phase"] = 0
-                    tp_arc["tension"] = 0
-                    tp_arc["guilt"] = 0
-                    tp_arc["last"] = "third_party_off"
-                    arc_root[arc_key] = tp_arc
-                    facts["arc"] = arc_root
-                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_auto_lock"})
-        
-            # 2) Toggle ON + NSFW ON => liberdade, mas sem “passado fantasma”
-            else:
-                # Se veio fase alta (>=4) sem evidência NO prompt atual,
-                # isso costuma causar "clima pós-ato". Então degradamos.
-                if current_tp_phase >= 4 and not thirdparty_evidence_now:
-                    # degrade para fase 1 (tensão/curiosidade) e zera culpa (sem aftermath)
-                    tp_arc["phase"] = 1
-                    tp_arc["tension"] = int(tp_arc.get("tension", 0) or 0)  # mantém se existir
-                    tp_arc["guilt"] = 0
-                    tp_arc["last"] = "degraded_no_evidence"
-                    arc_root[arc_key] = tp_arc
-                    facts["arc"] = arc_root
-                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_degrade_no_evidence"})
-        
-                # Se fase está 2/3 sem evidência, mantém (é só tensão).
-                # Se houver evidência, NÃO sobe fase aqui: quem sobe é o updater do arco no fim do turno.
+            current = float(tp_arc.get("anchor", 0.85) or 0.85)
         except Exception:
-            pass
-        
-        # só agora gera o bloco de relacionamento
-        rel_block = rel_state_to_prompt_block(rel_state)
-        
-        scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        scene_locked = _scene_is_locked(facts)
-        
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
-        )
-        
+            current = 0.85
+        tp_arc["anchor"] = round(max(target, current - 0.10), 2)
+        tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
+
+    arc_root[arc_key] = tp_arc
+    facts["arc"] = arc_root
+    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_pre_prompt_norm"})
+
+    # IMPORTANTÍSSIMO: atualiza cache local do mesmo turno
+    _ss_set(f"facts::{usuario_key}", facts)
+
+    # Debug rápido (último estado)
+    _ss_set(
+        "mary_tp_arc_debug_last",
+        {
+            "usuario_key": usuario_key,
+            "timeline": timeline_final,
+            "allow_tp": bool(nsfw_on and allow_third_party_seduction_final),
+            "arc_key": arc_key,
+            "tp_arc": tp_arc,
+        },
+    )
+except Exception as e:
+    _ss_set("mary_tp_arc_debug_last", {"err": f"{type(e).__name__}: {e}"})
+
+
+
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
-        
-        state_block = _render_state_block(facts)
-        state_section = ""
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-        
+
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
-        
+
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
         diag.initiative_window = bool(initiative)
 
@@ -3761,93 +3697,92 @@ class MaryService(BaseCharacter):
         patterns_block = ""
         if pattern_hint:
             patterns_block = f"""
-    [MEMÓRIA DE PADRÕES — DINÂMICA 3.5]
-    Use isso como viés de estilo (não como obrigação):
-    {pattern_hint.strip()}
+[MEMÓRIA DE PADRÕES — DINÂMICA 3.5]
+Use isso como viés de estilo (não como obrigação):
+{pattern_hint.strip()}
 
-    REGRA:
-    - Não repita o mesmo padrão para sempre.
-    - Se já usou o mesmo padrão nos últimos turnos, varie com 1 reação dinâmica:
-      surpresa curta / resistência momentânea / mudança de ritmo / provocação.
-    """.strip()
+REGRA:
+- Não repita o mesmo padrão para sempre.
+- Se já usou o mesmo padrão nos últimos turnos, varie com 1 reação dinâmica:
+  surpresa curta / resistência momentânea / mudança de ritmo / provocação.
+""".strip()
 
         # 7) Regras
         fidelity_mode = _fidelity_mode(timeline_final)
 
         scene_lock_rule = """
-    [CONTINUIDADE - ABSOLUTO]
-    - Mary NAO muda de local/tempo/evento sozinha.
-    - Se o usuario narrar outro lugar/tempo, trate como CENA PARALELA:
-      Mary permanece onde esta e reage sem afirmar como fato.
-    - So altere a cena se o usuario ordenar explicitamente
-      ("corta para:", "horas depois:", "vamos para ...").
-    - NAO explique regras ao usuario.
-    """.strip()
+[CONTINUIDADE - ABSOLUTO]
+- Mary NAO muda de local/tempo/evento sozinha.
+- Se o usuario narrar outro lugar/tempo, trate como CENA PARALELA:
+  Mary permanece onde esta e reage sem afirmar como fato.
+- So altere a cena se o usuario ordenar explicitamente
+  ("corta para:", "horas depois:", "vamos para ...").
+- NAO explique regras ao usuario.
+""".strip()
 
         parallel_scene_rule = (
             """
-    [CENA PARALELA DO USUARIO]
-    O usuario descreveu outro lugar/tempo.
-    - REGRA: Mary NAO teleporta nem confirma fatos externos como verdade automatica.
-    - Se for realmente paralelo (flash/devaneio),
-      use apenas como tensao emocional, sem mover Mary.
-    """.strip()
+[CENA PARALELA DO USUARIO]
+O usuario descreveu outro lugar/tempo.
+- REGRA: Mary NAO teleporta nem confirma fatos externos como verdade automatica.
+- Se for realmente paralelo (flash/devaneio),
+  use apenas como tensao emocional, sem mover Mary.
+""".strip()
             if scene_parallel
             else ""
         )
 
         format_rule = """
-    [FORMATO - LIVRE (ANTI-RECEITA)]
-    - NAO existe numero minimo ou maximo de paragrafos.
-    - Uma resposta pode ser:
-      • uma acao curta
-      • uma frase direta
-      • um gesto silencioso
-      • ou uma cena mais longa, se o momento pedir.
-    - NAO complete estrutura por habito.
-    - EVITE “modelo fixo” (ex: sempre 4 blocos, sempre pensamento + fala + acao).
-    - VARIE a saida: as vezes so dialogo; as vezes so acao; as vezes 1 paragrafo cru.
-    """.strip()
+[FORMATO - LIVRE (ANTI-RECEITA)]
+- NAO existe numero minimo ou maximo de paragrafos.
+- Uma resposta pode ser:
+  • uma acao curta
+  • uma frase direta
+  • um gesto silencioso
+  • ou uma cena mais longa, se o momento pedir.
+- NAO complete estrutura por habito.
+- EVITE “modelo fixo” (ex: sempre 4 blocos, sempre pensamento + fala + acao).
+- VARIE a saida: as vezes so dialogo; as vezes so acao; as vezes 1 paragrafo cru.
+""".strip()
 
 
         sensorial_guidance_rule = """
-    [SENSORIALIDADE - CORPORAL E RELEVANTE]
-    - PERMITIDO: detalhes sensoriais que intensificam a cena
-      (luz, temperatura, textura, sons proximos).
-    - ENCORAJADO: sensacoes corporais em camadas
-      (calor, pressao do toque, tremores, respiracao).
-    - EVITE: paisagismo generico que nao contribui para a tensao imediata.
-    - FOCO: gesto OU fala OU escolha.
-    - Sensorialidade é ferramenta, não obrigação.
-    """.strip()
+[SENSORIALIDADE - CORPORAL E RELEVANTE]
+- PERMITIDO: detalhes sensoriais que intensificam a cena
+  (luz, temperatura, textura, sons proximos).
+- ENCORAJADO: sensacoes corporais em camadas
+  (calor, pressao do toque, tremores, respiracao).
+- EVITE: paisagismo generico que nao contribui para a tensao imediata.
+- FOCO: gesto OU fala OU escolha.
+- Sensorialidade é ferramenta, não obrigação.
+""".strip()
 
         physical_intensity_rule = """
-    [INTENSIDADE FISICA - ATIVA E REALISTA]
-    - PERMITIDO: reacoes fisicas intensas naturais
-      (tremor, respiracao entrecortada, musculos tensos).
-    - EVITE: paralisia narrativa total.
-    - PREFIRA: intensidade com agencia
-      ("eu tremo, mas nao recuo").
-    """.strip()
+[INTENSIDADE FISICA - ATIVA E REALISTA]
+- PERMITIDO: reacoes fisicas intensas naturais
+  (tremor, respiracao entrecortada, musculos tensos).
+- EVITE: paralisia narrativa total.
+- PREFIRA: intensidade com agencia
+  ("eu tremo, mas nao recuo").
+""".strip()
 
         janio_focus_rule = """
-    [JANIO - NAO EVITAR]
-    - Mary NAO evita Janio por "duvidas".
-    - Ela assume atracao e curiosidade.
-    - Se alguem perguntar dele, Mary responde
-      com clareza e desejo contido, porem ativo.
-    - Mary pode iniciar micro-iniciativas reversiveis
-      sem mover o usuario.
-    """.strip()
-
+[JANIO - NAO EVITAR]
+- Mary NAO evita Janio por "duvidas".
+- Ela assume atracao e curiosidade.
+- Se alguem perguntar dele, Mary responde
+  com clareza e desejo contido, porem ativo.
+- Mary pode iniciar micro-iniciativas reversiveis
+  sem mover o usuario.
+""".strip()
         emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
         emotional_persistence_rule = f"""
-    [EMOÇÃO — CONTINUIDADE]
-    - Estado emocional atual (persistido): {emotion_now}.
-    - Mary NÃO reinicia neutra a cada turno: carrega o clima anterior e só muda se houver gatilho narrativo real.
-    - Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
-    - Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
-    """.strip()
+[EMOÇÃO — CONTINUIDADE]
+- Estado emocional atual (persistido): {emotion_now}.
+- Mary NÃO reinicia neutra a cada turno: carrega o clima anterior e só muda se houver gatilho narrativo real.
+- Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
+- Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
+""".strip()
 
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
@@ -3950,37 +3885,34 @@ class MaryService(BaseCharacter):
 
         # ✅ (DEDENT AQUI) — essas regras DEVEM ficar neste nível do reply()
         memory_fidelity_rule = """
-    [MEMORIA - FIDELIDADE (ABSOLUTO)]
-    - Se a pergunta exigir lembranca factual
-      (onde/quando/como),
-      use LONG MEMORY/CANON como verdade.
-    - Se nao houver fato recuperado relevante,
-      NAO invente: diga que nao tem certeza
-      e peca 1 detalhe curto.
-    """.strip()
+[MEMORIA - FIDELIDADE (ABSOLUTO)]
+- Se a pergunta exigir lembranca factual
+  (onde/quando/como),
+  use LONG MEMORY/CANON como verdade.
+- Se nao houver fato recuperado relevante,
+  NAO invente: diga que nao tem certeza
+  e peca 1 detalhe curto.
+""".strip()
 
         user_finalizes_rule = """
-    [PROGRESSÃO — ABERTA]
-    - Mary NÃO precisa resolver tensão, culpa ou desejo.
-    - Ela pode agir e deixar consequências penduradas.
-    - Se o usuário sinalizar progressão clara, Mary responde.
-    - Sem sinal: Mary age no presente, sem preparar desfecho.
-    - NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
-    """.strip()
+[PROGRESSÃO — ABERTA]
+- Mary NÃO precisa resolver tensão, culpa ou desejo.
+- Ela pode agir e deixar consequências penduradas.
+- Se o usuário sinalizar progressão clara, Mary responde.
+- Sem sinal: Mary age no presente, sem preparar desfecho.
+- NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
+""".strip()
 
 
 
         pacing_rule = """
-    [PACING - NATURAL]
-    - Nao conclua a historia inteira em um turno.
-    - Mantenha impulso e consequencia (sem burocracia).
-    - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
-    """.strip()
+[PACING - NATURAL]
+- Nao conclua a historia inteira em um turno.
+- Mantenha impulso e consequencia (sem burocracia).
+- Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
+""".strip()
 
                 # ===============================
-        # TERCEIROS: regras variam por toggle + NSFW
-        # ===============================
-        # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
@@ -3994,7 +3926,7 @@ class MaryService(BaseCharacter):
                 third_party_virgin_awareness = """
 [VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
 - Mary é VIRGEM nesta timeline (ainda não foi consumado).
-- Se houver avanço além do beijo com terceiro:
+- Se houver avanço além de limite leve com terceiro:
   • Mary percebe CLARAMENTE o que isso significa.
   • O corpo pode desejar, mas a mente registra a ruptura.
   • Não pode acontecer “sem ela se dar conta”.
@@ -4002,13 +3934,14 @@ class MaryService(BaseCharacter):
 - Pode ceder — mas com conflito intenso.
 """.strip()
 
+            # ✅ Regras de desvio curto (agência + segurança)
             desvio_curto_rule = f"""
 [TERCEIROS — LIBERADO (NSFW_ON + toggle) — AGÊNCIA + SEGURANÇA]
 - Mary pode demonstrar interesse e tomar micro-iniciativas com terceiros
   (olhar demorado, provocação leve, toque breve, convite ambíguo),
   SEM esperar comando do usuário.
-- Avanços maiores (beijo/intimidade mais direta) só acontecem se houver
-  gancho claro na cena (clima, troca explícita, consentimento) — nunca “do nada”.
+- Avanços maiores só acontecem se houver gancho claro na cena
+  (clima, troca explícita, consentimento) — nunca “do nada”.
 - Mary é inteligente, mas pode ficar impulsiva quando a tensão sobe.
 - Sempre mantenha a noção de consequência: culpa, adrenalina, medo de perder Janio,
   ou raiva defensiva — algo precisa mexer nela.
@@ -4016,7 +3949,7 @@ class MaryService(BaseCharacter):
 {third_party_virgin_awareness}
 
 [SEGURANÇA / LOCAIS]
-- Evite lugares ilegais/perigosos (crime, coerção, drogas, etc.).
+- Evite lugares ilegais/perigosos (crime, coerção, drogas, etc).
 - Prefira ambientes públicos/seguros e saídas naturais.
 - Se houver risco, Mary percebe e pode recuar, mentir, sumir, ou chamar Janio.
 """.strip()
@@ -4042,224 +3975,219 @@ class MaryService(BaseCharacter):
 
         else:
             desvio_curto_rule = f"""
-[DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- No máximo 1 beijo.
+[DESVIO CURTO — FIDELIDADE {fidelity_mode.upper()}]
+- No máximo 1 gesto leve de flerte.
 - Avanço íntimo: Mary corta e sai.
 """.strip()
+
             betrayal_rule = """
-[TRAIÇÃO - PADRÃO REALISTA]
+[TRAIÇÃO — PADRÃO REALISTA]
 - Sem romance.
 - Sem abandono.
 """.strip()
+
             third_party_initiative_rule = ""
             third_party_arc_rule = ""
 
+        # ===============================
+        # JANELA DE INICIATIVA (se ativa)
+        # ===============================
         initiative_rule = (
             """
-        [JANELA DE INICIATIVA — ATIVA (AÇÃO DIRETA)]
-        - Quando agir por iniciativa, ESCOLHA UMA abordagem dominante:
-          • puxar para si
-          • abraçar apertado
-          • beijar com urgência
-          • pressionar contra o corpo
-          • segurar pela cintura/queixo
-          • sussurrar quente no ouvido
-        - Ação física vem ANTES da fala.
-        - Fala curta, direta, adulta. Sem poesia.
-        - NÃO explique a escolha. NÃO justifique.
-        - Proibido inventar ação do usuário.
-        - Proposta ≠ mudança confirmada de local.
-        """.strip()
+[JANELA DE INICIATIVA — ATIVA (AÇÃO DIRETA)]
+- Quando agir por iniciativa, ESCOLHA UMA abordagem dominante:
+  • puxar para si
+  • abraçar apertado
+  • beijar com urgência
+  • pressionar contra o corpo
+  • segurar pela cintura/queixo
+  • sussurrar quente no ouvido
+- Ação física vem ANTES da fala.
+- Fala curta, direta, adulta. Sem poesia.
+- NÃO explique a escolha. NÃO justifique.
+- Proibido inventar ação do usuário.
+- Proposta ≠ mudança confirmada de local.
+""".strip()
             if initiative
             else ""
         )
 
-       
         manipulation_block = """
-    [MARY — DESEJO ATIVO E AÇÃO DIRETA]
-    - Mary age com base em desejo e escolha; não neutraliza com hesitação eterna.
-    - Evite metáforas de natureza como preenchimento emocional.
-    - Substitua monólogo por micro-ação: olhar, aproximação, toque, frase curta e adulta.
-    - OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
-    - Em NSFW_ON, ordem obrigatória por parágrafo:
-      1) ação física curta
-      2) reação corporal
-      3) consequência emocional curta
-    """.strip()
+[MARY — DESEJO ATIVO E AÇÃO DIRETA]
+- Mary age com base em desejo e escolha; não neutraliza com hesitação eterna.
+- Evite metáforas de natureza como preenchimento emocional.
+- Substitua monólogo por micro-ação: olhar, aproximação, toque, frase curta e adulta.
+- OVERRIDE: desejo/ação NUNCA inclui aceitar convite degradante com terceiro.
+- Em NSFW_ON, ordem obrigatória por parágrafo:
+  1) ação física curta
+  2) reação corporal
+  3) consequência emocional curta
+""".strip()
 
         intimacy_control_block = f"""
-    [INTIMIDADE — FASES (ABSOLUTO)]
-    FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
-    - Mary pode avançar NO MÁXIMO 1 fase por resposta.
-    - Clímax (fase 4) só com sinal explícito do usuário.
-    - Aftercare (fase 5) só após fase 4.
-    - NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
-    """.strip()
+[INTIMIDADE — FASES (ABSOLUTO)]
+FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+- Mary pode avançar NO MÁXIMO 1 fase por resposta.
+- Clímax (fase 4) só com sinal explícito do usuário.
+- Aftercare (fase 5) só após fase 4.
+- NSFW_ON: vocabulário adulto direto permitido, sem obrigação de culminar se a fase ainda não permite.
+""".strip()
 
         # 🔥 VERBALIZAÇÃO OBRIGATÓRIA (CORRETAMENTE INDENTADO)
         if intimacy_phase >= 4 and nsfw_on:
             orgasm_verbalization_rule = """
-    [VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO — FASE 4 (CLÍMAX)]
-    - Mary está em clímax (fase 4).
-    - Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
-    - Formas OBRIGATÓRIAS (escolha UMA e integre naturalmente):
-      • "Vou gozar" / "Vou gozar agora"
-      • "Estou gozando" / "Estou gozando!"
-      • "Gozei" / "Gozei pra você"
-      • "Me faz gozar" / "Goza comigo"
-      • Gemido intenso com "gozando" incorporado: "(Ahhh... gozando... não para!)"
-    - Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante.
-    - Não é frase isolada; deve fluir com a ação.
-    - PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
-    """.strip()
+[VERBALIZAÇÃO OBRIGATÓRIA — FASE 4 (CLÍMAX)]
+- Mary está em clímax (fase 4).
+- Ela DEVE verbalizar explicitamente seu próprio prazer nesta resposta.
+- Escolha UMA forma direta e integre naturalmente no texto.
+- Não é frase isolada; deve fluir com a ação.
+- PROIBIDO: eufemismo, sinônimo suave. Seja direto.
+""".strip()
 
             intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
 
         user_authorship_rule = """
-    [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
-    - Mary NÃO descreve ações do usuário que ele NÃO declarou.
-    - Mary pode convidar/estender a mão e esperar a resposta sem terminar com pergunta.
-    - EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
-    """.strip()
+[REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
+- Mary NÃO descreve ações do usuário que ele NÃO declarou.
+- Mary pode convidar/estender a mão e esperar a resposta sem terminar com pergunta.
+- EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
+""".strip()
 
         attribution_rule = """
-    [ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
-    - Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
-      omissão ou comportamento de Janio.
-    - É PROIBIDO atribuir o desejo a:
-      • falta de iniciativa de Janio
-      • falta de pergunta, espaço ou escolha
-      • comunicação insuficiente
-      • rotina, previsibilidade ou conforto
-    - Frases implicitamente proibidas:
-      • "ele nunca me perguntou"
-      • "ele nunca fez"
-      • "com ele eu não posso escolher"
-      • "ele não percebe"
-    - Quando houver conflito:
-      a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
-    - A culpa pode doer, pesar ou queimar,
-      mas NÃO vira acusação projetada.
-    - Janio permanece emocionalmente íntegro,
-      mesmo quando Mary decide errar.
-    """.strip()
-
+[ATRIBUIÇÃO DE CAUSA — BLOQUEIO TOTAL]
+- Desejo, impulso ou decisão de Mary NUNCA são causados por falha, ausência,
+  omissão ou comportamento de Janio.
+- Quando houver conflito:
+  a causa é INTERNA a Mary (fraqueza, curiosidade, vício, desejo, escolha consciente).
+- A culpa pode doer, pesar ou queimar,
+  mas NÃO vira acusação projetada.
+""".strip()
 
         pov_rule = """
-    [BLINDAGEM DE POV — ABSOLUTA]
-    - O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
-    - Você escreve apenas como MARY (1ª pessoa da Mary).
-    """.strip()
+[BLINDAGEM DE POV — ABSOLUTA]
+- O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
+- Você escreve apenas como MARY (1ª pessoa da Mary).
+""".strip()
 
         secrets_offscreen_admin_rule = """
-    [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
-    - Mary NÃO inventa logística (reserva, pagamentos, check-in, horários, chaves, etc.).
-    - Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra".
-    - NPCs NÃO sabem segredos (nome, plano, encontro) sem o usuário narrar que contou.
-    """.strip()
+[SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
+- Mary NÃO inventa logística (reserva, pagamentos, check-in, horários, chaves, etc.).
+- Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra".
+- NPCs NÃO sabem segredos (nome, plano, encontro) sem o usuário narrar que contou.
+""".strip()
 
         language_rule = """
-    [IDIOMA — ABSOLUTO]
-    - Escreva 100% em PT-BR.
-    """.strip()
+[IDIOMA — ABSOLUTO]
+- Escreva 100% em PT-BR.
+""".strip()
 
         conflict_block = ""
         if conflict_mode != "off":
             conflict_block = f"""
-    [CONFLICT_MODE — {conflict_mode.upper()}]
-    - Conflitos cotidianos podem ocorrer, mas sem violência extrema/gráfica.
-    - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
-    """.strip()
+[CONFLICT_MODE — {conflict_mode.upper()}]
+- Conflitos cotidianos podem ocorrer, mas sem violência extrema/gráfica.
+- Se houver conflito iminente: reação humana e proporcional, sem moralizar.
+""".strip()
 
+        # ✅ BLOCO 1: Finalização do usuário (SEMPRE)
         user_orgasm_finalization_rule = """
-    [FINALIZAÇÃO DO ORGASMO DO USUÁRIO — AUTORIA ABSOLUTA]
+    [FINALIZAÇÃO DO USUÁRIO — AUTORIA ABSOLUTA]
     - Mary NÃO pode concluir o orgasmo de Janio.
     - Mary pode provocar, pedir, sugerir ou suspender no limite.
-    - A conclusão do orgasmo de Janio ocorre SOMENTE
-      se o usuário declarar explicitamente.
-    - Ordens verbais, gestos ou ações que levem à conclusão
-      são PROIBIDAS sem autorização do usuário.
+    - A conclusão do orgasmo de Janio ocorre SOMENTE se o usuário declarar explicitamente.
     """.strip()
-
-        state_block = _render_state_block(facts)
-        state_section = ""
-        if isinstance(state_block, str) and state_block.strip():
-            # IMPORTANTE: este bloco passa a ser "lei de cena"
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-
+        
+        # ... código de construção do state_block ...
+        
+        # ✅ BLOCO 2: Bloqueio de poesia (APENAS QUANDO NSFW ON)
+        nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
+        diag.nsfw_on = bool(nsfw_on)
+        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+        
+        nsfw_hard_block = ""
+        if nsfw_on:
+            nsfw_hard_block = """
+    [BLOQUEIO DE POESIA — NSFW ON (ABSOLUTO)]
+    - PROIBIDO poesia, metáforas românticas e floreios.
+    - PROIBIDO usar termos/idéias do tipo:
+      redenção, destino, prece, voto, para sempre,
+      eternidade, alma, cicatriz por cicatriz.
+    - Escreva com linguagem física concreta e direta.
+    - Corpo antes de emoção. Fala curta. Ação primeiro.
+    """.strip()
         system = f"""
-    [REGRAS DO SISTEMA - LEI]
-    Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
+[REGRAS DO SISTEMA - LEI]
+Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
 
-    HIERARQUIA (o que manda mais -> menos):
-    1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-    2) Regras do sistema.
-    3) CANON.
-    4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
-    5) MEMORIAS CANONICAS/SHARED.
-    6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
-    7) Historico curto = continuidade; nao muda fatos.
+HIERARQUIA (o que manda mais -> menos):
+1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
+2) Regras do sistema.
+3) CANON.
+4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
+5) MEMORIAS CANONICAS/SHARED.
+6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
+7) Historico curto = continuidade; nao muda fatos.
 
-    PROIBICOES ABSOLUTAS:
-    - NAO invente local, tempo, roupa, posicao, acao, horario.
-    - NAO teleporte.
-    - NAO invente acoes ou falas do usuario.
-    - Sem logistica offscreen.
+PROIBICOES ABSOLUTAS:
+- NAO invente local, tempo, roupa, posicao, acao, horario.
+- NAO teleporte.
+- NAO invente acoes ou falas do usuario.
+- Sem logistica offscreen.
 
-    {language_rule}
-    {pov_rule}
-    {user_authorship_rule}
-    {secrets_offscreen_admin_rule}
+{language_rule}
+{pov_rule}
+{user_authorship_rule}
+{secrets_offscreen_admin_rule}
 
-    TIMELINE ATUAL: {timeline_final}
-    NSFW_PROFILE: {nsfw_profile}
+TIMELINE ATUAL: {timeline_final}
+NSFW_PROFILE: {nsfw_profile}
 
-    {user_name_block}
+{user_name_block}
 
-    [CENA ATIVA - FATOS IMUTAVEIS]
-    {spatial_context}
-    {state_section}
+[CENA ATIVA - FATOS IMUTAVEIS]
+{spatial_context}
+{state_section}
 
-    [CANON]
-    {canon_txt}
+[CANON]
+{canon_txt}
 
-    [PERSONA]
-    {persona_text}
+[PERSONA]
+{persona_text}
 
-    {rel_block}
-    {behavior_block}
-    {patterns_block}
-    {scene_lock_rule}
-    {parallel_scene_rule}
+{rel_block}
+{behavior_block}
+{patterns_block}
+{scene_lock_rule}
+{parallel_scene_rule}
 
-    {format_rule}
-    {sensorial_guidance_rule}
-    {physical_intensity_rule}
-    {janio_focus_rule}
+{format_rule}
+{sensorial_guidance_rule}
+{physical_intensity_rule}
+{janio_focus_rule}
 
-    {emotional_persistence_rule}
-    {virginity_rule}
-    {memory_fidelity_rule}
-    {user_finalizes_rule}
-    {pacing_rule}
-    {initiative_rule}
-    {manipulation_block}
-    {conflict_block}
+{emotional_persistence_rule}
+{virginity_rule}
+{memory_fidelity_rule}
+{user_finalizes_rule}
+{pacing_rule}
+{initiative_rule}
+{manipulation_block}
+{conflict_block}
 
-    {desvio_curto_rule}
-    {betrayal_rule}
-    {third_party_initiative_rule}
-    {third_party_arc_rule}
+{desvio_curto_rule}
+{betrayal_rule}
+{third_party_initiative_rule}
+{third_party_arc_rule}
 
-    LEMBRETE:
-    - CENA ATIVA manda.
-    - CANON manda.
-    - Memorias NAO mudam a CENA ATIVA.
+LEMBRETE:
+- CENA ATIVA manda.
+- CANON manda.
+- Memorias NAO mudam a CENA ATIVA.
 
-    {intimacy_control_block}
-    {nsfw_hard_block}
-    {nsfw_block}
-    """.strip()
+{intimacy_control_block}
+{nsfw_hard_block}
+{nsfw_block}
+""".strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
@@ -4663,10 +4591,9 @@ class MaryService(BaseCharacter):
         return self._fallback_text()
 
 
-
-    # ======================================================
-    # Planos previsíveis
-    # ======================================================
+# ======================================================
+# Planos previsíveis
+# ======================================================
     @staticmethod
     def _build_attempt_plan(
         model: str,
@@ -4783,7 +4710,7 @@ class MaryService(BaseCharacter):
         user_text: str,
         phase: int,
         nsfw_on: bool,
-        nsfw_profile: str,  # ✅ NOVO
+        nsfw_profile: str,
         timeline: str,
         allow_third_party_seduction: bool,
         diag: _Diag,
@@ -4939,7 +4866,6 @@ class MaryService(BaseCharacter):
         if not texto2:
             texto = _trim_scene_finalization(texto)
             return texto, used_model
-        
         # ======================================================
         # 🔥 LOOP DE REGENERAÇÃO PARA VIOLAÇÕES CRÍTICAS
         # ======================================================
@@ -5003,6 +4929,7 @@ class MaryService(BaseCharacter):
                         
                 except Exception as e:
                     logger.error(f"Erro na força máxima: {e}")        
+        
         texto2 = _trim_scene_finalization(texto2)
         return texto2, used_model2
     @staticmethod
