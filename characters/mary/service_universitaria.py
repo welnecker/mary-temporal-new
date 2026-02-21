@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from typing import Optional, Any
-
-import streamlit as st
 from .service_core import MaryService
 
 
@@ -15,6 +13,7 @@ class MaryServiceUniversitaria(MaryService):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # timeline default
         try:
             self.timeline = "universitaria"
         except Exception:
@@ -25,7 +24,7 @@ class MaryServiceUniversitaria(MaryService):
         *,
         user: str,
         model: str,
-        prompt: Optional[str] = None,   # ✅ NÃO pode ser obrigatório
+        prompt: str,
         timeline: str = "universitaria",
         nsfw: Optional[bool] = None,
         allow_third_party_seduction: Optional[bool] = None,
@@ -35,14 +34,6 @@ class MaryServiceUniversitaria(MaryService):
         timeline_final = (timeline or "universitaria").strip().lower()
         if timeline_final != "universitaria":
             timeline_final = "universitaria"
-
-        # ✅ fallback idêntico ao comportamento do funcional:
-        # quando mary_app não manda prompt, usa o chat_input.
-        if prompt is None:
-            try:
-                prompt = (st.session_state.get("chat_input") or "").strip()
-            except Exception:
-                prompt = ""
 
         return super().reply(
             user=user,
