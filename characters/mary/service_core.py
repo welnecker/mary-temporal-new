@@ -5140,45 +5140,27 @@ class MaryService(BaseCharacter):
         *,
         top_p: float = 0.95,
         extra: Optional[Dict[str, Any]] = None,
-    ) -> str:
+    ):
         payload: Dict[str, Any] = {
             "messages": messages,
             "temperature": float(temperature),
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-        
-        try:
-            if isinstance(extra, dict) and extra:
-                payload.update(extra)
-                try:
-                    resp = service_router.route_chat_strict(model, payload)
-                except Exception as e:
-                    logger.error(f"❌ route_chat_strict COM EXTRAS falhou: {type(e).__name__}: {e}")
-                    payload = {
-                        "messages": messages,
-                        "temperature": float(temperature),
-                        "top_p": float(top_p),
-                        "max_tokens": int(max_tokens),
-                    }
-                    resp = service_router.route_chat_strict(model, payload)
-            else:
+    
+        if isinstance(extra, dict) and extra:
+            payload.update(extra)
+            try:
                 resp = service_router.route_chat_strict(model, payload)
-            
-            logger.info(f"🔍 route_chat_strict retornou: {type(resp).__name__} = {repr(resp)[:200]}")
-            
-            if resp is None:
-                logger.warning(f"⚠️ route_chat_strict retornou None para modelo {model}")
-                fallback = self._fallback_text()
-                logger.info(f"✅ Usando fallback: {fallback[:100]}")
-                return fallback
-            
-            extracted = self._extract_text(resp)
-            logger.info(f"✅ Texto extraído: {extracted[:100]}")
-            return extracted
-            
-        except Exception as e:
-            logger.error(f"❌ Erro em _chat(): {type(e).__name__}: {e}")
-            fallback = self._fallback_text()
-            logger.info(f"✅ Usando fallback por erro: {fallback[:100]}")
-            return fallback
+                return (self._extract_text(resp) or "")
+            except Exception:
+                # Provider rejeitou campos extras → re-tenta 1x sem extras
+                payload = {
+                    "messages": messages,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                }
+    
+        resp = service_router.route_chat_strict(model, payload)
+        return (self._extract_text(resp) or "")
