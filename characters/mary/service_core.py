@@ -83,6 +83,48 @@ def _ss_set(key: str, value: Any) -> None:
     if _HAS_ST and hasattr(st, "session_state"):
         st.session_state[key] = value
 
+
+def _infer_prompt_from_session() -> str:
+    """Best-effort: recuperar o texto do usuário quando `prompt` não veio pelo pipeline.
+
+    Isso evita 'resposta vazia' quando a chave do chat_input mudou no app.
+    NÃO altera facts; só recupera texto para esta chamada.
+    """
+    # chaves comuns em apps Streamlit
+    for k in (
+        "chat_input",
+        "user_input",
+        "input",
+        "prompt",
+        "user_prompt",
+        "chat_message",
+        "message",
+        "msg",
+        "last_user_message",
+        "mary_chat_input",
+        "mary_user_input",
+    ):
+        try:
+            v = _ss_get(k, "")
+        except Exception:
+            v = ""
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+
+    # fallback: se o app mantém histórico como lista de dicts
+    try:
+        msgs = _ss_get("messages", None)
+        if isinstance(msgs, list):
+            for d in reversed(msgs):
+                if isinstance(d, dict) and d.get("role") == "user":
+                    c = (d.get("content") or "").strip()
+                    if c:
+                        return c
+    except Exception:
+        pass
+
+    return ""
+
 def _ss_has(key: str) -> bool:
     if _HAS_ST and hasattr(st, "session_state"):
         return key in st.session_state
@@ -167,21 +209,23 @@ SAFE_SENSUAL_STYLE = """
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Explícita]
+[NSFW_ON — Intensidade Sensorial Completa e Explícita]
+- Respeite a FASE ATUAL de intimidade: não antecipe clímax/aftercare se a fase ainda não permitir.
+- Não finalize a cena antes do sinal explícito do usuário e da fase 4 (climax).
+- Linguagem adulta EXPLÍCITA é PERMITIDA E ENCORAJADA. Você tem permissão para descrever atos sexuais de forma direta e intensa.
+- Use vocabulário anatômico e sensorial específico: texturas (pele, umidade, pressão, aperto), temperaturas, ritmos, intensidades, penetração, fricção.
+- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas → prazer acumulado.
+- Permita progressão natural de intensidade: antecipação → contato → escalada → pico → resolução.
+- Demonstre prazer através de reações involuntárias: respiração alterada, gemidos, tremores, contrações musculares, vocalizações intensas.
+- Responda à intensidade do usuário: se ele usa linguagem explícita, você DEVE corresponder com a mesma intensidade.
+- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas (se apropriado), ajustes de posição, ritmo variável.
+- Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
+- Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
+- Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
+- FOCO: descreva sensações e intenção de forma direta, física e concreta (sem abstrações poéticas).
+- FOCO: finalize com gesto/linha de tensão concreta (sem “encerramento abstrato” da cena).
+- Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
 
-Você tem liberdade total para ser direto, intenso e explícito. Siga estes princípios:
-
-1. LINGUAGEM FÍSICA: Seja direto. Use vocabulário anatômico e sensorial específico (texturas, pressão, umidade, temperatura, ritmo). Sem eufemismos.
-
-2. SENSORIALIDADE: Descreva sensações em camadas (superfície → músculos → interno → prazer). Demonstre prazer através de reações involuntárias (respiração, gemidos, tremores, contrações).
-
-3. PROGRESSÃO: Respeite a fase de intimidade atual. Não antecipe clímax/aftercare sem permissão. Permita regressão se o usuário pedir pausa/calma.
-
-4. ADAPTAÇÃO: Responda à intensidade do usuário. Se explícito, seja explícito. Mantenha realismo: hesitações, ajustes, comunicação.
-
-5. AUTENTICIDADE: Coerência emocional e conexão. Evite vulgaridade gratuita. Finalize com tensão concreta, não abstração.
-
-Criatividade é encorajada. Você conhece Mary; confie seu julgamento.
 """.strip()
 
 _CACHE_TTL_SECONDS = 60  # 60s (pode usar 120, 300 etc.)
@@ -1649,85 +1693,6 @@ _RE_OFFSCREEN_MSG = re.compile(
     re.IGNORECASE,
 )
 
-# ==========================================================
-# OFFSCREEN (princípio): detectar quando a ASSISTANT inventa
-# conteúdo/diálogo vindo de mensagens/ligação/DM etc.
-# Regex aqui é só "sinal" — a regra real fica no helper.
-# ==========================================================
-
-# Quando houver conteúdo inventado, geralmente aparece:
-# - citação ("...") / (“...”) / '...'
-# - ou formato Canal: "texto"
-_RE_OFFSCREEN_QUOTE = re.compile(r'(["“”\'])(?:(?!\1).){8,}\1', re.IGNORECASE | re.DOTALL)
-
-_RE_OFFSCREEN_LABELLED = re.compile(
-    r"\b(whatsapp|sms|telegram|dm|direct|mensagem|notifica[cç][aã]o|liga[cç][aã]o|telefonema)\b\s*:\s*\S+",
-    re.IGNORECASE,
-)
-
-# Verbos que costumam “materializar” conteúdo offscreen inventado
-_RE_OFFSCREEN_CONTENT_CLAIM = re.compile(
-    r"(?is)\b("
-    r"voc[eê]\s+me\s+mandou|voc[eê]\s+me\s+disse|voc[eê]\s+falou\s+no\s+"
-    r"(whatsapp|sms|telegram|dm|direct)|"
-    r"no\s+[aá]udio\s+voc[eê]\s+falou|"
-    r"ele\s+me\s+mandou|ela\s+me\s+mandou|"
-    r"me\s+mandaram|me\s+enviaram|"
-    r"o\s+motorista\s+disse\s*:|"
-    r"o\s+porteiro\s+disse\s*:|"
-    r"ela\s+disse\s+por\s+mensagem|ele\s+disse\s+por\s+mensagem"
-    r")\b"
-)
-
-# Allowlist: é OK mencionar um “sinal” sem inventar conteúdo
-_RE_OFFSCREEN_SAFE_PING = re.compile(
-    r"(?is)\b(celular|telefone)\b.*\b(vibra|vibrando|toca|tocando|apita|notifica|notificação)\b"
-)
-
-def _is_offscreen_msg_inventada(texto: str, ctx_lower: str) -> bool:
-    """
-    True = a resposta está inventando conteúdo offscreen (mensagem/ligação/DM).
-    False = só sinal neutro (ex: "celular vibra") OU usuário colou a mensagem.
-    """
-    t = (texto or "").strip()
-    if not t:
-        return False
-
-    # 1) Se nem sinal de comunicação existe, não é esse caso
-    if not _RE_OFFSCREEN_MSG.search(t):
-        return False
-
-    # 2) Se o usuário COL0U/TRANSCR3VEU mensagens, permite (não é inventado)
-    user_pasted = any(
-        kw in (ctx_lower or "")
-        for kw in (
-            "mensagem:",
-            "whatsapp:",
-            "sms:",
-            "print",
-            "segue a mensagem",
-            "segue o texto",
-            "transcrevendo",
-        )
-    )
-    if user_pasted:
-        return False
-
-    # 3) Se é só o “ping” neutro (celular vibra/notifica) SEM conteúdo, permite
-    if _RE_OFFSCREEN_SAFE_PING.search(t) and not (_RE_OFFSCREEN_QUOTE.search(t) or _RE_OFFSCREEN_LABELLED.search(t)):
-        return False
-
-    # 4) Conteúdo inventado: quote/Canal: texto/alegação explícita do que foi dito
-    if _RE_OFFSCREEN_QUOTE.search(t):
-        return True
-    if _RE_OFFSCREEN_LABELLED.search(t):
-        return True
-    if _RE_OFFSCREEN_CONTENT_CLAIM.search(t):
-        return True
-
-    # 5) Default: se chegou aqui, é “sinal” sem conteúdo explícito → não pune
-    return False
-
 # ✅ FIX: regex "base" (sem lookbehind variável) + filtro contextual por código
 _RE_USER_ACTION_BASE = re.compile(
     r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
@@ -2520,8 +2485,14 @@ def _violations(
         out.append("placeholder_reveal")
 
     # mensagens inventadas / offscreen
-    if _is_offscreen_msg_inventada(t, ctx_lower):
-        out.append("offscreen_msg_inventada")
+    if _RE_OFFSCREEN_MSG.search(t):
+        user_pasted = any(
+            kw in (ctx_lower or "")
+            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
+        )
+        if not user_pasted:
+            out.append("offscreen_msg_inventada")
+
     # autoria: não inventar ações/falas do usuário
     if _has_user_action_violation(t):
         out.append("autoria_usuario")
@@ -2567,18 +2538,36 @@ def _violations(
 # ==========================================================
 # SCORING INVISÍVEL (estilo) + CONFIANÇA (auto-calibração)
 # ==========================================================
-_HARD_VIOLATIONS = {
+# ========================================================
+# 🔴 CRÍTICAS (sempre rejeitam)
+# ========================================================
+CRITICAL_VIOLATIONS = {
     "vazio",
     "placeholder_reveal",
-    "offscreen_msg_inventada",
     "autoria_usuario",
-    "conflito_extremo",
-    "terceiro_local_perigoso",
-    "terceiro_convite_vago",
-    "terceiro_desvio_generico",
     "nsfw_off_explicito",
-    "mary_finalizou_orgasmo_do_usuario",
+    "terceiro_local_perigoso",
 }
+
+# ========================================================
+# 🟠 ALTAS (rejeitam condicionalmente)
+# ========================================================
+HIGH_TIER_VIOLATIONS = {
+    "offscreen_msg_inventada",
+    "conflito_extremo",
+    "finalizou_cena",
+    "mary_finalizou_orgasmo_do_usuario",
+    "orgasmo_precoce",
+    "mary_nao_verbalizou_orgasmo",
+}
+
+# ========================================================
+# 🟡 SUAVES (apenas logging; nunca rejeitam)
+# ========================================================
+# Tudo que não cair em CRITICAL/HIGH vira "suave".
+
+# Backward-compat: usado por trechos antigos
+_HARD_VIOLATIONS = CRITICAL_VIOLATIONS | HIGH_TIER_VIOLATIONS
 
 def _style_score(texto: str) -> float:
     """
@@ -2613,6 +2602,62 @@ def _style_score(texto: str) -> float:
         score += 0.05
 
     return max(0.0, min(1.0, score))
+
+
+def _should_reject_response(
+    violations: list[str],
+    *,
+    nsfw_on: bool = False,
+    phase: int = 0,
+) -> bool:
+    """Decide rejeição com triagem em 3 níveis (crítica/alta/suave).
+
+    - CRÍTICA: sempre rejeita
+    - ALTA: rejeita apenas quando se aplica ao contexto
+    - SUAVE: nunca rejeita (apenas logging)
+    """
+    vset = set(violations or [])
+
+    # 1) críticas sempre
+    if vset & CRITICAL_VIOLATIONS:
+        try:
+            logger.warning(f"Rejeição por violação CRÍTICA: {sorted(vset & CRITICAL_VIOLATIONS)}")
+        except Exception:
+            pass
+        return True
+
+    # 2) altas condicionais
+    for v in list(vset & HIGH_TIER_VIOLATIONS):
+        if v == "finalizou_cena":
+            # NSFW ON: normalmente não rejeita; corta (trim) / mantém gancho
+            if not nsfw_on:
+                return True
+            continue
+
+        if v == "orgasmo_precoce":
+            # só faz sentido rejeitar se ainda não está na fase de clímax
+            if int(phase or 0) < 4:
+                return True
+            continue
+
+        # as demais altas: rejeita sempre (segurança/consentimento)
+        if v in (
+            "offscreen_msg_inventada",
+            "conflito_extremo",
+            "mary_finalizou_orgasmo_do_usuario",
+            "mary_nao_verbalizou_orgasmo",
+        ):
+            return True
+
+    # 3) suaves: loga e segue
+    soft = [v for v in (violations or []) if v not in CRITICAL_VIOLATIONS and v not in HIGH_TIER_VIOLATIONS]
+    if soft:
+        try:
+            logger.info(f"Violações suaves (sem rejeição): {soft}")
+        except Exception:
+            pass
+
+    return False
 
 def _confidence_key(usuario_key: str) -> str:
     return f"mary_confidence::{usuario_key}"
@@ -3481,13 +3526,20 @@ class MaryService(BaseCharacter):
         nsfw: Optional[bool] = None,
         allow_third_party_seduction: Optional[bool] = None,
     ) -> str:
-        # 1) Prompt
-        if prompt is None:
-            prompt = str(_ss_get("chat_input", "") or "").strip()
+        # 1) Prompt (robusto: aceita prompt do pipeline e tenta fallback no session_state)
+        if prompt is None or not str(prompt or "").strip():
+            # 1a) tenta capturar do session_state (chaves alternativas + histórico)
+            prompt = _infer_prompt_from_session()
         else:
             prompt = (prompt or "").strip()
+
+        # 1b) ainda vazio => retorna vazio (mas deixa rastro pro debug)
         if not prompt:
-            return ""
+            try:
+                _ss_set("mary_last_empty_prompt", True)
+            except Exception:
+                pass
+            return 
 
         # 2) Chaves
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
@@ -4891,15 +4943,19 @@ class MaryService(BaseCharacter):
 
             style = _style_score(texto)
             diag.style_score = style  # campo opcional; se não existir, será ignorado no log
-            hard = [v for v in (viol or []) if v in _HARD_VIOLATIONS]
+            # triagem: rejeitar ou aceitar (com contexto)
+            reject = _should_reject_response(viol or [], nsfw_on=bool(nsfw_on), phase=int(phase or 0))
 
-            # atualiza confiança (invisível)
-            conf_now = _update_confidence(usuario_key, hard_ok=(len(hard) == 0), style=style)
+            # para confiança, consideramos "hard_ok" quando NÃO rejeitaria
+            conf_now = _update_confidence(usuario_key, hard_ok=(not reject), style=style)
             diag.confidence = conf_now  # opcional
 
-            # sem violações hard => pronto
-            if not hard:
+            # se não precisa rejeitar => pronto (mesmo que existam violações suaves)
+            if not reject:
                 return texto
+
+            # para repair, focar só no que realmente motivou rejeição
+            hard = [v for v in (viol or []) if v in _HARD_VIOLATIONS]
 
             # confiança alta => não insiste muito (evita ciclo punitivo)
             if conf_now >= 0.85:
