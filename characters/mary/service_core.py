@@ -1649,6 +1649,85 @@ _RE_OFFSCREEN_MSG = re.compile(
     re.IGNORECASE,
 )
 
+# ==========================================================
+# OFFSCREEN (princípio): detectar quando a ASSISTANT inventa
+# conteúdo/diálogo vindo de mensagens/ligação/DM etc.
+# Regex aqui é só "sinal" — a regra real fica no helper.
+# ==========================================================
+
+# Quando houver conteúdo inventado, geralmente aparece:
+# - citação ("...") / (“...”) / '...'
+# - ou formato Canal: "texto"
+_RE_OFFSCREEN_QUOTE = re.compile(r'(["“”\'])(?:(?!\1).){8,}\1', re.IGNORECASE | re.DOTALL)
+
+_RE_OFFSCREEN_LABELLED = re.compile(
+    r"\b(whatsapp|sms|telegram|dm|direct|mensagem|notifica[cç][aã]o|liga[cç][aã]o|telefonema)\b\s*:\s*\S+",
+    re.IGNORECASE,
+)
+
+# Verbos que costumam “materializar” conteúdo offscreen inventado
+_RE_OFFSCREEN_CONTENT_CLAIM = re.compile(
+    r"(?is)\b("
+    r"voc[eê]\s+me\s+mandou|voc[eê]\s+me\s+disse|voc[eê]\s+falou\s+no\s+"
+    r"(whatsapp|sms|telegram|dm|direct)|"
+    r"no\s+[aá]udio\s+voc[eê]\s+falou|"
+    r"ele\s+me\s+mandou|ela\s+me\s+mandou|"
+    r"me\s+mandaram|me\s+enviaram|"
+    r"o\s+motorista\s+disse\s*:|"
+    r"o\s+porteiro\s+disse\s*:|"
+    r"ela\s+disse\s+por\s+mensagem|ele\s+disse\s+por\s+mensagem"
+    r")\b"
+)
+
+# Allowlist: é OK mencionar um “sinal” sem inventar conteúdo
+_RE_OFFSCREEN_SAFE_PING = re.compile(
+    r"(?is)\b(celular|telefone)\b.*\b(vibra|vibrando|toca|tocando|apita|notifica|notificação)\b"
+)
+
+def _is_offscreen_msg_inventada(texto: str, ctx_lower: str) -> bool:
+    """
+    True = a resposta está inventando conteúdo offscreen (mensagem/ligação/DM).
+    False = só sinal neutro (ex: "celular vibra") OU usuário colou a mensagem.
+    """
+    t = (texto or "").strip()
+    if not t:
+        return False
+
+    # 1) Se nem sinal de comunicação existe, não é esse caso
+    if not _RE_OFFSCREEN_MSG.search(t):
+        return False
+
+    # 2) Se o usuário COL0U/TRANSCR3VEU mensagens, permite (não é inventado)
+    user_pasted = any(
+        kw in (ctx_lower or "")
+        for kw in (
+            "mensagem:",
+            "whatsapp:",
+            "sms:",
+            "print",
+            "segue a mensagem",
+            "segue o texto",
+            "transcrevendo",
+        )
+    )
+    if user_pasted:
+        return False
+
+    # 3) Se é só o “ping” neutro (celular vibra/notifica) SEM conteúdo, permite
+    if _RE_OFFSCREEN_SAFE_PING.search(t) and not (_RE_OFFSCREEN_QUOTE.search(t) or _RE_OFFSCREEN_LABELLED.search(t)):
+        return False
+
+    # 4) Conteúdo inventado: quote/Canal: texto/alegação explícita do que foi dito
+    if _RE_OFFSCREEN_QUOTE.search(t):
+        return True
+    if _RE_OFFSCREEN_LABELLED.search(t):
+        return True
+    if _RE_OFFSCREEN_CONTENT_CLAIM.search(t):
+        return True
+
+    # 5) Default: se chegou aqui, é “sinal” sem conteúdo explícito → não pune
+    return False
+
 # ✅ FIX: regex "base" (sem lookbehind variável) + filtro contextual por código
 _RE_USER_ACTION_BASE = re.compile(
     r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
@@ -2441,14 +2520,8 @@ def _violations(
         out.append("placeholder_reveal")
 
     # mensagens inventadas / offscreen
-    if _RE_OFFSCREEN_MSG.search(t):
-        user_pasted = any(
-            kw in (ctx_lower or "")
-            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
-        )
-        if not user_pasted:
-            out.append("offscreen_msg_inventada")
-
+    if _is_offscreen_msg_inventada(t, ctx_lower):
+        out.append("offscreen_msg_inventada")
     # autoria: não inventar ações/falas do usuário
     if _has_user_action_violation(t):
         out.append("autoria_usuario")
