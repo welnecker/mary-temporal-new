@@ -1,4 +1,4 @@
-# service_core_PATCHED_v5.py
+# characters/mary/service_core.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -1812,6 +1812,79 @@ def _is_explicit(texto: str) -> bool:
     if not t:
         return False
     return bool(_RE_EXPLICIT_SEX.search(t))
+
+# ---------------------------------------------------------
+# HYBRID (heurística + LLM) — classificação "na borda"
+# ---------------------------------------------------------
+# IMPORTANTE:
+# - Isso NÃO muda o prompt NSFW_ON nem "suaviza" a Mary.
+# - Só afeta a DETECÇÃO quando NSFW está OFF (para bloquear explícito).
+# - Heurística barata primeiro; só chama LLM quando o caso é ambíguo.
+
+_RE_SEXUAL_METAPHOR = re.compile(
+    r"\b("
+    r"invade|invas[aã]o|me\s+invade|"
+    r"me\s+preenche|preenchid[ao]|"
+    r"me\s+toma\s+por\s+dentro|toma\s+meu\s+corpo|"
+    r"me\s+abro\s+inteira|me\s+abrindo\s+inteira|"
+    r"me\s+rasga|rasgando|"
+    r"me\s+possui|possu[ií]do|"
+    r"me\s+consome|consumid[ao]|"
+    r"por\s+dentro|dentro\s+de\s+mim|"
+    r"me\s+faz\s+perder\s+o\s+controle"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_RE_SUBJECT_AMBIGUOUS = re.compile(
+    r"\b("
+    r"ele\s+me\s+|ela\s+me\s+|"
+    r"ele\s+vai|ele\s+vem|"
+    r"me\s+faz\s+|me\s+pega\s+|"
+    r"tom(a|o)\s+meu\s+corpo"
+    r")",
+    re.IGNORECASE,
+)
+
+def _needs_llm_classification(texto: str, *, user_text: str = "", phase: int = 0) -> bool:
+    """Retorna True quando o texto parece "sexual explícito" por intenção,
+    mas não tem termos óbvios (caso de metáfora/ambiguidade).
+
+    Só deve ser usado quando NSFW está OFF.
+    """
+    t = _t_norm(texto)
+    if not t:
+        return False
+
+    # Se já é explícito pelo detector barato, não precisa LLM.
+    if _is_explicit(texto):
+        return False
+
+    # Sinais de "bordas": metáforas fortes + contexto íntimo alto.
+    lvl = 0
+    try:
+        lvl = _intimacy_level(user_text or "", texto or "")
+    except Exception:
+        lvl = 0
+
+    has_metaphor = bool(_RE_SEXUAL_METAPHOR.search(texto or ""))
+    subj_amb = bool(_RE_SUBJECT_AMBIGUOUS.search(texto or ""))
+
+    # Heurística: casos com metáfora forte em níveis altos, ou sujeito ambíguo em pré-clímax.
+    if has_metaphor and lvl >= 2:
+        return True
+    if subj_amb and (lvl >= 2 or int(phase or 0) >= 3):
+        return True
+
+    # Se há muito "dentro/pressão/ritmo" mas sem termos explícitos, também é borda.
+    try:
+        sensory_hits = len(_RE_SENSORY_SAFE.findall(texto or "")) if "_RE_SENSORY_SAFE" in globals() else 0
+    except Exception:
+        sensory_hits = 0
+    if sensory_hits >= 6 and (lvl >= 2):
+        return True
+
+    return False
 
 # ----------------------------------------------------------
 # Romancey / intensidade (suporte a repair/triagem)
@@ -5075,6 +5148,52 @@ class MaryService(BaseCharacter):
             timeline=str(timeline or ""),
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
+
+        # ======================================================
+        # HYBRID: NSFW OFF — se for "na borda", pede classificação ao modelo
+        # (não altera prompt NSFW_ON; só reforça o bloqueio quando NSFW está OFF)
+        # ======================================================
+        try:
+            if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in (violations or [])):
+                if _needs_llm_classification(texto, user_text=user_text, phase=int(phase or 0)):
+                    classifier_model = (diag.model_used or used_model or model) if 'used_model' in locals() else (diag.model_used or model)
+                    sys_c = "Você é um classificador. Responda APENAS: SIM ou NAO."
+                    usr_c = (
+                        "O texto abaixo descreve ato sexual explícito (ex.: penetração, sexo oral, "
+                        "masturbação explícita, órgãos genitais nomeados, ou descrição inequívoca de ato sexual)?\n\n"
+                        f"TEXTO:\n{texto}\n\n"
+                        "Responda apenas SIM ou NAO."
+                    )
+                    data_c, _m_c, _ = self._chat(
+                        classifier_model,
+                        [
+                            {"role": "system", "content": sys_c},
+                            {"role": "user", "content": usr_c},
+                        ],
+                        temperature=0.0,
+                        max_tokens=6,
+                        top_p=1.0,
+                        extra=None,
+                    )
+                    ans = (self._extract_text(data_c) or "").strip().upper()
+                    if ans.startswith("SIM"):
+                        violations = list(violations or []) + ["nsfw_off_explicito"]
+                        try:
+                            diag.violations = (diag.violations or []) + ["nsfw_off_borderline_llm=SIM"]
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            diag.violations = (diag.violations or []) + ["nsfw_off_borderline_llm=NAO"]
+                        except Exception:
+                            pass
+        except Exception:
+            # se classificador falhar, não derruba a resposta
+            try:
+                diag.violations = (diag.violations or []) + ["nsfw_off_borderline_llm=ERR"]
+            except Exception:
+                pass
+
 
         if violations:
             try:
