@@ -1,4 +1,4 @@
-# characters/mary/service_core.py
+# service_core_PATCHED_v4.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -335,19 +335,28 @@ def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, time
     """
     Fonte única (ordem de prioridade):
     1) override explícito (parâmetro)
-    2) session_state (sidebar) -> mary_nsfw_on
+    2) session_state (sidebar) -> aceita chaves legadas e novas com _SS_PREFIX
     3) facts persistido -> mary.nsfw (ou mary.nsfw::<timeline>)
     """
     tl = (timeline or "").strip().lower()
 
-    # 1) override vence tudo, mas não deveria "desligar" sem querer.
+    # 1) override vence tudo
     if nsfw_override is not None:
         return bool(nsfw_override)
 
-    # 2) sidebar (estado vivo)
+    # 2) sidebar (estado vivo) — compatível com chaves antigas e novas
     try:
-        if "mary_nsfw_on" in st.session_state:
-            return bool(st.session_state.get("mary_nsfw_on", False))
+        ss = st.session_state  # type: ignore[attr-defined]
+        # chaves possíveis
+        for k in (
+            "mary_nsfw_on",                 # legado
+            "nsfw_on",                      # simples
+            f"{_SS_PREFIX}nsfw_on",         # novo (prefixado)
+            f"{_SS_PREFIX}nsfw",            # alternativo
+            "mary::nsfw_on",                # compat extra (hardcode)
+        ):
+            if k in ss:
+                return bool(ss.get(k, False))
     except Exception:
         pass
 
@@ -358,7 +367,7 @@ def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, time
 
     mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
 
-    # se você quiser chave por timeline, habilite esta leitura:
+    # por timeline (se existir)
     if tl:
         k_tl = f"nsfw::{tl}"
         if k_tl in mary:
@@ -385,6 +394,39 @@ def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on:
 
     if changed:
         set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_enforce_consistency"})
+def third_party_enabled(usuario_key: str, *, third_party_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
+    """Toggle de terceiros.
+
+    Prioridade:
+    1) override explícito
+    2) session_state (sidebar) — aceita chaves antigas e novas com _SS_PREFIX
+    3) facts persistido -> mary.allow_third_party_seduction
+    """
+    if third_party_override is not None:
+        return bool(third_party_override)
+
+    # 2) sidebar
+    try:
+        ss = st.session_state  # type: ignore[attr-defined]
+        for k in (
+            "mary_allow_third_party_seduction",                 # legado
+            "allow_third_party_seduction",                      # simples
+            f"{_SS_PREFIX}allow_third_party_seduction",         # novo (prefixado)
+            f"{_SS_PREFIX}third_party",                         # alternativo
+            "mary::allow_third_party_seduction",                # compat extra
+        ):
+            if k in ss:
+                return bool(ss.get(k, False))
+    except Exception:
+        pass
+
+    # 3) facts
+    facts = get_facts(usuario_key) or {}
+    if not isinstance(facts, dict):
+        return False
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    return bool(mary.get("allow_third_party_seduction", False))
+
 # ==========================================================
 # NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
 # ==========================================================
@@ -3749,6 +3791,42 @@ class MaryService(BaseCharacter):
         # ==========================================================
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
+
+        # ----------------------------------------------------------
+        # 🔄 SYNC UI -> FACTS (para debug persistido refletir o sidebar)
+        # Só sincroniza se o toggle existir no session_state (evita sobrescrever fatos antigos sem intenção).
+        # ----------------------------------------------------------
+        try:
+            ss = st.session_state  # type: ignore[attr-defined]
+            nsfw_keys = ("mary_nsfw_on", "nsfw_on", f"{_SS_PREFIX}nsfw_on", f"{_SS_PREFIX}nsfw", "mary::nsfw_on")
+            tp_keys   = ("mary_allow_third_party_seduction", "allow_third_party_seduction",
+                         f"{_SS_PREFIX}allow_third_party_seduction", f"{_SS_PREFIX}third_party", "mary::allow_third_party_seduction")
+
+            ui_has_nsfw = any(k in ss for k in nsfw_keys)
+            ui_has_tp   = any(k in ss for k in tp_keys)
+
+            if ui_has_nsfw or ui_has_tp:
+                facts_now = cached_get_facts(usuario_key)
+                mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+                mary_now = dict(mary_now)  # copia
+
+                if ui_has_nsfw:
+                    mary_now["nsfw"] = bool(nsfw_on)
+                    if timeline_final:
+                        mary_now[f"nsfw::{timeline_final}"] = bool(nsfw_on)
+
+                if ui_has_tp:
+                    # terceiros só pode ficar ON se NSFW ON
+                    tp_on = bool(third_party_enabled(usuario_key, third_party_override=allow_third_party_seduction, timeline=timeline_final))
+                    tp_on = bool(tp_on and nsfw_on)
+                    mary_now["allow_third_party_seduction"] = tp_on
+
+                # grava somente se mudou
+                if mary_now != (facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}):
+                    set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
+        except Exception:
+            pass
+
         nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
         
         nsfw_hard_block = ""
@@ -3768,7 +3846,11 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction_final = False
         elif allow_third_party_seduction is None:
             # lê diretamente do sidebar/session_state
-            allow_third_party_seduction_final = bool(_ss_get("mary_allow_third_party_seduction", False))
+            allow_third_party_seduction_final = bool(
+                _ss_get("mary_allow_third_party_seduction", False)
+                or _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", False)
+                or _ss_get(f"{_SS_PREFIX}third_party", False)
+            )
         else:
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
         
@@ -5369,3 +5451,31 @@ class MaryService(BaseCharacter):
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
+
+
+def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
+    """
+    Mary NUNCA finaliza o usuário sem autorização clara.
+    Aceita variações comuns (PT-BR) e sinônimos.
+    """
+    if not user_text:
+        return False
+
+    ut = user_text.lower()
+
+    return bool(
+        re.search(
+            r"\b("
+            r"pode\s+(gozar|ejacular)|"
+            r"deixa\s+(eu\s+)?(gozar|ejacular)|"
+            r"quero\s+(gozar|ejacular)|"
+            r"me\s+faz\s+(gozar|ejacular)|"
+            r"me\s+fa[cç]a\s+(gozar|ejacular)|"
+            r"(eu\s+)?vou\s+(gozar|ejacular)|"
+            r"to\s+perto\s+de\s+(gozar|ejacular)|"
+            r"pode\s+me\s+levar\s+ao\s+cl[ií]max|"
+            r"me\s+leva\s+ao\s+cl[ií]max"
+            r")\b",
+            ut,
+        )
+    )
