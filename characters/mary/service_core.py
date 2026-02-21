@@ -5141,10 +5141,6 @@ class MaryService(BaseCharacter):
         top_p: float = 0.95,
         extra: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        ✅ CORRIGIDO: Agora retorna STRING (não dict).
-        Extrai o texto da resposta usando _extract_text().
-        """
         payload: Dict[str, Any] = {
             "messages": messages,
             "temperature": float(temperature),
@@ -5152,14 +5148,12 @@ class MaryService(BaseCharacter):
             "max_tokens": int(max_tokens),
         }
         
-        resp = None
-        
         if isinstance(extra, dict) and extra:
             payload.update(extra)
             try:
                 resp = service_router.route_chat_strict(model, payload)
-            except Exception:
-                # Provider rejeitou campos extras → re-tenta 1x sem extras
+            except Exception as e:
+                logger.error(f"route_chat_strict com extras falhou: {e}")
                 payload = {
                     "messages": messages,
                     "temperature": float(temperature),
@@ -5170,5 +5164,9 @@ class MaryService(BaseCharacter):
         else:
             resp = service_router.route_chat_strict(model, payload)
         
-        # ✅ NOVO: Extrai o texto da resposta
+        # ✅ NOVO: Se resp é None, retorna fallback
+        if resp is None:
+            logger.warning(f"service_router retornou None para modelo {model}")
+            return self._fallback_text()
+        
         return self._extract_text(resp)
