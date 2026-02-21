@@ -1,4 +1,4 @@
-# characters/mary/service_core.py
+# service_core_PATCHED_v7.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -479,6 +479,71 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
     for k, v, m in updates:
         if current.get(k) != v:
             set_fact_safe(usuario_key, k, v, m)
+
+def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
+    """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
+
+    Regra:
+    - Se existir a fase por timeline, ela vence e sincroniza a global.
+    - Se não existir a fase por timeline, cria a fase por timeline a partir da global.
+    - Nunca reduz/avança fase aqui; só alinha chaves para evitar leituras divergentes.
+    """
+    try:
+        tl = (timeline or "").strip().lower()
+        if not tl:
+            return facts
+
+        if not isinstance(facts, dict):
+            return facts
+
+        # aceita variações antigas também
+        tl_keys = [f"intimacy.phase::{tl}", f"intimacy_phase::{tl}", f"mary_intimacy_phase::{tl}"]
+        global_keys = ["intimacy.phase", "intimacy_phase", "mary_intimacy_phase", "phase_intimacy", "phase"]
+
+        tl_val = None
+        for k in tl_keys:
+            if k in facts:
+                try:
+                    tl_val = int(facts.get(k) or 0)
+                except Exception:
+                    tl_val = 0
+                break
+
+        g_key_found = None
+        g_val = None
+        for k in global_keys:
+            if k in facts:
+                g_key_found = k
+                try:
+                    g_val = int(facts.get(k) or 0)
+                except Exception:
+                    g_val = 0
+                break
+
+        # Se existe timeline, ela vence
+        if tl_val is not None:
+            # sincroniza a global para evitar divergência
+            if g_val is None or g_val != tl_val:
+                set_fact_safe(usuario_key, "intimacy.phase", int(tl_val), {"fonte": "intimacy_sync"})
+                facts["intimacy.phase"] = int(tl_val)
+            # garante que a chave principal por timeline exista (caso esteja em alias)
+            if f"intimacy.phase::{tl}" not in facts or int(facts.get(f"intimacy.phase::{tl}") or -999) != int(tl_val):
+                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", int(tl_val), {"fonte": "intimacy_sync"})
+                facts[f"intimacy.phase::{tl}"] = int(tl_val)
+            return facts
+
+        # Se não existe timeline, cria a partir da global (ou 0)
+        base = int(g_val or 0)
+        set_fact_safe(usuario_key, f"intimacy.phase::{tl}", base, {"fonte": "intimacy_sync"})
+        facts[f"intimacy.phase::{tl}"] = base
+        # também garante global canônica
+        if g_key_found != "intimacy.phase" or g_val is None:
+            set_fact_safe(usuario_key, "intimacy.phase", base, {"fonte": "intimacy_sync"})
+            facts["intimacy.phase"] = base
+        return facts
+    except Exception:
+        return facts
+
 
 def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
     if not locked or not local or local == "—":
@@ -3732,6 +3797,12 @@ class MaryService(BaseCharacter):
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0 = cached_get_facts(usuario_key)
+        # ✅ Alinha phase global vs timeline (evita divergência "phase:0" vs "phase::timeline:1")
+        try:
+            facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
+        except Exception:
+            pass
+
 
         # 4) Mudança explícita de local/tempo (comando do usuário)
         mudou, novo_local = _user_requested_location_change(prompt)
