@@ -2435,11 +2435,22 @@ def _violations(
     user_text: str = "",
     phase: int = 0,
     nsfw_on: bool = False,
-    nsfw_profile: str = "SAFE",  # ✅ NOVO
+    nsfw_profile: str = "SAFE",
     timeline: str = "",
     allow_third_party_seduction: bool = False,
 ) -> List[str]:
-    """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
+    """
+    Validações "hard" (não-estéticas) para o mecanismo de repair.
+
+    Objetivo:
+    - Proteger autoria do usuário (não narrar ações/falas dele).
+    - Evitar meta-vazamento (regras/prompt/sistema).
+    - Evitar mensagens/logística offscreen inventadas.
+    - Evitar escalada de violência extrema.
+    - Guardrails realistas para "terceiros" (locais perigosos / convite vago).
+    - Se NSFW OFF, bloquear explícito.
+    - Evitar finalizar a cena sem autorização (soft no NSFW ON; hard no SAFE).
+    """
     t = (texto or "").strip()
     out: List[str] = []
 
@@ -2447,170 +2458,211 @@ def _violations(
         out.append("vazio")
         return out
 
+    # meta / vazamento
     if _RE_PLACEHOLDER_REVEAL.search(t):
         out.append("placeholder_reveal")
 
+    # mensagens inventadas / offscreen
     if _RE_OFFSCREEN_MSG.search(t):
         user_pasted = any(
             kw in (ctx_lower or "")
-            for kw in (
-                "mensagem:",
-                "whatsapp:",
-                "sms:",
-                "print",
-                "segue a mensagem",
-                "segue o texto",
-                "transcrevendo",
-            )
+            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
         )
         if not user_pasted:
             out.append("offscreen_msg_inventada")
 
-    # Regra de autoria: não inventar ações/falas do usuário
+    # autoria: não inventar ações/falas do usuário
     if _has_user_action_violation(t):
         out.append("autoria_usuario")
 
-    # ✅ Só considera conflito se o conflict_mode da timeline NÃO estiver off
+    # conflito (só se timeline permite)
     try:
         if _resolve_conflict_mode(timeline or "") != "off":
             if _RE_CONFLICT_IMMINENT.search(t):
                 out.append("conflito_extremo")
     except Exception:
-        # fallback seguro
         if _RE_CONFLICT_IMMINENT.search(t):
             out.append("conflito_extremo")
+
+    # terceiros: segurança/logística realista
     if _third_party_deviation(t):
         if _RE_DANGEROUS_LOCATIONS.search(t):
             out.append("terceiro_local_perigoso")
-        elif _RE_URBAN_LOCATIONS.search(t):
-            out.append("terceiro_local_urbano")
         elif _RE_VAGUE_INVITE.search(t):
             out.append("terceiro_convite_vago")
+        elif _RE_URBAN_LOCATIONS.search(t):
+            # urbano é permitido, mas evita "teleporte logístico" (uber/hotel etc.)
+            out.append("terceiro_local_urbano")
         else:
-            # fallback: terceiro + ação sem local explícito
-            out.append("terceiro_desvio_generico")     
+            out.append("terceiro_desvio_generico")
 
-    # Finalização de cena fora de hora
+    # finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
-            # No NSFW padrão, NÃO tratar como violação dura
-            if nsfw_on:
-                out.append("finalizou_cena_soft")
-            else:
-                out.append("finalizou_cena")
+            # no NSFW ON tratamos como SOFT (não derruba tudo; só corta no trim)
+            out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
 
-    # ======================================================
-    # ❌ PATCH: Mary NÃO pode finalizar orgasmo do usuário
-    # - Só é permitido se o usuário autorizar explicitamente
-    # ======================================================
-    # Observação: isso é independente de fase; fase controla "clímax" dela,
-    # mas aqui estamos bloqueando "finalizar o usuário" sem comando.
-    
-    if re.search(
-        r"\b(goz(a|ou)|ejacul(a|ou)|explodiu|jatos quentes|cl[ií]max dele)\b",
-        t.lower(),
-    ):
-        if not _user_explicitly_allows_user_orgasm(user_text):
-            out.append("mary_finalizou_orgasmo_do_usuario")
-
-    # ======================================================
-    # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
-    # ======================================================
+    # NSFW OFF: explícito vira violação
     if (not nsfw_on) and _is_explicit(t):
         out.append("nsfw_off_explicito")
 
-    # ======================================================
-    # ✅ NSFW ON: usuário explícito → resposta não pode ser sanitizada
-    # ======================================================
-    if (
-        nsfw_on
-        and (
-            _user_explicitly_allows_climax(user_text or "")
-            or _RE_EXPLICIT_SEX.search(user_text or "")
-        )
-        and (not _RE_EXPLICIT_SEX.search(t))
-        and (not _RE_SENSORY_SAFE.search(t))
-    ):
-        # Só marca violação se também não tiver densidade sensorial
-        out.append("nsfw_on_suavizou")
+    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
+    if re.search(r"\b(goz(a|ou)|ejacul(a|ou)|cl[ií]max\s+dele)\b", t.lower()):
+        if not _user_explicitly_allows_user_orgasm(user_text):
+            out.append("mary_finalizou_orgasmo_do_usuario")
 
-    # ======================================================
-    # ✅ NSFW ON: usuário intenso → romantização é violação
-    # ======================================================
-    if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
-        if nsfw_profile == "NSFW_RELAXED":
-            out.append("tone_romantic_when_intense_soft")
-        else:
-            out.append("tone_romantic_when_intense")
+    return out
 
-    # ======================================================
-    # ✅ Sensorialidade mínima (opcional / controlada por flag)
-    # ======================================================
-    enforce_density = bool(_ss_get("mary_enforce_sensory_density", False))
+# ==========================================================
+# SCORING INVISÍVEL (estilo) + CONFIANÇA (auto-calibração)
+# ==========================================================
+# ========================================================
+# 🔴 CRÍTICAS (sempre rejeitam)
+# ========================================================
+CRITICAL_VIOLATIONS = {
+    "vazio",
+    "placeholder_reveal",
+    "autoria_usuario",
+    "nsfw_off_explicito",
+    "terceiro_local_perigoso",
+}
 
-    if enforce_density and _low_sensory_density(t):
-        out.append("low_sensory_density")
+# ========================================================
+# 🟠 ALTAS (rejeitam condicionalmente)
+# ========================================================
+HIGH_TIER_VIOLATIONS = {
+    "offscreen_msg_inventada",
+    "conflito_extremo",
+    "finalizou_cena",
+    "mary_finalizou_orgasmo_do_usuario",
+    "orgasmo_precoce",
+    "mary_nao_verbalizou_orgasmo",
+}
 
-    # ✅ NSFW ON: evita poesia/metáforas quando o usuário veio explícito/intenso
-    if nsfw_on and _user_is_intense(user_text or ""):
-        if re.search(r"\b(reden[cç][aã]o|prece|voto|destino|para\s+sempre|etern|cicatriz\s+por\s+cicatriz)\b", t, re.IGNORECASE):
-            out.append("nsfw_poetizou")
+# ========================================================
+# 🟡 SUAVES (apenas logging; nunca rejeitam)
+# ========================================================
+# Tudo que não cair em CRITICAL/HIGH vira "suave".
 
-    # ✅ NSFW ON: quando a cena já está quente (fase >= 3) e/ou usuário veio intenso,
-    # Mary deve demonstrar prazer corporal (sem obrigar ato explícito).
-    if nsfw_on and (phase >= 3 or _user_is_intense(user_text or "")):
-        if not _RE_PLEASURE_EXPRESSION.search(t):
-            out.append("prazer_ausente")
+# Backward-compat: usado por trechos antigos
+_HARD_VIOLATIONS = CRITICAL_VIOLATIONS | HIGH_TIER_VIOLATIONS
 
-    # Em NSFW (perfil não relaxado), só reforça densidade se usuário estiver intenso
-    if (
-        nsfw_on
-        and enforce_density
-        and _user_is_intense(user_text or "")
-        and _low_sensory_density(t)
-    ):
-        out.append("low_sensory_density")
+def _style_score(texto: str) -> float:
+    """
+    Score 0..1 (não persiste em facts; só serve para calibrar sampling).
+    Penaliza respostas mecânicas/meta e incentiva continuidade "natural".
+    """
+    t = (texto or "").strip()
+    if not t:
+        return 0.0
 
-        # ======================================================
-        # 🔥 CONTROLE DE ORGASMO DA MARY (SEMPRE EXECUTA)
-        # ======================================================
-    
-        # ❌ Orgasmo precoce (antes da fase permitida)
-        if (
-            nsfw_on
-            and phase < 4
-            and _RE_MARY_ORGASM_DECLARATION.search(t)
+    score = 1.0
+
+    # meta/flags no texto
+    if re.search(r"\b(RESPOSTA\s+AUTOM[ÁA]TICA|REGRA\s+ABSOLUTA|COMO\s+IA)\b", t, re.IGNORECASE):
+        score -= 0.35
+
+    # excesso de colchetes/headers
+    if t.count("[") + t.count("]") >= 8:
+        score -= 0.15
+
+    # repetição de estrutura (muitos parágrafos curtos idênticos)
+    paras = [p.strip() for p in re.split(r"\n{2,}", t) if p.strip()]
+    if len(paras) >= 5:
+        short = sum(1 for p in paras if len(p) < 60)
+        if short >= 3:
+            score -= 0.10
+
+    # sinal mínimo de ação + fala (bom para continuidade)
+    has_dialogue = bool(re.search(r"\".{2,}\"", t))
+    has_action = bool(re.search(r"\b(entra|sai|aproximo|encosto|olho|viro|respiro|paro|puxo)\b", t, re.IGNORECASE))
+    if has_dialogue and has_action:
+        score += 0.05
+
+    return max(0.0, min(1.0, score))
+
+
+def _should_reject_response(
+    violations: list[str],
+    *,
+    nsfw_on: bool = False,
+    phase: int = 0,
+) -> bool:
+    """Decide rejeição com triagem em 3 níveis (crítica/alta/suave).
+
+    - CRÍTICA: sempre rejeita
+    - ALTA: rejeita apenas quando se aplica ao contexto
+    - SUAVE: nunca rejeita (apenas logging)
+    """
+    vset = set(violations or [])
+
+    # 1) críticas sempre
+    if vset & CRITICAL_VIOLATIONS:
+        try:
+            logger.warning(f"Rejeição por violação CRÍTICA: {sorted(vset & CRITICAL_VIOLATIONS)}")
+        except Exception:
+            pass
+        return True
+
+    # 2) altas condicionais
+    for v in list(vset & HIGH_TIER_VIOLATIONS):
+        if v == "finalizou_cena":
+            # NSFW ON: normalmente não rejeita; corta (trim) / mantém gancho
+            if not nsfw_on:
+                return True
+            continue
+
+        if v == "orgasmo_precoce":
+            # só faz sentido rejeitar se ainda não está na fase de clímax
+            if int(phase or 0) < 4:
+                return True
+            continue
+
+        # as demais altas: rejeita sempre (segurança/consentimento)
+        if v in (
+            "offscreen_msg_inventada",
+            "conflito_extremo",
+            "mary_finalizou_orgasmo_do_usuario",
+            "mary_nao_verbalizou_orgasmo",
         ):
-            out.append("orgasmo_precoce")
-    
-        # ❌ Cena claramente em clímax mas Mary não verbalizou
-        if (
-            nsfw_on
-            and phase >= 4
-            and _detect_climax_signal(t, user_text, nsfw_on=nsfw_on, phase=phase)
-            and not _RE_MARY_ORGASM_DECLARATION.search(t)
-        ):
-            out.append("mary_nao_verbalizou_orgasmo")
-    
-        # ❌ Fase quente mas sem intensidade corporal suficiente
-        if (
-            nsfw_on
-            and phase >= 4
-            and not _RE_ORGASM_INTENSITY.search(t)
-        ):
-            out.append("intensidade_orgasmo_baixa")
-    
-        # ❌ Clima quente mas Mary não provoca de forma ativa
-        if (
-            nsfw_on
-            and phase >= 3
-            and not _RE_EROTIC_PROVOCATION.search(t)
-            and _user_is_intense(user_text or "")
-        ):
-            out.append("provocacao_ausente")
-    
-        return out
-    
+            return True
+
+    # 3) suaves: loga e segue
+    soft = [v for v in (violations or []) if v not in CRITICAL_VIOLATIONS and v not in HIGH_TIER_VIOLATIONS]
+    if soft:
+        try:
+            logger.info(f"Violações suaves (sem rejeição): {soft}")
+        except Exception:
+            pass
+
+    return False
+
+def _confidence_key(usuario_key: str) -> str:
+    return f"mary_confidence::{usuario_key}"
+
+def _get_confidence(usuario_key: str) -> float:
+    try:
+        v = float(_ss_get(_confidence_key(usuario_key), 0.40) or 0.40)
+    except Exception:
+        v = 0.40
+    return max(0.0, min(1.0, v))
+
+def _update_confidence(usuario_key: str, *, hard_ok: bool, style: float) -> float:
+    """
+    Sobe quando: sem violações hard + score alto.
+    Cai quando: violação hard OU score muito baixo.
+    """
+    c = _get_confidence(usuario_key)
+    if hard_ok and style >= 0.70:
+        c = min(1.0, c + 0.08)
+    elif hard_ok and style >= 0.55:
+        c = min(1.0, c + 0.04)
+    else:
+        c = max(0.0, c - 0.10)
+    _ss_set(_confidence_key(usuario_key), round(c, 3))
+    return c
+
+
 def _trim_scene_finalization(texto: str) -> str:
     """Corta finalizações de cena e devolve um gancho sensorial."""
     if not texto:
@@ -2656,6 +2708,7 @@ def _repair_fewshot_example(violations: List[str]) -> str:
 
     vset = set(violations)
     chosen = next((p for p in priority if p in vset), violations[0])
+
 
     examples: Dict[str, str] = {
         "placeholder_reveal": """EXEMPLO DE CORREÇÃO (meta → in-character):
