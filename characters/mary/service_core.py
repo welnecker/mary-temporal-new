@@ -5148,25 +5148,37 @@ class MaryService(BaseCharacter):
             "max_tokens": int(max_tokens),
         }
         
-        if isinstance(extra, dict) and extra:
-            payload.update(extra)
-            try:
+        try:
+            if isinstance(extra, dict) and extra:
+                payload.update(extra)
+                try:
+                    resp = service_router.route_chat_strict(model, payload)
+                except Exception as e:
+                    logger.error(f"❌ route_chat_strict COM EXTRAS falhou: {type(e).__name__}: {e}")
+                    payload = {
+                        "messages": messages,
+                        "temperature": float(temperature),
+                        "top_p": float(top_p),
+                        "max_tokens": int(max_tokens),
+                    }
+                    resp = service_router.route_chat_strict(model, payload)
+            else:
                 resp = service_router.route_chat_strict(model, payload)
-            except Exception as e:
-                logger.error(f"route_chat_strict com extras falhou: {e}")
-                payload = {
-                    "messages": messages,
-                    "temperature": float(temperature),
-                    "top_p": float(top_p),
-                    "max_tokens": int(max_tokens),
-                }
-                resp = service_router.route_chat_strict(model, payload)
-        else:
-            resp = service_router.route_chat_strict(model, payload)
-        
-        # ✅ NOVO: Se resp é None, retorna fallback
-        if resp is None:
-            logger.warning(f"service_router retornou None para modelo {model}")
-            return self._fallback_text()
-        
-        return self._extract_text(resp)
+            
+            logger.info(f"🔍 route_chat_strict retornou: {type(resp).__name__} = {repr(resp)[:200]}")
+            
+            if resp is None:
+                logger.warning(f"⚠️ route_chat_strict retornou None para modelo {model}")
+                fallback = self._fallback_text()
+                logger.info(f"✅ Usando fallback: {fallback[:100]}")
+                return fallback
+            
+            extracted = self._extract_text(resp)
+            logger.info(f"✅ Texto extraído: {extracted[:100]}")
+            return extracted
+            
+        except Exception as e:
+            logger.error(f"❌ Erro em _chat(): {type(e).__name__}: {e}")
+            fallback = self._fallback_text()
+            logger.info(f"✅ Usando fallback por erro: {fallback[:100]}")
+            return fallback
