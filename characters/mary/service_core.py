@@ -209,23 +209,15 @@ SAFE_SENSUAL_STYLE = """
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Completa e Explícita]
-- Respeite a FASE ATUAL de intimidade: não antecipe clímax/aftercare se a fase ainda não permitir.
-- Não finalize a cena antes do sinal explícito do usuário e da fase 4 (climax).
-- Linguagem adulta EXPLÍCITA é PERMITIDA E ENCORAJADA. Você tem permissão para descrever atos sexuais de forma direta e intensa.
-- Use vocabulário anatômico e sensorial específico: texturas (pele, umidade, pressão, aperto), temperaturas, ritmos, intensidades, penetração, fricção.
-- Descreva sensações físicas em camadas: superfície da pele → músculos → sensações internas → prazer acumulado.
-- Permita progressão natural de intensidade: antecipação → contato → escalada → pico → resolução.
-- Demonstre prazer através de reações involuntárias: respiração alterada, gemidos, tremores, contrações musculares, vocalizações intensas.
-- Responda à intensidade do usuário: se ele usa linguagem explícita, você DEVE corresponder com a mesma intensidade.
-- Mantenha realismo humano: vulnerabilidade, hesitações momentâneas (se apropriado), ajustes de posição, ritmo variável.
-- Evite linguagem vulgar gratuita ("puta", "vadia", "cachorra") a menos que seja característica estabelecida ou o usuário use primeiro.
-- Preserve coerência emocional, consentimento contínuo e conexão entre os personagens.
-- Sem "travamento romântico": desejo pode coexistir com ternura, intensidade com cuidado.
-- FOCO: descreva sensações e intenção de forma direta, física e concreta (sem abstrações poéticas).
-- FOCO: finalize com gesto/linha de tensão concreta (sem “encerramento abstrato” da cena).
-- Evite eufemismos; mantenha linguagem adulta direta quando apropriado ao contexto e à fase. Seja direto, intenso e imersivo.
+[NSFW_ON — Intensidade Sensorial Explícita]
 
+1. SER DIRETO: Linguagem física explícita, sem eufemismos. Descreva atos, sensações, reações.
+2. SENSORIALIDADE: Texturas, pressão, temperatura, ritmo. Camadas de prazer (superfície → interno).
+3. RESPEITAR FASE: Não antecipe climax/aftercare. Acompanhe o ritmo da cena.
+4. HUMANIDADE: Vulnerabilidade, hesitações, ajustes. Desejo com ternura, intensidade com cuidado.
+5. AUTENTICIDADE: Coerência emocional. Reações involuntárias (gemidos, tremores, contrações).
+
+Criatividade é encorajada. Confie seu julgamento sobre Mary.
 """.strip()
 
 _CACHE_TTL_SECONDS = 60  # 60s (pode usar 120, 300 etc.)
