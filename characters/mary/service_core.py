@@ -5116,26 +5116,21 @@ class MaryService(BaseCharacter):
             p = int(phase)
         except Exception:
             p = 0
-
         maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
         p = max(self._INTIMACY_MIN, min(p, maxp))
-
         set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
-
         tl = ""
         try:
             tl = str(_ss_get("mary_timeline", "") or "").strip()
         except Exception:
             tl = ""
-
         if tl:
             try:
                 set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_progression"})
             except Exception:
                 pass
-
         return p
-
+    
     def _chat(
         self,
         model: str,
@@ -5145,17 +5140,24 @@ class MaryService(BaseCharacter):
         *,
         top_p: float = 0.95,
         extra: Optional[Dict[str, Any]] = None,
-    ):
+    ) -> str:
+        """
+        ✅ CORRIGIDO: Agora retorna STRING (não dict).
+        Extrai o texto da resposta usando _extract_text().
+        """
         payload: Dict[str, Any] = {
             "messages": messages,
             "temperature": float(temperature),
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
+        
+        resp = None
+        
         if isinstance(extra, dict) and extra:
             payload.update(extra)
             try:
-                return service_router.route_chat_strict(model, payload)
+                resp = service_router.route_chat_strict(model, payload)
             except Exception:
                 # Provider rejeitou campos extras → re-tenta 1x sem extras
                 payload = {
@@ -5164,5 +5166,9 @@ class MaryService(BaseCharacter):
                     "top_p": float(top_p),
                     "max_tokens": int(max_tokens),
                 }
-        return service_router.route_chat_strict(model, payload)
-####atual 19/2
+                resp = service_router.route_chat_strict(model, payload)
+        else:
+            resp = service_router.route_chat_strict(model, payload)
+        
+        # ✅ NOVO: Extrai o texto da resposta
+        return self._extract_text(resp)
