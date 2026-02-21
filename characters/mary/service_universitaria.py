@@ -24,7 +24,7 @@ class MaryServiceUniversitaria(MaryService):
         *,
         user: str,
         model: str,
-        prompt: str,
+        prompt: Optional[str] = None,  # ← Mude para Optional[str] = None
         timeline: str = "universitaria",
         nsfw: Optional[bool] = None,
         allow_third_party_seduction: Optional[bool] = None,
