@@ -331,94 +331,38 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
-def nsfw_enabled(
-    usuario_key: str,
-    *,
-    nsfw_override: Optional[bool] = None,
-    timeline: str = "",
-) -> bool:
-    """Fonte de verdade do NSFW.
+def nsfw_enabled(usuario_key: str, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
+    return nsfw_enabled_unified(usuario_key, nsfw_override=nsfw_override, timeline=timeline)
 
-    Prioridade:
-    1) override explícito (chamada programática / UI)
-    2) st.session_state['mary_nsfw_on'] (toggle do sidebar)
-    3) facts['mary']['nsfw::<timeline>'] ou facts['mary']['nsfw']
-    """
-    tl = (timeline or "").strip().lower() or "cumplice"
-
-    # --- helper: ler facts ---
-    def _facts_nsfw() -> bool:
-        facts = cached_get_facts(usuario_key) or {}
-        mary = facts.get("mary") if isinstance(facts, dict) else None
-        if not isinstance(mary, dict):
-            return False
-        # prefer timeline-specific
-        if f"nsfw::{tl}" in mary:
-            return bool(mary.get(f"nsfw::{tl}"))
-        if "nsfw" in mary:
-            return bool(mary.get("nsfw"))
+def _third_party_seduction_enabled(nsfw_on: bool) -> bool:
+    if not nsfw_on:
         return False
 
-    # 1) override explícito: persiste e retorna
-    if nsfw_override is not None:
-        v = bool(nsfw_override)
-        try:
-            st.session_state["mary_nsfw_on"] = v
-        except Exception:
-            pass
-        try:
-            facts = cached_get_facts(usuario_key) or {}
-            mary = facts.get("mary") if isinstance(facts, dict) else None
-            if not isinstance(mary, dict):
-                mary = {}
-            mary["nsfw"] = v
-            mary[f"nsfw::{tl}"] = v
-            set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_override"})
-        except Exception:
-            pass
-        return v
+    # 1) chave nova com namespace
+    v_new = _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", None)
+    if isinstance(v_new, bool):
+        return v_new
 
-    # 2) session_state: respeita e sincroniza para facts (evita inconsistência UI x DB)
-    try:
-        if "mary_nsfw_on" in st.session_state:
-            v = bool(st.session_state.get("mary_nsfw_on"))
-            # se divergiu do facts, sincroniza (melhora debug em repositories.py)
-            try:
-                if v != _facts_nsfw():
-                    facts = cached_get_facts(usuario_key) or {}
-                    mary = facts.get("mary") if isinstance(facts, dict) else None
-                    if not isinstance(mary, dict):
-                        mary = {}
-                    mary["nsfw"] = v
-                    mary[f"nsfw::{tl}"] = v
-                    set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_session_sync"})
-            except Exception:
-                pass
-            return v
-    except Exception:
-        pass
+    # 2) compat legado (sem namespace)
+    v_old = _ss_get("mary_allow_third_party_seduction", None)
+    if isinstance(v_old, bool):
+        return v_old
 
-    # 3) fallback facts
-    return _facts_nsfw()
+    v_old2 = _ss_get("mary_allow_third_party", None)
+    if isinstance(v_old2, bool):
+        return v_old2
 
+    # 3) modo antigo (bool ou string)
+    v_mode = _ss_get("mary_third_party_mode", None)
+    if isinstance(v_mode, bool):
+        return v_mode
 
-def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
-    """
-    Se NSFW OFF, terceiros NÃO pode ficar True persistido.
-    """
-    facts = get_facts(usuario_key) or {}
-    if not isinstance(facts, dict):
-        return
+    if isinstance(v_mode, str):
+        s = v_mode.strip().lower()
+        if s in ("liberar juntas", "liberar_juntas", "juntas", "on", "true", "1"):
+            return True
 
-    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-    changed = False
-
-    if not nsfw_on and bool(mary.get("allow_third_party_seduction", False)):
-        mary["allow_third_party_seduction"] = False
-        changed = True
-
-    if changed:
-        set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_enforce_consistency"})
+    return False
 # ==========================================================
 # NSFW PROFILE (SAFE / STRICT / NSFW_RELAXED)
 # ==========================================================
@@ -2469,11 +2413,22 @@ def _violations(
     user_text: str = "",
     phase: int = 0,
     nsfw_on: bool = False,
-    nsfw_profile: str = "SAFE",  # ✅ NOVO
+    nsfw_profile: str = "SAFE",
     timeline: str = "",
     allow_third_party_seduction: bool = False,
 ) -> List[str]:
-    """Heurísticas simples de violação/risco para o mecanismo de *repair*."""
+    """
+    Validações "hard" (não-estéticas) para o mecanismo de repair.
+
+    Objetivo:
+    - Proteger autoria do usuário (não narrar ações/falas dele).
+    - Evitar meta-vazamento (regras/prompt/sistema).
+    - Evitar mensagens/logística offscreen inventadas.
+    - Evitar escalada de violência extrema.
+    - Guardrails realistas para "terceiros" (locais perigosos / convite vago).
+    - Se NSFW OFF, bloquear explícito.
+    - Evitar finalizar a cena sem autorização (soft no NSFW ON; hard no SAFE).
+    """
     t = (texto or "").strip()
     out: List[str] = []
 
@@ -2481,170 +2436,137 @@ def _violations(
         out.append("vazio")
         return out
 
+    # meta / vazamento
     if _RE_PLACEHOLDER_REVEAL.search(t):
         out.append("placeholder_reveal")
 
+    # mensagens inventadas / offscreen
     if _RE_OFFSCREEN_MSG.search(t):
         user_pasted = any(
             kw in (ctx_lower or "")
-            for kw in (
-                "mensagem:",
-                "whatsapp:",
-                "sms:",
-                "print",
-                "segue a mensagem",
-                "segue o texto",
-                "transcrevendo",
-            )
+            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
         )
         if not user_pasted:
             out.append("offscreen_msg_inventada")
 
-    # Regra de autoria: não inventar ações/falas do usuário
+    # autoria: não inventar ações/falas do usuário
     if _has_user_action_violation(t):
         out.append("autoria_usuario")
 
-    # ✅ Só considera conflito se o conflict_mode da timeline NÃO estiver off
+    # conflito (só se timeline permite)
     try:
         if _resolve_conflict_mode(timeline or "") != "off":
             if _RE_CONFLICT_IMMINENT.search(t):
                 out.append("conflito_extremo")
     except Exception:
-        # fallback seguro
         if _RE_CONFLICT_IMMINENT.search(t):
             out.append("conflito_extremo")
+
+    # terceiros: segurança/logística realista
     if _third_party_deviation(t):
         if _RE_DANGEROUS_LOCATIONS.search(t):
             out.append("terceiro_local_perigoso")
-        elif _RE_URBAN_LOCATIONS.search(t):
-            out.append("terceiro_local_urbano")
         elif _RE_VAGUE_INVITE.search(t):
             out.append("terceiro_convite_vago")
+        elif _RE_URBAN_LOCATIONS.search(t):
+            # urbano é permitido, mas evita "teleporte logístico" (uber/hotel etc.)
+            out.append("terceiro_local_urbano")
         else:
-            # fallback: terceiro + ação sem local explícito
-            out.append("terceiro_desvio_generico")     
+            out.append("terceiro_desvio_generico")
 
-    # Finalização de cena fora de hora
+    # finalização de cena fora de hora
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
-            # No NSFW padrão, NÃO tratar como violação dura
-            if nsfw_on:
-                out.append("finalizou_cena_soft")
-            else:
-                out.append("finalizou_cena")
+            # no NSFW ON tratamos como SOFT (não derruba tudo; só corta no trim)
+            out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
 
-    # ======================================================
-    # ❌ PATCH: Mary NÃO pode finalizar orgasmo do usuário
-    # - Só é permitido se o usuário autorizar explicitamente
-    # ======================================================
-    # Observação: isso é independente de fase; fase controla "clímax" dela,
-    # mas aqui estamos bloqueando "finalizar o usuário" sem comando.
-    
-    if re.search(
-        r"\b(goz(a|ou)|ejacul(a|ou)|explodiu|jatos quentes|cl[ií]max dele)\b",
-        t.lower(),
-    ):
-        if not _user_explicitly_allows_user_orgasm(user_text):
-            out.append("mary_finalizou_orgasmo_do_usuario")
-
-    # ======================================================
-    # ✅ NSFW: explícito só vira "violação" quando NSFW está OFF
-    # ======================================================
+    # NSFW OFF: explícito vira violação
     if (not nsfw_on) and _is_explicit(t):
         out.append("nsfw_off_explicito")
 
-    # ======================================================
-    # ✅ NSFW ON: usuário explícito → resposta não pode ser sanitizada
-    # ======================================================
-    if (
-        nsfw_on
-        and (
-            _user_explicitly_allows_climax(user_text or "")
-            or _RE_EXPLICIT_SEX.search(user_text or "")
-        )
-        and (not _RE_EXPLICIT_SEX.search(t))
-        and (not _RE_SENSORY_SAFE.search(t))
-    ):
-        # Só marca violação se também não tiver densidade sensorial
-        out.append("nsfw_on_suavizou")
+    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
+    if re.search(r"\b(goz(a|ou)|ejacul(a|ou)|cl[ií]max\s+dele)\b", t.lower()):
+        if not _user_explicitly_allows_user_orgasm(user_text):
+            out.append("mary_finalizou_orgasmo_do_usuario")
 
-    # ======================================================
-    # ✅ NSFW ON: usuário intenso → romantização é violação
-    # ======================================================
-    if nsfw_on and _user_is_intense(user_text or "") and _response_is_romancey(t):
-        if nsfw_profile == "NSFW_RELAXED":
-            out.append("tone_romantic_when_intense_soft")
-        else:
-            out.append("tone_romantic_when_intense")
+    return out
 
-    # ======================================================
-    # ✅ Sensorialidade mínima (opcional / controlada por flag)
-    # ======================================================
-    enforce_density = bool(_ss_get("mary_enforce_sensory_density", False))
+# ==========================================================
+# SCORING INVISÍVEL (estilo) + CONFIANÇA (auto-calibração)
+# ==========================================================
+_HARD_VIOLATIONS = {
+    "vazio",
+    "placeholder_reveal",
+    "offscreen_msg_inventada",
+    "autoria_usuario",
+    "conflito_extremo",
+    "terceiro_local_perigoso",
+    "terceiro_convite_vago",
+    "terceiro_desvio_generico",
+    "nsfw_off_explicito",
+    "mary_finalizou_orgasmo_do_usuario",
+}
 
-    if enforce_density and _low_sensory_density(t):
-        out.append("low_sensory_density")
+def _style_score(texto: str) -> float:
+    """
+    Score 0..1 (não persiste em facts; só serve para calibrar sampling).
+    Penaliza respostas mecânicas/meta e incentiva continuidade "natural".
+    """
+    t = (texto or "").strip()
+    if not t:
+        return 0.0
 
-    # ✅ NSFW ON: evita poesia/metáforas quando o usuário veio explícito/intenso
-    if nsfw_on and _user_is_intense(user_text or ""):
-        if re.search(r"\b(reden[cç][aã]o|prece|voto|destino|para\s+sempre|etern|cicatriz\s+por\s+cicatriz)\b", t, re.IGNORECASE):
-            out.append("nsfw_poetizou")
+    score = 1.0
 
-    # ✅ NSFW ON: quando a cena já está quente (fase >= 3) e/ou usuário veio intenso,
-    # Mary deve demonstrar prazer corporal (sem obrigar ato explícito).
-    if nsfw_on and (phase >= 3 or _user_is_intense(user_text or "")):
-        if not _RE_PLEASURE_EXPRESSION.search(t):
-            out.append("prazer_ausente")
+    # meta/flags no texto
+    if re.search(r"\b(RESPOSTA\s+AUTOM[ÁA]TICA|REGRA\s+ABSOLUTA|COMO\s+IA)\b", t, re.IGNORECASE):
+        score -= 0.35
 
-    # Em NSFW (perfil não relaxado), só reforça densidade se usuário estiver intenso
-    if (
-        nsfw_on
-        and enforce_density
-        and _user_is_intense(user_text or "")
-        and _low_sensory_density(t)
-    ):
-        out.append("low_sensory_density")
+    # excesso de colchetes/headers
+    if t.count("[") + t.count("]") >= 8:
+        score -= 0.15
 
-        # ======================================================
-        # 🔥 CONTROLE DE ORGASMO DA MARY (SEMPRE EXECUTA)
-        # ======================================================
-    
-        # ❌ Orgasmo precoce (antes da fase permitida)
-        if (
-            nsfw_on
-            and phase < 4
-            and _RE_MARY_ORGASM_DECLARATION.search(t)
-        ):
-            out.append("orgasmo_precoce")
-    
-        # ❌ Cena claramente em clímax mas Mary não verbalizou
-        if (
-            nsfw_on
-            and phase >= 4
-            and _detect_climax_signal(t, user_text, nsfw_on=nsfw_on, phase=phase)
-            and not _RE_MARY_ORGASM_DECLARATION.search(t)
-        ):
-            out.append("mary_nao_verbalizou_orgasmo")
-    
-        # ❌ Fase quente mas sem intensidade corporal suficiente
-        if (
-            nsfw_on
-            and phase >= 4
-            and not _RE_ORGASM_INTENSITY.search(t)
-        ):
-            out.append("intensidade_orgasmo_baixa")
-    
-        # ❌ Clima quente mas Mary não provoca de forma ativa
-        if (
-            nsfw_on
-            and phase >= 3
-            and not _RE_EROTIC_PROVOCATION.search(t)
-            and _user_is_intense(user_text or "")
-        ):
-            out.append("provocacao_ausente")
-    
-        return out
-    
+    # repetição de estrutura (muitos parágrafos curtos idênticos)
+    paras = [p.strip() for p in re.split(r"\n{2,}", t) if p.strip()]
+    if len(paras) >= 5:
+        short = sum(1 for p in paras if len(p) < 60)
+        if short >= 3:
+            score -= 0.10
+
+    # sinal mínimo de ação + fala (bom para continuidade)
+    has_dialogue = bool(re.search(r"\".{2,}\"", t))
+    has_action = bool(re.search(r"\b(entra|sai|aproximo|encosto|olho|viro|respiro|paro|puxo)\b", t, re.IGNORECASE))
+    if has_dialogue and has_action:
+        score += 0.05
+
+    return max(0.0, min(1.0, score))
+
+def _confidence_key(usuario_key: str) -> str:
+    return f"mary_confidence::{usuario_key}"
+
+def _get_confidence(usuario_key: str) -> float:
+    try:
+        v = float(_ss_get(_confidence_key(usuario_key), 0.40) or 0.40)
+    except Exception:
+        v = 0.40
+    return max(0.0, min(1.0, v))
+
+def _update_confidence(usuario_key: str, *, hard_ok: bool, style: float) -> float:
+    """
+    Sobe quando: sem violações hard + score alto.
+    Cai quando: violação hard OU score muito baixo.
+    """
+    c = _get_confidence(usuario_key)
+    if hard_ok and style >= 0.70:
+        c = min(1.0, c + 0.08)
+    elif hard_ok and style >= 0.55:
+        c = min(1.0, c + 0.04)
+    else:
+        c = max(0.0, c - 0.10)
+    _ss_set(_confidence_key(usuario_key), round(c, 3))
+    return c
+
+
 def _trim_scene_finalization(texto: str) -> str:
     """Corta finalizações de cena e devolve um gancho sensorial."""
     if not texto:
@@ -3267,30 +3189,32 @@ def _tp_arc_key(timeline: str) -> str:
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
-    """Carrega o arco de terceiros (persistido em facts). Preserva chaves extras (ex: anchor_backup)."""
     if not isinstance(facts, dict):
         facts = {}
 
-    raw = facts.get(_tp_arc_key(timeline))
-    if not isinstance(raw, dict):
-        raw = {}
+    arc_root = facts.get("arc")
+    if not isinstance(arc_root, dict):
+        arc_root = {}
 
-    out = dict(raw)  # preserva extras (anchor_backup, last_anchor_mode, etc.)
+    arc_key = _tp_arc_key(timeline)
+    arc = arc_root.get(arc_key)
+    if not isinstance(arc, dict):
+        arc = {}
 
-    # defaults / normalização
-    out["phase"] = int(out.get("phase") or 0)
-    out["tension"] = _clamp01(out.get("tension", 0.0))
-    out["guilt"] = _clamp01(out.get("guilt", 0.0))
-    out["anchor"] = _clamp01(out.get("anchor", 0.85))
-    out["last"] = out.get("last") if isinstance(out.get("last"), str) else ""
+    out = {
+        "phase": int(arc.get("phase") or 0),
+        "tension": _clamp01(arc.get("tension", 0.0)),
+        "guilt": _clamp01(arc.get("guilt", 0.0)),
+        "anchor": _clamp01(arc.get("anchor", 0.45)),
+        "last": arc.get("last") if isinstance(arc.get("last"), str) else "",
+    }
 
-    # limites
     if out["phase"] < 0:
         out["phase"] = 0
     if out["phase"] > 4:
         out["phase"] = 4
-
     return out
+
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
     try:
@@ -3334,95 +3258,97 @@ def _tp_arc_event(prompt: str, texto: str) -> str:
 
 
 def _update_tp_arc_for_turn(
-    *,
     usuario_key: str,
-    facts: Dict[str, Any],
     timeline: str,
-    prompt: str,
-    texto: str,
+    *,
+    ev: str,
     allow_third_party: bool,
-    nsfw_on: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Atualiza fase/tensão/culpa do arco de terceiros e persiste.
-
-    ✅ Respeita o ANCHOR dinâmico:
-    - anchor alto => mais freio (sobe fase mais devagar + culpa maior)
-    - anchor baixo => mais permissiva (tensão sobe mais rápido + culpa menor)
-
-    Regras base:
-    - Se allow_third_party estiver OFF (ou nsfw_on False), decai e volta para fase segura.
-    - Não remove a âncora (anchor/anchor_backup).
     """
-    tl = (timeline or "").strip().lower() or "cumplice"
-    arc = _get_tp_arc_state(facts, tl)
-    ev = _tp_arc_event(prompt, texto)
+    Atualiza arco de terceiros por turno.
 
-    # garante defaults
+    Agora respeita o anchor dinâmico:
+    - anchor alto (~0.85): Mary mais "ancorada" (tensão sobe mais devagar, decai mais rápido)
+    - anchor baixo (~0.45): vínculo mais frouxo (tensão sobe mais rápido, decai mais devagar)
+    """
+    arc = _load_tp_arc_state(usuario_key, timeline)
+    arc = arc if isinstance(arc, dict) else {}
+
+    # defaults
     arc.setdefault("phase", 0)
     arc.setdefault("tension", 0.0)
     arc.setdefault("guilt", 0.0)
     arc.setdefault("anchor", 0.85)
-    arc.setdefault("anchor_backup", float(arc.get("anchor", 0.85) or 0.85))
 
-    anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
+    anchor = _clamp01(arc.get("anchor", 0.85))
+    permiss = _clamp01(1.0 - anchor)  # 0..1
 
-    # nsfw_on pode ser passado; se for False, terceiros efetivamente OFF
-    allow = bool(allow_third_party and (True if nsfw_on is None else bool(nsfw_on)))
-
-    # fatores derivados do anchor
-    permissive = _clamp01((0.85 - anchor) / 0.40)  # 0 (anchor=0.85) .. ~1 (anchor<=0.45)
-    tension_gain = 1.0 + 0.60 * permissive        # até +60%
-    guilt_gain = 0.70 + 0.60 * (1.0 - permissive) # anchor alto => culpa maior
-
-    if not allow:
-        # volta para fase segura gradualmente
-        if int(arc.get("phase") or 0) > 0:
-            arc["phase"] = max(0, int(arc["phase"]) - 1)
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.85)
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.90)
+    # OFF => zera
+    if not allow_third_party:
+        arc["phase"] = 0
+        arc["tension"] = 0.0
+        arc["guilt"] = 0.0
         arc["last"] = "third_party_off"
-        _save_tp_arc_state(usuario_key, tl, arc)
+        _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # EVENTO: test
+    ev = (ev or "").strip().lower()
+
+    # ganhos e decaimentos modulados pelo anchor
+    gain_t = 0.25 * (1.0 + permiss * 0.80)   # até ~0.45
+    gain_g = 0.10 * (1.0 + permiss * 0.50)   # até ~0.15
+    none_decay_t = 0.92 + permiss * 0.04     # 0.92..0.96 (anchor baixo decai menos)
+    none_decay_g = 0.95 + permiss * 0.03     # 0.95..0.98
+
+    # thresholds de fase (anchor baixo facilita subir)
+    thr2 = max(0.40, 0.55 - permiss * 0.10)
+    thr3 = max(0.55, 0.75 - permiss * 0.12)
+    thr4 = max(0.70, 0.90 - permiss * 0.10)
+
+    # 🔺 TEST (tensão/curiosidade)
     if ev == "test":
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) + (0.20 * tension_gain))
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) + (0.10 * guilt_gain))
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) + gain_t)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) + gain_g)
 
-        # fase sobe com tensão, mas anchor alto freia (exige mais tensão)
-        tension = float(arc["tension"])
-        t1 = 0.35 + 0.15 * (1.0 - permissive)  # anchor alto => limiar maior
-        t2 = 0.55 + 0.15 * (1.0 - permissive)
-        t3 = 0.80 + 0.10 * (1.0 - permissive)
-
-        if tension >= t3:
-            arc["phase"] = max(int(arc["phase"]), 3)
-        elif tension >= t2:
-            arc["phase"] = max(int(arc["phase"]), 2)
-        elif tension >= t1:
-            arc["phase"] = max(int(arc["phase"]), 1)
+        t = float(arc["tension"])
+        if t >= thr4:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 4)
+        elif t >= thr3:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 3)
+        elif t >= thr2:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 2)
+        else:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 1)
 
         arc["last"] = "test"
-        _save_tp_arc_state(usuario_key, tl, arc)
+        _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # EVENTO: return
+    # 🔻 RETURN (reancoragem)
     if ev == "return":
-        # retorno reduz tensão e culpa; entra em fase de reconstrução
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.55)
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.60)
-        arc["phase"] = 4 if (float(arc["tension"]) <= 0.35) else max(int(arc["phase"]), 2)
+        # anchor baixo => mantém mais resíduo; anchor alto => limpa mais
+        keep_t = 0.55 + permiss * 0.15  # 0.55..0.70
+        keep_g = 0.60 + permiss * 0.15  # 0.60..0.75
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * keep_t)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * keep_g)
+        arc["phase"] = 4
         arc["last"] = "return"
-        _save_tp_arc_state(usuario_key, tl, arc)
+        _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # EVENTO: none
-    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.92)
-    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.95)
-    if float(arc["tension"]) < 0.25 and int(arc.get("phase") or 0) in (1, 2):
-        arc["phase"] = 0
+    # none: decai leve
+    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * none_decay_t)
+    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * none_decay_g)
+
+    # coerência: sem tensão => não sustenta fase alta
+    if float(arc["tension"]) < 0.25:
+        if int(arc.get("phase", 0) or 0) in (1, 2):
+            arc["phase"] = 0
+        elif int(arc.get("phase", 0) or 0) >= 3:
+            arc["phase"] = 1
+
     arc["last"] = "none"
-    _save_tp_arc_state(usuario_key, tl, arc)
+    _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
 
 
@@ -3614,89 +3540,115 @@ class MaryService(BaseCharacter):
         _ss_set("mary_nsfw_profile", nsfw_profile)
 
         # ==========================================================
-        # ✅ CONSISTÊNCIA: se NSFW OFF, terceiros OFF (facts)
-        # (evita mary.nsfw=false e allow_third_party=true)
-        # ==========================================================
-        try:
-            from core.nsfw import enforce_third_party_consistency
-            enforce_third_party_consistency(usuario_key, timeline=timeline_final, nsfw_on=bool(nsfw_on))
-        except Exception:
-            pass
-
-        # ==========================================================
-        # 🔒 ARCO TERCEIROS (1 BLOCO SÓ): anchor dinâmico + anti "fase fantasma"
-        # Regras:
-        # - NSFW OFF OU terceiros OFF => phase=0, tension=0, guilt=0, anchor restaurado
-        # - NSFW ON + terceiros ON   => anchor cai suavemente até target (mais permissiva)
-        #                              e se phase>=4 sem evidência => degrada para phase=1
+        # 🔒 ANCHOR DINÂMICO (toggle terceiros ON/OFF)
+        # - ON: reduz anchor automaticamente (Mary mais permissiva)
+        # - OFF: restaura anchor original
         # ==========================================================
         try:
             tl_norm = (timeline_final or "").strip().lower() or "cumplice"
             arc_key = f"third_party::{tl_norm}"
-
+        
             arc_root = facts.get("arc") if isinstance(facts, dict) else None
             if not isinstance(arc_root, dict):
                 arc_root = {}
-
+        
             tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
-
-            # defaults (não remove âncora)
+            # defaults
             if "anchor" not in tp_arc:
                 tp_arc["anchor"] = 0.85
-
-            # backup do anchor original (1x)
+        
+            # Backup do anchor original (1x)
             if "anchor_backup" not in tp_arc:
                 tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
-
-            # estado efetivo do toggle
+        
+            # Regras
             allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
-
-            # evidência mínima de ato real com terceiro NO PROMPT ATUAL
-            _re_thirdparty_act = re.compile(
-                r"(?is)\b("
-                r"massagista|barman|gar[çc]om|seguran[çc]a|ficante|ex|"
-                r"beijei\s+ele|ele\s+me\s+beijou|me\s+pegou|me\s+tocou|"
-                r"tran(sei|sar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu"
-                r")\b"
-            )
-            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
-
-            # --- OFF: limpa e restaura anchor ---
-            if not allow_tp:
-                tp_arc["phase"] = 0
-                tp_arc["tension"] = 0
-                tp_arc["guilt"] = 0
-                tp_arc["last"] = "third_party_off"
-
+        
+            if allow_tp:
+                # alvo de liberdade (ajuste se quiser)
+                target = 0.45
+        
+                # queda suave por turno (evita "teleporte emocional")
+                current = float(tp_arc.get("anchor", 0.85) or 0.85)
+                new_anchor = max(target, current - 0.10)  # cai 0.10 por reply até o mínimo target
+        
+                tp_arc["anchor"] = round(new_anchor, 2)
+                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
+        
+            else:
+                # restaura ao original
                 backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
                 tp_arc["anchor"] = round(backup, 2)
                 tp_arc["last_anchor_mode"] = "tp_off_restore"
-
-            # --- ON: anchor cai suave + anti-fantasma ---
-            else:
-                # anchor dinâmico
-                target = 0.45
-                current = float(tp_arc.get("anchor", 0.85) or 0.85)
-                new_anchor = max(target, current - 0.10)
-                tp_arc["anchor"] = round(new_anchor, 2)
-                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
-
-                # anti "pós-ato" fantasma:
-                cur_phase = int(tp_arc.get("phase", 0) or 0)
-                if cur_phase >= 4 and not thirdparty_evidence_now:
-                    tp_arc["phase"] = 1
-                    # mantém tensão se já existe, mas zera culpa (sem aftermath)
-                    tp_arc["tension"] = float(tp_arc.get("tension", 0) or 0)
-                    tp_arc["guilt"] = 0
-                    tp_arc["last"] = "degraded_no_evidence"
-
-            # persiste 1 vez
+        
             arc_root[arc_key] = tp_arc
             facts["arc"] = arc_root
-            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_arc_master"})
+            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_anchor_auto"})
         except Exception:
             pass
-
+        
+        # ==========================================================
+        # 🔒 BLOCO ROBUSTO — CONTROLE ABSOLUTO DO ARCO DE TERCEIROS
+        # Regras:
+        # - Toggle OFF (ou NSFW OFF) => phase=0 + zera tensões (não pode "clima pós-ato")
+        # - Toggle ON => NÃO inventa passado. Não sobe fase aqui. Só impede "fase alta fantasma".
+        # - Se fase estiver alta sem evidência recente, degrada para um nível seguro (tensão) em vez de "pós-ato".
+        # ==========================================================
+        try:
+            tl_norm = (timeline_final or "").strip().lower()
+            arc_key = f"third_party::{tl_norm}"
+        
+            arc_root = facts.get("arc") if isinstance(facts, dict) else None
+            if not isinstance(arc_root, dict):
+                arc_root = {}
+        
+            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
+            current_tp_phase = int(tp_arc.get("phase", 0) or 0)
+        
+            # Evidência "recente" (somente no prompt atual) de ato real com terceiro.
+            # (sem depender de função externa)
+            _re_thirdparty_act = re.compile(
+                r"(?is)\b("
+                r"com\s+ele|com\s+outro|com\s+um\s+cara|com\s+um\s+homem|"
+                r"massagista|barman|gar[çc]om|seguran[çc]a|ex|ficante|"
+                r"ele\s+me\s+beijou|beijei\s+ele|me\s+pegou|me\s+tocou|"
+                r"trans(ei|ar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu|"
+                r"m[eê]n(stru|s)??\b"  # (leve; pode remover se quiser)
+                r")\b"
+            )
+        
+            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
+        
+            # 1) Toggle OFF (ou NSFW OFF) => trava e limpa
+            if (not nsfw_on) or (not allow_third_party_seduction_final):
+                if current_tp_phase != 0 or any(tp_arc.get(k) for k in ("tension", "guilt")):
+                    tp_arc["phase"] = 0
+                    tp_arc["tension"] = 0
+                    tp_arc["guilt"] = 0
+                    tp_arc["last"] = "third_party_off"
+                    arc_root[arc_key] = tp_arc
+                    facts["arc"] = arc_root
+                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_auto_lock"})
+        
+            # 2) Toggle ON + NSFW ON => liberdade, mas sem “passado fantasma”
+            else:
+                # Se veio fase alta (>=4) sem evidência NO prompt atual,
+                # isso costuma causar "clima pós-ato". Então degradamos.
+                if current_tp_phase >= 4 and not thirdparty_evidence_now:
+                    # degrade para fase 1 (tensão/curiosidade) e zera culpa (sem aftermath)
+                    tp_arc["phase"] = 1
+                    tp_arc["tension"] = int(tp_arc.get("tension", 0) or 0)  # mantém se existir
+                    tp_arc["guilt"] = 0
+                    tp_arc["last"] = "degraded_no_evidence"
+                    arc_root[arc_key] = tp_arc
+                    facts["arc"] = arc_root
+                    set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_degrade_no_evidence"})
+        
+                # Se fase está 2/3 sem evidência, mantém (é só tensão).
+                # Se houver evidência, NÃO sobe fase aqui: quem sobe é o updater do arco no fim do turno.
+        except Exception:
+            pass
+        
         # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         
@@ -4413,15 +4365,33 @@ class MaryService(BaseCharacter):
                 # decrementa contador
                 stt["turns_left"] = int(stt.get("turns_left") or 0) - 1
                 _ss_set(pk, stt)
+
+        confidence = _get_confidence(usuario_key)
+
+        # anchor atual do arco de terceiros (impacta sampling quando terceiros ON)
+        anchor_now = 0.85
+        try:
+            tl_norm = (timeline_final or "").strip().lower()
+            arc_key = f"third_party::{tl_norm}"
+            arc_root = facts.get("arc") if isinstance(facts, dict) else None
+            if isinstance(arc_root, dict):
+                tp_arc = arc_root.get(arc_key)
+                if isinstance(tp_arc, dict):
+                    anchor_now = float(tp_arc.get("anchor", 0.85) or 0.85)
+        except Exception:
+            pass
+
         attempts = self._build_attempt_plan(
             model=model,
             nsfw_on=nsfw_on,
             phase=phase,
             prev_phase=prev_phase,
             phase_streak=phase_streak,
-            conflict_now=bool(conflict_now),
-            user_text=prompt,
+            allow_third_party=bool(allow_third_party_seduction_final),
+            anchor=anchor_now,
+            confidence=confidence,
         )
+
         last_err: Optional[Exception] = None
 
         for plan in attempts:
@@ -4663,12 +4633,11 @@ class MaryService(BaseCharacter):
                 try:
                     _update_tp_arc_for_turn(
                         usuario_key=usuario_key,
-                        facts=facts,
+                        facts=facts or {},
                         timeline=timeline_final,
-                        prompt=prompt,
-                        texto=texto,
-                        allow_third_party=allow_third_party_seduction_final,
-                        nsfw_on=nsfw_on,
+                        prompt=prompt or "",
+                        texto=texto or "",
+                        allow_third_party=bool(allow_third_party_seduction_final and nsfw_on),
                     )
                 except Exception:
                     pass
@@ -4706,343 +4675,208 @@ class MaryService(BaseCharacter):
     # ======================================================
     @staticmethod
     def _build_attempt_plan(
-        model: str,
-        nsfw_on: bool,
+        self,
+        *,
         phase: int,
-        prev_phase: int,
-        phase_streak: int,
-        conflict_now: bool,
-        user_text: str,
+        nsfw_on: bool,
+        model: str,
+        prev_phase: int = 0,
+        phase_streak: int = 0,
+        allow_third_party: bool = False,
+        anchor: float = 0.85,
+        confidence: float = 0.40,
     ) -> List[Dict[str, Any]]:
         """
-        Plano dinâmico de geração para maximizar imersão:
-        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
-        - Conflito: temperature desce (resposta mais firme/limpa)
-        - Explicações/fatos: mais contido
-        Campos opcionais em cada plano:
-        - top_p
-        - extra (best-effort: alguns providers ignoram/rejeitam)
+        Plano de sampling por tentativas.
+
+        - Temperatura adaptativa por fase (mais cedo = um pouco mais criativo;
+          fase alta = mais coeso/preciso).
+        - Quando anchor baixa (terceiros ON + vínculo mais solto), aumentamos
+          levemente a variância (temp/top_p) para permitir escolhas menos "ancoradas".
+        - Conforme a confiança aumenta, reduzimos variância e número de tentativas.
+
+        Obs: prev_phase/phase_streak são aceitos para compatibilidade; não são usados
+        diretamente aqui (a lógica de "travamento" continua no updater de fase).
         """
-        ut = (user_text or "").lower()
-        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
+        phase = int(phase or 0)
+        anchor = float(anchor or 0.85)
+        anchor = max(0.0, min(1.0, anchor))
+        confidence = max(0.0, min(1.0, float(confidence or 0.40)))
 
-        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
-        cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
-
-        # Base tokens (fôlego)
-        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
-        base_tokens = 3000 if nsfw_on else 2000
-
-        # mais fôlego só quando realmente precisa
-        if nsfw_on and phase >= 3:
-            base_tokens = 3400
-
-        # explicações: menor
-        if looks_factual and not nsfw_on:
-            base_tokens = 1700
-
-        # aftercare: resposta costuma ser menor/mais controlada
-        if phase == 5:
-            base_tokens = 2200 if nsfw_on else 1800
-
-        # ✅ CAP defensivo
-        base_tokens = min(base_tokens, 3400)
-
-        # Decoding por cena
-        if conflict_now:
-            base_temp = 0.62 if nsfw_on else 0.58
-            base_top_p = 0.90
-        elif looks_factual:
-            base_temp = 0.55
+        # base por fase (coerência crescente)
+        if phase <= 0:
+            base_temp = 0.95
             base_top_p = 0.92
+        elif phase == 1:
+            base_temp = 0.88
+            base_top_p = 0.92
+        elif phase == 2:
+            base_temp = 0.80
+            base_top_p = 0.90
+        elif phase == 3:
+            base_temp = 0.72
+            base_top_p = 0.88
         else:
-            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
-            if phase == 5:
-                if cooldown:
-                    base_temp = 0.58 if nsfw_on else 0.55
-                    base_top_p = 0.93 if nsfw_on else 0.94
-                else:
-                    base_temp = 0.64 if nsfw_on else 0.60
-                    base_top_p = 0.94 if nsfw_on else 0.95
-            elif phase >= 4:
-                base_temp = 1.0
-                base_top_p = 0.92
-            elif phase == 3:
-                base_temp = 0.84
-                base_top_p = 0.93
-            elif phase == 2:
-                base_temp = 0.80
-                base_top_p = 0.95
-            else:
-                base_temp = 0.74
-                base_top_p = 0.96
+            base_temp = 0.66
+            base_top_p = 0.86
 
-                # Penalidades: variam por tipo de cena
-        if looks_factual or conflict_now:
-            extra = {
-                "presence_penalty": 0.25,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.05,
-            }
-        elif nsfw_on and phase >= 4:
-            # clímax: permite repetição e foco no corpo/ritmo
-            extra = {
-                "presence_penalty": 0.15,
-                "frequency_penalty": 0.05,
-                "repetition_penalty": 1.03,
-            }
-        else:
-            extra = {
-                "presence_penalty": 0.30,
-                "frequency_penalty": 0.12,
-                "repetition_penalty": 1.05,
-            }
+        # NSFW tende a ganhar mais naturalidade com um pouco menos de variação (evita checklist)
+        if nsfw_on:
+            base_temp = max(0.55, base_temp - 0.05)
 
-        return [
-            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
-        ]
+        # ajuste por anchor (só faz sentido se terceiros ON)
+        if allow_third_party:
+            if anchor <= 0.55:
+                base_temp = min(1.05, base_temp + 0.08)
+                base_top_p = min(0.98, base_top_p + 0.05)
+            elif anchor >= 0.82:
+                base_temp = max(0.50, base_temp - 0.04)
 
+        # confiança alta => menos tentativas e menos variação
+        max_attempts = 3
+        if confidence >= 0.80:
+            max_attempts = 2
+            base_temp = max(0.50, base_temp - 0.03)
+        if confidence >= 0.92:
+            max_attempts = 1
 
-    # ======================================================
-    # Gerar + Repair
-    # ======================================================
+        # leve "spread" entre tentativas
+        temps = [base_temp, min(1.10, base_temp + 0.06), max(0.45, base_temp - 0.06)][:max_attempts]
+        top_ps = [base_top_p, min(0.99, base_top_p + 0.03), max(0.80, base_top_p - 0.03)][:max_attempts]
+
+        # tokens
+        max_tokens = 900 if phase >= 3 else 700
+
+        attempts: List[Dict[str, Any]] = []
+        for i in range(len(temps)):
+            attempts.append(
+                {
+                    "temperature": round(float(temps[i]), 2),
+                    "top_p": round(float(top_ps[i]), 2),
+                    "max_tokens": int(max_tokens),
+                }
+            )
+        return attempts
+
     def _generate_with_repair(
         self,
+        *,
+        usuario_key: str,
         model: str,
         messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: int,
-        top_p: float,
-        usuario_key: str,
+        prompt: str,
         ctx_lower: str,
-        user_text: str,
         phase: int,
         nsfw_on: bool,
-        nsfw_profile: str,  # ✅ NOVO
+        nsfw_profile: str,
         timeline: str,
         allow_third_party_seduction: bool,
-        diag: _Diag,
-        extra: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
+        attempt_plan: List[Dict[str, Any]],
+        diag: "_Diag",
+    ) -> str:
+        """
+        Gera resposta com *mínimo* de intervenção.
 
-        data, used_model, _provider_meta = self._chat(
-            model,
-            messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            extra=extra,
-        )
-        used_model = used_model or model
+        - Só faz repair quando houver violações HARD.
+        - Quando a confiança sobe, evita refazer tentativas (menos punitivo).
+        - Usa scoring invisível para calibrar confiança.
+        """
+        phase = int(phase or 0)
+        confidence_pre = _get_confidence(usuario_key)
 
-        # ✅ pega finish_reason + usage (quando existirem)
-        finish_reason, usage = _extract_finish_reason_and_usage(data)
+        last_text = ""
+        last_viol = []
 
-        try:
-            _ss_set(
-                "mary_last_raw_preview",
-                {
-                    "used_model": used_model,
-                    "raw_type": type(data).__name__,
-                    "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
-                    "finish_reason": finish_reason,
-                    "usage": usage,
-                    "raw_preview": (str(data)[:900] if data is not None else ""),
-                },
+        for attempt_idx, plan in enumerate(attempt_plan or [{"temperature": 0.8, "top_p": 0.9, "max_tokens": 700}]):
+            diag.attempt = attempt_idx + 1
+            diag.temperature = float(plan.get("temperature", 0.8))
+            diag.top_p = float(plan.get("top_p", 0.9))
+            diag.max_tokens = int(plan.get("max_tokens", 700))
+
+            texto = self._chat(
+                model=model,
+                messages=messages,
+                temperature=diag.temperature,
+                top_p=diag.top_p,
+                max_tokens=diag.max_tokens,
+            ) or ""
+            texto = (texto or "").strip()
+            last_text = texto
+
+            viol = _violations(
+                texto,
+                ctx_lower,
+                user_text=prompt,
+                phase=phase,
+                nsfw_on=bool(nsfw_on),
+                nsfw_profile=str(nsfw_profile or "SAFE"),
+                timeline=str(timeline or ""),
+                allow_third_party_seduction=bool(allow_third_party_seduction),
             )
-        except Exception:
-            pass
+            last_viol = viol
+            diag.violations = list(viol or [])
 
-        # --- extrai texto do payload ---
-        texto = self._extract_text(data) if data is not None else ""
-        texto = (texto or "").strip()
+            style = _style_score(texto)
+            diag.style_score = style  # campo opcional; se não existir, será ignorado no log
+            hard = [v for v in (viol or []) if v in _HARD_VIOLATIONS]
 
-        # ✅ Blindagem anti-truncamento / parêntese quebrado
-        # Aplica cedo para não "criar" violações por corte do provider
-        try:
-            if finish_reason in ("length", "max_tokens", "token_limit", "content_filter"):
-                texto = _seal_broken_ending(texto)
-            else:
-                # mesmo sem finish_reason confiável, sela se houver sinais típicos
-                texto = _seal_broken_ending(texto)
-        except Exception:
-            pass
+            # atualiza confiança (invisível)
+            conf_now = _update_confidence(usuario_key, hard_ok=(len(hard) == 0), style=style)
+            diag.confidence = conf_now  # opcional
 
-        # ✅ Se veio vazio, força erro para cair no try/except externo e entrar no plano seguinte
-        if not texto:
-            try:
-                diag.violations = (diag.violations or []) + ["vazio"]
-            except Exception:
-                pass
-            raise RuntimeError("Model returned empty text")
+            # sem violações hard => pronto
+            if not hard:
+                return texto
 
-        # ======================================================
-        # ✅ Validações / violações (para repair)
-        # ======================================================
-        violations = _violations(
-            texto=texto,
-            ctx_lower=ctx_lower,
-            user_text=user_text,
-            phase=int(phase or 0),
-            nsfw_on=bool(nsfw_on),
-            nsfw_profile=str(nsfw_profile),
-            timeline=str(timeline or ""),
-            allow_third_party_seduction=bool(allow_third_party_seduction),
-        )
+            # confiança alta => não insiste muito (evita ciclo punitivo)
+            if conf_now >= 0.85:
+                break
 
-        if violations:
-            try:
-                diag.violations = (diag.violations or []) + list(violations)
-            except Exception:
-                pass
+            # 1 repair leve (no máximo) para hard violations
+            repair = _repair_instruction(hard) + "\n" + _repair_fewshot_example(hard)
+            repair = repair.strip()
 
-        # ✅ Sem violações → aplica corte de finalização e retorna
-        if not violations:
-            texto = _trim_scene_finalization(texto)
-            return texto, used_model
-        # ======================================================
-        # ✅ Repair (1 passada)
-        # ======================================================
-        try:
-            diag.repairs += 1
-        except Exception:
-            pass
+            if repair:
+                messages_repair = list(messages)
+                messages_repair.append({"role": "assistant", "content": texto})
+                messages_repair.append({"role": "user", "content": f"[REPAIR]\n{repair}\n\nReescreva a resposta. Sem meta. Sem narrar ações do usuário."})
 
-        repair_instr = _repair_instruction(violations)
+                texto2 = self._chat(
+                    model=model,
+                    messages=messages_repair,
+                    temperature=max(0.55, min(1.05, diag.temperature)),
+                    top_p=max(0.85, min(0.99, diag.top_p)),
+                    max_tokens=diag.max_tokens,
+                ) or ""
+                texto2 = (texto2 or "").strip()
 
-        repair_system = (
-            "Você está reescrevendo a última resposta da Mary.\n"
-            "A reescrita deve obedecer 100% as regras do system original.\n"
-            "NÃO explique regras.\n"
-            "NÃO mencione violações.\n"
-            "Apenas reescreva a resposta final.\n\n"
-            f"{repair_instr}"
-        )
-
-        repair_messages: List[Dict[str, str]] = []
-
-        # mantém o system original intacto (messages[0]) e injeta um system extra de repair
-        try:
-            if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                repair_messages.append(messages[0])
-        except Exception:
-            pass
-
-        repair_messages.append({"role": "system", "content": repair_system})
-
-        # contexto mínimo: prompt do usuário + resposta atual
-        repair_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
-        repair_messages.append({"role": "assistant", "content": texto})
-
-        data2, used_model2, _provider_meta2 = self._chat(
-            used_model,
-            repair_messages,
-            temperature=max(0.40, float(temperature) - 0.10),
-            max_tokens=int(max_tokens),
-            top_p=min(0.98, float(top_p) + 0.02),
-            extra=extra,
-        )
-        used_model2 = used_model2 or used_model
-
-        # preview do repair (opcional)
-        try:
-            fr2, usage2 = _extract_finish_reason_and_usage(data2)
-            _ss_set(
-                "mary_last_raw_preview_repair",
-                {
-                    "used_model": used_model2,
-                    "raw_type": type(data2).__name__,
-                    "raw_keys": list(data2.keys())[:20] if isinstance(data2, dict) else None,
-                    "finish_reason": fr2,
-                    "usage": usage2,
-                    "raw_preview": (str(data2)[:900] if data2 is not None else ""),
-                },
-            )
-        except Exception:
-            pass
-
-        texto2 = self._extract_text(data2) if data2 is not None else ""
-        texto2 = (texto2 or "").strip()
-
-        # sela truncamento do repair também
-        try:
-            texto2 = _seal_broken_ending(texto2)
-        except Exception:
-            pass
-
-                # se repair falhar, devolve o original (melhor que vazio)
-        if not texto2:
-            texto = _trim_scene_finalization(texto)
-            return texto, used_model
-        
-        # ======================================================
-        # 🔥 LOOP DE REGENERAÇÃO PARA VIOLAÇÕES CRÍTICAS
-        # ======================================================
-        # Verifica se a violação crítica "mary_nao_verbalizou_orgasmo" foi corrigida
-        # Se não, tenta regenerar novamente com força explícita
-        
-        # ✅ VALIDAÇÃO RIGOROSA: Se ainda não tem verbalização, força máxima
-        if "mary_nao_verbalizou_orgasmo" in violations and nsfw_on and phase >= 4:
-            if not _RE_MARY_ORGASM_DECLARATION.search(texto2):
-                logger.warning(
-                    f"Violação persiste após repair. Aplicando força máxima (tentativa 3/3)."
+                viol2 = _violations(
+                    texto2,
+                    ctx_lower,
+                    user_text=prompt,
+                    phase=phase,
+                    nsfw_on=bool(nsfw_on),
+                    nsfw_profile=str(nsfw_profile or "SAFE"),
+                    timeline=str(timeline or ""),
+                    allow_third_party_seduction=bool(allow_third_party_seduction),
                 )
-                
-                # Prompt de força MÁXIMA (quase imperativo)
-                force_block_max = f"""
-        [🔥🔥 FORÇA MÁXIMA — VERBALIZAÇÃO OBRIGATÓRIA]
-        Mary está em clímax (fase {phase}). Ela DEVE dizer uma destas palavras:
-        - "Vou gozar"
-        - "Estou gozando"
-        - "Gozei"
-        - "Me faz gozar"
-        - "Goza comigo"
-        
-        Escolha UMA e integre no texto. Sem exceção. Sem eufemismo.
-        Exemplo: "Ahhh... vou gozar!"
-        
-        Isso não é sugestão. É obrigatório.
-        """.strip()
-                
-                # Montar mensagens com força máxima
-                force_messages_max: List[Dict[str, str]] = []
-                
-                try:
-                    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                        force_messages_max.append(messages[0])
-                except Exception:
-                    pass
-                
-                force_messages_max.append({"role": "system", "content": force_block_max})
-                force_messages_max.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
-                force_messages_max.append({"role": "assistant", "content": texto2})
-                
-                try:
-                    data_max, used_model_max, _ = self._chat(
-                        used_model2,
-                        force_messages_max,
-                        temperature=0.40,  # Muito baixo (força máxima)
-                        max_tokens=int(max_tokens),
-                        top_p=0.85,  # Conservador
-                        extra=extra,
-                    )
-                    
-                    texto_max = self._extract_text(data_max) if data_max is not None else ""
-                    texto_max = (texto_max or "").strip()
-                    
-                    if texto_max and _RE_MARY_ORGASM_DECLARATION.search(texto_max):
-                        texto2 = _trim_scene_finalization(texto_max)
-                        logger.info("Força máxima bem-sucedida: verbalização detectada.")
-                    else:
-                        logger.warning("Força máxima falhou. Usando resposta anterior.")
-                        
-                except Exception as e:
-                    logger.error(f"Erro na força máxima: {e}")        
-        texto2 = _trim_scene_finalization(texto2)
-        return texto2, used_model2
-    @staticmethod
+                hard2 = [v for v in (viol2 or []) if v in _HARD_VIOLATIONS]
+                style2 = _style_score(texto2)
+                _update_confidence(usuario_key, hard_ok=(len(hard2) == 0), style=style2)
+
+                if not hard2:
+                    diag.violations = list(viol2 or [])
+                    return texto2
+
+            # senão, vai para próxima tentativa
+
+        # fallback final: devolve o último texto (mas corta finalização se foi só "soft")
+        if last_text and ("finalizou_cena_soft" in (last_viol or [])):
+            try:
+                last_text = _trim_scene_finalization(last_text)
+            except Exception:
+                pass
+        return last_text
     def _fallback_text() -> str:
         return (
             "Eu solto um meio sorriso e digo o nome sem fingir distância: Janio. Eu não estou confusa sobre ele — eu estou com medo do quanto eu gostei.\n\n"
@@ -5202,3 +5036,4 @@ class MaryService(BaseCharacter):
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
+####atual 19/2
