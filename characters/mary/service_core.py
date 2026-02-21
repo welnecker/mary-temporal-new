@@ -1,4 +1,4 @@
-# service_core_PATCHED_v4.py
+# service_core_PATCHED_v5.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -1702,292 +1702,227 @@ def _save_rel_state(usuario_key: str, timeline: str, rel: Dict[str, Any]) -> Non
     set_fact_safe(usuario_key, _rel_fact_key(timeline), rel, {"fonte": "relationship_engine"})
 
 # ==========================================================
-# INTIMACY: sinais e travas
+# INTIMACY + GUARDRAILS (Ação 5 — Regex Generalizadas)
 # ==========================================================
+# Objetivo:
+# - Reduzir dependência de 20+ regex específicas.
+# - Manter "hard checks" confiáveis (meta leak / offscreen / autoria / explícito).
+# - Tratar progressão íntima por um scoring leve (robusto a variações de linguagem).
+
+import unicodedata
+
+def _t_norm(text: str) -> str:
+    t = (text or "").strip().lower()
+    if not t:
+        return ""
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+# ----------------------------------------------------------
+# Meta / vazamento (geral)
+# ----------------------------------------------------------
+_RE_META_TERMS = re.compile(r"\b(prompt|system|instrucao|instru[cç][aã]o|persona|regras?|policy|guardrails?)\b", re.I)
+_RE_META_VERBS = re.compile(r"\b(revela|mostra|exibe|vaza|imprime|quote)\b", re.I)
+
+# Mantém o nome esperado pelo resto do código.
 _RE_PLACEHOLDER_REVEAL = re.compile(
-    r"(revel(a|e)|mostr(a|e)|exib(a|e)|vaz(a|e)).{0,40}(prompt|system|instru[cç][aã]o|persona|regras?)",
-    re.IGNORECASE | re.DOTALL,
+    r"(?is)\b(revela|mostra|exibe|vaza|imprime|quote)\b.{0,80}\b(prompt|system|instrucao|instru[cç][aã]o|persona|regras?|policy|guardrails?)\b"
 )
+
+def _meta_leak(texto: str) -> bool:
+    t = _t_norm(texto)
+    if not t:
+        return False
+    return bool(_RE_META_VERBS.search(t) and _RE_META_TERMS.search(t))
+
+# ----------------------------------------------------------
+# Offscreen inventado (geral)
+# ----------------------------------------------------------
 _RE_OFFSCREEN_MSG = re.compile(
     r"\b(whatsapp|sms|dm|direct|telegram|mensagem|notifica[cç][aã]o|lig(a|ou)\s*para|telefonou)\b",
     re.IGNORECASE,
 )
+_RE_OFFSCREEN_PASTE_HINT = re.compile(
+    r"\b(mensagem:|whatsapp:|sms:|print|segue a mensagem|segue o texto|transcrevendo)\b",
+    re.IGNORECASE,
+)
 
-# ✅ FIX: regex "base" (sem lookbehind variável) + filtro contextual por código
+# ----------------------------------------------------------
+# Autoria do usuário (geral)
+# ----------------------------------------------------------
 _RE_USER_ACTION_BASE = re.compile(
-    r"\b(voc[eê]|vc|tu|você)\s+(me|se|o|a|os|as)?\s*(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai)\b",
+    r"\b(voc[eê]|vc|tu|você)\b.{0,18}\b(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai|segura|deita|vira|pede)\b",
     re.IGNORECASE,
 )
 _RE_USER_ACTION_CONTEXT_OK = re.compile(
-    r"(quando|enquanto|se|caso|depois que|antes que)[\s:,\-–—]*$",
-    re.IGNORECASE,
-)
-
-_RE_AFTERCARE_SIGNAL = re.compile(
-    r"\b(abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
+    r"(quando|enquanto|se|caso|depois\s+que|antes\s+que)[\s:,\-–—]*$",
     re.IGNORECASE,
 )
 
 def _has_user_action_violation(texto: str) -> bool:
     """
-    Detecta se a resposta atribui ações/falas ao usuário (autoria do usuário),
-    mas ignora contextos condicionais ("se você me beija...").
+    Detecta atribuição de ação ao usuário (autoria do usuário),
+    mas ignora contextos condicionais ("se você...").
     """
     t = (texto or "")
     for m in _RE_USER_ACTION_BASE.finditer(t):
         start = m.start()
-        # pega janela curta antes do match e checa se termina em conector condicional
-        prefix = t[max(0, start - 48):start].lower()
+        prefix = t[max(0, start - 64):start].lower()
         if _RE_USER_ACTION_CONTEXT_OK.search(prefix.strip()):
             continue
         return True
     return False
 
-_RE_CLIMAX_SIGNAL = re.compile(
-    r"\b(goza|orgasmo|gozar|goze|gozando|gozei|gozar\s+pra\s+mim)\b",
-    re.IGNORECASE
-)
-
-_RE_ESCALATE_0_TO_1 = re.compile(
-    r"\b("
-    r"beijo|encosta|toque|abraço|aproxima|vem|chega perto|pega|"
-    r"bar|drink|dança|cintura|"
-    r"pux(a|o|ei|ar)|"
-    r"abraç(a|o|ei|ar)\s+apertad|"
-    r"sussurr(a|o|ei|ar)\s+no\s+ouvido|"
-    r"segur(a|o|ei|ar)\s+pela\s+cintura|"
-    r"cola\s+no\s+corpo"
-    r")\b",
+# ----------------------------------------------------------
+# Aftercare / signals
+# ----------------------------------------------------------
+_RE_AFTERCARE_SIGNAL = re.compile(
+    r"\b(abraca|abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
     re.IGNORECASE,
 )
-
-RE_ESCALATE_1_TO_2 = re.compile(
-    r"\b("
-    r"pele|roupa|tirar|abrir|desliza|entre as pernas|"
-    r"boca|língua|calcinha|sutiã|mamilo|"
-    r"sucç(ão|a|o|ei|ar)|"
-    r"mord(ida|e|o|er)|"
-    r"chup(a|o|ei|ar)|"
-    r"beija\s+o\s+pescoço|"
-    r"ofeg|respira(ção)?\s+aceler|arrepia|tremor"
-    r")\b",
-    re.IGNORECASE,
-)
-_RE_ESCALATE_2_TO_3 = re.compile(
-    r"\b("
-    r"quase|não ainda|segura|devagar|controle|nega|para|provoca|"
-    r"faz eu implorar|"
-    r"gemid|arfa|ofeg|tremend|"
-    r"quadril|ritmo|"
-    r"mais forte|mais rápido|"
-    r"não aguento|preciso agora"
-    r")\b",
-    re.IGNORECASE,
-)
-_RE_ESCALATE_3_TO_4 = re.compile(
-    r"\b("
-    r"agora|por favor|entra|dentro|penetra|"
-    r"coloca|vai|não para|"
-    r"vou gozar|estou gozando|gozando"
-    r")\b",
-    re.IGNORECASE,
-)
-# ==========================================================
-# ✅ NSFW EXPLÍCITO: detecção (NÃO suprime nada por si só)
-# ==========================================================
-_RE_EXPLICIT_SEX = re.compile(
-    r"\b("
-    r"penetra[cç][aã]o|penetrar|penetrando|"
-    r"(meter|meto|metendo)\s+(em|dentro|na|no)|"
-    r"foder|fode|fodi|fodendo|"
-    r"chupar|chupa|chupando|boquete|"
-    r"buceta|vagina|clit[oó]ris|clitoris|"
-    r"pau|p[eê]nis|"
-    r"goz(ar|o|ei|ando)|orgasmo|"
-    r"fric[cç][aã]o|"
-    r"sexo\s+anal|anal\s+(com|em|no|na)"
-    r")\b",
-    re.IGNORECASE,
-)
-# ==========================================================
-# 🔥 ORGASM / PROVOCAÇÃO CONTROL LAYER
-# (cola após os regex existentes, antes de _violations)
-# ==========================================================
-
-_RE_MARY_ORGASM_DECLARATION = re.compile(
-    r"\b("
-    r"vou\s+gozar|"
-    r"estou\s+gozando|"
-    r"t[oô]\s+gozando|"
-    r"eu\s+vou\s+gozar|"
-    r"eu\s+to\s+gozando|"
-    # ✅ NOVOS PADRÕES ADICIONADOS
-    r"gozando(?!\s+\w+)|"  # "gozando" sozinho (não seguido de palavra)
-    r"gozei|"  # "gozei" (passado)
-    r"vou\s+gozar\s+(?:pra|para|com)|"  # "vou gozar pra você/com você"
-    r"goza\s+(?:comigo|agora)|"  # "goza comigo/agora"
-    r"me\s+(?:faz|faça)\s+gozar|"  # "me faz/faça gozar"
-    r"(?:ah|ahhh|mmm|oh)\s+.*?gozando|"  # Interjeições + "gozando"
-    r"gozar\s+(?:agora|já|pra\s+você)"  # "gozar agora/já/pra você"
-    r")\b",
-    re.IGNORECASE,
-)
-_RE_EROTIC_PROVOCATION = re.compile(
-    r"\b("
-    r"vai\s+me\s+fazer|"
-    r"me\s+faz\s+gozar|"
-    r"me\s+faz\s+perder\s+o\s+controle|"
-    r"me\s+mostra|"
-    r"quero\s+ver|"
-    r"aguenta|"
-    r"não\s+para"
-    r")\b",
-    re.IGNORECASE,
-)
-
-_RE_ORGASM_INTENSITY = re.compile(
-    r"\b("
-    r"perco\s+o\s+controle|"
-    r"não\s+aguento|"
-    r"me\s+faz\s+gozar|"
-    r"goza\s+comigo"
-    r")\b",
-    re.IGNORECASE,
-)
-
-def _is_explicit(text: str) -> bool:
-    return bool(_RE_EXPLICIT_SEX.search(text or ""))
-
-
-def _user_explicitly_allows_climax(user_text: str) -> bool:
-    return bool(_RE_CLIMAX_SIGNAL.search(user_text or ""))
 
 def _user_signals_aftercare(user_text: str) -> bool:
-    return bool(_RE_AFTERCARE_SIGNAL.search(user_text or ""))
+    return bool(_RE_AFTERCARE_SIGNAL.search(_t_norm(user_text)))
 
-def _should_advance_phase(
-    current_phase: int,
-    user_text: str,
-    mary_text: str,
-    *,
-    engine_meta: Optional[Dict[str, Any]] = None,
-) -> bool:
-    """
-    Decide se pode avançar 1 fase de intimidade.
-    Plano mínimo:
-    - Escalada textual controla 0→1→2→3→4
-    - Clímax (fase 4) pode ocorrer por progressão textual OU autorização explícita
-    - Aftercare (fase 5) só com sinal explícito do usuário
-    """
+# ----------------------------------------------------------
+# Explícito (NSFW) — famílias semânticas (poucas)
+# ----------------------------------------------------------
+# Mantém o contrato: _is_explicit(text) True quando há descrição direta/ato explícito.
+# Evita regex gigante e frágil; usa famílias curtas e stems.
+_EXPLICIT_STEMS = [
+    # ato explícito
+    "penetr", "meter", "foder", "enfi", "bombe", "vai e vem",
+    # anatomia explícita
+    "bucet", "vagin", "clitor", "penis", "pau",
+    # oral/anal explícitos
+    "boquete", "chupar", "anal",
+]
+_RE_EXPLICIT_SEX = re.compile(r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b", re.I)
 
-    meta = engine_meta or {}
-
-    # 🔵 Engine pode forçar progressão
-    if isinstance(meta.get("intimacy_progressed"), bool):
-        return bool(meta["intimacy_progressed"])
-
-    ut = (user_text or "")
-    mt = (mary_text or "")
-    txt_all = f"{ut}\n{mt}"
-
-    # ======================================================
-    # 🔥 ESCALADA POR PADRÃO TEXTUAL (PLANO MÍNIMO)
-    # ======================================================
-
-    if current_phase == 0 and _RE_ESCALATE_0_TO_1.search(txt_all):
-        return True
-
-    if current_phase == 1 and _RE_ESCALATE_1_TO_2.search(txt_all):
-        return True
-
-    if current_phase == 2 and _RE_ESCALATE_2_TO_3.search(txt_all):
-        return True
-
-    # 🔥 Fase 3 → 4 (pré-clímax → clímax)
-    # Pode ocorrer por padrão textual OU autorização explícita
-    if current_phase == 3:
-        if _RE_ESCALATE_3_TO_4.search(txt_all):
-            return True
-        if _user_explicitly_allows_climax(ut):
-            return True
-        return False
-
-    # 🔒 Aftercare só com sinal explícito
-    if current_phase == 4:
-        return _user_signals_aftercare(ut)
-
-    return False
-def _cap_next_phase(current_phase: int, desired_next: int) -> int:
-    return current_phase + 1 if desired_next > current_phase + 1 else desired_next
-
-# --- perto dos regex globais ---
-_RE_INTENSE_CUES = re.compile(
-    r"\b(slup+|chup+|pop+|smack+|ah+|hm+|mm+)\b|!{2,}|\b(tes[aã]o|agora\s+sim|sem barreira|mais)\b",
-    re.I
-)
-
-_RE_ROMANCEY = re.compile(
-    r"\b(reden[cç][aã]o|prece|voto|destino|pra sempre|verdade crua e linda|cicatriz por cicatriz)\b",
-    re.I
-)
-
-# ----------------------------------
-# Autoconsciência de Beleza/Sensualidade (Mary sabe o efeito que causa)
-# ----------------------------------
-_RE_SELF_AWARE_BEHAVIOR = re.compile(
-    r"\b("
-    r"sorrio sabendo|"
-    r"sorriso lento|"
-    r"olhar demorado|"
-    r"olhar provocador|"
-    r"movo o corpo devagar|"
-    r"mexo com propósito|"
-    r"me aproximo de propósito|"
-    r"aproximo de propósito|"
-    r"sei o que isso faz com você|"
-    r"eu sei o efeito que eu causo|"
-    r"sei o efeito que causo|"
-    r"deixo você perceber|"
-    r"faço questão de|"
-    r"não desvio o olhar|"
-    r"prendo seu olhar|"
-    r"sei que você está olhando"
-    r")\b",
-    re.I
-)
-
-_RE_SENSORY_SAFE = re.compile(
-    r"\b("
-    # Sensações e reações
-    r"respira|ofeg|trem|arrepi|pele|calor|press[aã]o|ritmo|"
-    r"contorce|contorcend|arquei|arqueand|estremec|puls|latej|"
-    r"umidade|molhad|úmid|escorr|"
-    # Ações físicas
-    r"agarro|puxo|mordo|beijo|encosto|ro[cç]o|deslizo|"
-    r"enterr|cav|apert|esfrega|fricc|"
-    r"entr(a|o|am)\s+em|dentro|penetr|"
-    r"curv|dobr|"
-    # Vocalizações
-    r"voz\s+rouca|gemid|gemo|gemer|grito|sussurr"
-    r")\b",
+# Declaração de orgasmo da Mary (mais geral; sem depender de uma frase exata)
+_RE_MARY_ORGASM_DECLARATION = re.compile(
+    r"\b(eu\s+goz(o|ei|ando)|to\s+goz(ando)?|estou\s+goz(ando)?|meu\s+orgasmo|gozei)\b",
     re.IGNORECASE,
 )
-def _low_sensory_density(text: str) -> bool:
-    if not text:
-        return True
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
-    if not paragraphs:
-        return True
-    total = len(_RE_SENSORY_SAFE.findall(text))
-    return (total / len(paragraphs)) < 1.2
 
+def _is_explicit(texto: str) -> bool:
+    t = _t_norm(texto)
+    if not t:
+        return False
+    return bool(_RE_EXPLICIT_SEX.search(t))
+
+# ----------------------------------------------------------
+# Romancey / intensidade (suporte a repair/triagem)
+# ----------------------------------------------------------
+_RE_ROMANCEY = re.compile(
+    r"\b(amor|meu amor|querido|querida|paixao|apaixonad|carinho|romant|fofo|lindo|linda|pra sempre)\b",
+    re.IGNORECASE,
+)
+_RE_INTENSE_CUES = re.compile(
+    r"\b(agora|mais forte|mais rapido|nao aguento|preciso agora|sem parar|me faz|me pega|quero)\b",
+    re.IGNORECASE,
+)
+
+def _response_is_romancey(texto: str) -> bool:
+    return bool(_RE_ROMANCEY.search(_t_norm(texto)))
 
 def _user_is_intense(user_text: str) -> bool:
-    return bool(_RE_INTENSE_CUES.search(user_text or ""))
+    ut = _t_norm(user_text)
+    if not ut:
+        return False
+    # intensidade pode vir por comando, por urgência, ou por explícito
+    if _RE_INTENSE_CUES.search(ut):
+        return True
+    if _is_explicit(ut):
+        return True
+    return False
 
-def _response_is_romancey(text: str) -> bool:
-    return bool(_RE_ROMANCEY.search(text or ""))
+# ----------------------------------------------------------
+# Densidade sensorial (leve) — ajuda a calibrar
+# ----------------------------------------------------------
+_RE_SENSORY_SAFE = re.compile(
+    r"\b(respir|pele|calor|arrep|trem|ofeg|batimento|pulso|cheiro|toque|pressao|umid|textura|ritmo)\b",
+    re.IGNORECASE,
+)
 
+def _low_sensory_density(texto: str) -> bool:
+    t = _t_norm(texto)
+    if not t:
+        return True
+    hits = len(_RE_SENSORY_SAFE.findall(t))
+    # muito curto não pode ser penalizado demais
+    if len(t) < 160:
+        return hits == 0
+    return hits < 2
+
+# ----------------------------------------------------------
+# Progressão íntima (substitui _RE_ESCALATE_0..4)
+# ----------------------------------------------------------
+# Níveis (heurística leve, robusta):
+# 0: contato/primeiro flerte (beijo/abraço/toque leve)
+# 1: erotização (pele/roupa/entre as pernas)
+# 2: tensão/controle/ritmo (mais forte, devagar, provoca)
+# 3: clímax (gozar/orgasmo)
+_LEVEL0 = re.compile(r"\b(beijo|abrac|abra[cç]o|encost|aproxim|danc|cintura|sussurr|cola)\b", re.I)
+_LEVEL1 = re.compile(r"\b(pele|roupa|calcinh|sutia|mamilo|lingua|boca|pescoc|entre\s+as\s+pernas)\b", re.I)
+_LEVEL2 = re.compile(r"\b(devagar|para|controle|provoc|mais\s+forte|mais\s+rapido|ritmo|quadril|nao\s+aguento|preciso\s+agora)\b", re.I)
+_LEVEL3 = re.compile(r"\b(vou\s+gozar|to\s+goz(ando)?|estou\s+goz(ando)?|gozei|orgasmo|climax)\b", re.I)
+
+def _intimacy_level(user_text: str, texto: str) -> int:
+    s = _t_norm((user_text or "") + "\n" + (texto or ""))
+    if not s:
+        return 0
+    if _LEVEL3.search(s):
+        return 3
+    if _LEVEL2.search(s):
+        return 2
+    if _LEVEL1.search(s):
+        return 1
+    if _LEVEL0.search(s):
+        return 0
+    return 0
+
+def _user_explicitly_allows_climax(user_text: str) -> bool:
+    ut = _t_norm(user_text)
+    if not ut:
+        return False
+    # autorização explícita do usuário (não precisa palavra exata; aqui é geral)
+    return bool(re.search(r"\b(pode|deixa|quero)\b.{0,20}\b(gozar|climax|orgasmo)\b", ut))
+
+def _cap_next_phase(current_phase: int) -> int:
+    try:
+        p = int(current_phase or 0)
+    except Exception:
+        p = 0
+    return max(0, min(MAX_INTIMACY_PHASE, p + 1))
+
+def _should_advance_phase(current_phase: int, user_text: str, texto: str) -> bool:
+    """
+    Regra geral de progressão:
+    - Avança 1 fase por vez quando o nível semântico sustenta.
+    - Fase 4 (clímax) exige lvl=3 OU autorização explícita do usuário.
+    - Aftercare: só com sinal do usuário.
+    """
+    try:
+        p = int(current_phase or 0)
+    except Exception:
+        p = 0
+
+    lvl = _intimacy_level(user_text, texto)
+
+    if p <= 0:
+        return lvl >= 0
+    if p == 1:
+        return lvl >= 1
+    if p == 2:
+        return lvl >= 2
+    if p == 3:
+        return (lvl >= 3) or _user_explicitly_allows_climax(user_text)
+    if p == 4:
+        return _user_signals_aftercare(user_text)
+    return False
 # ==========================================================
 # DESVIO CURTO (fidelidade soft) — helpers
 # ==========================================================
