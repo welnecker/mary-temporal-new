@@ -24,16 +24,17 @@ class MaryServiceUniversitaria(MaryService):
         *,
         user: str,
         model: str,
-        prompt: Optional[str] = None,
+        prompt: str,
         timeline: str = "universitaria",
         nsfw: Optional[bool] = None,
         allow_third_party_seduction: Optional[bool] = None,
         **kwargs: Any,
     ):
+        # força timeline correta
         timeline_final = (timeline or "universitaria").strip().lower()
         if timeline_final != "universitaria":
             timeline_final = "universitaria"
-    
+
         return super().reply(
             user=user,
             model=model,
