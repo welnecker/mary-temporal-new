@@ -331,41 +331,75 @@ def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used:
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
-def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
-    """
-    Fonte única (ordem de prioridade):
-    1) override explícito (parâmetro)
-    2) session_state (sidebar) -> mary_nsfw_on
-    3) facts persistido -> mary.nsfw (ou mary.nsfw::<timeline>)
-    """
-    tl = (timeline or "").strip().lower()
+def nsfw_enabled(
+    usuario_key: str,
+    *,
+    nsfw_override: Optional[bool] = None,
+    timeline: str = "",
+) -> bool:
+    """Fonte de verdade do NSFW.
 
-    # 1) override vence tudo, mas não deveria "desligar" sem querer.
+    Prioridade:
+    1) override explícito (chamada programática / UI)
+    2) st.session_state['mary_nsfw_on'] (toggle do sidebar)
+    3) facts['mary']['nsfw::<timeline>'] ou facts['mary']['nsfw']
+    """
+    tl = (timeline or "").strip().lower() or "cumplice"
+
+    # --- helper: ler facts ---
+    def _facts_nsfw() -> bool:
+        facts = cached_get_facts(usuario_key) or {}
+        mary = facts.get("mary") if isinstance(facts, dict) else None
+        if not isinstance(mary, dict):
+            return False
+        # prefer timeline-specific
+        if f"nsfw::{tl}" in mary:
+            return bool(mary.get(f"nsfw::{tl}"))
+        if "nsfw" in mary:
+            return bool(mary.get("nsfw"))
+        return False
+
+    # 1) override explícito: persiste e retorna
     if nsfw_override is not None:
-        return bool(nsfw_override)
+        v = bool(nsfw_override)
+        try:
+            st.session_state["mary_nsfw_on"] = v
+        except Exception:
+            pass
+        try:
+            facts = cached_get_facts(usuario_key) or {}
+            mary = facts.get("mary") if isinstance(facts, dict) else None
+            if not isinstance(mary, dict):
+                mary = {}
+            mary["nsfw"] = v
+            mary[f"nsfw::{tl}"] = v
+            set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_override"})
+        except Exception:
+            pass
+        return v
 
-    # 2) sidebar (estado vivo)
+    # 2) session_state: respeita e sincroniza para facts (evita inconsistência UI x DB)
     try:
         if "mary_nsfw_on" in st.session_state:
-            return bool(st.session_state.get("mary_nsfw_on", False))
+            v = bool(st.session_state.get("mary_nsfw_on"))
+            # se divergiu do facts, sincroniza (melhora debug em repositories.py)
+            try:
+                if v != _facts_nsfw():
+                    facts = cached_get_facts(usuario_key) or {}
+                    mary = facts.get("mary") if isinstance(facts, dict) else None
+                    if not isinstance(mary, dict):
+                        mary = {}
+                    mary["nsfw"] = v
+                    mary[f"nsfw::{tl}"] = v
+                    set_fact_safe(usuario_key, "mary", mary, {"fonte": "nsfw_session_sync"})
+            except Exception:
+                pass
+            return v
     except Exception:
         pass
 
-    # 3) facts persistido
-    facts = get_facts(usuario_key) or {}
-    if not isinstance(facts, dict):
-        return False
-
-    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-
-    # se você quiser chave por timeline, habilite esta leitura:
-    if tl:
-        k_tl = f"nsfw::{tl}"
-        if k_tl in mary:
-            return bool(mary.get(k_tl))
-
-    # fallback global
-    return bool(mary.get("nsfw", False))
+    # 3) fallback facts
+    return _facts_nsfw()
 
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
@@ -3307,117 +3341,91 @@ def _update_tp_arc_for_turn(
     prompt: str,
     texto: str,
     allow_third_party: bool,
-    nsfw_on: bool,
+    nsfw_on: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Atualiza fase/tensão/culpa e persiste. Respeita anchor dinâmico."""
-    arc = _get_tp_arc_state(facts, timeline)
+    """Atualiza fase/tensão/culpa do arco de terceiros e persiste.
+
+    ✅ Respeita o ANCHOR dinâmico:
+    - anchor alto => mais freio (sobe fase mais devagar + culpa maior)
+    - anchor baixo => mais permissiva (tensão sobe mais rápido + culpa menor)
+
+    Regras base:
+    - Se allow_third_party estiver OFF (ou nsfw_on False), decai e volta para fase segura.
+    - Não remove a âncora (anchor/anchor_backup).
+    """
+    tl = (timeline or "").strip().lower() or "cumplice"
+    arc = _get_tp_arc_state(facts, tl)
     ev = _tp_arc_event(prompt, texto)
 
-    # Estado efetivo
-    allow_eff = bool(nsfw_on and allow_third_party)
+    # garante defaults
+    arc.setdefault("phase", 0)
+    arc.setdefault("tension", 0.0)
+    arc.setdefault("guilt", 0.0)
+    arc.setdefault("anchor", 0.85)
+    arc.setdefault("anchor_backup", float(arc.get("anchor", 0.85) or 0.85))
 
     anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
-    # liberdade cresce quando anchor cai
-    freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.55 (livre)
 
-    # limites por anchor (travamento “lógico”)
-    if anchor >= 0.75:
-        max_phase_allowed = 2   # não deixa ir pra “risco real” fácil
-        test_gain = 0.12        # tensão sobe menos
-        guilt_gain = 0.08
-    elif anchor >= 0.60:
-        max_phase_allowed = 3
-        test_gain = 0.18
-        guilt_gain = 0.10
-    else:
-        max_phase_allowed = 4
-        test_gain = 0.24
-        guilt_gain = 0.12
+    # nsfw_on pode ser passado; se for False, terceiros efetivamente OFF
+    allow = bool(allow_third_party and (True if nsfw_on is None else bool(nsfw_on)))
 
-    # OFF: volta ao seguro e reduz tudo
-    if not allow_eff:
-        if arc["phase"] > 0:
-            arc["phase"] = max(0, arc["phase"] - 1)
-        arc["tension"] = _clamp01(float(arc["tension"]) * 0.85)
-        arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.90)
+    # fatores derivados do anchor
+    permissive = _clamp01((0.85 - anchor) / 0.40)  # 0 (anchor=0.85) .. ~1 (anchor<=0.45)
+    tension_gain = 1.0 + 0.60 * permissive        # até +60%
+    guilt_gain = 0.70 + 0.60 * (1.0 - permissive) # anchor alto => culpa maior
+
+    if not allow:
+        # volta para fase segura gradualmente
+        if int(arc.get("phase") or 0) > 0:
+            arc["phase"] = max(0, int(arc["phase"]) - 1)
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.85)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.90)
         arc["last"] = "third_party_off"
-        _save_tp_arc_state(usuario_key, timeline, arc)
+        _save_tp_arc_state(usuario_key, tl, arc)
         return arc
 
-    # ON:
+    # EVENTO: test
     if ev == "test":
-        # ganho depende do freedom (quanto mais livre, mais rápido sobe)
-        arc["tension"] = _clamp01(float(arc["tension"]) + test_gain * (0.75 + freedom))
-        arc["guilt"] = _clamp01(float(arc["guilt"]) + guilt_gain * (0.65 + freedom))
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) + (0.20 * tension_gain))
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) + (0.10 * guilt_gain))
 
-        t = float(arc["tension"])
-        if t >= 0.80:
-            arc["phase"] = max(arc["phase"], 3)
-        elif t >= 0.55:
-            arc["phase"] = max(arc["phase"], 2)
-        else:
-            arc["phase"] = max(arc["phase"], 1)
+        # fase sobe com tensão, mas anchor alto freia (exige mais tensão)
+        tension = float(arc["tension"])
+        t1 = 0.35 + 0.15 * (1.0 - permissive)  # anchor alto => limiar maior
+        t2 = 0.55 + 0.15 * (1.0 - permissive)
+        t3 = 0.80 + 0.10 * (1.0 - permissive)
 
-        # respeita o teto por anchor
-        arc["phase"] = min(int(arc["phase"]), int(max_phase_allowed))
+        if tension >= t3:
+            arc["phase"] = max(int(arc["phase"]), 3)
+        elif tension >= t2:
+            arc["phase"] = max(int(arc["phase"]), 2)
+        elif tension >= t1:
+            arc["phase"] = max(int(arc["phase"]), 1)
 
         arc["last"] = "test"
-        _save_tp_arc_state(usuario_key, timeline, arc)
+        _save_tp_arc_state(usuario_key, tl, arc)
         return arc
 
+    # EVENTO: return
     if ev == "return":
-        # retorno reduz tudo; se anchor estiver alto, “reconstrução” é mais forte
-        k_t = 0.55 if anchor < 0.70 else 0.45
-        k_g = 0.60 if anchor < 0.70 else 0.50
-        arc["tension"] = _clamp01(float(arc["tension"]) * k_t)
-        arc["guilt"] = _clamp01(float(arc["guilt"]) * k_g)
-
-        # fase 4 só faz sentido se houver tensão baixa E anchor alto o bastante
-        if float(arc["tension"]) <= 0.35 and anchor >= 0.70:
-            arc["phase"] = 4
-        else:
-            arc["phase"] = max(int(arc["phase"]), 2)
-
+        # retorno reduz tensão e culpa; entra em fase de reconstrução
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.55)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.60)
+        arc["phase"] = 4 if (float(arc["tension"]) <= 0.35) else max(int(arc["phase"]), 2)
         arc["last"] = "return"
-        _save_tp_arc_state(usuario_key, timeline, arc)
+        _save_tp_arc_state(usuario_key, tl, arc)
         return arc
 
-    # none: decai leve, mas sem “teleporte”
-    arc["tension"] = _clamp01(float(arc["tension"]) * 0.92)
-    arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.95)
-    if float(arc["tension"]) < 0.25 and int(arc["phase"]) in (1, 2):
+    # EVENTO: none
+    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.92)
+    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.95)
+    if float(arc["tension"]) < 0.25 and int(arc.get("phase") or 0) in (1, 2):
         arc["phase"] = 0
-
     arc["last"] = "none"
-    _save_tp_arc_state(usuario_key, timeline, arc)
+    _save_tp_arc_state(usuario_key, tl, arc)
     return arc
-    if ev == "return":
-        # retorno reduz, mas quanto mais “solta” (anchor baixo), menos o retorno “apaga” tensão/culpa
-        t_mul = min(0.80, 0.55 + (freedom * 0.30))
-        g_mul = min(0.85, 0.60 + (freedom * 0.25))
 
-        arc["tension"] = _clamp01(arc["tension"] * t_mul)
-        arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
 
-        arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(arc["phase"], 2)
-        arc["last"] = "return"
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
-
-    # none: decay leve (anchor baixo => decay menor)
-    d_mul = min(0.98, 0.92 + (freedom * 0.08))
-    g_mul = min(0.99, 0.95 + (freedom * 0.06))
-
-    arc["tension"] = _clamp01(arc["tension"] * d_mul)
-    arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
-
-    if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
-        arc["phase"] = 0
-
-    arc["last"] = "none"
-    _save_tp_arc_state(usuario_key, timeline, arc)
-    return arc
-    
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
     try:
