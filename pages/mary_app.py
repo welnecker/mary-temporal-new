@@ -1,6 +1,6 @@
 from __future__ import annotations
 from core.repositories import force_reset_virginity_universitaria
-# pages/mary_app.py
+# mary_app_harmonized_core_v6.py
 
 # ==========================================================
 # IMPORTS PADRÃO
@@ -980,16 +980,34 @@ def _persist_nsfw_for_current_timeline_if_needed_inline() -> None:
     """
     Persistência NSFW INLINE (não depende de helper fora do callback).
     Evita NameError em callback antigo preso na sessão.
+
+    IMPORTANTE (harmonização com service_core v6):
+    - service_core dá prioridade ao flag por timeline: mary["nsfw::<timeline>"].
+    - então aqui persistimos SEMPRE:
+        1) mary.nsfw (global)
+        2) mary.nsfw::<timeline> (por timeline atual)
     """
     uk = _usuario_key_atual()
     current = bool(st.session_state.get("mary_nsfw_on", False))
     last = st.session_state.get("mary_nsfw_last_saved", None)
 
+    # tenta inferir timeline do usuario_key: "Nome::mary::<timeline>"
+    tl = ""
+    try:
+        tl = str(uk).split("::")[-1].strip().lower()
+    except Exception:
+        tl = ""
+
     if last is None or bool(last) != current:
         try:
+            # global
             set_fact(uk, "mary.nsfw", current, {"fonte": "ui_toggle"})
+            # por timeline (prioridade no core)
+            if tl:
+                set_fact(uk, f"mary.nsfw::{tl}", current, {"fonte": "ui_toggle"})
         except Exception:
             pass
+
         st.session_state["mary_nsfw_last_saved"] = current
         _clear_service_caches_for_keys([uk])
 
