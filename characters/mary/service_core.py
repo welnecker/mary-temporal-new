@@ -2450,6 +2450,8 @@ def _violations(
     - Guardrails realistas para "terceiros" (locais perigosos / convite vago).
     - Se NSFW OFF, bloquear explícito.
     - Evitar finalizar a cena sem autorização (soft no NSFW ON; hard no SAFE).
+    - (NSFW ON) Se houver sinal de clímax, Mary deve verbalizar o próprio orgasmo.
+    - (Sempre) Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita dele.
     """
     t = (texto or "").strip()
     out: List[str] = []
@@ -2458,6 +2460,126 @@ def _violations(
         out.append("vazio")
         return out
 
+    t_lower = t.lower()
+    u_lower = (user_text or "").strip().lower()
+
+    # ----------------------------------------------------------
+    # meta / vazamento
+    # ----------------------------------------------------------
+    if _RE_PLACEHOLDER_REVEAL.search(t):
+        out.append("placeholder_reveal")
+
+    # ----------------------------------------------------------
+    # mensagens inventadas / offscreen (WhatsApp/SMS/print etc.)
+    # ----------------------------------------------------------
+    if _RE_OFFSCREEN_MSG.search(t):
+        user_pasted = any(
+            kw in (ctx_lower or "")
+            for kw in (
+                "mensagem:",
+                "whatsapp:",
+                "sms:",
+                "print",
+                "segue a mensagem",
+                "segue o texto",
+                "transcrevendo",
+            )
+        )
+        if not user_pasted:
+            out.append("offscreen_msg_inventada")
+
+    # ----------------------------------------------------------
+    # autoria: não inventar ações/falas do usuário
+    # ----------------------------------------------------------
+    if _has_user_action_violation(t):
+        out.append("autoria_usuario")
+
+    # ----------------------------------------------------------
+    # conflito (só se timeline permite)
+    # ----------------------------------------------------------
+    try:
+        if _resolve_conflict_mode(timeline or "") != "off":
+            if _RE_CONFLICT_IMMINENT.search(t):
+                out.append("conflito_extremo")
+    except Exception:
+        if _RE_CONFLICT_IMMINENT.search(t):
+            out.append("conflito_extremo")
+
+    # ----------------------------------------------------------
+    # terceiros: segurança/logística realista
+    # ----------------------------------------------------------
+    if _third_party_deviation(t):
+        if _RE_DANGEROUS_LOCATIONS.search(t):
+            out.append("terceiro_local_perigoso")
+        elif _RE_VAGUE_INVITE.search(t):
+            out.append("terceiro_convite_vago")
+        elif _RE_URBAN_LOCATIONS.search(t):
+            # urbano é permitido, mas evita "teleporte logístico" (uber/hotel etc.)
+            out.append("terceiro_local_urbano")
+        else:
+            out.append("terceiro_desvio_generico")
+
+        # Se terceiros estiver liberado, mantemos o guardrail de lugares perigosos,
+        # mas os demais viram apenas sinalização (não necessariamente rejeição).
+        if allow_third_party_seduction and "terceiro_local_perigoso" not in out:
+            # rebaixa os marcadores não-críticos para "soft" via padrão (não entra em CRITICAL/HIGH)
+            pass
+
+    # ----------------------------------------------------------
+    # finalização de cena fora de hora
+    # ----------------------------------------------------------
+    if _RE_SCENE_FINALIZATION.search(t):
+        if not _finalization_allowed(user_text or "", int(phase or 0)):
+            # no NSFW ON tratamos como SOFT (não derruba tudo; só corta no trim)
+            out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
+
+    # ----------------------------------------------------------
+    # NSFW OFF: explícito vira violação
+    # ----------------------------------------------------------
+    if (not nsfw_on) and _is_explicit(t):
+        out.append("nsfw_off_explicito")
+
+    # ----------------------------------------------------------
+    # NSFW ON: orgasmo da Mary deve ser verbalizado quando há sinal de clímax
+    # ----------------------------------------------------------
+    if nsfw_on:
+        try:
+            climax_signal = _detect_climax_signal(t, user_text or "", nsfw_on=True, phase=int(phase or 0))
+        except Exception:
+            climax_signal = False
+
+        if climax_signal:
+            # 1) Se Mary entrou em clímax, ela precisa verbalizar (ex: "vou gozar", "tô gozando", "gozei")
+            if not _RE_MARY_ORGASM_DECLARATION.search(t):
+                out.append("mary_nao_verbalizou_orgasmo")
+
+            # 2) Se ela verbalizou orgasmo MUITO cedo, marca orgasmo_precoce (só serve pra reject condicional)
+            if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t) and not _RE_SCENE_FINALIZATION.search(u_lower):
+                out.append("orgasmo_precoce")
+
+    # ----------------------------------------------------------
+    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
+    # (evita falso positivo quando Mary fala do PRÓPRIO orgasmo)
+    # ----------------------------------------------------------
+    # Heurística: só considera orgasmo do usuário quando há marcação de 2ª pessoa / "seu" / "dele".
+    user_orgasm_claim = bool(
+        re.search(
+            r"\b("
+            r"voc[eê]\s+(?:vai\s+)?goz(?:a|ar|ou)|"
+            r"fa[cç]o\s+voc[eê]\s+gozar|te\s+fa[cç]o\s+gozar|vou\s+te\s+fazer\s+gozar|"
+            r"seu\s+cl[ií]max|cl[ií]max\s+de\s+voc[eê]|cl[ií]max\s+dele|"
+            r"ejacul(?:a|ou)|"
+            r"gozamos"
+            r")\b",
+            t_lower,
+        )
+    )
+
+    if user_orgasm_claim:
+        if not _user_explicitly_allows_user_orgasm(user_text):
+            out.append("mary_finalizou_orgasmo_do_usuario")
+
+    return out
     # meta / vazamento
     if _RE_PLACEHOLDER_REVEAL.search(t):
         out.append("placeholder_reveal")
