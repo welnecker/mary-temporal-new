@@ -1,4 +1,4 @@
-# service_core_PATCHED_v7.py
+# characters/mary/service_core.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -886,45 +886,66 @@ def _inject_intro_as_context_once(
     """
     Injeta o intro da persona como contexto UMA ÚNICA VEZ por usuario_key,
     mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
+
+    Correções:
+    - Cleanup de intro legado NÃO pode rodar sempre (senão destrói o guard).
+    - Cleanup roda no máximo 1x por sessão e por timeline.
+    - Só limpa cache/zera flag quando realmente removeu algo.
     """
 
-    # ✅ flag SEMPRE definido antes do uso (conserta NameError)
-    flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
+    tl = str(timeline or "").strip()
 
-    # 🔥 LIMPEZA DEFINITIVA — SEMPRE EXECUTADA (antes do guard)
+    # ✅ flag SEMPRE definido antes do uso
+    inject_flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
+    cleanup_flag = f"{_SS_PREFIX}intro_cleanup_done::{usuario_key}::{tl or 'global'}"
+
+    # -------------------------------
+    # ✅ Cleanup 1x (somente intro/timeline-fixed)
+    # -------------------------------
     try:
-        tl = str(timeline or "").strip()
         use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
 
-        if not use_fixed:
-            # remove qualquer intro fixo (global e por timeline)
-            delete_fact(usuario_key, "mary.intro.fixed")
-            if tl:
-                delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
+        if (not use_fixed) and (not bool(_ss_get(cleanup_flag, False))):
+            deleted_any = False
 
-            # ✅ remove o intro sincronizado que ficou persistido em facts (o seu "As férias...")
-            # formato atual que você mostrou: mary.intro.universitaria.{text/hash/id}
+            # remove qualquer intro fixo (global e por timeline)
+            if get_fact(usuario_key, "mary.intro.fixed", default=None) is not None:
+                delete_fact(usuario_key, "mary.intro.fixed")
+                deleted_any = True
+
             if tl:
-                delete_fact(usuario_key, f"mary.intro.{tl}")
+                if get_fact(usuario_key, f"mary.intro.fixed.{tl}", default=None) is not None:
+                    delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
+                    deleted_any = True
+
+                # remove o intro sincronizado que ficou persistido em facts
+                if get_fact(usuario_key, f"mary.intro.{tl}", default=None) is not None:
+                    delete_fact(usuario_key, f"mary.intro.{tl}")
+                    deleted_any = True
 
             # remove legado que às vezes “trava” a timeline
-            delete_fact(usuario_key, "mary.timeline.fixed")
+            if get_fact(usuario_key, "mary.timeline.fixed", default=None) is not None:
+                delete_fact(usuario_key, "mary.timeline.fixed")
+                deleted_any = True
 
-            # garante refletir imediatamente
-            clear_user_cache(usuario_key)
+            _ss_set(cleanup_flag, True)
 
-            # ✅ derruba o guard de sessão (para permitir reinjeção limpa 1x após limpeza)
-            _ss_set(flag, False)
+            # só invalida cache/guard se realmente removeu algo
+            if deleted_any:
+                clear_user_cache(usuario_key)
+                _ss_set(inject_flag, False)
     except Exception:
         pass
 
+    # -------------------------------
     # ⛔ Guard de sessão (UMA VEZ)
-    if bool(_ss_get(flag, False)):
+    # -------------------------------
+    if bool(_ss_get(inject_flag, False)):
         return
 
     # canon vence e dispensa intro
     if _has_canon_memories(shared_key, timeline):
-        _ss_set(flag, True)
+        _ss_set(inject_flag, True)
         return
 
     # ✅ Escolha do intro com prioridade correta
@@ -941,7 +962,7 @@ def _inject_intro_as_context_once(
             messages.append({"role": "system", "content": block})
 
     # ✅ marca como injetado (impede reinjeção)
-    _ss_set(flag, True)
+    _ss_set(inject_flag, True)
 # ==========================================================
 # ✅ LONG MEMORY (Mongo $text)
 # ==========================================================
@@ -1815,12 +1836,47 @@ _RE_OFFSCREEN_PASTE_HINT = re.compile(
 )
 
 # ----------------------------------------------------------
-# Autoria do usuário (geral)
+# Autoria / voz (ROBUSTO)
 # ----------------------------------------------------------
-_RE_USER_ACTION_BASE = re.compile(
-    r"\b(voc[eê]|vc|tu|você)\b.{0,18}\b(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai|segura|deita|vira|pede)\b",
+# Contrato:
+# - Mary NÃO "fala pelo usuário" nem por outros personagens (Janio/Arthur/terceiros).
+# - Mary pode descrever ações observáveis de terceiros, mas NÃO deve escrever diálogos atribuídos a eles
+#   (ex.: 'Arthur: ...', '"..." — disse Arthur').
+# - Mary também não deve atribuir pensamentos/decisões internas a "você/Janio/Arthur".
+#
+# Observação: isso NÃO mexe em NSFW/ intensidade; só impede "boca alheia".
+
+# 1) Atribuição direta de ação ao usuário por 2ª pessoa (a clássica)
+_RE_USER_2P_ACTION = re.compile(
+    r"\b(voc[eê]|vc|tu)\b.{0,22}\b(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai|segura|deita|vira|pede|decide|resolve|escolhe)\b",
     re.IGNORECASE,
 )
+
+# 2) Fala atribuída a QUALQUER personagem que não seja Mary (bloqueia "Nome: ...")
+_RE_OTHER_SPEAKER_TAG = re.compile(
+    r"(?m)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
+)
+
+# 3) Fala atribuída via travessão/descritor ("... — disse Fulano")
+_RE_QUOTED_ATTRIBUTION = re.compile(
+    r"(?i)"
+    r"(\"[^\"]{2,}\"|“[^”]{2,}”)"
+    r"\s*[,\-–—]\s*"
+    r"(?:diz|disse|fala|falou|responde|respondeu|pergunta|perguntou|sussurra|sussurrou|comenta|comentou|murmura|murmurou|provoca|provocou)\s+"
+    r"(?!mary\b)[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30}\b"
+)
+
+# 4) Pensamento/decisão interna atribuída ao usuário ou a nomes comuns do usuário
+_RE_INTERNAL_STATE = re.compile(
+    r"\b(pensa|pensei|pensou|acha|achei|achou|imagina|imaginei|imaginou|"
+    r"quer|queria|quis|deseja|desejava|"
+    r"sente|sentiu|sentia|"
+    r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b",
+    re.IGNORECASE,
+)
+_RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
+
+# Contexto condicional "se você..." (não é autoria)
 _RE_USER_ACTION_CONTEXT_OK = re.compile(
     r"(quando|enquanto|se|caso|depois\s+que|antes\s+que)[\s:,\-–—]*$",
     re.IGNORECASE,
@@ -1828,16 +1884,44 @@ _RE_USER_ACTION_CONTEXT_OK = re.compile(
 
 def _has_user_action_violation(texto: str) -> bool:
     """
-    Detecta atribuição de ação ao usuário (autoria do usuário),
-    mas ignora contextos condicionais ("se você...").
+    True quando a resposta:
+    - Atribui ação/decisão interna ao usuário (2ª pessoa) fora de contexto condicional.
+    - Escreve fala atribuída a QUALQUER personagem que não seja Mary (Nome: ..., ou "..." — disse Fulano).
+    - Atribui pensamentos/decisões internas a Janio/Arthur (aliases comuns do usuário).
+
+    Permite:
+    - Ações observáveis de terceiros (sem fala atribuída).
+    - Falas da própria Mary.
     """
     t = (texto or "")
-    for m in _RE_USER_ACTION_BASE.finditer(t):
+    if not t.strip():
+        return False
+
+    # A) Impede Mary de colocar falas na boca de outros personagens
+    #    (inclui usuário quando aparece como personagem, e inclui terceiros)
+    if _RE_OTHER_SPEAKER_TAG.search(t):
+        return True
+    if _RE_QUOTED_ATTRIBUTION.search(t):
+        return True
+
+    # B) 2ª pessoa com ação (autoria do usuário)
+    for m in _RE_USER_2P_ACTION.finditer(t):
         start = m.start()
         prefix = t[max(0, start - 64):start].lower()
         if _RE_USER_ACTION_CONTEXT_OK.search(prefix.strip()):
             continue
         return True
+
+    # C) Estado interno atribuído a Janio/Arthur (aliases)
+    #    Ex.: "Janio decide..." / "Arthur pensa..."
+    if _RE_USER_NAME_ALIASES.search(t) and _RE_INTERNAL_STATE.search(t):
+        # janela curta para reduzir falso positivo
+        low = t.lower()
+        for mm in _RE_USER_NAME_ALIASES.finditer(low):
+            w = low[mm.start(): mm.start() + 140]
+            if _RE_INTERNAL_STATE.search(w):
+                return True
+
     return False
 
 # ----------------------------------------------------------
@@ -1850,6 +1934,56 @@ _RE_AFTERCARE_SIGNAL = re.compile(
 
 def _user_signals_aftercare(user_text: str) -> bool:
     return bool(_RE_AFTERCARE_SIGNAL.search(_t_norm(user_text)))
+
+# ----------------------------------------------------------
+# Regressão de fase (novo) — aumenta realismo sem mexer no prompt
+# ----------------------------------------------------------
+_RE_PHASE_BRAKE = re.compile(
+    r"\b("
+    r"espera|pera|calma|devagar|mais\s+devagar|"
+    r"para|pare|stop|"
+    r"abra[cç]a|abraço|me\s+abra[cç]a|"
+    r"carinho|fica\s+comigo|"
+    r"respira|vamos\s+respirar|"
+    r"s[oó]\s+um\s+segundo|"
+    r"agora\s+n[aã]o"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _user_requests_slowdown(user_text: str) -> bool:
+    return bool(_RE_PHASE_BRAKE.search(_t_norm(user_text)))
+
+
+def _compute_next_phase(
+    current_phase: int,
+    user_text: str,
+    texto: str,
+    *,
+    engine_meta: Any = None,
+) -> int:
+    """
+    Motor de fase v2:
+    - Avança 1 fase por vez quando o nível sustenta (_should_advance_phase).
+    - Regride 1 fase quando o usuário pede desaceleração (devagar/espera/abraço).
+    - Não cai abaixo de 0.
+    - Mantém o contrato de clímax/aftercare do motor atual.
+    """
+    try:
+        p = int(current_phase or 0)
+    except Exception:
+        p = 0
+    p = max(0, min(MAX_INTIMACY_PHASE, p))
+
+    # ✅ desaceleração tem prioridade (recuo suave)
+    if _user_requests_slowdown(user_text or ""):
+        return max(0, p - 1)
+
+    # avanço normal
+    if _should_advance_phase(p, user_text, texto, engine_meta=engine_meta):
+        return _cap_next_phase(p)
+
+    return p
 
 # ----------------------------------------------------------
 # Explícito (NSFW) — famílias semânticas (poucas)
@@ -2036,7 +2170,7 @@ def _cap_next_phase(current_phase: int) -> int:
         p = 0
     return max(0, min(MAX_INTIMACY_PHASE, p + 1))
 
-def _should_advance_phase(current_phase: int, user_text: str, texto: str) -> bool:
+def _should_advance_phase(current_phase: int, user_text: str, texto: str, *, engine_meta: Any = None, **_kw: Any) -> bool:
     """
     Regra geral de progressão:
     - Avança 1 fase por vez quando o nível semântico sustenta.
@@ -2695,60 +2829,7 @@ def _violations(
             out.append("mary_finalizou_orgasmo_do_usuario")
 
     return out
-    # meta / vazamento
-    if _RE_PLACEHOLDER_REVEAL.search(t):
-        out.append("placeholder_reveal")
 
-    # mensagens inventadas / offscreen
-    if _RE_OFFSCREEN_MSG.search(t):
-        user_pasted = any(
-            kw in (ctx_lower or "")
-            for kw in ("mensagem:", "whatsapp:", "sms:", "print", "segue a mensagem", "segue o texto", "transcrevendo")
-        )
-        if not user_pasted:
-            out.append("offscreen_msg_inventada")
-
-    # autoria: não inventar ações/falas do usuário
-    if _has_user_action_violation(t):
-        out.append("autoria_usuario")
-
-    # conflito (só se timeline permite)
-    try:
-        if _resolve_conflict_mode(timeline or "") != "off":
-            if _RE_CONFLICT_IMMINENT.search(t):
-                out.append("conflito_extremo")
-    except Exception:
-        if _RE_CONFLICT_IMMINENT.search(t):
-            out.append("conflito_extremo")
-
-    # terceiros: segurança/logística realista
-    if _third_party_deviation(t):
-        if _RE_DANGEROUS_LOCATIONS.search(t):
-            out.append("terceiro_local_perigoso")
-        elif _RE_VAGUE_INVITE.search(t):
-            out.append("terceiro_convite_vago")
-        elif _RE_URBAN_LOCATIONS.search(t):
-            # urbano é permitido, mas evita "teleporte logístico" (uber/hotel etc.)
-            out.append("terceiro_local_urbano")
-        else:
-            out.append("terceiro_desvio_generico")
-
-    # finalização de cena fora de hora
-    if _RE_SCENE_FINALIZATION.search(t):
-        if not _finalization_allowed(user_text or "", int(phase or 0)):
-            # no NSFW ON tratamos como SOFT (não derruba tudo; só corta no trim)
-            out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
-
-    # NSFW OFF: explícito vira violação
-    if (not nsfw_on) and _is_explicit(t):
-        out.append("nsfw_off_explicito")
-
-    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
-    if re.search(r"\b(goz(a|ou)|ejacul(a|ou)|cl[ií]max\s+dele)\b", t.lower()):
-        if not _user_explicitly_allows_user_orgasm(user_text):
-            out.append("mary_finalizou_orgasmo_do_usuario")
-
-    return out
 
 # ==========================================================
 # SCORING INVISÍVEL (estilo) + CONFIANÇA (auto-calibração)
@@ -3523,11 +3604,15 @@ def _tp_arc_key(timeline: str) -> str:
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
-    """Carrega o arco de terceiros (persistido em facts). Preserva chaves extras (ex: anchor_backup)."""
+    """Carrega o arco de terceiros (persistido em facts['arc']). Preserva chaves extras (ex: anchor_backup)."""
     if not isinstance(facts, dict):
         facts = {}
 
-    raw = facts.get(_tp_arc_key(timeline))
+    arc_root = facts.get("arc")
+    if not isinstance(arc_root, dict):
+        arc_root = {}
+
+    raw = arc_root.get(_tp_arc_key(timeline))
     if not isinstance(raw, dict):
         raw = {}
 
@@ -3535,6 +3620,7 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 
     # defaults / normalização
     out["phase"] = int(out.get("phase") or 0)
+    out["mode"] = str(out.get("mode") or out.get("last") or "return")
     out["tension"] = _clamp01(out.get("tension", 0.0))
     out["guilt"] = _clamp01(out.get("guilt", 0.0))
     out["anchor"] = _clamp01(out.get("anchor", 0.85))
@@ -3571,22 +3657,35 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
 
 
 def _tp_arc_event(prompt: str, texto: str) -> str:
-    """Heurística leve: detecta se o turno envolve 'teste com terceiros' ou 'retorno'."""
+    """Heurística leve: detecta se o turno envolve 'teste com terceiros' ou 'retorno'.
+
+    Importante:
+    - NÃO usa apenas 'janio' como gatilho de retorno (isso travava a progressão).
+    - 'return' só quando há intenção explícita de voltar/encerrar o terceiro.
+    """
     p = (prompt or "").lower()
     t = (texto or "").lower()
 
-    # retorno/âncora
-    if any(k in p for k in ("voltar", "de volta", "indo embora", "chegar em casa", "motorhome", "janio")):
-        return "return"
-    if any(k in t for k in ("volto", "de volta", "janio", "meu amor", "quero você")):
+    # retorno/âncora (intenção explícita)
+    ret_kw = (
+        "voltar", "de volta", "indo embora", "ir embora", "chegar em casa",
+        "vou embora", "vamos embora", "acabou", "encerrar", "parar com isso",
+        "desisto", "não quero mais", "quero você", "eu escolho você",
+    )
+    if any(k in p for k in ret_kw) or any(k in t for k in ret_kw):
         return "return"
 
-    # teste com terceiros (genérico; sem depender de nomes)
-    third = ("forró", "balada", "bar", "dança", "dançar", "convite", "beijo", "cantada", "nome falso", "me chama de")
-    if any(k in p for k in third) or any(k in t for k in third):
+    # teste com terceiros (sinais de flerte/ato com outro)
+    third_kw = (
+        "nome falso", "me chama de", "cantada", "convite", "beijo", "beijou",
+        "dança", "dançar", "me pega", "me tocou", "encosta", "mãos dele",
+        "ele me", "aquele cara", "outro cara", "barman", "garçom", "segurança",
+    )
+    if any(k in p for k in third_kw) or any(k in t for k in third_kw):
         return "test"
 
     return "none"
+
 
 
 def _update_tp_arc_for_turn(
@@ -3599,21 +3698,71 @@ def _update_tp_arc_for_turn(
     allow_third_party: bool,
     nsfw_on: bool,
 ) -> Dict[str, Any]:
-    """Atualiza fase/tensão/culpa e persiste. Respeita anchor dinâmico."""
+    """Atualiza fase/tensão/culpa e persiste.
+
+    ✅ Correções importantes:
+    - Lê e escreve no mesmo lugar: facts['arc'][third_party::<timeline>]
+    - Anchor dinâmico só muda quando há evidência de TERCEIRO no turno (toggle ON não basta).
+    - Evita "return" travar o arco (isso é tratado no _tp_arc_event).
+    """
     arc = _get_tp_arc_state(facts, timeline)
     ev = _tp_arc_event(prompt, texto)
 
     # Estado efetivo
     allow_eff = bool(nsfw_on and allow_third_party)
 
+    # --- anchor: defaults + backup 1x ---
     anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
+    if "anchor_backup" not in arc:
+        arc["anchor_backup"] = float(anchor)
+
+    # evidência de terceiro NO TURNO
+    thirdparty_now = bool(_RE_THIRD_PARTY_WEAK.search((prompt or "") + "\n" + (texto or "")))
+    # se já temos desvio claro (beyond kiss / fuga), também conta
+    try:
+        if _third_party_deviation((prompt or "") + "\n" + (texto or "")):
+            thirdparty_now = True
+    except Exception:
+        pass
+
+    # OFF: volta ao seguro e restaura anchor (backup)
+    if not allow_eff:
+        if arc.get("phase", 0) > 0:
+            arc["phase"] = max(0, int(arc.get("phase", 0) or 0) - 1)
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.85)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.90)
+        arc["mode"] = "return"
+        arc["last"] = "third_party_off"
+
+        backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
+        arc["anchor"] = round(backup, 2)
+
+        _save_tp_arc_state(usuario_key, timeline, arc)
+        return arc
+
+    # ON: anchor cai GRADUALMENTE apenas quando há terceiro no turno
+    target = 0.45
+    if thirdparty_now:
+        step = 0.04
+        anchor = max(target, anchor - step)
+        arc["anchor"] = round(anchor, 2)
+        arc["last_anchor_mode"] = "tp_on_drop_by_evidence"
+    else:
+        # sem terceiro neste turno: retorno pode recuperar levemente (sem "resetar" tudo)
+        if ev == "return":
+            step_up = 0.03
+            backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
+            anchor = min(backup, anchor + step_up)
+            arc["anchor"] = round(anchor, 2)
+            arc["last_anchor_mode"] = "tp_on_soft_recover"
+
     # liberdade cresce quando anchor cai
     freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.55 (livre)
 
-    # limites por anchor (travamento “lógico”)
+    # limites por anchor
     if anchor >= 0.75:
-        max_phase_allowed = 2   # não deixa ir pra “risco real” fácil
-        test_gain = 0.12        # tensão sobe menos
+        max_phase_allowed = 2
+        test_gain = 0.12
         guilt_gain = 0.08
     elif anchor >= 0.60:
         max_phase_allowed = 3
@@ -3624,90 +3773,72 @@ def _update_tp_arc_for_turn(
         test_gain = 0.24
         guilt_gain = 0.12
 
-    # OFF: volta ao seguro e reduz tudo
-    if not allow_eff:
-        if arc["phase"] > 0:
-            arc["phase"] = max(0, arc["phase"] - 1)
-        arc["tension"] = _clamp01(float(arc["tension"]) * 0.85)
-        arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.90)
-        arc["last"] = "third_party_off"
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
-
     # ON:
     if ev == "test":
-        # ganho depende do freedom (quanto mais livre, mais rápido sobe)
-        arc["tension"] = _clamp01(float(arc["tension"]) + test_gain * (0.75 + freedom))
-        arc["guilt"] = _clamp01(float(arc["guilt"]) + guilt_gain * (0.65 + freedom))
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) + test_gain * (0.75 + freedom))
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) + guilt_gain * (0.65 + freedom))
 
-        t = float(arc["tension"])
-        if t >= 0.80:
-            arc["phase"] = max(arc["phase"], 3)
-        elif t >= 0.55:
-            arc["phase"] = max(arc["phase"], 2)
+        tval = float(arc["tension"])
+        if tval >= 0.80:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 3)
+        elif tval >= 0.55:
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 2)
         else:
-            arc["phase"] = max(arc["phase"], 1)
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 1)
 
-        # respeita o teto por anchor
         arc["phase"] = min(int(arc["phase"]), int(max_phase_allowed))
+        # ambiguidade moral: tentação/conflito/ativo
+        if tval >= 0.65:
+            arc["mode"] = "active"
+        elif tval >= 0.50:
+            arc["mode"] = "conflict"
+        elif tval >= 0.25:
+            arc["mode"] = "temptation"
+        else:
+            arc["mode"] = "return"
 
         arc["last"] = "test"
+
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
     if ev == "return":
-        # retorno reduz tudo; se anchor estiver alto, “reconstrução” é mais forte
+        # retorno reduz tensão/culpa; quanto mais preso (anchor alto), mais forte a reconstrução
         k_t = 0.55 if anchor < 0.70 else 0.45
         k_g = 0.60 if anchor < 0.70 else 0.50
-        arc["tension"] = _clamp01(float(arc["tension"]) * k_t)
-        arc["guilt"] = _clamp01(float(arc["guilt"]) * k_g)
+        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * k_t)
+        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * k_g)
 
-        # fase 4 só faz sentido se houver tensão baixa E anchor alto o bastante
+        # fase 4 = "retorno consolidado" (tensão baixa + anchor razoável)
         if float(arc["tension"]) <= 0.35 and anchor >= 0.70:
             arc["phase"] = 4
         else:
-            arc["phase"] = max(int(arc["phase"]), 2)
+            arc["phase"] = max(int(arc.get("phase", 0) or 0), 2)
 
+        arc["mode"] = "return"
         arc["last"] = "return"
         _save_tp_arc_state(usuario_key, timeline, arc)
         return arc
 
-    # none: decai leve, mas sem “teleporte”
-    arc["tension"] = _clamp01(float(arc["tension"]) * 0.92)
-    arc["guilt"] = _clamp01(float(arc["guilt"]) * 0.95)
-    if float(arc["tension"]) < 0.25 and int(arc["phase"]) in (1, 2):
+    # none: decai leve
+    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.92)
+    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.95)
+    if float(arc["tension"]) < 0.25 and int(arc.get("phase", 0) or 0) in (1, 2):
         arc["phase"] = 0
+
+    # ambiguidade moral: se ainda há tensão, mantém tentação/conflito mesmo sem "test"
+    tval = float(arc.get("tension", 0.0) or 0.0)
+    if thirdparty_now and tval >= 0.50:
+        arc["mode"] = "conflict"
+    elif thirdparty_now and tval >= 0.25:
+        arc["mode"] = "temptation"
+    elif tval < 0.20:
+        arc["mode"] = "return"
 
     arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
-    if ev == "return":
-        # retorno reduz, mas quanto mais “solta” (anchor baixo), menos o retorno “apaga” tensão/culpa
-        t_mul = min(0.80, 0.55 + (freedom * 0.30))
-        g_mul = min(0.85, 0.60 + (freedom * 0.25))
 
-        arc["tension"] = _clamp01(arc["tension"] * t_mul)
-        arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
-
-        arc["phase"] = 4 if (arc["tension"] <= 0.35) else max(arc["phase"], 2)
-        arc["last"] = "return"
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
-
-    # none: decay leve (anchor baixo => decay menor)
-    d_mul = min(0.98, 0.92 + (freedom * 0.08))
-    g_mul = min(0.99, 0.95 + (freedom * 0.06))
-
-    arc["tension"] = _clamp01(arc["tension"] * d_mul)
-    arc["guilt"] = _clamp01(arc["guilt"] * g_mul)
-
-    if arc["tension"] < 0.25 and arc["phase"] in (1, 2):
-        arc["phase"] = 0
-
-    arc["last"] = "none"
-    _save_tp_arc_state(usuario_key, timeline, arc)
-    return arc
-    
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
     try:
@@ -3959,71 +4090,12 @@ class MaryService(BaseCharacter):
         #                              e se phase>=4 sem evidência => degrada para phase=1
         # ==========================================================
         try:
-            tl_norm = (timeline_final or "").strip().lower() or "cumplice"
-            arc_key = f"third_party::{tl_norm}"
-
-            arc_root = facts.get("arc") if isinstance(facts, dict) else None
-            if not isinstance(arc_root, dict):
-                arc_root = {}
-
-            tp_arc = arc_root.get(arc_key) if isinstance(arc_root.get(arc_key), dict) else {}
-
-            # defaults (não remove âncora)
-            if "anchor" not in tp_arc:
-                tp_arc["anchor"] = 0.85
-
-            # backup do anchor original (1x)
-            if "anchor_backup" not in tp_arc:
-                tp_arc["anchor_backup"] = float(tp_arc.get("anchor", 0.85) or 0.85)
-
-            # estado efetivo do toggle
-            allow_tp = bool(nsfw_on and allow_third_party_seduction_final)
-
-            # evidência mínima de ato real com terceiro NO PROMPT ATUAL
-            _re_thirdparty_act = re.compile(
-                r"(?is)\b("
-                r"massagista|barman|gar[çc]om|seguran[çc]a|ficante|ex|"
-                r"beijei\s+ele|ele\s+me\s+beijou|me\s+pegou|me\s+tocou|"
-                r"tran(sei|sar)\s+com|dei\s+pra|gozei\s+com|me\s+comeu"
-                r")\b"
-            )
-            thirdparty_evidence_now = bool(_re_thirdparty_act.search(prompt or ""))
-
-            # --- OFF: limpa e restaura anchor ---
-            if not allow_tp:
-                tp_arc["phase"] = 0
-                tp_arc["tension"] = 0
-                tp_arc["guilt"] = 0
-                tp_arc["last"] = "third_party_off"
-
-                backup = float(tp_arc.get("anchor_backup", 0.85) or 0.85)
-                tp_arc["anchor"] = round(backup, 2)
-                tp_arc["last_anchor_mode"] = "tp_off_restore"
-
-            # --- ON: anchor cai suave + anti-fantasma ---
-            else:
-                # anchor dinâmico
-                target = 0.45
-                current = float(tp_arc.get("anchor", 0.85) or 0.85)
-                new_anchor = max(target, current - 0.10)
-                tp_arc["anchor"] = round(new_anchor, 2)
-                tp_arc["last_anchor_mode"] = "tp_on_auto_drop"
-
-                # anti "pós-ato" fantasma:
-                cur_phase = int(tp_arc.get("phase", 0) or 0)
-                if cur_phase >= 4 and not thirdparty_evidence_now:
-                    tp_arc["phase"] = 1
-                    # mantém tensão se já existe, mas zera culpa (sem aftermath)
-                    tp_arc["tension"] = float(tp_arc.get("tension", 0) or 0)
-                    tp_arc["guilt"] = 0
-                    tp_arc["last"] = "degraded_no_evidence"
-
-            # persiste 1 vez
-            arc_root[arc_key] = tp_arc
-            facts["arc"] = arc_root
-            set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "third_party_arc_master"})
+            # (movido) O arco de terceiros (anchor/tension/guilt/phase) é atualizado por _update_tp_arc_for_turn().
+            # Este bloco antigo foi removido para evitar sobrescrever o arc a cada turno.
+            pass
         except Exception:
             pass
+
 
         # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
@@ -4962,18 +5034,19 @@ class MaryService(BaseCharacter):
                 # Intimacy progression
                            
                 try:
+                    
                     current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-                
+
                     # 🚫 Não altera fase durante aftercare forçado
                     if phase != 5:
-                        if _should_advance_phase(current_phase, prompt, texto, engine_meta=meta):
-                            desired_next = _cap_next_phase(current_phase, current_phase + 1)
-                            if desired_next == 4 and not _user_explicitly_allows_climax(prompt):
-                                desired_next = current_phase
-                            if desired_next == 5 and (current_phase < 4 or not _user_signals_aftercare(prompt)):
-                                desired_next = current_phase
-                            if desired_next != current_phase:
-                                self._set_intimacy_phase(usuario_key, desired_next)
+                        desired_next = _compute_next_phase(
+                            current_phase,
+                            prompt,
+                            texto,
+                            engine_meta=meta,
+                        )
+                        if desired_next != current_phase:
+                            self._set_intimacy_phase(usuario_key, desired_next)
                 except Exception:
                     pass
 
