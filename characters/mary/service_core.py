@@ -1866,6 +1866,25 @@ _RE_QUOTED_ATTRIBUTION = re.compile(
     r"(?!mary\b)[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30}\b"
 )
 
+# 3b) Fala atribuída por pronome ("— ..." ele/ela continua/repete/etc.)
+#     Ex.: — Mary — ele repete, ... / — AMIGA! — ela grita ...
+_RE_QUOTED_PRONOUN_ATTRIB = re.compile(
+    r"(?is)"
+    r"(?:^|\n)\s*(—\s*[^\n]{2,220}|\"[^\"]{2,220}\"|“[^”]{2,220}”)"
+    r"[^\n]{0,80}\b"
+    r"(ele|ela)\b\s+"
+    r"(diz|disse|fala|falou|responde|respondeu|pergunta|perguntou|"
+    r"continua|continuou|repete|repetiu|grita|gritou|ri|riu|"
+    r"provoca|provocou|insiste|insistiu|sussurra|sussurrou|murmura|murmurou)\b"
+)
+
+# 3c) Diálogo iniciado por 3º (nome/pronome antes do travessão)
+#     Ex.: Ele sorri. — ...  / Arthur chega e: — ...
+_RE_THIRD_LEADS_DIALOGUE = re.compile(
+    r"(?is)\b(arthur|silvia|ele|ela|o\s+\w+|a\s+\w+)\b[^\n]{0,80}(—|\"|“)"
+)
+
+
 # 4) Pensamento/decisão interna atribuída ao usuário ou a nomes comuns do usuário
 _RE_INTERNAL_STATE = re.compile(
     r"\b(pensa|pensei|pensou|acha|achei|achou|imagina|imaginei|imaginou|"
@@ -1902,6 +1921,10 @@ def _has_user_action_violation(texto: str) -> bool:
     if _RE_OTHER_SPEAKER_TAG.search(t):
         return True
     if _RE_QUOTED_ATTRIBUTION.search(t):
+        return True
+    if _RE_QUOTED_PRONOUN_ATTRIB.search(t):
+        return True
+    if _RE_THIRD_LEADS_DIALOGUE.search(t):
         return True
 
     # B) 2ª pessoa com ação (autoria do usuário)
