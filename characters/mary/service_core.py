@@ -12,6 +12,7 @@ MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding din
 - Mantive NSFW_ON como "adulto/intenso".
 """
 import random
+import datetime
 import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
 import logging
 import re
@@ -1595,6 +1596,471 @@ def _rel_fact_key(timeline: str) -> str:
     tl = (timeline or "").strip() or "cumplice"
     return f"rel.state::{tl}"
 
+# ==========================================================
+# MANUAL MEMORY REACTIVATION (#mem ...) + LATENT MEMORIES
+# ==========================================================
+# Objetivo:
+# - Permitir ao usuário "chamar" memórias específicas com gatilho composto (AND/OR)
+# - Opcionalmente aplicar prioridade temporal (@recent/@oldest/@lastN)
+# - Ativar memórias "latentes" automaticamente quando condições do arco/estado baterem
+# Importante:
+# - NÃO altera o prompt NSFW nem "suaviza" texto
+# - Só injeta contexto adicional (system) quando acionado
+# - Guardrails: tamanho máximo, limite por turno, cooldown anti-repetição
+
+_RE_MEM_DIRECTIVE = re.compile(r"(?im)^(?:#mem|⟦MEM⟧)\s*(?:@(?P<mode>[a-zA-Z]+)(?P<n>\d+)?)?\s+(?P<expr>.+?)\s*$")
+_RE_TAGS_LINE = re.compile(r"(?im)^\s*\[TAGS:\s*(?P<tags>[^\]]+)\]\s*$")
+_RE_LATENT_LINE = re.compile(r"(?im)^\s*\[LATENT:\s*(?P<cond>[^\]]+)\]\s*$")
+
+def _mem_recent_key(usuario_key: str) -> str:
+    return f"mary_mem_recent::{usuario_key}"
+
+def _mem_latent_recent_key(usuario_key: str) -> str:
+    return f"mary_mem_latent_recent::{usuario_key}"
+
+def _turn_counter_key(usuario_key: str) -> str:
+    return f"mary_turn_counter::{usuario_key}"
+
+def _bump_turn_counter(usuario_key: str) -> int:
+    """Contador de turnos por sessão (não persiste em facts)."""
+    try:
+        cur = int(_ss_get(_turn_counter_key(usuario_key), 0) or 0)
+    except Exception:
+        cur = 0
+    cur += 1
+    _ss_set(_turn_counter_key(usuario_key), cur)
+    return cur
+
+def _extract_mem_directive(prompt: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    Remove a linha de diretiva #mem/⟦MEM⟧ do prompt do usuário e retorna:
+    - prompt limpo (sem a diretiva)
+    - spec dict: {"expr": str, "mode": str|None, "n": int|None}
+    Observação: só considera diretiva quando a linha começa com #mem/⟦MEM⟧.
+    """
+    if not prompt:
+        return "", None
+
+    spec: Optional[Dict[str, Any]] = None
+    lines = prompt.splitlines()
+    kept: List[str] = []
+    for ln in lines:
+        m = _RE_MEM_DIRECTIVE.match(ln.strip())
+        if m and spec is None:
+            mode = (m.group("mode") or "").strip().lower() or None
+            n = m.group("n")
+            spec = {"expr": (m.group("expr") or "").strip(), "mode": mode, "n": int(n) if n else None}
+            continue
+        kept.append(ln)
+
+    cleaned = "\n".join(kept).strip()
+    return cleaned, spec
+
+def _split_top_level(expr: str, sep: str = "+") -> List[str]:
+    """Split por sep, mas respeitando parênteses (top-level)."""
+    out: List[str] = []
+    buf: List[str] = []
+    depth = 0
+    for ch in (expr or ""):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if ch == sep and depth == 0:
+            part = "".join(buf).strip()
+            if part:
+                out.append(part)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        out.append(tail)
+    return out
+
+def _parse_compound_expr(expr: str) -> List[List[str]]:
+    """
+    Converte expressão do tipo:
+      "primeira+(transa|vez)+motel"
+    em lista AND de opções OR:
+      [["primeira"], ["transa","vez"], ["motel"]]
+    """
+    expr = (expr or "").strip()
+    if not expr:
+        return []
+
+    and_terms = _split_top_level(expr, "+")
+    parsed: List[List[str]] = []
+    for term in and_terms:
+        t = term.strip()
+        if not t:
+            continue
+        if t.startswith("(") and t.endswith(")"):
+            inner = t[1:-1]
+            opts = [o.strip() for o in inner.split("|") if o.strip()]
+            if opts:
+                parsed.append(opts)
+            continue
+        # caso: a+(b|c) sem parênteses externos não ocorre; mas "a|(b)" não suportamos fora de ()
+        parsed.append([t])
+    return parsed
+
+def _parse_tags_from_memory(text: str) -> List[str]:
+    if not text:
+        return []
+    tags: List[str] = []
+    for m in _RE_TAGS_LINE.finditer(text):
+        raw = m.group("tags") or ""
+        for t in raw.split(","):
+            tt = t.strip()
+            if tt:
+                tags.append(tt)
+    return tags
+
+def _extract_latent_conditions(text: str) -> List[str]:
+    if not text:
+        return []
+    return [ (m.group("cond") or "").strip() for m in _RE_LATENT_LINE.finditer(text) if (m.group("cond") or "").strip() ]
+
+def _memory_text_fields(mem: Dict[str, Any]) -> Tuple[str, str, str]:
+    """
+    Normaliza campos de memória (compatível com diferentes formatos):
+    - title
+    - kind/tipo
+    - text
+    """
+    if not isinstance(mem, dict):
+        return "", "", ""
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    title = str(mem.get("title") or meta.get("title") or meta.get("titulo") or mem.get("titulo") or "").strip()
+    kind = str(mem.get("kind") or meta.get("kind") or meta.get("tipo") or mem.get("tipo") or "").strip()
+    txt = str(mem.get("text") or mem.get("texto") or meta.get("text") or "").strip()
+    return title, kind, txt
+
+def _memory_timestamp(mem: Dict[str, Any]) -> Optional[float]:
+    """Tenta extrair timestamp da memória; fallback None."""
+    if not isinstance(mem, dict):
+        return None
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    for k in ("ts","timestamp","created_at","createdAt","time"):
+        v = meta.get(k) if k in meta else mem.get(k)
+        if v is None:
+            continue
+        try:
+            if isinstance(v, (int, float)):
+                return float(v)
+            s = str(v).strip()
+            # aceita epoch em string
+            if re.fullmatch(r"\d{10,13}", s):
+                return float(s[:10])
+            # tenta iso
+            try:
+                dt = datetime.datetime.fromisoformat(s.replace("Z","+00:00"))
+                return dt.timestamp()
+            except Exception:
+                pass
+        except Exception:
+            continue
+    return None
+
+def _memory_id(mem: Dict[str, Any]) -> str:
+    if not isinstance(mem, dict):
+        return "mem::invalid"
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    mid = meta.get("id") or mem.get("id")
+    if mid:
+        return f"mem::{mid}"
+    title, kind, txt = _memory_text_fields(mem)
+    h = hashlib.sha1((title+"|"+kind+"|"+txt).encode("utf-8", errors="ignore")).hexdigest()[:16]
+    return f"mem::sha1::{h}"
+
+def _norm_token(s: str) -> str:
+    return _t_norm(s or "").strip()
+
+def _memory_haystack(mem: Dict[str, Any]) -> str:
+    title, kind, txt = _memory_text_fields(mem)
+    tags = _parse_tags_from_memory(txt)
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    # inclui tags também de meta, se existir
+    mtags = meta.get("tags")
+    if isinstance(mtags, list):
+        tags += [str(x) for x in mtags if str(x).strip()]
+    elif isinstance(mtags, str):
+        tags += [t.strip() for t in mtags.split(",") if t.strip()]
+    blob = "\n".join([title, kind, txt, " ".join(tags)])
+    return _norm_token(blob)
+
+def _expr_match(mem: Dict[str, Any], parsed_expr: List[List[str]]) -> bool:
+    if not parsed_expr:
+        return False
+    hay = _memory_haystack(mem)
+    if not hay:
+        return False
+    for or_group in parsed_expr:
+        ok = False
+        for opt in or_group:
+            tok = _norm_token(opt)
+            if tok and tok in hay:
+                ok = True
+                break
+        if not ok:
+            return False
+    return True
+
+def _select_memories(
+    mems: List[Dict[str, Any]],
+    parsed_expr: List[List[str]],
+    *,
+    mode: Optional[str] = None,
+    n: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """Seleciona memórias que casam com expr e aplica prioridade temporal."""
+    hits = [m for m in (mems or []) if _expr_match(m, parsed_expr)]
+    if not hits:
+        return []
+
+    mode = (mode or "").strip().lower() or None
+
+    # ordenação temporal (se existir ts)
+    def key_ts(m: Dict[str, Any]) -> float:
+        ts = _memory_timestamp(m)
+        return ts if ts is not None else -1.0
+
+    if mode in ("recent","new","latest"):
+        hits.sort(key=key_ts, reverse=True)
+    elif mode in ("old","oldest","first"):
+        hits.sort(key=key_ts, reverse=False)
+    else:
+        # padrão: mais recente primeiro quando ts existe, senão mantém ordem
+        if any(_memory_timestamp(m) is not None for m in hits):
+            hits.sort(key=key_ts, reverse=True)
+
+    # quantidade
+    if mode and mode.startswith("last"):
+        # suporta @last2 etc.
+        k = n or 1
+        return hits[: max(1, min(6, k))]
+    return hits[:1]
+
+def _cooldown_allows(usuario_key: str, mem_id: str, *, latent: bool, cooldown_turns: int = 10) -> bool:
+    """Evita repetir a mesma memória com frequência (por sessão)."""
+    k = _mem_latent_recent_key(usuario_key) if latent else _mem_recent_key(usuario_key)
+    recent = _ss_get(k, []) or []
+    try:
+        # lista de (turn, id)
+        recent_list = list(recent) if isinstance(recent, (list, tuple)) else []
+    except Exception:
+        recent_list = []
+    # remove itens antigos
+    cur_turn = int(_ss_get(_turn_counter_key(usuario_key), 0) or 0)
+    filtered = []
+    for it in recent_list:
+        try:
+            tturn, mid = int(it[0]), str(it[1])
+            if cur_turn - tturn <= cooldown_turns:
+                filtered.append((tturn, mid))
+        except Exception:
+            continue
+    _ss_set(k, filtered)
+    return mem_id not in {mid for _, mid in filtered}
+
+def _mark_cooldown(usuario_key: str, mem_id: str, *, latent: bool) -> None:
+    k = _mem_latent_recent_key(usuario_key) if latent else _mem_recent_key(usuario_key)
+    cur_turn = int(_ss_get(_turn_counter_key(usuario_key), 0) or 0)
+    recent = _ss_get(k, []) or []
+    try:
+        recent_list = list(recent) if isinstance(recent, (list, tuple)) else []
+    except Exception:
+        recent_list = []
+    recent_list.append((cur_turn, mem_id))
+    # mantém janela curta
+    recent_list = recent_list[-20:]
+    _ss_set(k, recent_list)
+
+def _inject_memory_block(
+    messages: List[Dict[str, str]],
+    *,
+    kind: str,
+    title: str,
+    text: str,
+    tags: List[str],
+    source: str,
+) -> None:
+    """Insere uma memória como system (pequena e sem meta-vazamento)."""
+    blob = text.strip()
+    if not blob:
+        return
+    # corte de tamanho (guardrail)
+    blob = blob[:600].rstrip()
+    ttags = ", ".join([t.strip() for t in tags if t.strip()][:10])
+    hdr_parts = []
+    if title:
+        hdr_parts.append(f"Título: {title}")
+    if kind:
+        hdr_parts.append(f"Tipo: {kind}")
+    if ttags:
+        hdr_parts.append(f"Tags: {ttags}")
+    header = (" | ".join(hdr_parts)).strip()
+
+    content = (
+        f"[MEMÓRIA REATIVADA — {source.upper()}]\n"
+        + (header + "\n" if header else "")
+        + blob
+        + "\n\nRegras: use esta memória como CONTEXTO. Não cite tags/headers ao usuário."
+    ).strip()
+
+    # Insere após o primeiro system (persona), para manter hierarquia
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        messages.insert(1, {"role": "system", "content": content})
+    else:
+        messages.insert(0, {"role": "system", "content": content})
+
+def _inject_manual_memory_if_any(
+    *,
+    usuario_key: str,
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    spec: Optional[Dict[str, Any]],
+) -> None:
+    if not spec:
+        return
+    expr = str(spec.get("expr") or "").strip()
+    if not expr:
+        return
+
+    parsed = _parse_compound_expr(expr)
+    if not parsed:
+        return
+
+    mems = cached_list_memories(shared_key, limit=600) or []
+    # respeita timeline quando meta carrega isso
+    filtered: List[Dict[str, Any]] = []
+    for m in mems:
+        meta = m.get("meta") if isinstance(m.get("meta"), dict) else {}
+        if _memory_timeline_ok(meta, timeline):
+            filtered.append(m)
+
+    chosen = _select_memories(filtered, parsed, mode=spec.get("mode"), n=spec.get("n"))
+    if not chosen:
+        return
+
+    # injeta (no máximo 1 por turno por padrão; @lastN injeta N mas limitamos a 2)
+    max_inject = 1
+    mode = (spec.get("mode") or "")
+    if mode and mode.startswith("last"):
+        max_inject = max(1, min(2, int(spec.get("n") or 1)))
+
+    injected = 0
+    for mem in chosen[:max_inject]:
+        mid = _memory_id(mem)
+        if not _cooldown_allows(usuario_key, mid, latent=False):
+            continue
+        title, kind, txt = _memory_text_fields(mem)
+        tags = _parse_tags_from_memory(txt)
+        _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="manual")
+        _mark_cooldown(usuario_key, mid, latent=False)
+        injected += 1
+        if injected >= max_inject:
+            break
+
+def _eval_latent_condition(cond: str, *, tp_arc: Dict[str, Any]) -> bool:
+    """
+    Suporta condições simples:
+      - tension>=0.5, tension>0.5, tension<=0.7, anchor<=0.6
+      - mode==temptation
+      - mode in (temptation,conflict)
+    Variáveis: tension, anchor, mode
+    """
+    c = (cond or "").strip()
+    if not c:
+        return False
+
+    tension = float(tp_arc.get("tension", 0.0) or 0.0)
+    anchor = float(tp_arc.get("anchor", 0.85) or 0.85)
+    mode = str(tp_arc.get("mode") or tp_arc.get("last") or "").strip().lower()
+
+    # mode in (...)
+    m = re.match(r"(?i)mode\s+in\s*\((.+)\)\s*$", c)
+    if m:
+        items = [x.strip().lower() for x in m.group(1).split(",") if x.strip()]
+        return mode in items
+
+    m = re.match(r"(?i)mode\s*==\s*([a-zA-Z_]+)\s*$", c)
+    if m:
+        return mode == m.group(1).strip().lower()
+
+    m = re.match(r"(?i)(tension|anchor)\s*(>=|<=|>|<|==)\s*([0-9]*\.?[0-9]+)\s*$", c)
+    if m:
+        var = m.group(1).lower()
+        op = m.group(2)
+        try:
+            val = float(m.group(3))
+        except Exception:
+            return False
+        cur = tension if var == "tension" else anchor
+        if op == ">=":
+            return cur >= val
+        if op == "<=":
+            return cur <= val
+        if op == ">":
+            return cur > val
+        if op == "<":
+            return cur < val
+        if op == "==":
+            return abs(cur - val) < 1e-9
+    return False
+
+def _inject_latent_memory_if_any(
+    *,
+    usuario_key: str,
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    tp_arc: Dict[str, Any],
+) -> None:
+    """
+    Procura memórias com [LATENT: ...] e injeta no máximo 1 por turno,
+    respeitando cooldown.
+    """
+    mems = cached_list_memories(shared_key, limit=600) or []
+    if not mems:
+        return
+
+    candidates: List[Tuple[float, Dict[str, Any], str]] = []
+    for mem in mems:
+        meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+        if not _memory_timeline_ok(meta, timeline):
+            continue
+        title, kind, txt = _memory_text_fields(mem)
+        if not txt:
+            continue
+        conds = _extract_latent_conditions(txt)
+        if not conds:
+            continue
+        ok = any(_eval_latent_condition(c, tp_arc=tp_arc) for c in conds)
+        if not ok:
+            continue
+        ts = _memory_timestamp(mem) or 0.0
+        candidates.append((ts, mem, conds[0]))
+
+    if not candidates:
+        return
+
+    # prioriza a mais recente
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    for _, mem, _ in candidates[:6]:
+        mid = _memory_id(mem)
+        if not _cooldown_allows(usuario_key, mid, latent=True):
+            continue
+        title, kind, txt = _memory_text_fields(mem)
+        tags = _parse_tags_from_memory(txt)
+        _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="latent")
+        _mark_cooldown(usuario_key, mid, latent=True)
+        break
+
+
 
 def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
     """
@@ -1654,7 +2120,6 @@ def _load_rel_state(
 
     # 3) Metas internas
     base.setdefault("_promote_streak", 0)
-    base.setdefault("_regress_streak", 0)
     base.setdefault("_loop_streak", 0)
     base.setdefault("_last_pattern", "")
     base.setdefault("_last_updated_ts", 0)
@@ -1866,22 +2331,19 @@ _RE_QUOTED_ATTRIBUTION = re.compile(
     r"(?!mary\b)[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30}\b"
 )
 
-# 3b) Fala atribuída por pronome ("— ..." ele/ela continua/repete/etc.)
-#     Ex.: — Mary — ele repete, ... / — AMIGA! — ela grita ...
-_RE_QUOTED_PRONOUN_ATTRIB = re.compile(
-    r"(?is)"
-    r"(?:^|\n)\s*(—\s*[^\n]{2,220}|\"[^\"]{2,220}\"|“[^”]{2,220}”)"
-    r"[^\n]{0,80}\b"
-    r"(ele|ela)\b\s+"
-    r"(diz|disse|fala|falou|responde|respondeu|pergunta|perguntou|"
-    r"continua|continuou|repete|repetiu|grita|gritou|ri|riu|"
-    r"provoca|provocou|insiste|insistiu|sussurra|sussurrou|murmura|murmurou)\b"
+# 3b) Citação atribuída implicitamente a terceiros (sem "disse Fulano")
+# Ex.: Ele sorri e "Então, Mary..." / "..." — ele pergunta.
+_RE_THIRD_PARTY_QUOTE_BEFORE = re.compile(
+    r"(?is)\b("
+    r"ele|ela|"
+    r"janio|arthur|"
+    r"o\s+cara|o\s+homem|o\s+rapaz|o\s+garoto|"
+    r"aquele\s+cara|um\s+cara"
+    r")\b[^\n\"]{0,160}\"[^\n\"]{2,}\""
 )
 
-# 3c) Diálogo iniciado por 3º (nome/pronome antes do travessão)
-#     Ex.: Ele sorri. — ...  / Arthur chega e: — ...
-_RE_THIRD_LEADS_DIALOGUE = re.compile(
-    r"(?is)\b(arthur|silvia|ele|ela|o\s+\w+|a\s+\w+)\b[^\n]{0,80}(—|\"|“)"
+_RE_THIRD_PARTY_QUOTE_AFTER = re.compile(
+    r"(?is)\"[^\n\"]{2,}\"[^\n]{0,60}\b(ele|ela|janio|arthur)\b"
 )
 
 
@@ -1922,9 +2384,9 @@ def _has_user_action_violation(texto: str) -> bool:
         return True
     if _RE_QUOTED_ATTRIBUTION.search(t):
         return True
-    if _RE_QUOTED_PRONOUN_ATTRIB.search(t):
+    if _RE_THIRD_PARTY_QUOTE_BEFORE.search(t):
         return True
-    if _RE_THIRD_LEADS_DIALOGUE.search(t):
+    if _RE_THIRD_PARTY_QUOTE_AFTER.search(t):
         return True
 
     # B) 2ª pessoa com ação (autoria do usuário)
@@ -2378,6 +2840,17 @@ _RE_CONFLICT_IMMINENT = re.compile(
     re.IGNORECASE,
 )
 
+
+# Subconjunto letal/arma (sempre HARD, mesmo em modo "soft")
+_RE_CONFLICT_LETHAL = re.compile(
+    r"\b("
+    r"matar|vou\s+te\s+matar|"
+    r"arma|faca|fac[aã]|tiro|rev[oó]lver|pistola|"
+    r"esfaquear|atirar"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _RE_SCENE_FINALIZATION = re.compile(
     r"\b("
     r"orgasmei|gozei|gozamos|"  # Passado/conclusivo
@@ -2770,12 +3243,19 @@ def _violations(
     # conflito (só se timeline permite)
     # ----------------------------------------------------------
     try:
-        if _resolve_conflict_mode(timeline or "") != "off":
-            if _RE_CONFLICT_IMMINENT.search(t):
+        mode = _resolve_conflict_mode(timeline or "")
+        if mode != "off" and _RE_CONFLICT_IMMINENT.search(t):
+            # Em "soft": só derruba quando é letal/arma. Caso contrário, apenas sinaliza.
+            if _RE_CONFLICT_LETHAL.search(t):
                 out.append("conflito_extremo")
+            else:
+                out.append("conflito_soft")
     except Exception:
         if _RE_CONFLICT_IMMINENT.search(t):
-            out.append("conflito_extremo")
+            if _RE_CONFLICT_LETHAL.search(t):
+                out.append("conflito_extremo")
+            else:
+                out.append("conflito_soft")
 
     # ----------------------------------------------------------
     # terceiros: segurança/logística realista
@@ -3923,6 +4403,14 @@ class MaryService(BaseCharacter):
             prompt = str(_ss_get("chat_input", "") or "").strip()
         else:
             prompt = (prompt or "").strip()
+
+        # ✅ Diretiva opcional de memória (não vai para o modelo)
+        prompt, mem_spec = _extract_mem_directive(prompt)
+
+        # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
+        if (not prompt) and mem_spec:
+            prompt = "Continue."
+
         if not prompt:
             return ""
 
@@ -4808,6 +5296,28 @@ class MaryService(BaseCharacter):
             )
         
         # Prompt atual sempre por último
+
+        # ==========================================
+        # MEMÓRIAS — chamada manual (#mem ...) e latentes
+        # (não altera prompt NSFW; só injeta contexto)
+        # ==========================================
+        _inject_manual_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            spec=mem_spec,
+        )
+
+        # Latentes: ativam automaticamente quando condições baterem (ex: tension/anchor/mode)
+        _inject_latent_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            tp_arc=tp_arc_state,
+        )
+
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})        
         # Fase efetiva usada no decoding (pode ser forçada para aftercare)
         phase = int(intimacy_phase)
