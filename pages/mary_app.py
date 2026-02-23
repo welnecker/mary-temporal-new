@@ -2580,22 +2580,18 @@ def main() -> None:
             key="shared_mem_kind",
         )
 
-
-        # ----------------------------------------------
-        # ✅ TAGS / LATENT — campos que viram header [TAGS]/[LATENT]
-        # ----------------------------------------------
         mem_tags = st.text_input(
-            "Tags (separadas por vírgula)",
-            placeholder="Ex: arthur, telefone, contato | primeira, transa, local",
+            "Tags (opcional) — use vírgula",
+            placeholder="Ex: Arthur, telefone, uber",
             key="shared_mem_tags",
-            help="Use para gatilhos compostos: #mem arthur+telefone",
+            help="Essas tags viram o cabeçalho [TAGS: ...] e são usadas para gatilhos compostos (ex: Arthur+telefone).",
         )
 
         mem_latent = st.text_input(
-            "Condição latente (opcional)",
-            placeholder="Ex: tension>=0.5 | anchor<=0.6 | mode in (temptation,conflict)",
+            "Latente (opcional) — regra de ativação automática",
+            placeholder="Ex: tension>0.5; guilt<0.2",
             key="shared_mem_latent",
-            help="Se preenchido, vira [LATENT: ...] e pode ser usada no disparo automático (core).",
+            help="Vira o cabeçalho [LATENT: ...]. Use quando quiser memórias que 'acordam' automaticamente por estado (tensão, culpa, etc.).",
         )
 
         if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
@@ -2603,8 +2599,8 @@ def main() -> None:
             if not t_raw:
                 st.warning("Escreva o texto da memória antes de salvar.")
             else:
-                tags_raw = (mem_tags or "").strip()
-                latent_raw = (mem_latent or "").strip()
+                tags_raw = (st.session_state.get("shared_mem_tags") or mem_tags or "").strip()
+                latent_raw = (st.session_state.get("shared_mem_latent") or mem_latent or "").strip()
 
                 header_lines = []
                 if tags_raw:
