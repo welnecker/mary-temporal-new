@@ -5309,6 +5309,9 @@ class MaryService(BaseCharacter):
             spec=mem_spec,
         )
 
+        # Estado do arco de terceiros (para memórias latentes)
+        tp_arc_state = _get_tp_arc_state(usuario_key, timeline_final)
+
         # Latentes: ativam automaticamente quando condições baterem (ex: tension/anchor/mode)
         _inject_latent_memory_if_any(
             usuario_key=usuario_key,
