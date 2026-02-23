@@ -1,4 +1,4 @@
-# characters/mary/service_core.py
+# characters/mary/service_core.py-service_core_PATCHED_v10c.py
 from __future__ import annotations
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
