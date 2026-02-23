@@ -1,3 +1,8 @@
+22/02/2026   18:39
+
+from __future__ import annotations
+from core.repos
+
 from __future__ import annotations
 from core.repositories import force_reset_virginity_universitaria
 # mary_app_harmonized_core_v6.py
@@ -1028,6 +1033,17 @@ def _sort_backend_docs(docs: list[dict]) -> list[dict]:
             if isinstance(v, (int, float)):
                 return float(v)
             if isinstance(v, str):
+
+                # Monta corpo final com TAGS/LATENT (sem duplicar se o usuário já escreveu manualmente)
+                t_final = t
+                try:
+                    if (mem_tags or "").strip() and not re.search(r"(?im)^\s*\[TAGS:", t_final):
+                        t_final = t_final.rstrip() + "\n\n[TAGS: " + (mem_tags or "").strip() + "]"
+                    if (mem_latent or "").strip() and not re.search(r"(?im)^\s*\[LATENT:", t_final):
+                        t_final = t_final.rstrip() + "\n[LATENT: " + (mem_latent or "").strip() + "]"
+                except Exception:
+                    t_final = t
+
                 try:
                     vv = v.replace("T", " ").replace("Z", "").strip()
                     if vv.isdigit():
@@ -2545,7 +2561,7 @@ def main() -> None:
             shared_in = st.text_input(
                 "Key compartilhada (editável):",
                 value=st.session_state.get("shared_key_override") or shared_default,
-                help="Ex: Janio Donisete::mary::shared",
+                help="Troca a chave (namespace) onde as memórias shared serão LIDAS/SALVAS. Ex: Janio Donisete::mary::shared",
             ).strip()
             apply_shared = st.form_submit_button("✅ Aplicar key")
 
@@ -2558,6 +2574,8 @@ def main() -> None:
 
         st.caption("Key efetiva:")
         st.code(shared_key)
+
+        st.caption("Chamar memória no chat (manual): use `#mem <expr>` — ex: `#mem Arthur+telefone` ou `#mem @recent Arthur+(telefone|contato)`")
 
         st.markdown("**➕ Inserir memória (shared)**")
         mem_text = st.text_area(
@@ -2579,6 +2597,24 @@ def main() -> None:
             key="shared_mem_kind",
         )
 
+        # 🏷️ TAGS (gatilhos compostos) — usados para chamada manual via #mem
+        # Ex: tags: Arthur, telefone, motel
+        mem_tags = st.text_input(
+            "Tags (opcional, separadas por vírgula)",
+            placeholder="Ex: Arthur, telefone, motel  |  Ex: primeira, transa, local",
+            key="shared_mem_tags",
+            help="Essas tags viram uma linha no texto: [TAGS: ...]. Depois você chama com: #mem Arthur+telefone (suporta OR: primeira+(transa|vez)+local).",
+        )
+
+        # 🫥 LATENT (opcional) — ativa automaticamente quando condição bate
+        # Ex: tension>0.5, phase>=3, third_party_phase>=4
+        mem_latent = st.text_input(
+            "Latent (condição opcional)",
+            placeholder="Ex: tension>0.5  |  Ex: third_party_phase>=4 & anchor<0.6",
+            key="shared_mem_latent",
+            help="Se preenchido, adiciona [LATENT: ...] e a memória pode ser injetada automaticamente quando a condição bater. Isso NÃO muda NSFW nem o texto; só injeta contexto.",
+        )
+
         if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
             t = (mem_text or "").strip()
             if not t:
@@ -2592,7 +2628,7 @@ def main() -> None:
                     meta["title"] = mem_title.strip()
 
                 try:
-                    append_memory(shared_key, t, meta=meta)
+                    append_memory(shared_key, t_final, meta=meta)
                     st.success("✅ Memória salva em (shared).")
 
                     st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
