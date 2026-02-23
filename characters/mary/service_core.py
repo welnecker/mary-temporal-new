@@ -2485,9 +2485,16 @@ _EXPLICIT_STEMS = [
 ]
 _RE_EXPLICIT_SEX = re.compile(r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b", re.I)
 
-# Declaração de orgasmo da Mary (mais geral; sem depender de uma frase exata)
 _RE_MARY_ORGASM_DECLARATION = re.compile(
-    r"\b(eu\s+goz(o|ei|ando)|to\s+goz(ando)?|estou\s+goz(ando)?|meu\s+orgasmo|gozei)\b",
+    r"\b(?:"
+    r"eu\s+goz(?:o|ei|ando)|"
+    r"(?:t[oô]|t[aá]|estou)\s+goz(?:ando)?|"
+    r"vou\s+gozar|"
+    r"(?:me\s+faz(?:er|endo)?|me\s+fa[cç]a)\s+gozar|"
+    r"goza\s+comigo|"
+    r"goz(?:amos|ei|ando)|"
+    r"meu\s+orgasmo"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -2940,7 +2947,7 @@ def _detect_climax_signal(
     t = (texto or "").lower()
     u = (user_text or "").lower()
 
-    if len(t) < 120 and phase < 4:
+    if len(t) < 120 and phase < 3:
         return False
 
     signals = (
@@ -3195,7 +3202,7 @@ def _violations(
     - Guardrails realistas para "terceiros" (locais perigosos / convite vago).
     - Se NSFW OFF, bloquear explícito.
     - Evitar finalizar a cena sem autorização (soft no NSFW ON; hard no SAFE).
-    - (NSFW ON) Se houver sinal de clímax, Mary deve verbalizar o próprio orgasmo.
+    - (NSFW ON) Se houver sinal de clímax (fase >= 4), Mary deve verbalizar o próprio orgasmo.
     - (Sempre) Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita dele.
     """
     t = (texto or "").strip()
@@ -3207,6 +3214,7 @@ def _violations(
 
     t_lower = t.lower()
     u_lower = (user_text or "").strip().lower()
+    ctx_l = (ctx_lower or "").lower()  # ✅ garante lower real
 
     # ----------------------------------------------------------
     # meta / vazamento
@@ -3218,8 +3226,9 @@ def _violations(
     # mensagens inventadas / offscreen (WhatsApp/SMS/print etc.)
     # ----------------------------------------------------------
     if _RE_OFFSCREEN_MSG.search(t):
+        # ✅ usa ctx_lower normalizado
         user_pasted = any(
-            kw in (ctx_lower or "")
+            kw in ctx_l
             for kw in (
                 "mensagem:",
                 "whatsapp:",
@@ -3266,23 +3275,20 @@ def _violations(
         elif _RE_VAGUE_INVITE.search(t):
             out.append("terceiro_convite_vago")
         elif _RE_URBAN_LOCATIONS.search(t):
-            # urbano é permitido, mas evita "teleporte logístico" (uber/hotel etc.)
             out.append("terceiro_local_urbano")
         else:
             out.append("terceiro_desvio_generico")
 
-        # Se terceiros estiver liberado, mantemos o guardrail de lugares perigosos,
-        # mas os demais viram apenas sinalização (não necessariamente rejeição).
+        # ✅ Se terceiros estiver liberado, rebaixa TUDO exceto local perigoso para "soft"
         if allow_third_party_seduction and "terceiro_local_perigoso" not in out:
-            # rebaixa os marcadores não-críticos para "soft" via padrão (não entra em CRITICAL/HIGH)
-            pass
+            downgradable = {"terceiro_convite_vago", "terceiro_local_urbano", "terceiro_desvio_generico"}
+            out = [f"{v}_soft" if v in downgradable else v for v in out]
 
     # ----------------------------------------------------------
     # finalização de cena fora de hora
     # ----------------------------------------------------------
     if _RE_SCENE_FINALIZATION.search(t):
         if not _finalization_allowed(user_text or "", int(phase or 0)):
-            # no NSFW ON tratamos como SOFT (não derruba tudo; só corta no trim)
             out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
 
     # ----------------------------------------------------------
@@ -3292,37 +3298,52 @@ def _violations(
         out.append("nsfw_off_explicito")
 
     # ----------------------------------------------------------
-    # NSFW ON: orgasmo da Mary deve ser verbalizado quando há sinal de clímax
+    # NSFW ON: orgasmo da Mary deve ser verbalizado quando há sinal de clímax (somente fase >= 4)
     # ----------------------------------------------------------
     if nsfw_on:
         try:
-            climax_signal = _detect_climax_signal(t, user_text or "", nsfw_on=True, phase=int(phase or 0))
+            climax_signal = _detect_climax_signal(
+                t,
+                user_text or "",
+                nsfw_on=True,
+                phase=int(phase or 0),
+            )
         except Exception:
             climax_signal = False
 
+        # ✅ Gate de fase: só vira "hard" (mary_nao_verbalizou_orgasmo) em fase 4+
         if climax_signal:
-            # 1) Se Mary entrou em clímax, ela precisa verbalizar (ex: "vou gozar", "tô gozando", "gozei")
+            # 1) Se Mary entrou em clímax, ela precisa verbalizar
+            # Mas só marca violação se REALMENTE não verbalizou
             if not _RE_MARY_ORGASM_DECLARATION.search(t):
-                out.append("mary_nao_verbalizou_orgasmo")
+                # Dupla verificação: procura por qualquer forma de "goz"
+                if not re.search(r"\bgoz\w+", t, re.IGNORECASE):
+                    out.append("mary_nao_verbalizou_orgasmo")
 
-            # 2) Se ela verbalizou orgasmo MUITO cedo, marca orgasmo_precoce (só serve pra reject condicional)
-            if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t) and not _RE_SCENE_FINALIZATION.search(u_lower):
+        # ✅ Orgasmo precoce: só marca se ela VERBALIZOU orgasmo em fase < 4
+        if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t):
+            # se o usuário explicitamente pediu finalização/clímax, não marca precoce
+            if not _RE_SCENE_FINALIZATION.search(u_lower):
                 out.append("orgasmo_precoce")
 
     # ----------------------------------------------------------
     # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
     # (evita falso positivo quando Mary fala do PRÓPRIO orgasmo)
     # ----------------------------------------------------------
-    # Heurística: só considera orgasmo do usuário quando há marcação de 2ª pessoa / "seu" / "dele".
+    # ✅ Heurística: só considera orgasmo do usuário quando há 2ª pessoa / "seu" / "te".
+    # ✅ Remove "gozamos" (gera falso positivo em linguagem de dupla sem consentimento explícito).
     user_orgasm_claim = bool(
         re.search(
             r"\b("
-            r"voc[eê]\s+(?:vai\s+)?goz(?:a|ar|ou)|"
-            r"fa[cç]o\s+voc[eê]\s+gozar|te\s+fa[cç]o\s+gozar|vou\s+te\s+fazer\s+gozar|"
-            r"seu\s+cl[ií]max|cl[ií]max\s+de\s+voc[eê]|cl[ií]max\s+dele|"
-            r"ejacul(?:a|ou)|"
-            r"gozamos"
-            r")\b",
+            r"voc[eê]\s+(?:vai\s+)?goz(?:a|ar|ou)\b|"
+            r"(?:fa[cç]o|vou)\s+te\s+fazer\s+gozar\b|"
+            r"fa[cç]o\s+voc[eê]\s+gozar\b|"
+            r"te\s+fa[cç]o\s+gozar\b|"
+            r"seu\s+cl[ií]max\b|"
+            r"cl[ií]max\s+de\s+voc[eê]\b|"
+            r"cl[ií]max\s+dele\b|"
+            r"ejacul(?:a|ou)\b"
+            r")",
             t_lower,
         )
     )
@@ -3667,8 +3688,9 @@ def _repair_instruction(violations: List[str]) -> str:
 
     if "nsfw_poetizou" in violations:
         bullets.append(
-            "- NSFW ON: remova poesia/metáforas e palavras românticas (redenção, destino, prece, voto, para sempre, cicatriz por cicatriz). "
-            "Foque em ação curta + sensação física."
+            "- NSFW ON: mantenha linguagem física direta e concreta. "
+            "Evite termos abstratos (redenção, destino, prece, voto, para sempre). "
+            "Mantenha detalhes sensoriais físicos: pressão, ritmo, calor, textura, respiração."
         )
 
     if "tone_romantic_when_intense" in violations:
@@ -4553,13 +4575,15 @@ class MaryService(BaseCharacter):
         nsfw_hard_block = ""
         if nsfw_on:
             nsfw_hard_block = """
-        [BLOQUEIO DE POESIA — NSFW ON (ABSOLUTO)]
-        - PROIBIDO poesia, metáforas românticas e floreios.
-        - PROIBIDO usar termos/idéias do tipo:
-          redenção, destino, prece, voto, para sempre,
-          eternidade, alma, cicatriz por cicatriz.
-        - Escreva com linguagem física concreta e direta.
-        - Corpo antes de emoção. Fala curta. Ação primeiro.
+        [LINGUAGEM FÍSICA — NSFW ON]
+        - PERMITIDO: linguagem física direta e explícita
+          (buceta, pênis, boca, língua, penetração, etc.)
+        - PERMITIDO: detalhes sensoriais em camadas
+          (texturas, pressões, umidades, temperaturas, ritmos)
+        - PERMITIDO: reações físicas intensas
+          (tremores, contrações, gemidos, respiração entrecortada)
+        - PROIBIDO APENAS: redenção, destino, prece, voto, para sempre
+        - FOCO: descreva o que Mary SENTE e FAZ, não o que significa
         """.strip()
         
         # ✅ TERCEIROS: respeita o toggle da UI (override) quando NSFW está ON
@@ -5922,7 +5946,7 @@ class MaryService(BaseCharacter):
         data2, used_model2, _provider_meta2 = self._chat(
             used_model,
             repair_messages,
-            temperature=max(0.40, float(temperature) - 0.10),
+            temperature=float(temperature) if "nsfw_on" not in violations else float(temperature),
             max_tokens=int(max_tokens),
             top_p=min(0.98, float(top_p) + 0.02),
             extra=extra,
@@ -6006,7 +6030,7 @@ class MaryService(BaseCharacter):
                     data_max, used_model_max, _ = self._chat(
                         used_model2,
                         force_messages_max,
-                        temperature=0.40,  # Muito baixo (força máxima)
+                        temperature=0.70,  # Muito baixo (força máxima)
                         max_tokens=int(max_tokens),
                         top_p=0.85,  # Conservador
                         extra=extra,
