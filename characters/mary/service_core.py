@@ -2470,39 +2470,176 @@ def _compute_next_phase(
 
     return p
 
-# ----------------------------------------------------------
-# Explícito (NSFW) — famílias semânticas (poucas)
-# ----------------------------------------------------------
-# Mantém o contrato: _is_explicit(text) True quando há descrição direta/ato explícito.
-# Evita regex gigante e frágil; usa famílias curtas e stems.
-_EXPLICIT_STEMS = [
-    # ato explícito
-    "penetr", "meter", "foder", "enfi", "bombe", "vai e vem",
-    # anatomia explícita
-    "bucet", "vagin", "clitor", "penis", "pau",
-    # oral/anal explícitos
-    "boquete", "chupar", "anal",
-]
-_RE_EXPLICIT_SEX = re.compile(r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b", re.I)
+# ------------------------------------------------------------------
+# Normalização de texto (helper)
+# ------------------------------------------------------------------
+def _t_norm(texto: str) -> str:
+    """Normaliza texto para busca: lowercase, sem acentos extras."""
+    if not texto:
+        return ""
+    t = str(texto).lower().strip()
+    # Remove múltiplos espaços
+    t = re.sub(r'\s+', ' ', t)
+    return t
 
-_RE_MARY_ORGASM_DECLARATION = re.compile(
-    r"\b(?:"
-    r"eu\s+goz(?:o|ei|ando)|"
-    r"(?:t[oô]|t[aá]|estou)\s+goz(?:ando)?|"
-    r"vou\s+gozar|"
-    r"(?:me\s+faz(?:er|endo)?|me\s+fa[cç]a)\s+gozar|"
-    r"goza\s+comigo|"
-    r"goz(?:amos|ei|ando)|"
-    r"meu\s+orgasmo"
-    r")\b",
-    re.IGNORECASE,
+
+# ==================================================================
+# 1️⃣ DETECÇÃO DE CONTEÚDO EXPLÍCITO
+# ==================================================================
+
+# Famílias semânticas de conteúdo explícito (stems curtos, eficientes)
+_EXPLICIT_STEMS = [
+    # Atos sexuais explícitos
+    "penetr",      # penetração, penetrar
+    "meter",       # meter dentro
+    "foder",       # foder, fodendo
+    "enfi",        # enfiar
+    "bombe",       # bombeando
+    "vai e vem",   # movimento explícito
+    
+    # Anatomia genital explícita
+    "bucet",       # buceta
+    "vagin",       # vagina
+    "clitor",      # clitóris
+    "penis",       # pênis
+    "pau",         # pau (gíria)
+    "pica",        # pica (gíria)
+    
+    # Atos orais/anais explícitos
+    "boquete",     # boquete
+    "chupar",      # chupar (pênis)
+    "anal",        # anal
+    "cu",          # cu (gíria)
+    
+    # Fluidos/Sensações explícitas
+    "gozada",      # gozada
+    "porra",       # porra (gíria)
+    "leite",       # leite (gíria para sêmen)
+]
+
+# Regex compilado para explícito
+_RE_EXPLICIT_SEX = re.compile(
+    r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b",
+    re.IGNORECASE
 )
 
 def _is_explicit(texto: str) -> bool:
+    """
+    Retorna True se o texto contém descrição direta de ato sexual explícito.
+    
+    Exemplos:
+    - "Ele me fode com vontade" → True
+    - "Meu pau entra dentro" → True
+    - "Estou gozando muito" → False (orgasmo, não ato explícito)
+    - "Beijo apaixonado" → False
+    """
     t = _t_norm(texto)
     if not t:
         return False
     return bool(_RE_EXPLICIT_SEX.search(t))
+
+
+# ==================================================================
+# 2️⃣ DETECÇÃO DE ORGASMO DE MARY (EXPANDIDO v10c+)
+# ==================================================================
+
+# Regex expandido: detecta 15+ variações de orgasmo
+_RE_MARY_ORGASM_DECLARATION = re.compile(
+    r"\b(?:"
+    # Formas básicas de "gozar"
+    r"(?:eu\s+)?goz(?:o|ei|ando|ar)|"
+    r"(?:t[oô]|t[aá]|estou|tô|to)\s+goz(?:ando)?|"
+    r"vou\s+gozar|"
+    r"(?:vou\s+)?(?:me\s+)?(?:faz(?:er|endo)?|fa[cç]a)\s+gozar|"
+    
+    # Variações com "comigo"
+    r"goza\s+comigo|"
+    r"goza\s+(?:em\s+)?mim|"
+    
+    # Formas plurais
+    r"goz(?:amos|aram|arem)|"
+    
+    # Orgasmo (palavra direta)
+    r"(?:meu\s+)?orgasmo|"
+    r"(?:tô|estou|to)\s+(?:em\s+)?orgasmo|"
+    r"(?:vou\s+)?(?:ter\s+)?(?:um\s+)?orgasmo|"
+    
+    # Variações coloquiais
+    r"(?:tô|estou|to)\s+perto\s+(?:de\s+)?(?:gozar|orgasmo)|"
+    r"(?:já\s+)?(?:vou|vou\s+)?(?:gozar|vir)|"
+    
+    # Efeitos de orgasmo
+    r"(?:me\s+)?(?:faz\s+)?vir|"
+    r"(?:tô|estou)\s+(?:vindo|virando)|"
+    
+    # Intensidade máxima
+    r"(?:me\s+)?(?:leva|leve)\s+(?:ao\s+)?cl[ií]max|"
+    r"(?:vou\s+)?(?:ao\s+)?cl[ií]max|"
+    r"(?:pico\s+)?(?:de\s+)?prazer|"
+    
+    # Expressões de intensidade
+    r"(?:tô|estou)\s+(?:perdendo|saindo)\s+(?:do\s+)?controle|"
+    r"(?:não\s+)?aguento\s+(?:mais|de\s+prazer)|"
+    
+    # Reações corporais de clímax
+    r"(?:meu\s+)?(?:corpo\s+)?(?:treme|contrai|espasma)|"
+    r"(?:tô|estou)\s+(?:tremendo|contraindo|espalmando)|"
+    
+    # Variações com "me"
+    r"(?:me\s+)?(?:faz\s+)?(?:gozar|vir|explodir)|"
+    
+    # Intensidade extrema
+    r"(?:me\s+)?(?:faz\s+)?(?:explodir|desintegrar|voar)|"
+    r"(?:tô|estou)\s+(?:explodindo|desintegrando|voando)"
+    
+    r")\b",
+    re.IGNORECASE | re.VERBOSE
+)
+
+def _has_mary_orgasm_declaration(texto: str) -> bool:
+    """
+    Retorna True se o texto contém declaração de orgasmo de Mary.
+    
+    Exemplos:
+    - "Eu gozei" → True
+    - "Vou gozar" → True
+    - "Goza comigo" → True
+    - "Estou em orgasmo" → True
+    - "Me faz vir" → True
+    - "Não aguento mais de prazer" → True
+    - "Meu corpo treme" → True
+    - "Estou perdendo o controle" → True
+    - "Beijo apaixonado" → False
+    - "Estou feliz" → False
+    """
+    t = _t_norm(texto)
+    if not t:
+        return False
+    return bool(_RE_MARY_ORGASM_DECLARATION.search(t))
+
+
+# ==================================================================
+# 3️⃣ HELPER: Detecta se é APENAS orgasmo (sem ato explícito)
+# ==================================================================
+
+def _is_orgasm_only(texto: str) -> bool:
+    """
+    True se tem orgasmo MAS NÃO tem ato explícito.
+    Útil para diferenciar: "Estou gozando" vs "Ele me fode e goza"
+    """
+    has_orgasm = _has_mary_orgasm_declaration(texto)
+    has_explicit = _is_explicit(texto)
+    return has_orgasm and not has_explicit
+
+
+def _is_orgasm_and_explicit(texto: str) -> bool:
+    """
+    True se tem AMBOS: orgasmo E ato explícito.
+    Exemplo: "Ele me fode e eu gozei"
+    """
+    has_orgasm = _has_mary_orgasm_declaration(texto)
+    has_explicit = _is_explicit(texto)
+    return has_orgasm and has_explicit
 
 # ---------------------------------------------------------
 # HYBRID (heurística + LLM) — classificação "na borda"
@@ -6030,7 +6167,7 @@ class MaryService(BaseCharacter):
                     data_max, used_model_max, _ = self._chat(
                         used_model2,
                         force_messages_max,
-                        temperature=0.70,  # Muito baixo (força máxima)
+                        temperature=0.70,  
                         max_tokens=int(max_tokens),
                         top_p=0.85,  # Conservador
                         extra=extra,
