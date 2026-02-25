@@ -52,7 +52,7 @@ MODEL_ALIASES: Dict[str, str] = {}
 PINNED_OPENROUTER_MODELS: List[str] = [
     "arcee-ai/trinity-large-preview:free",
     "minimax/minimax-m2.5",
-    "tngtech/deepseek-r1t-chimera:free",
+    "tngtech/deepseek-r1t2-chimera",
 ]
 
 
