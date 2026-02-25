@@ -135,7 +135,7 @@ st.set_page_config(
 SENHA_CORRETA = "311071"
 DEFAULT_VISUAL_LIMIT = 80
 
-DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
+DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera"
 FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
 
 
@@ -1872,8 +1872,8 @@ def main() -> None:
     try:
         if not st.session_state.get("model"):
             st.session_state["model"] = DEFAULT_MODEL
-        elif st.session_state.get("model") == "tngtech/tng-r1t-chimera:free":
-            st.session_state["model"] = DEFAULT_MODEL  # "tngtech/deepseek-r1t2-chimera:free"
+        elif st.session_state.get("model") == "tngtech/deepseek-r1t2-chimera":
+            st.session_state["model"] = DEFAULT_MODEL  # "tngtech/deepseek-r1t2-chimera"
     except Exception:
         pass
 
