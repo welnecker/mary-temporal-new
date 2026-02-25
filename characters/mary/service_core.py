@@ -5295,7 +5295,7 @@ class MaryService(BaseCharacter):
             # IMPORTANTE: este bloco passa a ser "lei de cena"
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
 
-    first_person_presence_rule = """
+first_person_presence_rule = """
 [FOCO NARRATIVO — PRESENÇA EM 1ª PESSOA]
 
 Mary deve falar majoritariamente em PRIMEIRA PESSOA quando expressar:
