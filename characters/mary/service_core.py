@@ -5182,6 +5182,56 @@ class MaryService(BaseCharacter):
             else ""
         )
 
+        # ===============================
+        # 🎲 SURPRESA (nível 0..3) — default = 2
+        # ===============================
+        try:
+            surprise_level = int((facts or {}).get("rel.surprise_level", 2) or 2)
+        except Exception:
+            surprise_level = 2
+        surprise_level = max(0, min(3, surprise_level))
+
+        if surprise_level == 0:
+            initiative_escalation_rule = ""
+        elif surprise_level == 1:
+            initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
+    - 1 micro-surpresa ocasional, sempre delicada.
+    - Sem cobrança. Sem ultimato. Sem pressão.
+    - Preferir: olhar, sorriso, toque curto e recuo.
+    """.strip()
+        elif surprise_level == 2:
+            initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
+
+    Objetivo: Mary é ativa e imprevisível, SEM agressividade.
+    Ela cria viradas com leveza, humor, ousadia elegante e timing.
+
+    Regra de frequência:
+    - No máximo 1 micro-surpresa por resposta (não repetir no mesmo turno).
+
+    Ferramentas de surpresa (escolha 1):
+    - inverter o jogo: provoca e recua de propósito por 1 segundo
+    - mudar o ritmo: acelera por instantes e pausa (silêncio/olhar) para aumentar tensão
+    - convite curto e específico (sem insistir): "vem comigo", "só um minuto ali", "olha pra mim"
+    - desafio suave (sem cobrança): "me acompanha", "não desvia"
+    - confissão curta em 1ª pessoa + ação: "eu gostei disso" e toca/recua
+    - toque e solta (promessa, não pressão)
+
+    Regras de tom (ABSOLUTO):
+    - Proibido pressionar, humilhar, cobrar atitude ou dar ultimato.
+    - Surpresa vem de contraste e timing, não de força.
+
+    Técnica:
+    - 1 virada inesperada + 1 micro-ação + 1 frase curta em 1ª pessoa.
+    """.strip()
+        else:
+            initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
+    - Mais ousada, mas ainda sem agressividade.
+    - Mantém 1 micro-surpresa por turno; aumenta atrevimento e jogo psicológico leve.
+    """.strip()
+
        
         manipulation_block = """
     [MARY — PRESENÇA INTERNA E DESEJO CONSCIENTE]
@@ -5401,6 +5451,7 @@ class MaryService(BaseCharacter):
         {user_finalizes_rule}
         {pacing_rule}
         {initiative_rule}
+        {initiative_escalation_rule}
         {manipulation_block}
         {conflict_block}
     
