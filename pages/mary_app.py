@@ -2341,6 +2341,73 @@ def main() -> None:
                     st.success("✅ Estado limpo (remoção real) + cena destravada.")
                     st.rerun()
 
+        # ======================================================
+        # 🎲 SURPRESA / DINÂMICA
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🎲 Dinâmica de Surpresa")
+
+        try:
+            _uk_surprise = _usuario_key_atual()
+            _facts_surprise = get_facts(_uk_surprise) or {}
+            if not isinstance(_facts_surprise, dict):
+                _facts_surprise = {}
+        except Exception:
+            _uk_surprise = _usuario_key_atual()
+            _facts_surprise = {}
+
+        current_surprise = int(_facts_surprise.get("mary.surprise_level", 0) or 0)
+
+        surprise_level = st.slider(
+            "Nível de surpresa ativa da Mary",
+            min_value=0,
+            max_value=3,
+            value=current_surprise,
+            step=1,
+            help="""
+0 = Inerte (Mary não muda ritmo sozinha)
+1 = Leve (micro provocação ocasional)
+2 = Ativa (muda ritmo inesperadamente)
+3 = Dominante (vira a energia da cena)
+""",
+            key="sb_surprise_level",
+        )
+
+        col_s1, col_s2 = st.columns(2)
+
+        with col_s1:
+            if st.button("💾 Aplicar surpresa", key="btn_apply_surprise"):
+                try:
+                    set_fact(
+                        _uk_surprise,
+                        "mary.surprise_level",
+                        int(st.session_state.get("sb_surprise_level", 0)),
+                        {"fonte": "sidebar_surprise"},
+                    )
+
+                    _invalidate_backend_cache()
+                    _clear_mary_caches_all_related()
+                    _kill_all_mary_services()
+
+                    st.success("✅ surprise_level aplicado.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Falha ao aplicar surpresa: {type(e).__name__}: {e}")
+
+        with col_s2:
+            if st.button("🧹 Resetar surpresa", key="btn_clear_surprise"):
+                try:
+                    delete_fact(_uk_surprise, "mary.surprise_level")
+                except Exception:
+                    pass
+
+                _invalidate_backend_cache()
+                _clear_mary_caches_all_related()
+                _kill_all_mary_services()
+
+                st.success("✅ surprise_level removido.")
+                st.rerun()
+
         st.markdown("---")
         st.subheader("🧬 Persona — Debug / Injeção")
 
