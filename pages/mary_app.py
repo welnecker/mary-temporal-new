@@ -2239,23 +2239,25 @@ def main() -> None:
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
-
+        
         if "mary_allow_third_party_seduction" not in st.session_state:
             st.session_state["mary_allow_third_party_seduction"] = False
-
+        
+        # Se desligou NSFW, força OFF e zera seeds/ciúme no facts (sem derrubar UI)
         if not nsfw_after:
             st.session_state["mary_allow_third_party_seduction"] = False
             try:
-                uk_reset = _usuario_key_atual()
-                set_fact(uk_reset, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
-                set_fact(uk_reset, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
-                set_fact(uk_reset, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
+                uk = _usuario_key_atual()
+                set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
             except Exception:
                 pass
-
+        
+        # Persistência de NSFW por timeline (quando alternar)
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
-
+        
         if nsfw_after:
             st.checkbox(
                 "Permitir Mary ceder a terceiros (segredo)",
@@ -2263,25 +2265,27 @@ def main() -> None:
                 help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
             )
             st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
-
+        
             st.markdown("### 🔐 Ciúme / Flerte / Segredo")
-
+        
+            # defaults vindo dos facts
             try:
                 facts_rel = get_facts(_usuario_key_atual()) or {}
                 if not isinstance(facts_rel, dict):
                     facts_rel = {}
             except Exception:
                 facts_rel = {}
-
+        
             seed_default = str(facts_rel.get("rel.ciume_flerte_segredo", "") or "")
             cooldown_default = int(facts_rel.get("rel.ciume_cooldown_turns", 6) or 6)
-
+        
             seed_input = st.text_input(
                 "Seed narrativo (ex: telefonema de Arthur)",
                 value=seed_default,
                 key="rel_ciume_seed_input",
                 help="Vazio desativa. Se preenchido, pode disparar telefone/notificação com suspense.",
             )
+        
             cooldown_input = st.slider(
                 "Cooldown (turnos)",
                 min_value=2,
@@ -2289,11 +2293,12 @@ def main() -> None:
                 value=cooldown_default,
                 key="rel_ciume_cooldown_input",
             )
-
+        
+            # grava no facts sem quebrar a UI
             try:
-                uk_rel = _usuario_key_atual()
-                set_fact(uk_rel, "rel.ciume_flerte_segredo", (seed_input or "").strip(), {"fonte": "sidebar"})
-                set_fact(uk_rel, "rel.ciume_cooldown_turns", int(cooldown_input), {"fonte": "sidebar"})
+                uk = _usuario_key_atual()
+                set_fact(uk, "rel.ciume_flerte_segredo", (seed_input or "").strip(), {"fonte": "sidebar"})
+                set_fact(uk, "rel.ciume_cooldown_turns", int(cooldown_input), {"fonte": "sidebar"})
             except Exception:
                 pass
 
