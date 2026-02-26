@@ -3685,36 +3685,42 @@ def _repair_fewshot_example(violations: List[str]) -> str:
     vset = set(violations)
     chosen = next((p for p in priority if p in vset), violations[0])
 
-
     examples: Dict[str, str] = {
         "placeholder_reveal": """EXEMPLO DE CORREÇÃO (meta → in-character):
 [RUIM] 'Como IA eu não posso...'
 [BOM] 'Eu te encaro de perto, a voz baixa: "fala comigo" — e deixo o silêncio apertar.'""",
-        "autoria_usuario": """EXEMPLO DE CORREÇÃO (autoria do usuário):
+
+    "autoria_usuario": """EXEMPLO DE CORREÇÃO (autoria do usuário):
 [RUIM] 'Você me puxa e me beija.'
 [BOM] 'Eu aproximo um dedo do seu queixo, paro a um sopro. "se quiser" — eu espero seu movimento.'""",
+
+    "conclusao_perfeita": """EXEMPLO DE CORREÇÃO (evitar finalização automática):
 [RUIM] 'E então termina tudo perfeito.'
 [BOM] 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
-        "nsfw_off_explicito": """EXEMPLO DE CORREÇÃO (NSFW OFF):
+
+    "nsfw_off_explicito": """EXEMPLO DE CORREÇÃO (NSFW OFF):
 [RUIM] '(descrição explícita...)'
 [BOM] 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
+
+    "emocao_generica": """EXEMPLO DE CORREÇÃO (evitar frase genérica):
 [RUIM] 'Eu gosto disso.'
 [BOM] 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
-        "terceiro_logistica_offscreen": """EXEMPLO DE CORREÇÃO (sem logística offscreen):
+
+    "terceiro_logistica_offscreen": """EXEMPLO DE CORREÇÃO (sem logística offscreen):
 [RUIM] 'Eu pego um Uber e vamos ao hotel.'
 [BOM] 'Eu inclino a cabeça para um canto mais interno do lugar. "vem" — sem confirmar mudança de local.'""",
-        "offscreen_msg_inventada": """EXEMPLO DE CORREÇÃO (sem mensagens inventadas):
+
+    "offscreen_msg_inventada": """EXEMPLO DE CORREÇÃO (sem mensagens inventadas):
 [RUIM] 'Você me mandou áudio dizendo...'
 [BOM] 'Meu celular vibra. Eu nem olho ainda — fico em você, decidindo no corpo.'""",
 
-        "terceiro_local_perigoso": """EXEMPLO DE CORREÇÃO (segurança realista):
+    "terceiro_local_perigoso": """EXEMPLO DE CORREÇÃO (segurança realista):
 [RUIM] 'Eu topo ir pro matagal com ele.'
-[BOM] 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou então num lugar decente."''""",
+[BOM] 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou então num lugar decente."'""",
 
-        "terceiro_convite_vago": """EXEMPLO DE CORREÇÃO (convite vago):
+    "terceiro_convite_vago": """EXEMPLO DE CORREÇÃO (convite vago):
 [RUIM] 'Eu vou com ele sem perguntar.'
-[BOM] 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."''""",
-
+[BOM] 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."'""",
     }
     return examples.get(chosen, "")
 
@@ -5074,7 +5080,7 @@ class MaryService(BaseCharacter):
     - Corte repeticao: se ja ficou quente, nao re-explica; avanca 1 micro-passo.
     """.strip()
 
-                # ===============================
+        # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         # ===============================
