@@ -5207,6 +5207,10 @@ class MaryService(BaseCharacter):
         # ===============================
         # 🎲 SURPRESA (nível 0..3) — default = 2
         # ===============================
+        initiative = False
+        initiative_rule = ""                 # se você usa no system, defina sempre
+        initiative_escalation_rule = ""      # ✅ evita UnboundLocalError sempre
+        
         try:
             surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
         except Exception:
