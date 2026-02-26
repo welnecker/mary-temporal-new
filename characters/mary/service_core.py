@@ -2717,18 +2717,17 @@ def _needs_llm_classification(texto: str, *, user_text: str = "", phase: int = 0
 # ----------------------------------------------------------
 # Romancey / intensidade (suporte a repair/triagem)
 # ----------------------------------------------------------
-_RE_ROMANCEY = re.compile(
-    r"\b(amor|meu amor|querido|querida|paixao|apaixonad|carinho|romant|fofo|lindo|linda|pra sempre)\b",
-    re.IGNORECASE,
-)
+_RE_ROMANCEY = re.compile(r"(?!.*)", re.IGNORECASE)  # Nunca match
+
 _RE_INTENSE_CUES = re.compile(
     r"\b(agora|mais forte|mais rapido|nao aguento|preciso agora|sem parar|me faz|me pega|quero)\b",
     re.IGNORECASE,
 )
 
 def _response_is_romancey(texto: str) -> bool:
-    return bool(_RE_ROMANCEY.search(_t_norm(texto)))
-
+    # ❌ DESATIVADO: Emoção + sexo é permitido
+    return False
+    
 def _user_is_intense(user_text: str) -> bool:
     ut = _t_norm(user_text)
     if not ut:
@@ -3669,11 +3668,9 @@ def _repair_fewshot_example(violations: List[str]) -> str:
     priority = [
         "placeholder_reveal",
         "autoria_usuario",
-        "tone_romantic_when_intense",
         "finalizou_cena",
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
-        "nsfw_poetizou",
         "prazer_ausente",
         "low_sensory_density",
 
@@ -3696,19 +3693,11 @@ def _repair_fewshot_example(violations: List[str]) -> str:
         "autoria_usuario": """EXEMPLO DE CORREÇÃO (autoria do usuário):
 [RUIM] 'Você me puxa e me beija.'
 [BOM] 'Eu aproximo um dedo do seu queixo, paro a um sopro. "se quiser" — eu espero seu movimento.'""",
-        "tone_romantic_when_intense": """EXEMPLO DE CORREÇÃO (romance → físico direto):
-[RUIM] 'Meu coração é uma prece...'
-[BOM] 'Minha respiração falha quando você chega perto; o calor sobe pela minha pele e eu digo só: "agora".'""",
-        "finalizou_cena": """EXEMPLO DE CORREÇÃO (não concluir sozinho):
 [RUIM] 'E então termina tudo perfeito.'
 [BOM] 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
         "nsfw_off_explicito": """EXEMPLO DE CORREÇÃO (NSFW OFF):
 [RUIM] '(descrição explícita...)'
 [BOM] 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
-        "nsfw_on_suavizou": """EXEMPLO DE CORREÇÃO (NSFW ON sem infantilizar):
-[RUIM] 'Eu fico corada e falo docinho...'
-[BOM] 'Eu falo baixo e adulto, o corpo colado no seu; minha mão guia o ritmo sem poesia nem hesitação.'""",
-        "low_sensory_density": """EXEMPLO DE CORREÇÃO (sensorialidade):
 [RUIM] 'Eu gosto disso.'
 [BOM] 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
         "terceiro_logistica_offscreen": """EXEMPLO DE CORREÇÃO (sem logística offscreen):
