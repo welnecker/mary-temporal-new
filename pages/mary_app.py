@@ -2235,10 +2235,13 @@ def main() -> None:
 
         if not nsfw_after:
             st.session_state["mary_allow_third_party_seduction"] = False
-            set_fact(usuario_key, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
-            set_fact(usuario_key, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
-            set_fact(usuario_key, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
-        if nsfw_after != nsfw_before:
+            try:
+                uk = _usuario_key_atual()
+                set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
+            except Exception:
+                pass        if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
 
         if nsfw_after:
@@ -2250,31 +2253,40 @@ def main() -> None:
             st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
 
         if nsfw_after:
-
             st.markdown("### 🔐 Ciúme / Flerte / Segredo")
         
-            seed_default = facts.get("rel.ciume_flerte_segredo", "") if facts else ""
+            # lê facts com segurança para defaults do UI
+            try:
+                facts_rel = get_facts(_usuario_key_atual()) or {}
+                if not isinstance(facts_rel, dict):
+                    facts_rel = {}
+            except Exception:
+                facts_rel = {}
+        
+            seed_default = str(facts_rel.get("rel.ciume_flerte_segredo", "") or "")
+            cooldown_default = int(facts_rel.get("rel.ciume_cooldown_turns", 6) or 6)
         
             seed_input = st.text_input(
                 "Seed narrativo (ex: telefonema de Arthur)",
                 value=seed_default,
                 key="rel_ciume_seed_input",
-                help="Vazio desativa. Se preenchido, pode disparar telefone/notificação com suspense."
+                help="Vazio desativa. Se preenchido, pode disparar telefone/notificação com suspense.",
             )
-        
-            cooldown_default = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
         
             cooldown_input = st.slider(
                 "Cooldown (turnos)",
                 min_value=2,
                 max_value=20,
                 value=cooldown_default,
-                key="rel_ciume_cooldown_input"
+                key="rel_ciume_cooldown_input",
             )
         
-            set_fact_safe(usuario_key, "rel.ciume_flerte_segredo", seed_input.strip(), {"fonte": "sidebar"})
-            set_fact_safe(usuario_key, "rel.ciume_cooldown_turns", int(cooldown_input), {"fonte": "sidebar"})
-
+            # grava sem derrubar UI
+            try:
+                set_fact(_usuario_key_atual(), "rel.ciume_flerte_segredo", (seed_input or "").strip(), {"fonte": "sidebar"})
+                set_fact(_usuario_key_atual(), "rel.ciume_cooldown_turns", int(cooldown_input), {"fonte": "sidebar"})
+            except Exception:
+                pass
         st.markdown("---")
         st.subheader("🧾 Estado Atual (facts → service_core)")
 
