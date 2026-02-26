@@ -2235,10 +2235,9 @@ def main() -> None:
 
         if not nsfw_after:
             st.session_state["mary_allow_third_party_seduction"] = False
-            set_fact_safe(usuario_key, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
-            set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
-            set_fact_safe(usuario_key, "rel.ciume_last_trigger_turn", None, {"fonte": "nsfw_off_reset"})
-
+            set_fact(usuario_key, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
+            set_fact(usuario_key, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
+            set_fact(usuario_key, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
 
