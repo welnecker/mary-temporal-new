@@ -4634,6 +4634,24 @@ class MaryService(BaseCharacter):
         
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+
+        # ==========================================================
+        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
+        # ==========================================================
+        try:
+            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
+            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
+            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
+
+            # Defaults seguros
+            if "rel.jealousy_level" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
+            if "rel.jealousy_mode" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
+        except Exception:
+            seed = ""
+            cooldown_turns = 6
+            last_trigger_turn = None
         
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
@@ -4786,6 +4804,15 @@ class MaryService(BaseCharacter):
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
         
         intimacy_phase = self._get_intimacy_phase(facts)
+        # ==========================================================
+        # 🎲 CONTADOR DE TURNOS (para cooldown de ciúme)
+        # ==========================================================
+        try:
+            turn_key = f"_mary_turn_counter::{usuario_key}"
+            cur_turn = int(_ss_get(turn_key, 0) or 0) + 1
+            _ss_set(turn_key, cur_turn)
+        except Exception:
+            cur_turn = 0
         diag.intimacy_phase_pre = int(intimacy_phase)
         
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
@@ -5181,13 +5208,16 @@ class MaryService(BaseCharacter):
         # 🎲 SURPRESA (nível 0..3) — default = 2
         # ===============================
         try:
-            surprise_level = int((facts or {}).get("rel.surprise_level", 2) or 2)
+            surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
         except Exception:
             surprise_level = 2
         surprise_level = max(0, min(3, surprise_level))
 
         if surprise_level == 0:
             initiative_escalation_rule = ""
+            initiative = False
+        elif surprise_level >= 2:
+            initiative = True            
         elif surprise_level == 1:
             initiative_escalation_rule = """
     [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
@@ -5388,6 +5418,69 @@ class MaryService(BaseCharacter):
            - Deve verbalizar sensação em primeira pessoa.
            - Deve expressar como o corpo e o emocional se conectaram.
         """.strip()
+        # ==========================================================
+        # 🔥 GANCHO DE CIÚME — TELEFONE (SEED DIEGÉTICO)
+        # ==========================================================
+        ciume_block = ""
+
+        try:
+            if seed:
+                # Cooldown por turnos
+                can_trigger = True
+                if last_trigger_turn is not None:
+                    try:
+                        if (int(cur_turn) - int(last_trigger_turn)) < cooldown_turns:
+                            can_trigger = False
+                    except Exception:
+                        pass
+
+                if can_trigger:
+                    lvl = int(facts.get("rel.jealousy_level", 0) or 0)
+
+                    base = 0.12
+                    bonus = min(0.18, lvl / 400.0)
+                    chance = base + bonus
+
+                    if random.random() < chance:
+                        # registra trigger
+                        set_fact_safe(
+                            usuario_key,
+                            "rel.ciume_last_trigger_turn",
+                            cur_turn,
+                            {"fonte": "ciume_event"},
+                        )
+
+                        # aumenta tensão levemente
+                        set_fact_safe(
+                            usuario_key,
+                            "rel.jealousy_level",
+                            lvl + 8,
+                            {"fonte": "ciume_event"},
+                        )
+
+                        mode = str(facts.get("rel.jealousy_mode", "provocation")).lower()
+
+                        if mode == "withdraw":
+                            behavior = "Mary fica tensa, cobre a tela rápido e desconversa."
+                        elif mode == "confront":
+                            behavior = "Mary deixa a tensão crescer e encara Janio sem explicar tudo."
+                        else:
+                            behavior = "Mary provoca: deixa o nome aparecer por um segundo e observa a reação."
+
+                        ciume_block = f"""
+[GANCHO DE CIÚME — TELEFONE]
+Em um momento natural da cena, o telefone de Mary vibra.
+Na tela aparece algo associado a: "{seed}".
+
+Direção:
+- {behavior}
+- NÃO revelar tudo neste turno.
+- Use microgestos (pausa, olhar, respiração presa, sorriso curto).
+- Intensifique gradualmente se Janio reagir.
+""".strip()
+
+        except Exception:
+            ciume_block = ""
     
         system = f"""
         [REGRAS DO SISTEMA - LEI]
@@ -5452,8 +5545,10 @@ class MaryService(BaseCharacter):
     
         {desvio_curto_rule}
         {betrayal_rule}
+        {ciume_block}
         {third_party_initiative_rule}
         {third_party_arc_rule}
+        
     
         LEMBRETE:
         - CENA ATIVA manda.
