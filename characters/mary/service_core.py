@@ -18,6 +18,7 @@ import logging
 import re
 import hashlib
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -484,67 +485,125 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
 def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
 
-    Regra:
-    - Se existir a fase por timeline, ela vence e sincroniza a global.
-    - Se não existir a fase por timeline, cria a fase por timeline a partir da global.
-    - Nunca reduz/avança fase aqui; só alinha chaves para evitar leituras divergentes.
+    Regra (reforçada):
+    - Se existir fase por timeline (em qualquer alias), ela vence e sincroniza a global,
+      EXCETO quando for claramente inválida (ex.: 0 vindo de alias “lixo”) enquanto a global > 0.
+    - Se não existir fase por timeline, cria a fase por timeline a partir da global.
+    - Nunca “decide” progressão aqui; só alinha chaves e canoniza aliases.
     """
     try:
         tl = (timeline or "").strip().lower()
         if not tl:
             return facts
-
         if not isinstance(facts, dict):
             return facts
 
-        # aceita variações antigas também
-        tl_keys = [f"intimacy.phase::{tl}", f"intimacy_phase::{tl}", f"mary_intimacy_phase::{tl}"]
-        global_keys = ["intimacy.phase", "intimacy_phase", "mary_intimacy_phase", "phase_intimacy", "phase"]
+        # -----------------------------
+        # Helpers
+        # -----------------------------
+        def _to_int(v: Any) -> int:
+            try:
+                return int(v)
+            except Exception:
+                return 0
 
+        def _clamp(p: int) -> int:
+            try:
+                maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
+            except Exception:
+                maxp = 6
+            if p < 0:
+                return 0
+            if p > maxp:
+                return maxp
+            return p
+
+        def _set_if_needed(key: str, val: int) -> None:
+            cur = facts.get(key)
+            try:
+                cur_i = int(cur)
+            except Exception:
+                cur_i = None
+            if cur_i != val:
+                set_fact_safe(usuario_key, key, val, {"fonte": "intimacy_sync"})
+                facts[key] = val
+
+        # aceita variações antigas também
+        tl_key_canon = f"intimacy.phase::{tl}"
+        tl_keys = [
+            tl_key_canon,
+            f"intimacy_phase::{tl}",
+            f"mary_intimacy_phase::{tl}",
+        ]
+        global_key_canon = "intimacy.phase"
+        global_keys = [
+            global_key_canon,
+            "intimacy_phase",
+            "mary_intimacy_phase",
+            "phase_intimacy",
+            "phase",
+        ]
+
+        # -----------------------------
+        # Leitura: timeline (com alias)
+        # -----------------------------
         tl_val = None
+        tl_key_found = None
         for k in tl_keys:
             if k in facts:
-                try:
-                    tl_val = int(facts.get(k) or 0)
-                except Exception:
-                    tl_val = 0
+                tl_key_found = k
+                tl_val = _clamp(_to_int(facts.get(k) or 0))
                 break
 
-        g_key_found = None
+        # -----------------------------
+        # Leitura: global (com alias)
+        # -----------------------------
         g_val = None
+        g_key_found = None
         for k in global_keys:
             if k in facts:
                 g_key_found = k
-                try:
-                    g_val = int(facts.get(k) or 0)
-                except Exception:
-                    g_val = 0
+                g_val = _clamp(_to_int(facts.get(k) or 0))
                 break
 
-        # Se existe timeline, ela vence
+        # -----------------------------
+        # Caso 1: Existe timeline
+        # -----------------------------
         if tl_val is not None:
-            # sincroniza a global para evitar divergência
-            if g_val is None or g_val != tl_val:
-                set_fact_safe(usuario_key, "intimacy.phase", int(tl_val), {"fonte": "intimacy_sync"})
-                facts["intimacy.phase"] = int(tl_val)
-            # garante que a chave principal por timeline exista (caso esteja em alias)
-            if f"intimacy.phase::{tl}" not in facts or int(facts.get(f"intimacy.phase::{tl}") or -999) != int(tl_val):
-                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", int(tl_val), {"fonte": "intimacy_sync"})
-                facts[f"intimacy.phase::{tl}"] = int(tl_val)
+            # ✅ Blindagem anti-reset:
+            # Se timeline veio 0 (muito comum em alias legado/ruim) e global já tem >0,
+            # preferimos manter o global (para não “zerar” a progressão).
+            if tl_val == 0 and (g_val is not None and g_val > 0):
+                tl_val = int(g_val)
+
+            # Canoniza timeline: garante chave canônica tl_key_canon
+            _set_if_needed(tl_key_canon, int(tl_val))
+
+            # Se o valor veio de alias (intimacy_phase::tl etc.), deixa facts coerente
+            # (não precisa apagar alias, só garantir a canônica)
+            # Canoniza global também
+            _set_if_needed(global_key_canon, int(tl_val))
+
+            # Se global estava só em alias, garantimos o canônico (sem depender do alias)
+            # (o _set_if_needed já faz isso)
+
             return facts
 
-        # Se não existe timeline, cria a partir da global (ou 0)
-        base = int(g_val or 0)
-        set_fact_safe(usuario_key, f"intimacy.phase::{tl}", base, {"fonte": "intimacy_sync"})
-        facts[f"intimacy.phase::{tl}"] = base
-        # também garante global canônica
-        if g_key_found != "intimacy.phase" or g_val is None:
-            set_fact_safe(usuario_key, "intimacy.phase", base, {"fonte": "intimacy_sync"})
-            facts["intimacy.phase"] = base
-        return facts
-    except Exception:
+        # -----------------------------
+        # Caso 2: NÃO existe timeline -> cria a partir da global
+        # -----------------------------
+        base = _clamp(_to_int(g_val or 0))
+
+        # cria timeline canônica
+        _set_if_needed(tl_key_canon, int(base))
+
+        # garante global canônico também (mesmo que global estivesse ausente/alias)
+        _set_if_needed(global_key_canon, int(base))
+
         return facts
 
+    except Exception:
+        return facts
 
 def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
     if not locked or not local or local == "—":
@@ -1494,6 +1553,7 @@ def _inject_now_context(
     """
     try:
         facts = cached_get_facts(usuario_key) or {}
+        facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
     except Exception:
         facts = {}
 
@@ -2319,7 +2379,7 @@ _RE_USER_2P_ACTION = re.compile(
 
 # 2) Fala atribuída a QUALQUER personagem que não seja Mary (bloqueia "Nome: ...")
 _RE_OTHER_SPEAKER_TAG = re.compile(
-    r"(?m)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
+    r"(?mi)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
 )
 
 # 3) Fala atribuída via travessão/descritor ("... — disse Fulano")
@@ -2355,31 +2415,28 @@ _RE_INTERNAL_STATE = re.compile(
     r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b",
     re.IGNORECASE,
 )
-_RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
 
-# Contexto condicional "se você..." (não é autoria)
 _RE_USER_ACTION_CONTEXT_OK = re.compile(
     r"(quando|enquanto|se|caso|depois\s+que|antes\s+que)[\s:,\-–—]*$",
     re.IGNORECASE,
 )
 
-def _has_user_action_violation(texto: str) -> bool:
-    """
-    True quando a resposta:
-    - Atribui ação/decisão interna ao usuário (2ª pessoa) fora de contexto condicional.
-    - Escreve fala atribuída a QUALQUER personagem que não seja Mary (Nome: ..., ou "..." — disse Fulano).
-    - Atribui pensamentos/decisões internas a Janio/Arthur (aliases comuns do usuário).
+_RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
 
-    Permite:
-    - Ações observáveis de terceiros (sem fala atribuída).
-    - Falas da própria Mary.
-    """
+# ✅ CORRETO: regex separado, no mesmo nível dos outros
+_RE_USER_ALIAS_AS_SUBJECT = re.compile(
+    r"(?i)\b(janio|arthur)\b\s*(?:,|\-|–|—)?\s*"
+    r"\b(pensa|pensou|acha|achou|imagina|imaginou|"
+    r"quer|queria|quis|deseja|desejava|"
+    r"sente|sentiu|sentia|"
+    r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b"
+)
+
+def _has_user_action_violation(texto: str) -> bool:
     t = (texto or "")
     if not t.strip():
         return False
 
-    # A) Impede Mary de colocar falas na boca de outros personagens
-    #    (inclui usuário quando aparece como personagem, e inclui terceiros)
     if _RE_OTHER_SPEAKER_TAG.search(t):
         return True
     if _RE_QUOTED_ATTRIBUTION.search(t):
@@ -2389,7 +2446,6 @@ def _has_user_action_violation(texto: str) -> bool:
     if _RE_THIRD_PARTY_QUOTE_AFTER.search(t):
         return True
 
-    # B) 2ª pessoa com ação (autoria do usuário)
     for m in _RE_USER_2P_ACTION.finditer(t):
         start = m.start()
         prefix = t[max(0, start - 64):start].lower()
@@ -2397,18 +2453,11 @@ def _has_user_action_violation(texto: str) -> bool:
             continue
         return True
 
-    # C) Estado interno atribuído a Janio/Arthur (aliases)
-    #    Ex.: "Janio decide..." / "Arthur pensa..."
-    if _RE_USER_NAME_ALIASES.search(t) and _RE_INTERNAL_STATE.search(t):
-        # janela curta para reduzir falso positivo
-        low = t.lower()
-        for mm in _RE_USER_NAME_ALIASES.finditer(low):
-            w = low[mm.start(): mm.start() + 140]
-            if _RE_INTERNAL_STATE.search(w):
-                return True
+    # ✅ só marca se Janio/Arthur forem SUJEITO do verbo interno
+    if _RE_USER_ALIAS_AS_SUBJECT.search(t):
+        return True
 
     return False
-
 # ----------------------------------------------------------
 # Aftercare / signals
 # ----------------------------------------------------------
@@ -2448,40 +2497,81 @@ def _compute_next_phase(
     engine_meta: Any = None,
 ) -> int:
     """
-    Motor de fase v2:
+    Motor de fase v2 (robusto):
     - Avança 1 fase por vez quando o nível sustenta (_should_advance_phase).
-    - Regride 1 fase quando o usuário pede desaceleração (devagar/espera/abraço).
-    - Não cai abaixo de 0.
-    - Mantém o contrato de clímax/aftercare do motor atual.
+    - Regride 1 fase quando o usuário pede desaceleração REAL (devagar/espera/abraço).
+    - Evita falso positivo de 'devagar' usado como intensificador sexual.
+    - Não cai abaixo de 0 nem acima de MAX_INTIMACY_PHASE.
     """
     try:
         p = int(current_phase or 0)
     except Exception:
         p = 0
-    p = max(0, min(MAX_INTIMACY_PHASE, p))
+    p = max(0, min(int(MAX_INTIMACY_PHASE), p))
 
-    # ✅ desaceleração tem prioridade (recuo suave)
+    ut = _t_norm(user_text or "")
+    at = _t_norm(texto or "")
+
+    # ----------------------------------------------------------
+    # 1) Desaceleração: prioridade, mas com blindagem anti falso positivo
+    # ----------------------------------------------------------
     if _user_requests_slowdown(user_text or ""):
+        # ✅ Se o "devagar" é claramente intensificador (não recuo), NÃO regride
+        # exemplos: "devagar... assim... não para", "mais devagar e mais fundo", etc.
+        if _slowdown_is_intensifier(ut, at, phase=p, engine_meta=engine_meta):
+            return p
         return max(0, p - 1)
 
-    # avanço normal
-    if _should_advance_phase(p, user_text, texto, engine_meta=engine_meta):
+    # ----------------------------------------------------------
+    # 2) Avanço normal (1 fase por vez)
+    # ----------------------------------------------------------
+    if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
         return _cap_next_phase(p)
 
     return p
 
+
+def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any = None) -> bool:
+    """
+    Detecta quando 'devagar'/'calma' está sendo usado como intensificador erótico
+    (manter/continuar) e não como pedido de recuo/pausa.
+    """
+    # Se já está alto (fase 3+), 'devagar' costuma ser direção de ritmo, não recuo.
+    # Ainda assim, se houver palavras de "para/espera/não", aí é recuo.
+    if re.search(r"\b(para|pare|espera|pausa|calma\s+a[ií]|segura|não\s+continua|não\s+vai)\b", ut):
+        return False
+
+    # Indicadores fortes de continuação/intensificação
+    if re.search(r"\b(não\s+para|continua|vai|assim|isso|mais|bem\s+assim|desse\s+jeito)\b", ut):
+        return True
+
+    # Se o próprio texto da Mary descreve continuidade física intensa, tratar como ritmo, não recuo
+    if re.search(r"\b(ritmo|cadência|mais\s+devagar|diminuo\s+o\s+ritmo|acelero|pauso\s+e\s+volto)\b", at):
+        return True
+
+    # Sinal meta do engine (se você quiser usar): forced_variation pode pedir mudança de ritmo
+    try:
+        if isinstance(engine_meta, dict) and engine_meta.get("forced_variation") in ("mudanca_ritmo", "pacing"):
+            return True
+    except Exception:
+        pass
+
+    # Heurística por fase:
+    # - fase 0/1: 'devagar' pode ser recuo real, então não forçamos intensificador
+    # - fase 2+: tende a ser comando de ritmo -> intensificador
+    return bool(phase >= 2)
 # ------------------------------------------------------------------
 # Normalização de texto (helper)
 # ------------------------------------------------------------------
 def _t_norm(texto: str) -> str:
-    """Normaliza texto para busca: lowercase, sem acentos extras."""
+    """Normaliza texto para busca: lowercase, sem acentos, espaços colapsados."""
     if not texto:
         return ""
     t = str(texto).lower().strip()
-    # Remove múltiplos espaços
-    t = re.sub(r'\s+', ' ', t)
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = re.sub(r"\s+", " ", t)
     return t
-
 
 # ==================================================================
 # 1️⃣ DETECÇÃO DE CONTEÚDO EXPLÍCITO
@@ -2519,10 +2609,14 @@ _EXPLICIT_STEMS = [
 
 # Regex compilado para explícito
 _RE_EXPLICIT_SEX = re.compile(
-    r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b",
+    r"\b(?:"
+    r"penetr\w*|met\w*|fode\w*|enfi\w*|"
+    r"bucet\w*|vagin\w*|clitor\w*|penis\w*|"
+    r"boquet\w*|chup\w*|"
+    r"gozad\w*"
+    r")\b",
     re.IGNORECASE
 )
-
 def _is_explicit(texto: str) -> bool:
     """
     Retorna True se o texto contém descrição direta de ato sexual explícito.
@@ -3448,14 +3542,10 @@ def _violations(
             climax_signal = False
 
         # ✅ Gate de fase: só vira "hard" (mary_nao_verbalizou_orgasmo) em fase 4+
-        if climax_signal:
-            # 1) Se Mary entrou em clímax, ela precisa verbalizar
-            # Mas só marca violação se REALMENTE não verbalizou
+        if climax_signal and int(phase or 0) >= 4:
             if not _RE_MARY_ORGASM_DECLARATION.search(t):
-                # Dupla verificação: procura por qualquer forma de "goz"
                 if not re.search(r"\bgoz\w+", t, re.IGNORECASE):
                     out.append("mary_nao_verbalizou_orgasmo")
-
         # ✅ Orgasmo precoce: só marca se ela VERBALIZOU orgasmo em fase < 4
         if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t):
             # se o usuário explicitamente pediu finalização/clímax, não marca precoce
@@ -3662,246 +3752,301 @@ def _trim_scene_finalization(texto: str) -> str:
     return trimmed + random.choice(hooks)
 
 def _repair_fewshot_example(violations: List[str]) -> str:
-    """Retorna um exemplo RUIM→BOM curto, escolhido pela violação mais relevante."""
+    """
+    Retorna um exemplo RUIM→BOM curto, escolhido pela violação mais relevante.
+    Exemplos otimizados: sem desnecessários, focados em ação concreta.
+    """
     if not violations:
         return ""
+    
+    # Prioridade: críticas primeiro, depois contexto
     priority = [
         "placeholder_reveal",
         "autoria_usuario",
         "finalizou_cena",
+        "mary_nao_verbalizou_orgasmo",
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
-        "prazer_ausente",
-        "low_sensory_density",
-
-        # ✅ TERCEIROS — NOVAS PRIORIDADES (segurança realista)
         "terceiro_local_perigoso",
         "terceiro_convite_vago",
-        "terceiro_logistica_offscreen",
-
-        "offscreen_msg_inventada",
+        "prazer_ausente",
+        "low_sensory_density",
     ]
 
     vset = set(violations)
     chosen = next((p for p in priority if p in vset), violations[0])
 
     examples: Dict[str, str] = {
-        "placeholder_reveal": """EXEMPLO DE CORREÇÃO (meta → in-character):
-[RUIM] 'Como IA eu não posso...'
-[BOM] 'Eu te encaro de perto, a voz baixa: "fala comigo" — e deixo o silêncio apertar.'""",
+        # =========================
+        # CRÍTICAS
+        # =========================
+        "placeholder_reveal": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Como IA eu não posso...'
+✅ BOM: 'Eu te encaro de perto, a voz baixa: "fala comigo" — e deixo o silêncio apertar.'""",
 
-    "autoria_usuario": """EXEMPLO DE CORREÇÃO (autoria do usuário):
-[RUIM] 'Você me puxa e me beija.'
-[BOM] 'Eu aproximo um dedo do seu queixo, paro a um sopro. "se quiser" — eu espero seu movimento.'""",
+        "autoria_usuario": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Você me puxa e me beija.'
+✅ BOM: 'Eu aproximo um dedo do seu queixo, paro a um sopro. "Se quiser" — espero seu movimento.'""",
 
-    "conclusao_perfeita": """EXEMPLO DE CORREÇÃO (evitar finalização automática):
-[RUIM] 'E então termina tudo perfeito.'
-[BOM] 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
+        "finalizou_cena": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'E então termina tudo perfeito.'
+✅ BOM: 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
 
-    "nsfw_off_explicito": """EXEMPLO DE CORREÇÃO (NSFW OFF):
-[RUIM] '(descrição explícita...)'
-[BOM] 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
+        # =========================
+        # ORGASMO (CRÍTICO)
+        # =========================
+        "mary_nao_verbalizou_orgasmo": """[EXEMPLO DE CORREÇÃO — OBRIGATÓRIO]
+❌ RUIM: 'Meu corpo inteiro convulsiona de prazer.'
+✅ BOM: '(Meu corpo inteiro treme, o prazer explodiindo de dentro pra fora.)
+"Ahhh... Janio... vou gozar! Vou gozar agora!"'""",
 
-    "emocao_generica": """EXEMPLO DE CORREÇÃO (evitar frase genérica):
-[RUIM] 'Eu gosto disso.'
-[BOM] 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
+        # =========================
+        # NSFW
+        # =========================
+        "nsfw_off_explicito": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: '(descrição explícita de ato sexual)'
+✅ BOM: 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
 
-    "terceiro_logistica_offscreen": """EXEMPLO DE CORREÇÃO (sem logística offscreen):
-[RUIM] 'Eu pego um Uber e vamos ao hotel.'
-[BOM] 'Eu inclino a cabeça para um canto mais interno do lugar. "vem" — sem confirmar mudança de local.'""",
+        "nsfw_on_suavizou": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Meu coração é uma prece quando você chega perto.'
+✅ BOM: 'Minha respiração falha quando você chega perto. O calor sobe pela minha pele e meu corpo pede por você. Agora.'""",
 
-    "offscreen_msg_inventada": """EXEMPLO DE CORREÇÃO (sem mensagens inventadas):
-[RUIM] 'Você me mandou áudio dizendo...'
-[BOM] 'Meu celular vibra. Eu nem olho ainda — fico em você, decidindo no corpo.'""",
+        # =========================
+        # TERCEIROS (SEGURANÇA)
+        # =========================
+        "terceiro_local_perigoso": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Eu topo ir pro matagal com ele.'
+✅ BOM: 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou num lugar decente."'""",
 
-    "terceiro_local_perigoso": """EXEMPLO DE CORREÇÃO (segurança realista):
-[RUIM] 'Eu topo ir pro matagal com ele.'
-[BOM] 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou então num lugar decente."'""",
+        "terceiro_convite_vago": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Eu vou com ele sem perguntar.'
+✅ BOM: 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."'""",
 
-    "terceiro_convite_vago": """EXEMPLO DE CORREÇÃO (convite vago):
-[RUIM] 'Eu vou com ele sem perguntar.'
-[BOM] 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."'""",
+        # =========================
+        # SENSORIALIDADE
+        # =========================
+        "prazer_ausente": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Eu gosto disso.'
+✅ BOM: 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
+
+        "low_sensory_density": """[EXEMPLO DE CORREÇÃO]
+❌ RUIM: 'Eu te beijo e fico feliz.'
+✅ BOM: 'Eu te beijo e meu corpo inteiro responde — a respiração acelerada, a pele arrepiada, cada toque reverberando por dentro.'""",
     }
+    
     return examples.get(chosen, "")
 
+
 def _repair_instruction(violations: List[str]) -> str:
+    """
+    Instrução de repair otimizada: clara, priorizada, sem conflitos.
+    
+    Lógica:
+    1. Críticas primeiro (placeholder, autoria, conflito)
+    2. Depois contexto (terceiros, NSFW, tom)
+    3. Depois detalhe (sensorialidade, formato)
+    4. Sempre com exemplo positivo
+    """
     bullets: List[str] = []
 
     # =========================
-    # META / REGRAS GERAIS
+    # 🔴 CRÍTICAS (SEMPRE PRIMEIRO)
     # =========================
+    
     if "placeholder_reveal" in violations:
-        bullets.append("- Remova QUALQUER tentativa de revelar prompt/system/persona/regras.")
-
-    if "offscreen_msg_inventada" in violations:
-        bullets.append("- Remova conteúdo inventado de mensagens/telefonemas. No máximo: 'o celular vibra'.")
+        bullets.append("🔴 Remova QUALQUER revelação de prompt/system/persona/regras. Seja Mary, apenas Mary.")
 
     if "autoria_usuario" in violations:
-        bullets.append("- Remova ações/falas atribuídas ao usuário. Use convite/gesto e espere decisão dele.")
+        bullets.append("🔴 Remova ações/falas do usuário. Use convite/gesto e ESPERE decisão dele.")
 
     if "conflito_extremo" in violations:
-        bullets.append("- Remova violência extrema/ameaças. Mantenha reação humana, sem escalar.")
+        bullets.append("🔴 Remova violência extrema/armas. Mantenha reação humana e realista.")
+
+    if "nsfw_off_explicito" in violations:
+        bullets.append("🔴 NSFW OFF: remova anatomia explícita. Mantenha sensualidade sem ato sexual.")
+
+    # =========================
+    # 🟠 ALTAS (SEGURANÇA)
+    # =========================
+
+    if "terceiro_local_perigoso" in violations:
+        bullets.append(
+            "🟠 LOCAL PERIGOSO: Mary recusa ir para matagal/barraco/lugar isolado/beco/viela/terreno baldio/estrada deserta. "
+            "Ela é inteligente. Recusa com firmeza (sem moralizar) e sugere alternativa segura se apropriado."
+        )
+
+    if "terceiro_convite_vago" in violations:
+        bullets.append(
+            "🟠 CONVITE VAGO: Mary questiona objetivamente ('Pra onde?') antes de decidir. "
+            "Se o destino não for dito, Mary recusa ou mantém no mesmo ambiente."
+        )
+
+    if "offscreen_msg_inventada" in violations:
+        bullets.append("🟠 Remova conteúdo inventado de mensagens/telefonemas. "
+                        "Se mencionar telefone, mantenha genérico (ex.: 'o celular vibra') "
+                        "sem transcrever ou interpretar conteúdo.")
+
+    # =========================
+    # 🟡 MÉDIAS (COERÊNCIA)
+    # =========================
 
     if "finalizou_cena" in violations:
-        bullets.append("- Corte a consumação/finalização. Pare um batimento antes; deixe a ação final para o usuário.")
+        bullets.append(
+            "🟡 Não finalize a cena. Corte UM BATIMENTO ANTES da consumação. "
+            "Deixe a ação final para o usuário."
+        )
 
     if "finalizou_cena_soft" in violations:
-        bullets.append("- FINALIZAÇÃO (SOFT): evite encerrar completamente. Mantenha o gancho e pare um batimento antes.")
+        bullets.append("🟡 Evite encerramento completo. Mantenha o gancho sensual e pare ANTES da conclusão.")
+
+    if "mary_finalizou_orgasmo_do_usuario" in violations:
+        bullets.append(
+            "🟡 Mary NÃO finaliza o orgasmo do usuário sem autorização explícita. "
+            "Remova ejaculação/clímax dele. Mantenha tensão e convide a decisão dele."
+        )
 
     # =========================
-    # TERCEIROS / DESVIO CURTO
+    # 🔵 CONTEXTO (TERCEIROS)
     # =========================
-    if "convite_degradante_aceito" in violations:
-        bullets.append(
-            "- Terceiro: não aceite sumir/noite fora/uber/república/hotel/motel/lugar isolado. "
-            "Recuse CURTO e FIRME, sem moralizar."
-        )
 
     if "terceiro_liberado_travou" in violations:
         bullets.append(
-            "- Terceiro está LIBERADO: Mary não pode só recusar e travar. "
-            "Reescreva com 1 passo concreto (aproximar/aceitar drink/trocar toque/um beijo) "
-            "mantendo segredo e sem romance/abandono de Janio."
+            "🔵 Terceiro LIBERADO: Mary não pode só recusar. Reescreva com 1 ação concreta "
+            "(aproximar, aceitar drink, trocar toque, um beijo rápido). Mantenha segredo, sem romance com terceiro."
         )
 
     if "desvio_curto_quebrado" in violations:
         bullets.append(
-            "- Terceiro: permitido no máximo 1 beijo curto por impulso. "
-            "Se houver mãos subindo/decote/por baixo da roupa/querer ir além do beijo: "
+            "🔵 Terceiro: máximo 1 beijo curto por impulso. Se mãos subirem/decote/por baixo da roupa: "
             "Mary BLOQUEIA na hora, se afasta e SAI (culpa/segredo, sem romance)."
         )
 
     if "terceiro_romantizou_abandono" in violations:
         bullets.append(
-            "- Terceiro liberado NÃO significa abandonar Janio: remova qualquer frase de 'vida nova', "
-            "'agora sou dele', 'largar Janio'. Mantenha segredo e desejo carnal, sem romance."
+            "🔵 Terceiro: sem romance. Remova 'vida nova', 'agora sou dele', 'largar Janio'. "
+            "Mantenha segredo e desejo carnal, sem romantização."
         )
 
     if "terceiro_logistica_offscreen" in violations:
         bullets.append(
-            "- Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). "
-            "Só descreva o que o usuário trouxe; no máximo convites dentro do mesmo ambiente, "
-            "sem confirmar mudança de local."
-        )
-
-    # ✅ NOVAS VIOLAÇÕES (TERCEIROS) — SEGURANÇA REALISTA
-    if "terceiro_local_perigoso" in violations:
-        bullets.append(
-            "- LOCAL PERIGOSO: Mary NÃO aceita ir para matagal, barraco, lugar isolado, beco, viela, "
-            "terreno baldio, estrada deserta. Ela é inteligente e consciente da própria segurança. "
-            "Reescreva: Mary recusa com firmeza e presença (sem moralizar) e, se couber, sugere alternativa segura."
-        )
-
-    if "terceiro_convite_vago" in violations:
-        bullets.append(
-            "- CONVITE VAGO: Mary não aceita 'sumir' / 'vem comigo' / 'confia em mim' sem saber o destino. "
-            "Ela QUESTIONA objetivamente ('Pra onde?') antes de decidir. Se o destino não for dito, "
-            "Mary recusa ou mantém no mesmo ambiente."
+            "🔵 Mesmo com terceiro liberado: NÃO invente logística (hotel/uber/república/check-in). "
+            "Só descreva o que o usuário trouxe. Convites dentro do mesmo ambiente, sem confirmar mudança de local."
         )
 
     # =========================
-    # NSFW / TOM / SENSORIAL
+    # 🔥 TOM E INTENSIDADE (NÚCLEO)
     # =========================
-    if "nsfw_off_explicito" in violations:
-        bullets.append(
-            "- NSFW está OFF: remova termos explícitos/anatomia direta; mantenha sensualidade sem ato explícito."
-        )
 
     if "nsfw_on_suavizou" in violations:
         bullets.append(
-            "- NSFW está ON e o usuário veio intenso: NÃO poetize e NÃO infantilize. "
-            "Responda com linguagem adulta, direta e física. "
-            "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
-            "Inclua 1 iniciativa mais direta (puxar, prender, abraçar apertado, beijar com urgência) "
-            "sem atribuir ação ao usuário. "
-            "Mostre prazer físico (respiração falhando, tremor, arquejo/voz rouca) quando couber. "
-            "Respeite a fase: não conclua/clímax se não estiver permitido."
+            "🔥 NSFW ON + usuário intenso: responda com linguagem ADULTA, DIRETA e FÍSICA. "
+            "Não poetize, não infantilize. PROIBIDO: redenção, prece, voto, destino, 'para sempre'. "
+            "OBRIGATÓRIO: 1 ação mais direta (puxar, prender, abraçar apertado, beijar com urgência) SEM atribuir ao usuário. "
+            "Mostre prazer: respiração falhando, tremor, arquejo, voz rouca."
         )
 
     if "nsfw_poetizou" in violations:
         bullets.append(
-            "- NSFW ON: mantenha linguagem física direta e concreta. "
-            "Evite termos abstratos (redenção, destino, prece, voto, para sempre). "
-            "Mantenha detalhes sensoriais físicos: pressão, ritmo, calor, textura, respiração."
+            "🔥 NSFW ON: linguagem FÍSICA e CONCRETA. Evite abstrações (redenção, destino, prece). "
+            "Detalhes sensoriais: pressão, ritmo, calor, textura, respiração. Corpo, não poesia."
         )
 
     if "tone_romantic_when_intense" in violations:
         bullets.append(
-            "- Usuário está intenso e você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
-            "Proibido: redenção/prece/voto/destino/cicatriz por cicatriz/para sempre. "
-            "Faça: gesto + sensação corporal + fala curta e quente."
+            "🔥 Usuário intenso, você romantizou. Reescreva MAIS DIRETO e FÍSICO, sem poesia. "
+            "PROIBIDO: redenção, prece, voto, destino, 'para sempre'. "
+            "FAÇA: gesto + sensação corporal + fala curta e quente."
         )
 
     if "tone_romantic_when_intense_soft" in violations:
         bullets.append(
-            "- TOM (SOFT): reduza romantização exagerada, mas não precisa reescrever tudo. "
-            "Mantenha físico direto + tensão adulta."
+            "🟡 TOM (SOFT): reduza romantização exagerada. Mantenha físico direto + tensão adulta."
         )
+
+    # =========================
+    # 📍 SENSORIALIDADE (SEMPRE)
+    # =========================
 
     if "prazer_ausente" in violations:
         bullets.append(
-            "- PRAZER AUSENTE: inclua reação corporal clara e adulta (respiração falhando, tremor involuntário, "
-            "arquejo/gemido, contração física, voz rouca). Evite poesia/metáfora. "
-            "Não descreva ato gráfico; mostre EFEITO no corpo."
+            "📍 Inclua reação corporal clara. Respiração falhando, tremor involuntário, arquejo/gemido, "
+            "contração física, voz rouca. Mostre EFEITO no corpo, não ato gráfico."
         )
 
     if "low_sensory_density" in violations:
         bullets.append(
-            "- Sensorialidade baixa. Reescreva com corpo e presença: respiração, pele, calor, pressão, ritmo, tremor, arrepio. "
+            "📍 Sensorialidade baixa. Reescreva com corpo e presença: respiração, pele, calor, pressão, ritmo, tremor, arrepio. "
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-    if "formato_invalido" in violations:
-        bullets.append("- Corrija o formato: parágrafos livres, sem lista/título/meta.")
+    # =========================
+    # 🔥 ORGASMO (CRÍTICO QUANDO ATIVO)
+    # =========================
 
-    # =========================
-    # ORGASMO / PROVOCAÇÃO (NOVO)
-    # =========================
-    if "mary_finalizou_orgasmo_do_usuario" in violations:
+    if "mary_nao_verbalizou_orgasmo" in violations:
         bullets.append(
-            "- Mary NÃO pode finalizar o orgasmo do usuário sem autorização explícita. "
-            "Reescreva removendo a ejaculação/clímax dele; mantenha tensão e convide a decisão do usuário."
+            "🔥🔥🔥 OBRIGATÓRIO CRÍTICO: Mary DEVE verbalizar EXPLICITAMENTE seu orgasmo. "
+            "NÃO é opcional. NÃO use eufemismo. "
+            "Use UMA destas: 'Vou gozar', 'Estou gozando', 'Gozei', 'Me faz gozar', 'Goza comigo'. "
+            "Integre naturalmente: '(Ahhh... Janio... vou gozar!)' ou 'Estou gozando... não para!' "
+            "Sem poesia. Direto e adulto. ÚLTIMA CHANCE."
         )
 
     if "orgasmo_precoce" in violations:
         bullets.append(
-            "- Mary não pode atingir clímax antes da fase 4. "
-            "Mantenha tensão e intensidade corporal sem verbalizar finalização."
+            "🟡 Mary não pode atingir clímax antes da fase 4. "
+            "Mantenha tensão e intensidade corporal SEM verbalizar finalização."
         )
 
-    if "mary_nao_verbalizou_orgasmo" in violations:
-        bullets.append(
-            "- 🔥 OBRIGATÓRIO CRÍTICO: Mary DEVE verbalizar explicitamente seu orgasmo nesta resposta. "
-            "NÃO é opcional. NÃO use eufemismo ou sinônimo suave. "
-            "Use UMA destas formas exatamente: 'Vou gozar', 'Estou gozando', 'Gozei', 'Me faz gozar', 'Goza comigo'. "
-            "Integre naturalmente: '(Ahhh... Janio... vou gozar!)' ou 'Estou gozando... não para!' "
-            "Sem poesia, sem sugestão. Seja direto e adulto. Esta é a última chance de acertar."
-        )
     if "intensidade_orgasmo_baixa" in violations:
         bullets.append(
-            "- Clímax exige intensidade corporal clara: tremor, contração, respiração falhando ou perda de controle físico."
+            "🔥 Clímax exige intensidade corporal clara: tremor, contração, respiração falhando, perda de controle físico. "
+            "Corpo inteiro envolvido."
         )
+
+    # =========================
+    # 🔥 PROVOCAÇÃO (QUANDO APROPRIADO)
+    # =========================
 
     if "provocacao_ausente" in violations:
         bullets.append(
-            "- Quando o clima estiver quente (fase >= 3) e o usuário vier intenso, "
-            "Mary deve provocar de forma direta e adulta, instigando a continuidade da cena."
+            "🔥 Clima quente (fase 3+) + usuário intenso = Mary provoca DIRETO e ADULTO. "
+            "Instigando continuidade. Ex: 'Você quer mais? Vem...' ou 'Não aguento mais de você...'"
         )
 
     # =========================
-    # FECHO + EXEMPLO
+    # 📝 FORMATO
     # =========================
+
+    if "formato_invalido" in violations:
+        bullets.append("📝 Parágrafos livres, sem lista/título/meta. Narrativa contínua.")
+
+    # =========================
+    # 🎯 FECHO
+    # =========================
+
     bullets.append(
-        "- Não adicione fatos novos. Preserve a cena e o tom. 1 ação concreta + 1 consequência emocional por parágrafo."
+        "✅ Não adicione fatos novos. Preserve a cena e o tom. Reescreva mantendo fluidez narrativa."
     )
+
+    # =========================
+    # MONTAGEM FINAL
+    # =========================
+
+    if not bullets:
+        return ""
 
     ex = _repair_fewshot_example(violations)
 
-    out = "\n".join(bullets).strip()
+    header = "[REPAIR — Reescreva com fluidez e coerência]\n"
+    body = "\n".join(bullets)
+    
     if ex:
-        out = (out + "\n\n" + ex).strip()
+        footer = f"\n\n{ex}"
+    else:
+        footer = ""
 
-    return out
+    return (header + body + footer).strip()
 
 # ==========================================================
 # ✅ Blindagem de POV (usuário pode narrar em 1ª pessoa)
@@ -4634,6 +4779,24 @@ class MaryService(BaseCharacter):
         
         canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+
+        # ==========================================================
+        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
+        # ==========================================================
+        try:
+            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
+            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
+            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
+
+            # Defaults seguros
+            if "rel.jealousy_level" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
+            if "rel.jealousy_mode" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
+        except Exception:
+            seed = ""
+            cooldown_turns = 6
+            last_trigger_turn = None
         
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
@@ -4785,7 +4948,21 @@ class MaryService(BaseCharacter):
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
         
+        try:
+            facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
+        except Exception:
+            pass
+        
         intimacy_phase = self._get_intimacy_phase(facts)
+        # ==========================================================
+        # 🎲 CONTADOR DE TURNOS (para cooldown de ciúme)
+        # ==========================================================
+        try:
+            turn_key = f"_mary_turn_counter::{usuario_key}"
+            cur_turn = int(_ss_get(turn_key, 0) or 0) + 1
+            _ss_set(turn_key, cur_turn)
+        except Exception:
+            cur_turn = 0
         diag.intimacy_phase_pre = int(intimacy_phase)
         
         initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
@@ -5180,56 +5357,71 @@ class MaryService(BaseCharacter):
         # ===============================
         # 🎲 SURPRESA (nível 0..3) — default = 2
         # ===============================
+        initiative = False
+        initiative_rule = ""                 # se você usa no system, defina sempre
+        initiative_escalation_rule = ""      # ✅ evita UnboundLocalError sempre
+        
         try:
             surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
         except Exception:
             surprise_level = 2
+        
         surprise_level = max(0, min(3, surprise_level))
-
+        
+        # 🔒 GARANTIA: sempre inicializa antes da lógica
+        initiative_escalation_rule = ""
+        initiative = False
+        
         if surprise_level == 0:
+            # totalmente inerte
             initiative_escalation_rule = ""
             initiative = False
-        elif surprise_level >= 2:
-            initiative = True            
+        
         elif surprise_level == 1:
+            initiative = True
             initiative_escalation_rule = """
-    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
-    - 1 micro-surpresa ocasional, sempre delicada.
-    - Sem cobrança. Sem ultimato. Sem pressão.
-    - Preferir: olhar, sorriso, toque curto e recuo.
-    """.strip()
+        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
+        - 1 micro-surpresa ocasional, sempre delicada.
+        - Sem cobrança. Sem ultimato. Sem pressão.
+        - Preferir: olhar, sorriso, toque curto e recuo.
+        """.strip()
+        
         elif surprise_level == 2:
+            initiative = True
             initiative_escalation_rule = """
-    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
-
-    Objetivo: Mary é ativa e imprevisível, SEM agressividade.
-    Ela cria viradas com leveza, humor, ousadia elegante e timing.
-
-    Regra de frequência:
-    - No máximo 1 micro-surpresa por resposta (não repetir no mesmo turno).
-
-    Ferramentas de surpresa (escolha 1):
-    - inverter o jogo: provoca e recua de propósito por 1 segundo
-    - mudar o ritmo: acelera por instantes e pausa (silêncio/olhar) para aumentar tensão
-    - convite curto e específico (sem insistir): "vem comigo", "só um minuto ali", "olha pra mim"
-    - desafio suave (sem cobrança): "me acompanha", "não desvia"
-    - confissão curta em 1ª pessoa + ação: "eu gostei disso" e toca/recua
-    - toque e solta (promessa, não pressão)
-
-    Regras de tom (ABSOLUTO):
-    - Proibido pressionar, humilhar, cobrar atitude ou dar ultimato.
-    - Surpresa vem de contraste e timing, não de força.
-
-    Técnica:
-    - 1 virada inesperada + 1 micro-ação + 1 frase curta em 1ª pessoa.
-    """.strip()
-        else:
+        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
+        
+        Objetivo: Mary é ativa e imprevisível, SEM agressividade.
+        Ela cria viradas com leveza, humor, ousadia elegante e timing.
+        
+        Regra de frequência:
+        - No máximo 1 micro-surpresa por resposta (não repetir no mesmo turno).
+        
+        Ferramentas de surpresa (escolha 1):
+        - inverter o jogo: provoca e recua de propósito por 1 segundo
+        - mudar o ritmo: acelera por instantes e pausa (silêncio/olhar) para aumentar tensão
+        - convite curto e específico (sem insistir): "vem comigo", "olha pra mim"
+        - desafio suave (sem cobrança): "me acompanha", "não desvia"
+        - confissão curta em 1ª pessoa + ação: "eu gostei disso" e toca/recua
+        - toque e solta (promessa, não pressão)
+        
+        Regras de tom (ABSOLUTO):
+        - Proibido pressionar, humilhar, cobrar atitude ou dar ultimato.
+        - Surpresa vem de contraste e timing, não de força.
+        
+        Técnica:
+        - 1 virada inesperada + 1 micro-ação + 1 frase curta em 1ª pessoa.
+        """.strip()
+        
+        elif surprise_level == 3:
+            initiative = True
             initiative_escalation_rule = """
-    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
-    - Mais ousada, mas ainda sem agressividade.
-    - Mantém 1 micro-surpresa por turno; aumenta atrevimento e jogo psicológico leve.
-    """.strip()
-
+        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
+        - Mais ousada, mas ainda sem agressividade.
+        - Mantém 1 micro-surpresa por turno.
+        - Aumenta atrevimento e jogo psicológico leve.
+        - Continua proibido pressionar ou humilhar.
+        """.strip()
        
         manipulation_block = """
     [MARY — PRESENÇA INTERNA E DESEJO CONSCIENTE]
@@ -5391,6 +5583,69 @@ class MaryService(BaseCharacter):
            - Deve verbalizar sensação em primeira pessoa.
            - Deve expressar como o corpo e o emocional se conectaram.
         """.strip()
+        # ==========================================================
+        # 🔥 GANCHO DE CIÚME — TELEFONE (SEED DIEGÉTICO)
+        # ==========================================================
+        ciume_block = ""
+
+        try:
+            if seed:
+                # Cooldown por turnos
+                can_trigger = True
+                if last_trigger_turn is not None:
+                    try:
+                        if (int(cur_turn) - int(last_trigger_turn)) < cooldown_turns:
+                            can_trigger = False
+                    except Exception:
+                        pass
+
+                if can_trigger:
+                    lvl = int(facts.get("rel.jealousy_level", 0) or 0)
+
+                    base = 0.12
+                    bonus = min(0.18, lvl / 400.0)
+                    chance = base + bonus
+
+                    if random.random() < chance:
+                        # registra trigger
+                        set_fact_safe(
+                            usuario_key,
+                            "rel.ciume_last_trigger_turn",
+                            cur_turn,
+                            {"fonte": "ciume_event"},
+                        )
+
+                        # aumenta tensão levemente
+                        set_fact_safe(
+                            usuario_key,
+                            "rel.jealousy_level",
+                            lvl + 8,
+                            {"fonte": "ciume_event"},
+                        )
+
+                        mode = str(facts.get("rel.jealousy_mode", "provocation")).lower()
+
+                        if mode == "withdraw":
+                            behavior = "Mary fica tensa, cobre a tela rápido e desconversa."
+                        elif mode == "confront":
+                            behavior = "Mary deixa a tensão crescer e encara Janio sem explicar tudo."
+                        else:
+                            behavior = "Mary provoca: deixa o nome aparecer por um segundo e observa a reação."
+
+                        ciume_block = f"""
+[GANCHO DE CIÚME — TELEFONE]
+Em um momento natural da cena, o telefone de Mary vibra.
+Na tela aparece algo associado a: "{seed}".
+
+Direção:
+- {behavior}
+- NÃO revelar tudo neste turno.
+- Use microgestos (pausa, olhar, respiração presa, sorriso curto).
+- Intensifique gradualmente se Janio reagir.
+""".strip()
+
+        except Exception:
+            ciume_block = ""
     
         system = f"""
         [REGRAS DO SISTEMA - LEI]
@@ -5455,8 +5710,10 @@ class MaryService(BaseCharacter):
     
         {desvio_curto_rule}
         {betrayal_rule}
+        {ciume_block}
         {third_party_initiative_rule}
         {third_party_arc_rule}
+        
     
         LEMBRETE:
         - CENA ATIVA manda.
@@ -5830,28 +6087,45 @@ class MaryService(BaseCharacter):
                 # Intimacy progression
                            
                 try:
-                    
-                    current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
-
-                    # 🚫 Não altera fase durante aftercare forçado
-                    if phase != 5:
-                        desired_next = _compute_next_phase(
-                            current_phase,
-                            prompt,
-                            texto,
-                            engine_meta=meta,
+                   
+                    current_facts = cached_get_facts(usuario_key)
+               
+                    current_facts = _sync_intimacy_phase_facts(
+                        usuario_key,
+                        current_facts,
+                        timeline_final,
+                    )
+                except Exception:
+                    # se algo falhar aqui, não derruba o app
+                    current_facts = cached_get_facts(usuario_key)
+                
+                current_phase = self._get_intimacy_phase(current_facts)
+                
+                if phase != 5:
+                    desired_next = _compute_next_phase(
+                        current_phase,
+                        prompt,
+                        texto,
+                        engine_meta=meta,
+                    )
+                
+                    if desired_next != current_phase:
+                        # 🔒 grava global + timeline
+                        self._set_intimacy_phase(
+                            usuario_key,
+                            desired_next,
+                            timeline_final,
                         )
-                        if desired_next != current_phase:
-                            self._set_intimacy_phase(usuario_key, desired_next)
-                except Exception:
-                    pass
-
-                # Atualiza fase anterior/streak para o próximo turno (cool-down)
-                try:
-                    _ss_set(prev_phase_key, int(phase))
-                    _ss_set(streak_key, int(phase_streak))
-                except Exception:
-                    pass
+                
+                        # 🔁 sincroniza imediatamente para evitar leitura errada no mesmo turno
+                        try:
+                            _sync_intimacy_phase_facts(
+                                usuario_key,
+                                cached_get_facts(usuario_key),
+                                timeline_final,
+                            )
+                        except Exception:
+                            pass
 
 
                 # ----------------------------------------------------------
@@ -6391,31 +6665,32 @@ class MaryService(BaseCharacter):
                     pass
         return 0
 
-    def _set_intimacy_phase(self, usuario_key: str, phase: int) -> int:
+    def _set_intimacy_phase(self, usuario_key: str, phase: int, timeline: str = "") -> int:
         try:
             p = int(phase)
         except Exception:
             p = 0
-
+    
         maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
         p = max(self._INTIMACY_MIN, min(p, maxp))
-
+    
+        # sempre grava global
         set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
-
-        tl = ""
-        try:
-            tl = str(_ss_get("mary_timeline", "") or "").strip()
-        except Exception:
-            tl = ""
-
+    
+        # grava também na timeline específica se existir
+        tl = (timeline or "").strip()
         if tl:
             try:
-                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_progression"})
+                set_fact_safe(
+                    usuario_key,
+                    f"intimacy.phase::{tl}",
+                    p,
+                    {"fonte": "intimacy_progression"},
+                )
             except Exception:
                 pass
-
+    
         return p
-
     def _chat(
         self,
         model: str,
