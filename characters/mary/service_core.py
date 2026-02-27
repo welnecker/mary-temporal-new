@@ -6992,46 +6992,46 @@ Direção:
             except Exception:
                 pass
             return int(phase or 0)        
-    def _chat(
+   def _chat(
         self,
-            model: str,
-            messages: List[Dict[str, str]],
-            temperature: float,
-            max_tokens: int,
-            *,
-            top_p: float = 0.95,
-            extra: Optional[Dict[str, Any]] = None,
-        ) -> Tuple[Any, str, Any]:
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        *,
+        top_p: float = 0.95,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Any, str, Any]:
     
-            payload: Dict[str, Any] = {
-                "messages": messages,
-                "temperature": float(temperature),
-                "top_p": float(top_p),
-                "max_tokens": int(max_tokens),
-            }
+        payload: Dict[str, Any] = {
+            "messages": messages,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_tokens": int(max_tokens),
+        }
     
-            # tenta com extra (se houver)
-            if isinstance(extra, dict) and extra:
-                payload_with_extra = dict(payload)
-                payload_with_extra.update(extra)
-                try:
-                    resp = service_router.route_chat_strict(model, payload_with_extra)
-                    return _normalize_chat_return(resp, model)
-                except Exception:
-                    # rejeitou extras -> cai para payload base
-                    pass
-    
-            # tenta payload base
+        # tenta com extra
+        if isinstance(extra, dict) and extra:
+            payload_with_extra = dict(payload)
+            payload_with_extra.update(extra)
             try:
-                resp = service_router.route_chat_strict(model, payload)
-                return _normalize_chat_return(resp, model)
-            except Exception as e:
-                # NUNCA devolva None. Devolve 3-tuple com data=None
-                try:
-                    logger.exception("Erro em _chat(): %s", e)
-                except Exception:
-                    pass
-                return None, model, {"error": str(e)}
+                resp = service_router.route_chat_strict(model, payload_with_extra)
+                return resp, model, None
+            except Exception:
+                pass  # cai para payload base
+    
+        # tenta payload base
+        try:
+            resp = service_router.route_chat_strict(model, payload)
+            return resp, model, None
+        except Exception as e:
+            try:
+                logger.exception("Erro em _chat(): %s", e)
+            except Exception:
+                pass
+    
+            # NUNCA devolve None isolado
+            return None, model, {"error": str(e)}
     
     
     def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
