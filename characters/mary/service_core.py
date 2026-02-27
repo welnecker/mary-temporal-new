@@ -2415,49 +2415,10 @@ _RE_INTERNAL_STATE = re.compile(
     r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b",
     re.IGNORECASE,
 )
+
 _RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
 
-# Contexto condicional "se você..." (não é autoria)
-_RE_USER_ACTION_CONTEXT_OK = re.compile(
-    r"(quando|enquanto|se|caso|depois\s+que|antes\s+que)[\s:,\-–—]*$",
-    re.IGNORECASE,
-)
-
-def _has_user_action_violation(texto: str) -> bool:
-    """
-    True quando a resposta:
-    - Atribui ação/decisão interna ao usuário (2ª pessoa) fora de contexto condicional.
-    - Escreve fala atribuída a QUALQUER personagem que não seja Mary (Nome: ..., ou "..." — disse Fulano).
-    - Atribui pensamentos/decisões internas a Janio/Arthur (aliases comuns do usuário).
-
-    Permite:
-    - Ações observáveis de terceiros (sem fala atribuída).
-    - Falas da própria Mary.
-    """
-    t = (texto or "")
-    if not t.strip():
-        return False
-
-    # A) Impede Mary de colocar falas na boca de outros personagens
-    #    (inclui usuário quando aparece como personagem, e inclui terceiros)
-    if _RE_OTHER_SPEAKER_TAG.search(t):
-        return True
-    if _RE_QUOTED_ATTRIBUTION.search(t):
-        return True
-    if _RE_THIRD_PARTY_QUOTE_BEFORE.search(t):
-        return True
-    if _RE_THIRD_PARTY_QUOTE_AFTER.search(t):
-        return True
-
-    # B) 2ª pessoa com ação (autoria do usuário)
-    for m in _RE_USER_2P_ACTION.finditer(t):
-        start = m.start()
-        prefix = t[max(0, start - 64):start].lower()
-        if _RE_USER_ACTION_CONTEXT_OK.search(prefix.strip()):
-            continue
-        return True
-
-    # C) Estado interno atribuído ao usuário (Janio/Arthur) APENAS quando for sujeito
+# ✅ CORRETO: regex separado, no mesmo nível dos outros
 _RE_USER_ALIAS_AS_SUBJECT = re.compile(
     r"(?i)\b(janio|arthur)\b\s*(?:,|\-|–|—)?\s*"
     r"\b(pensa|pensou|acha|achou|imagina|imaginou|"
@@ -2487,7 +2448,7 @@ def _has_user_action_violation(texto: str) -> bool:
             continue
         return True
 
-    # ✅ só marca se "Janio/Arthur" estiver como sujeito do verbo interno
+    # ✅ só marca se Janio/Arthur forem SUJEITO do verbo interno
     if _RE_USER_ALIAS_AS_SUBJECT.search(t):
         return True
 
