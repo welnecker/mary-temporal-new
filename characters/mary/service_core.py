@@ -18,6 +18,7 @@ import logging
 import re
 import hashlib
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
@@ -484,67 +485,125 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
 def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
 
-    Regra:
-    - Se existir a fase por timeline, ela vence e sincroniza a global.
-    - Se não existir a fase por timeline, cria a fase por timeline a partir da global.
-    - Nunca reduz/avança fase aqui; só alinha chaves para evitar leituras divergentes.
+    Regra (reforçada):
+    - Se existir fase por timeline (em qualquer alias), ela vence e sincroniza a global,
+      EXCETO quando for claramente inválida (ex.: 0 vindo de alias “lixo”) enquanto a global > 0.
+    - Se não existir fase por timeline, cria a fase por timeline a partir da global.
+    - Nunca “decide” progressão aqui; só alinha chaves e canoniza aliases.
     """
     try:
         tl = (timeline or "").strip().lower()
         if not tl:
             return facts
-
         if not isinstance(facts, dict):
             return facts
 
-        # aceita variações antigas também
-        tl_keys = [f"intimacy.phase::{tl}", f"intimacy_phase::{tl}", f"mary_intimacy_phase::{tl}"]
-        global_keys = ["intimacy.phase", "intimacy_phase", "mary_intimacy_phase", "phase_intimacy", "phase"]
+        # -----------------------------
+        # Helpers
+        # -----------------------------
+        def _to_int(v: Any) -> int:
+            try:
+                return int(v)
+            except Exception:
+                return 0
 
+        def _clamp(p: int) -> int:
+            try:
+                maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
+            except Exception:
+                maxp = 6
+            if p < 0:
+                return 0
+            if p > maxp:
+                return maxp
+            return p
+
+        def _set_if_needed(key: str, val: int) -> None:
+            cur = facts.get(key)
+            try:
+                cur_i = int(cur)
+            except Exception:
+                cur_i = None
+            if cur_i != val:
+                set_fact_safe(usuario_key, key, val, {"fonte": "intimacy_sync"})
+                facts[key] = val
+
+        # aceita variações antigas também
+        tl_key_canon = f"intimacy.phase::{tl}"
+        tl_keys = [
+            tl_key_canon,
+            f"intimacy_phase::{tl}",
+            f"mary_intimacy_phase::{tl}",
+        ]
+        global_key_canon = "intimacy.phase"
+        global_keys = [
+            global_key_canon,
+            "intimacy_phase",
+            "mary_intimacy_phase",
+            "phase_intimacy",
+            "phase",
+        ]
+
+        # -----------------------------
+        # Leitura: timeline (com alias)
+        # -----------------------------
         tl_val = None
+        tl_key_found = None
         for k in tl_keys:
             if k in facts:
-                try:
-                    tl_val = int(facts.get(k) or 0)
-                except Exception:
-                    tl_val = 0
+                tl_key_found = k
+                tl_val = _clamp(_to_int(facts.get(k) or 0))
                 break
 
-        g_key_found = None
+        # -----------------------------
+        # Leitura: global (com alias)
+        # -----------------------------
         g_val = None
+        g_key_found = None
         for k in global_keys:
             if k in facts:
                 g_key_found = k
-                try:
-                    g_val = int(facts.get(k) or 0)
-                except Exception:
-                    g_val = 0
+                g_val = _clamp(_to_int(facts.get(k) or 0))
                 break
 
-        # Se existe timeline, ela vence
+        # -----------------------------
+        # Caso 1: Existe timeline
+        # -----------------------------
         if tl_val is not None:
-            # sincroniza a global para evitar divergência
-            if g_val is None or g_val != tl_val:
-                set_fact_safe(usuario_key, "intimacy.phase", int(tl_val), {"fonte": "intimacy_sync"})
-                facts["intimacy.phase"] = int(tl_val)
-            # garante que a chave principal por timeline exista (caso esteja em alias)
-            if f"intimacy.phase::{tl}" not in facts or int(facts.get(f"intimacy.phase::{tl}") or -999) != int(tl_val):
-                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", int(tl_val), {"fonte": "intimacy_sync"})
-                facts[f"intimacy.phase::{tl}"] = int(tl_val)
+            # ✅ Blindagem anti-reset:
+            # Se timeline veio 0 (muito comum em alias legado/ruim) e global já tem >0,
+            # preferimos manter o global (para não “zerar” a progressão).
+            if tl_val == 0 and (g_val is not None and g_val > 0):
+                tl_val = int(g_val)
+
+            # Canoniza timeline: garante chave canônica tl_key_canon
+            _set_if_needed(tl_key_canon, int(tl_val))
+
+            # Se o valor veio de alias (intimacy_phase::tl etc.), deixa facts coerente
+            # (não precisa apagar alias, só garantir a canônica)
+            # Canoniza global também
+            _set_if_needed(global_key_canon, int(tl_val))
+
+            # Se global estava só em alias, garantimos o canônico (sem depender do alias)
+            # (o _set_if_needed já faz isso)
+
             return facts
 
-        # Se não existe timeline, cria a partir da global (ou 0)
-        base = int(g_val or 0)
-        set_fact_safe(usuario_key, f"intimacy.phase::{tl}", base, {"fonte": "intimacy_sync"})
-        facts[f"intimacy.phase::{tl}"] = base
-        # também garante global canônica
-        if g_key_found != "intimacy.phase" or g_val is None:
-            set_fact_safe(usuario_key, "intimacy.phase", base, {"fonte": "intimacy_sync"})
-            facts["intimacy.phase"] = base
-        return facts
-    except Exception:
+        # -----------------------------
+        # Caso 2: NÃO existe timeline -> cria a partir da global
+        # -----------------------------
+        base = _clamp(_to_int(g_val or 0))
+
+        # cria timeline canônica
+        _set_if_needed(tl_key_canon, int(base))
+
+        # garante global canônico também (mesmo que global estivesse ausente/alias)
+        _set_if_needed(global_key_canon, int(base))
+
         return facts
 
+    except Exception:
+        return facts
 
 def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
     if not locked or not local or local == "—":
@@ -1494,6 +1553,7 @@ def _inject_now_context(
     """
     try:
         facts = cached_get_facts(usuario_key) or {}
+        facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
     except Exception:
         facts = {}
 
@@ -2319,7 +2379,7 @@ _RE_USER_2P_ACTION = re.compile(
 
 # 2) Fala atribuída a QUALQUER personagem que não seja Mary (bloqueia "Nome: ...")
 _RE_OTHER_SPEAKER_TAG = re.compile(
-    r"(?m)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
+    r"(?mi)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
 )
 
 # 3) Fala atribuída via travessão/descritor ("... — disse Fulano")
@@ -2397,18 +2457,41 @@ def _has_user_action_violation(texto: str) -> bool:
             continue
         return True
 
-    # C) Estado interno atribuído a Janio/Arthur (aliases)
-    #    Ex.: "Janio decide..." / "Arthur pensa..."
-    if _RE_USER_NAME_ALIASES.search(t) and _RE_INTERNAL_STATE.search(t):
-        # janela curta para reduzir falso positivo
-        low = t.lower()
-        for mm in _RE_USER_NAME_ALIASES.finditer(low):
-            w = low[mm.start(): mm.start() + 140]
-            if _RE_INTERNAL_STATE.search(w):
-                return True
+    # C) Estado interno atribuído ao usuário (Janio/Arthur) APENAS quando for sujeito
+_RE_USER_ALIAS_AS_SUBJECT = re.compile(
+    r"(?i)\b(janio|arthur)\b\s*(?:,|\-|–|—)?\s*"
+    r"\b(pensa|pensou|acha|achou|imagina|imaginou|"
+    r"quer|queria|quis|deseja|desejava|"
+    r"sente|sentiu|sentia|"
+    r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b"
+)
+
+def _has_user_action_violation(texto: str) -> bool:
+    t = (texto or "")
+    if not t.strip():
+        return False
+
+    if _RE_OTHER_SPEAKER_TAG.search(t):
+        return True
+    if _RE_QUOTED_ATTRIBUTION.search(t):
+        return True
+    if _RE_THIRD_PARTY_QUOTE_BEFORE.search(t):
+        return True
+    if _RE_THIRD_PARTY_QUOTE_AFTER.search(t):
+        return True
+
+    for m in _RE_USER_2P_ACTION.finditer(t):
+        start = m.start()
+        prefix = t[max(0, start - 64):start].lower()
+        if _RE_USER_ACTION_CONTEXT_OK.search(prefix.strip()):
+            continue
+        return True
+
+    # ✅ só marca se "Janio/Arthur" estiver como sujeito do verbo interno
+    if _RE_USER_ALIAS_AS_SUBJECT.search(t):
+        return True
 
     return False
-
 # ----------------------------------------------------------
 # Aftercare / signals
 # ----------------------------------------------------------
@@ -2448,40 +2531,81 @@ def _compute_next_phase(
     engine_meta: Any = None,
 ) -> int:
     """
-    Motor de fase v2:
+    Motor de fase v2 (robusto):
     - Avança 1 fase por vez quando o nível sustenta (_should_advance_phase).
-    - Regride 1 fase quando o usuário pede desaceleração (devagar/espera/abraço).
-    - Não cai abaixo de 0.
-    - Mantém o contrato de clímax/aftercare do motor atual.
+    - Regride 1 fase quando o usuário pede desaceleração REAL (devagar/espera/abraço).
+    - Evita falso positivo de 'devagar' usado como intensificador sexual.
+    - Não cai abaixo de 0 nem acima de MAX_INTIMACY_PHASE.
     """
     try:
         p = int(current_phase or 0)
     except Exception:
         p = 0
-    p = max(0, min(MAX_INTIMACY_PHASE, p))
+    p = max(0, min(int(MAX_INTIMACY_PHASE), p))
 
-    # ✅ desaceleração tem prioridade (recuo suave)
+    ut = _t_norm(user_text or "")
+    at = _t_norm(texto or "")
+
+    # ----------------------------------------------------------
+    # 1) Desaceleração: prioridade, mas com blindagem anti falso positivo
+    # ----------------------------------------------------------
     if _user_requests_slowdown(user_text or ""):
+        # ✅ Se o "devagar" é claramente intensificador (não recuo), NÃO regride
+        # exemplos: "devagar... assim... não para", "mais devagar e mais fundo", etc.
+        if _slowdown_is_intensifier(ut, at, phase=p, engine_meta=engine_meta):
+            return p
         return max(0, p - 1)
 
-    # avanço normal
-    if _should_advance_phase(p, user_text, texto, engine_meta=engine_meta):
+    # ----------------------------------------------------------
+    # 2) Avanço normal (1 fase por vez)
+    # ----------------------------------------------------------
+    if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
         return _cap_next_phase(p)
 
     return p
 
+
+def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any = None) -> bool:
+    """
+    Detecta quando 'devagar'/'calma' está sendo usado como intensificador erótico
+    (manter/continuar) e não como pedido de recuo/pausa.
+    """
+    # Se já está alto (fase 3+), 'devagar' costuma ser direção de ritmo, não recuo.
+    # Ainda assim, se houver palavras de "para/espera/não", aí é recuo.
+    if re.search(r"\b(para|pare|espera|pausa|calma\s+a[ií]|segura|não\s+continua|não\s+vai)\b", ut):
+        return False
+
+    # Indicadores fortes de continuação/intensificação
+    if re.search(r"\b(não\s+para|continua|vai|assim|isso|mais|bem\s+assim|desse\s+jeito)\b", ut):
+        return True
+
+    # Se o próprio texto da Mary descreve continuidade física intensa, tratar como ritmo, não recuo
+    if re.search(r"\b(ritmo|cadência|mais\s+devagar|diminuo\s+o\s+ritmo|acelero|pauso\s+e\s+volto)\b", at):
+        return True
+
+    # Sinal meta do engine (se você quiser usar): forced_variation pode pedir mudança de ritmo
+    try:
+        if isinstance(engine_meta, dict) and engine_meta.get("forced_variation") in ("mudanca_ritmo", "pacing"):
+            return True
+    except Exception:
+        pass
+
+    # Heurística por fase:
+    # - fase 0/1: 'devagar' pode ser recuo real, então não forçamos intensificador
+    # - fase 2+: tende a ser comando de ritmo -> intensificador
+    return bool(phase >= 2)
 # ------------------------------------------------------------------
 # Normalização de texto (helper)
 # ------------------------------------------------------------------
 def _t_norm(texto: str) -> str:
-    """Normaliza texto para busca: lowercase, sem acentos extras."""
+    """Normaliza texto para busca: lowercase, sem acentos, espaços colapsados."""
     if not texto:
         return ""
     t = str(texto).lower().strip()
-    # Remove múltiplos espaços
-    t = re.sub(r'\s+', ' ', t)
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = re.sub(r"\s+", " ", t)
     return t
-
 
 # ==================================================================
 # 1️⃣ DETECÇÃO DE CONTEÚDO EXPLÍCITO
@@ -2519,10 +2643,14 @@ _EXPLICIT_STEMS = [
 
 # Regex compilado para explícito
 _RE_EXPLICIT_SEX = re.compile(
-    r"\b(" + "|".join([re.escape(s) for s in _EXPLICIT_STEMS]) + r")\b",
+    r"\b(?:"
+    r"penetr\w*|met\w*|fode\w*|enfi\w*|"
+    r"bucet\w*|vagin\w*|clitor\w*|penis\w*|"
+    r"boquet\w*|chup\w*|"
+    r"gozad\w*"
+    r")\b",
     re.IGNORECASE
 )
-
 def _is_explicit(texto: str) -> bool:
     """
     Retorna True se o texto contém descrição direta de ato sexual explícito.
@@ -3448,14 +3576,10 @@ def _violations(
             climax_signal = False
 
         # ✅ Gate de fase: só vira "hard" (mary_nao_verbalizou_orgasmo) em fase 4+
-        if climax_signal:
-            # 1) Se Mary entrou em clímax, ela precisa verbalizar
-            # Mas só marca violação se REALMENTE não verbalizou
+        if climax_signal and int(phase or 0) >= 4:
             if not _RE_MARY_ORGASM_DECLARATION.search(t):
-                # Dupla verificação: procura por qualquer forma de "goz"
                 if not re.search(r"\bgoz\w+", t, re.IGNORECASE):
                     out.append("mary_nao_verbalizou_orgasmo")
-
         # ✅ Orgasmo precoce: só marca se ela VERBALIZOU orgasmo em fase < 4
         if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t):
             # se o usuário explicitamente pediu finalização/clímax, não marca precoce
@@ -3792,7 +3916,9 @@ def _repair_instruction(violations: List[str]) -> str:
         )
 
     if "offscreen_msg_inventada" in violations:
-        bullets.append("🟠 Remova mensagens/telefonemas inventados. No máximo: 'o celular vibra'.")
+        bullets.append("🟠 Remova conteúdo inventado de mensagens/telefonemas. "
+                        "Se mencionar telefone, mantenha genérico (ex.: 'o celular vibra') "
+                        "sem transcrever ou interpretar conteúdo.")
 
     # =========================
     # 🟡 MÉDIAS (COERÊNCIA)
@@ -4855,6 +4981,11 @@ class MaryService(BaseCharacter):
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
+        
+        try:
+            facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
+        except Exception:
+            pass
         
         intimacy_phase = self._get_intimacy_phase(facts)
         # ==========================================================
@@ -5991,27 +6122,44 @@ Direção:
                            
                 try:
                     
-                    current_phase = self._get_intimacy_phase(cached_get_facts(usuario_key))
+                    current_facts = cached_get_facts(usuario_key)
 
-                    # 🚫 Não altera fase durante aftercare forçado
-                    if phase != 5:
-                        desired_next = _compute_next_phase(
-                            current_phase,
-                            prompt,
-                            texto,
-                            engine_meta=meta,
-                        )
-                        if desired_next != current_phase:
-                            self._set_intimacy_phase(usuario_key, desired_next)
-                except Exception:
-                    pass
-
-                # Atualiza fase anterior/streak para o próximo turno (cool-down)
                 try:
-                    _ss_set(prev_phase_key, int(phase))
-                    _ss_set(streak_key, int(phase_streak))
+                    current_facts = _sync_intimacy_phase_facts(
+                        usuario_key,
+                        current_facts,
+                        timeline_final,
+                    )
                 except Exception:
                     pass
+                
+                current_phase = self._get_intimacy_phase(current_facts)
+                
+                if phase != 5:
+                    desired_next = _compute_next_phase(
+                        current_phase,
+                        prompt,
+                        texto,
+                        engine_meta=meta,
+                    )
+                
+                    if desired_next != current_phase:
+                        # 🔒 grava global + timeline
+                        self._set_intimacy_phase(
+                            usuario_key,
+                            desired_next,
+                            timeline_final,
+                        )
+                
+                        # 🔁 sincroniza imediatamente para evitar leitura errada no mesmo turno
+                        try:
+                            _sync_intimacy_phase_facts(
+                                usuario_key,
+                                cached_get_facts(usuario_key),
+                                timeline_final,
+                            )
+                        except Exception:
+                            pass
 
 
                 # ----------------------------------------------------------
@@ -6551,31 +6699,32 @@ Direção:
                     pass
         return 0
 
-    def _set_intimacy_phase(self, usuario_key: str, phase: int) -> int:
+    def _set_intimacy_phase(self, usuario_key: str, phase: int, timeline: str = "") -> int:
         try:
             p = int(phase)
         except Exception:
             p = 0
-
+    
         maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
         p = max(self._INTIMACY_MIN, min(p, maxp))
-
+    
+        # sempre grava global
         set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
-
-        tl = ""
-        try:
-            tl = str(_ss_get("mary_timeline", "") or "").strip()
-        except Exception:
-            tl = ""
-
+    
+        # grava também na timeline específica se existir
+        tl = (timeline or "").strip()
         if tl:
             try:
-                set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_progression"})
+                set_fact_safe(
+                    usuario_key,
+                    f"intimacy.phase::{tl}",
+                    p,
+                    {"fonte": "intimacy_progression"},
+                )
             except Exception:
                 pass
-
+    
         return p
-
     def _chat(
         self,
         model: str,
