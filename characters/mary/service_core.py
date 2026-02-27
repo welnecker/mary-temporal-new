@@ -498,52 +498,143 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
         if not isinstance(facts, dict):
             return facts
 
-        # -----------------------------
-        # Helpers
-        # -----------------------------
-        def _to_int(v: Any) -> int:
-            try:
-                return int(v)
-            except Exception:
-                return 0
+       def _sync_intimacy_phase_keys(self, usuario_key: str, facts: Dict[str, Any], phase: Any, timeline: str = "") -> int:
+    """
+    Sincroniza phase em TODOS os formatos:
+    - FLAT canon: "intimacy.phase" e "intimacy.phase::{tl}"
+    - FLAT legacy: "intimacy_phase", "mary_intimacy_phase", "phase", etc
+    - NESTED: facts["intimacy"]["phase"] e facts["intimacy"][f"phase::{tl}"]
+    Retorna phase final (clampado).
+    """
 
-        def _clamp(p: int) -> int:
-            try:
-                maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
-            except Exception:
-                maxp = 6
-            if p < 0:
-                return 0
-            if p > maxp:
-                return maxp
-            return p
+    if not isinstance(facts, dict):
+        facts = {}
 
-        def _set_if_needed(key: str, val: int) -> None:
-            cur = facts.get(key)
-            try:
-                cur_i = int(cur)
-            except Exception:
-                cur_i = None
-            if cur_i != val:
-                set_fact_safe(usuario_key, key, val, {"fonte": "intimacy_sync"})
-                facts[key] = val
+    tl = (timeline or "").strip() or (getattr(self, "timeline", "") or getattr(self, "tl", "") or "")
+    tl = str(tl or "").strip()
 
-        # aceita variações antigas também
-        tl_key_canon = f"intimacy.phase::{tl}"
-        tl_keys = [
-            tl_key_canon,
-            f"intimacy_phase::{tl}",
-            f"mary_intimacy_phase::{tl}",
-        ]
-        global_key_canon = "intimacy.phase"
-        global_keys = [
-            global_key_canon,
-            "intimacy_phase",
-            "mary_intimacy_phase",
-            "phase_intimacy",
-            "phase",
-        ]
+    # -----------------------------
+    # Helpers
+    # -----------------------------
+    def _to_int(v: Any) -> int:
+        try:
+            return int(v)
+        except Exception:
+            return 0
 
+    def _clamp(p: int) -> int:
+        try:
+            maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
+        except Exception:
+            maxp = 6
+        if p < 0:
+            return 0
+        if p > maxp:
+            return maxp
+        return p
+
+    def _set_if_needed(key: str, val: int) -> None:
+        cur = facts.get(key)
+        try:
+            cur_i = int(cur)
+        except Exception:
+            cur_i = None
+        if cur_i != val:
+            set_fact_safe(usuario_key, key, val, {"fonte": "intimacy_sync"})
+            facts[key] = val
+
+    # aceita variações antigas também
+    tl_key_canon = f"intimacy.phase::{tl}" if tl else ""
+    tl_keys = [k for k in [
+        tl_key_canon,
+        f"intimacy_phase::{tl}" if tl else "",
+        f"mary_intimacy_phase::{tl}" if tl else "",
+    ] if k]
+
+    global_key_canon = "intimacy.phase"
+    global_keys = [
+        global_key_canon,
+        "intimacy_phase",
+        "mary_intimacy_phase",
+        "phase_intimacy",
+        "phase",
+    ]
+
+    # -----------------------------
+    # Resolve phase (preferência: nested > tl flat > global flat > phase arg)
+    # -----------------------------
+    resolved = None
+
+    # 1) nested
+    try:
+        intimacy = facts.get("intimacy")
+        if isinstance(intimacy, dict):
+            if tl and f"phase::{tl}" in intimacy:
+                resolved = _to_int(intimacy.get(f"phase::{tl}"))
+            elif "phase" in intimacy:
+                resolved = _to_int(intimacy.get("phase"))
+    except Exception:
+        pass
+
+    # 2) tl flat (canon/legacy)
+    if resolved is None and tl_keys:
+        for k in tl_keys:
+            if k in facts:
+                resolved = _to_int(facts.get(k))
+                break
+
+    # 3) global flat (canon/legacy)
+    if resolved is None:
+        for k in global_keys:
+            if k in facts:
+                resolved = _to_int(facts.get(k))
+                break
+
+    # 4) fallback: argumento phase
+    if resolved is None:
+        resolved = _to_int(phase)
+
+    resolved = _clamp(resolved)
+
+    # -----------------------------
+    # Grava em FLAT (canon + legacy)
+    # -----------------------------
+    _set_if_needed(global_key_canon, resolved)
+    for k in global_keys:
+        if k != global_key_canon:
+            _set_if_needed(k, resolved)
+
+    if tl:
+        for k in tl_keys:
+            _set_if_needed(k, resolved)
+
+    # -----------------------------
+    # Grava em NESTED
+    # -----------------------------
+    try:
+        intimacy = facts.get("intimacy")
+        if not isinstance(intimacy, dict):
+            intimacy = {}
+
+        changed = False
+
+        if _to_int(intimacy.get("phase")) != resolved:
+            intimacy["phase"] = resolved
+            changed = True
+
+        if tl:
+            kt = f"phase::{tl}"
+            if _to_int(intimacy.get(kt)) != resolved:
+                intimacy[kt] = resolved
+                changed = True
+
+        if changed:
+            set_fact_safe(usuario_key, "intimacy", intimacy, {"fonte": "intimacy_sync"})
+            facts["intimacy"] = intimacy
+    except Exception:
+        pass
+
+    return resolved
         # -----------------------------
         # Leitura: timeline (com alias)
         # -----------------------------
@@ -2922,20 +3013,43 @@ def _low_sensory_density(texto: str) -> bool:
 _LEVEL0 = re.compile(r"\b(beijo|abrac|abra[cç]o|encost|aproxim|danc|cintura|sussurr|cola)\b", re.I)
 _LEVEL1 = re.compile(r"\b(pele|roupa|calcinh|sutia|mamilo|lingua|boca|pescoc|entre\s+as\s+pernas)\b", re.I)
 _LEVEL2 = re.compile(r"\b(devagar|para|controle|provoc|mais\s+forte|mais\s+rapido|ritmo|quadril|nao\s+aguento|preciso\s+agora)\b", re.I)
-_LEVEL3 = re.compile(r"\b(vou\s+gozar|to\s+goz(ando)?|estou\s+goz(ando)?|gozei|orgasmo|climax)\b", re.I)
+_LEVEL3 = re.compile(
+    r"\b("
+    r"vou\s+gozar|"
+    r"to\s+goz(ando)?|"
+    r"estou\s+goz(ando)?|"
+    r"gozei|"
+    r"goza(r)?|"
+    r"orgasmo|"
+    r"cl[ií]max"
+    r")\b",
+    re.I,
+)
 
 def _intimacy_level(user_text: str, texto: str) -> int:
+    """
+    Calcula nível semântico de intimidade (0 a 3).
+
+    0 = neutro / conversa
+    1 = contato físico leve
+    2 = excitação explícita
+    3 = ato sexual / clímax
+    """
+
     s = _t_norm((user_text or "") + "\n" + (texto or ""))
     if not s:
         return 0
+
+    # Ordem do mais forte para o mais fraco
     if _LEVEL3.search(s):
         return 3
+
     if _LEVEL2.search(s):
         return 2
+
     if _LEVEL1.search(s):
         return 1
-    if _LEVEL0.search(s):
-        return 0
+
     return 0
 
 def _user_explicitly_allows_climax(user_text: str) -> bool:
@@ -2952,12 +3066,21 @@ def _cap_next_phase(current_phase: int) -> int:
         p = 0
     return max(0, min(MAX_INTIMACY_PHASE, p + 1))
 
-def _should_advance_phase(current_phase: int, user_text: str, texto: str, *, engine_meta: Any = None, **_kw: Any) -> bool:
+def _should_advance_phase(
+    current_phase: int,
+    user_text: str,
+    texto: str,
+    *,
+    engine_meta: Any = None,
+    **_kw: Any
+) -> bool:
     """
-    Regra geral de progressão:
-    - Avança 1 fase por vez quando o nível semântico sustenta.
-    - Fase 4 (clímax) exige lvl=3 OU autorização explícita do usuário.
-    - Aftercare: só com sinal do usuário.
+    Progressão:
+    0 -> 1: exige erotização real (lvl>=1)
+    1 -> 2: exige escalada (lvl>=2)
+    2 -> 3: exige pré-clímax/tensão alta (lvl>=2)
+    3 -> 4: exige clímax (lvl>=3) ou permissão explícita do usuário
+    4 -> 5: aftercare somente se usuário sinalizar
     """
     try:
         p = int(current_phase or 0)
@@ -2966,17 +3089,19 @@ def _should_advance_phase(current_phase: int, user_text: str, texto: str, *, eng
 
     lvl = _intimacy_level(user_text, texto)
 
-    if p <= 0:
-        return lvl >= 0
-    if p == 1:
+    if p == 0:
         return lvl >= 1
+    if p == 1:
+        return lvl >= 2
     if p == 2:
         return lvl >= 2
     if p == 3:
         return (lvl >= 3) or _user_explicitly_allows_climax(user_text)
     if p == 4:
         return _user_signals_aftercare(user_text)
+
     return False
+
 # ==========================================================
 # DESVIO CURTO (fidelidade soft) — helpers
 # ==========================================================
@@ -6496,7 +6621,21 @@ Direção:
                     texto = _trim_scene_finalization(texto)
             except Exception:
                 pass
+        
+            # ✅ atualiza phase com base no texto FINAL
+            try:
+                self._update_phase_from_text(
+                    usuario_key,
+                    timeline,
+                    int(phase or 0),
+                    user_text,
+                    texto,
+                )
+            except Exception:
+                pass
+        
             return texto, used_model
+            
         # ======================================================
         # ✅ Repair (1 passada)
         # ======================================================
@@ -6569,9 +6708,15 @@ Direção:
 
                 # se repair falhar, devolve o original (melhor que vazio)
         if not texto2:
-            texto = _trim_scene_finalization(texto)
-            return texto, used_model
+            try:
+                if not _finalization_allowed(user_text or "", int(phase or 0)):
+                    texto = _trim_scene_finalization(texto)
+            except Exception:
+                pass
         
+            self._update_phase_from_text(usuario_key, timeline, int(phase or 0), user_text, texto)
+        
+            return texto, used_model        
         # ======================================================
         # 🔥 LOOP DE REGENERAÇÃO PARA VIOLAÇÕES CRÍTICAS
         # ======================================================
@@ -6644,8 +6789,9 @@ Direção:
                 except Exception:
                     pass
                 
+                self._update_phase_from_text(usuario_key, timeline, int(phase or 0), user_text, texto2)
+                
                 return texto2, used_model2
-
     @staticmethod
     def _fallback_text() -> str:
         return (
@@ -6798,37 +6944,68 @@ Direção:
             pass
 
         return p
+
+    def _update_phase_from_text(self, usuario_key: str, timeline: str, phase: int, user_text: str, final_text: str) -> int:
+    try:
+        next_phase = _compute_next_phase(
+            current_phase=int(phase or 0),
+            user_text=user_text,
+            texto=final_text,
+            engine_meta=None,
+        )
+        if next_phase != int(phase or 0):
+            self._set_intimacy_phase(usuario_key, next_phase, timeline)
+            try:
+                logger.info(f"[INTIMACY] Phase mudou {phase} → {next_phase}")
+            except Exception:
+                pass
+        return next_phase
+    except Exception as e:
+        try:
+            logger.exception("Erro ao evoluir phase: %s", e)
+        except Exception:
+            pass
+        return int(phase or 0)
         
     def _chat(
-        self,
-        model: str,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: int,
-        *,
-        top_p: float = 0.95,
-        extra: Optional[Dict[str, Any]] = None,
-    ):
-        payload: Dict[str, Any] = {
-            "messages": messages,
-            "temperature": float(temperature),
-            "top_p": float(top_p),
-            "max_tokens": int(max_tokens),
-        }
-        if isinstance(extra, dict) and extra:
-            payload.update(extra)
-            try:
-                return service_router.route_chat_strict(model, payload)
-            except Exception:
-                # Provider rejeitou campos extras → re-tenta 1x sem extras
-                payload = {
-                    "messages": messages,
-                    "temperature": float(temperature),
-                    "top_p": float(top_p),
-                    "max_tokens": int(max_tokens),
-                }
-        return service_router.route_chat_strict(model, payload)
+    self,
+    model: str,
+    messages: List[Dict[str, str]],
+    temperature: float,
+    max_tokens: int,
+    *,
+    top_p: float = 0.95,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Tuple[Any, str, Any]:
+    payload: Dict[str, Any] = {
+        "messages": messages,
+        "temperature": float(temperature),
+        "top_p": float(top_p),
+        "max_tokens": int(max_tokens),
+    }
 
+    # tenta com extra (se houver)
+    if isinstance(extra, dict) and extra:
+        payload_with_extra = dict(payload)
+        payload_with_extra.update(extra)
+        try:
+            resp = service_router.route_chat_strict(model, payload_with_extra)
+            return _normalize_chat_return(resp, model)
+        except Exception:
+            # rejeitou extras -> cai para payload base
+            pass
+
+    # tenta payload base
+    try:
+        resp = service_router.route_chat_strict(model, payload)
+        return _normalize_chat_return(resp, model)
+    except Exception as e:
+        # NUNCA devolva None. Devolve 3-tuple com data=None
+        try:
+            logger.exception("Erro em _chat(): %s", e)
+        except Exception:
+            pass
+        return None, model, {"error": str(e)}
 
 def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
     """
