@@ -2497,36 +2497,37 @@ def _compute_next_phase(
     engine_meta: Any = None,
 ) -> int:
     """
-    Motor de fase v2 (robusto):
-    - Avança 1 fase por vez quando o nível sustenta (_should_advance_phase).
-    - Regride 1 fase quando o usuário pede desaceleração REAL (devagar/espera/abraço).
-    - Evita falso positivo de 'devagar' usado como intensificador sexual.
-    - Não cai abaixo de 0 nem acima de MAX_INTIMACY_PHASE.
+    Motor estável de progressão.
+
+    - Nunca salta mais de 1 fase.
+    - Pode regredir 1 fase se houver desaceleração real.
+    - Não força clímax.
     """
+
     try:
         p = int(current_phase or 0)
     except Exception:
         p = 0
+
     p = max(0, min(int(MAX_INTIMACY_PHASE), p))
 
     ut = _t_norm(user_text or "")
     at = _t_norm(texto or "")
 
     # ----------------------------------------------------------
-    # 1) Desaceleração: prioridade, mas com blindagem anti falso positivo
+    # 1) Desaceleração real
     # ----------------------------------------------------------
     if _user_requests_slowdown(user_text or ""):
-        # ✅ Se o "devagar" é claramente intensificador (não recuo), NÃO regride
-        # exemplos: "devagar... assim... não para", "mais devagar e mais fundo", etc.
         if _slowdown_is_intensifier(ut, at, phase=p, engine_meta=engine_meta):
             return p
         return max(0, p - 1)
 
     # ----------------------------------------------------------
-    # 2) Avanço normal (1 fase por vez)
+    # 2) Avanço natural
     # ----------------------------------------------------------
     if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
-        return _cap_next_phase(p)
+        next_p = p + 1
+        return min(next_p, int(MAX_INTIMACY_PHASE))
 
     return p
 
@@ -2634,83 +2635,139 @@ def _is_explicit(texto: str) -> bool:
 
 
 # ==================================================================
-# 2️⃣ DETECÇÃO DE ORGASMO DE MARY (EXPANDIDO v10c+)
+# ✅ ORGASMO — Verbalização EXPLÍCITA (Mary) + Sinal de Clímax (heurístico)
 # ==================================================================
 
-# Regex expandido: detecta 15+ variações de orgasmo
+# 1) Verbalização EXPLÍCITA: precisa conter "goz*" ou "orgasmo" (sem eufemismo)
 _RE_MARY_ORGASM_DECLARATION = re.compile(
     r"\b(?:"
-    # Formas básicas de "gozar"
-    r"(?:eu\s+)?goz(?:o|ei|ando|ar)|"
-    r"(?:t[oô]|t[aá]|estou|tô|to)\s+goz(?:ando)?|"
+    # raiz "goz" (PT-BR)
+    r"(?:eu\s+)?goz(?:o|ei|ando|ar|ava|aria|asse|ou)|"
+    r"(?:t[oô]|to|t[aá]|estou)\s+goz(?:ando)?|"
     r"vou\s+gozar|"
-    r"(?:vou\s+)?(?:me\s+)?(?:faz(?:er|endo)?|fa[cç]a)\s+gozar|"
-    
-    # Variações com "comigo"
-    r"goza\s+comigo|"
-    r"goza\s+(?:em\s+)?mim|"
-    
-    # Formas plurais
-    r"goz(?:amos|aram|arem)|"
-    
-    # Orgasmo (palavra direta)
-    r"(?:meu\s+)?orgasmo|"
-    r"(?:tô|estou|to)\s+(?:em\s+)?orgasmo|"
+    r"(?:quase|t[oô]|to|estou)\s+perto\s+de\s+gozar|"
+    r"(?:eu\s+)?(?:já\s+)?(?:t[oô]|to|estou)\s+(?:gozando)|"
+    # palavra direta
+    r"orgasmo|"
     r"(?:vou\s+)?(?:ter\s+)?(?:um\s+)?orgasmo|"
-    
-    # Variações coloquiais
-    r"(?:tô|estou|to)\s+perto\s+(?:de\s+)?(?:gozar|orgasmo)|"
-    r"(?:já\s+)?(?:vou|vou\s+)?(?:gozar|vir)|"
-    
-    # Efeitos de orgasmo
-    r"(?:me\s+)?(?:faz\s+)?vir|"
-    r"(?:tô|estou)\s+(?:vindo|virando)|"
-    
-    # Intensidade máxima
-    r"(?:me\s+)?(?:leva|leve)\s+(?:ao\s+)?cl[ií]max|"
-    r"(?:vou\s+)?(?:ao\s+)?cl[ií]max|"
-    r"(?:pico\s+)?(?:de\s+)?prazer|"
-    
-    # Expressões de intensidade
-    r"(?:tô|estou)\s+(?:perdendo|saindo)\s+(?:do\s+)?controle|"
-    r"(?:não\s+)?aguento\s+(?:mais|de\s+prazer)|"
-    
-    # Reações corporais de clímax
-    r"(?:meu\s+)?(?:corpo\s+)?(?:treme|contrai|espasma)|"
-    r"(?:tô|estou)\s+(?:tremendo|contraindo|espalmando)|"
-    
-    # Variações com "me"
-    r"(?:me\s+)?(?:faz\s+)?(?:gozar|vir|explodir)|"
-    
-    # Intensidade extrema
-    r"(?:me\s+)?(?:faz\s+)?(?:explodir|desintegrar|voar)|"
-    r"(?:tô|estou)\s+(?:explodindo|desintegrando|voando)"
-    
+    r"(?:t[oô]|to|estou)\s+(?:em\s+)?orgasmo|"
+    # opcional: ejacular (se você usa isso no texto da Mary)
+    r"(?:eu\s+)?ejacul(?:o|ei|ando|ar)|"
+    r"(?:t[oô]|to|estou)\s+ejacul(?:ando)?|"
+    r"vou\s+ejacular"
     r")\b",
-    re.IGNORECASE | re.VERBOSE
+    re.IGNORECASE,
 )
 
 def _has_mary_orgasm_declaration(texto: str) -> bool:
     """
-    Retorna True se o texto contém declaração de orgasmo de Mary.
-    
-    Exemplos:
-    - "Eu gozei" → True
-    - "Vou gozar" → True
-    - "Goza comigo" → True
-    - "Estou em orgasmo" → True
-    - "Me faz vir" → True
-    - "Não aguento mais de prazer" → True
-    - "Meu corpo treme" → True
-    - "Estou perdendo o controle" → True
-    - "Beijo apaixonado" → False
-    - "Estou feliz" → False
+    True => Mary verbalizou orgasmo de forma explícita:
+    "vou gozar", "tô gozando", "eu gozei", "orgasmo" etc.
     """
-    t = _t_norm(texto)
+    if not texto:
+        return False
+    return bool(_RE_MARY_ORGASM_DECLARATION.search(texto))
+
+
+# 2) Score de "sinal de clímax" (heurístico, NÃO é a verbalização)
+#    -> aqui a gente pega sinais corporais e descrições típicas.
+#    -> NÃO inclui "cheguei lá" / "tô no auge" etc.
+def _orgasm_signal_score(texto: str) -> int:
+    if not texto:
+        return 0
+
+    t = (texto or "").lower()
+
+    signals = (
+        # corpo / contrações
+        "espasmo", "espasmos",
+        "contraç", "contraindo", "contrações",
+        "treme", "tremendo", "tremor",
+        "arqueia", "arqueio", "arco",
+        "pernas bambas", "perna bamba",
+        "perde o controle", "perdendo o controle",
+        "onda", "ondas",
+        "puls", "pulsando", "pulsar",
+        "latej", "latejando",
+        "me atravessa", "atravessa como um raio",
+        "explod", "explodindo",
+        "desaba", "desabando",
+        "choque", "choque de prazer",
+        "convuls", "convulsão",
+        "grito", "gemido alto", "gemendo forte",
+        # “clímax” pode existir como palavra, mas não é obrigatório
+        "clímax", "climax",
+    )
+
+    score = 0
+    for s in signals:
+        if s in t:
+            score += 1
+
+    # reforço: texto longo descrevendo pico costuma ser mais confiável
+    if len(t) >= 220:
+        score += 1
+
+    return score
+
+
+# 3) DETECÇÃO DE CLÍMAX (heurística, não determinística)
+def _detect_climax_signal(
+    texto: str,
+    user_text: str,
+    *,
+    nsfw_on: bool,
+    phase: int,
+) -> bool:
+    """
+    Detecta "clímax acontecendo" de forma heurística.
+    Serve para: se houver clímax, exigir verbalização explícita da Mary.
+    """
+    if not nsfw_on:
+        return False
+
+    t = (texto or "").strip()
     if not t:
         return False
-    return bool(_RE_MARY_ORGASM_DECLARATION.search(t))
 
+    # Não tenta detectar cedo demais com texto curto
+    if len(t) < 120 and phase < 3:
+        return False
+
+    # Se ela já verbalizou, não precisa forçar nada (não gera violação)
+    if _has_mary_orgasm_declaration(t):
+        return True
+
+    score = _orgasm_signal_score(t)
+
+    u = (user_text or "").lower()
+
+    # Se o usuário explicitamente pede clímax/gozar, isso aumenta confiança
+    user_boost = 0
+    if phase >= 3:
+        for kw in ("goza", "gozou", "gozar", "orgasmo", "clímax", "climax", "finaliza", "finalizar"):
+            if kw in u:
+                user_boost += 1
+
+    score_total = score + user_boost
+
+    # thresholds (ajustados pra não dar falso positivo)
+    if phase >= 4:
+        return score_total >= 1  # mais permissivo no pico
+    if phase >= 3:
+        return score_total >= 3  # exige mais sinal antes do pico
+    return False
+
+
+def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
+    """
+    Se foi marcada a violação 'mary_nao_verbalizou_orgasmo',
+    só libera se agora existe verbalização explícita.
+    """
+    if "mary_nao_verbalizou_orgasmo" not in (violations or []):
+        return True
+
+    return _has_mary_orgasm_declaration(text or "")
 
 # ==================================================================
 # 3️⃣ HELPER: Detecta se é APENAS orgasmo (sem ato explícito)
@@ -2892,13 +2949,24 @@ def _cap_next_phase(current_phase: int) -> int:
         p = 0
     return max(0, min(MAX_INTIMACY_PHASE, p + 1))
 
-def _should_advance_phase(current_phase: int, user_text: str, texto: str, *, engine_meta: Any = None, **_kw: Any) -> bool:
+def _should_advance_phase(
+    current_phase: int,
+    user_text: str,
+    texto: str,
+    *,
+    engine_meta: Any = None,
+    **_kw: Any,
+) -> bool:
     """
-    Regra geral de progressão:
-    - Avança 1 fase por vez quando o nível semântico sustenta.
-    - Fase 4 (clímax) exige lvl=3 OU autorização explícita do usuário.
-    - Aftercare: só com sinal do usuário.
+    Progressão natural e humana:
+
+    0 → 1 : qualquer contato
+    1 → 2 : erotização clara
+    2 → 3 : tensão consistente / ritmo estabelecido
+    3 → 4 : nível 3 detectado (clímax iminente)
+    4 → 5 : sinal de desaceleração / exaustão / transição
     """
+
     try:
         p = int(current_phase or 0)
     except Exception:
@@ -2906,17 +2974,28 @@ def _should_advance_phase(current_phase: int, user_text: str, texto: str, *, eng
 
     lvl = _intimacy_level(user_text, texto)
 
+    # 0 → 1
     if p <= 0:
-        return lvl >= 0
-    if p == 1:
         return lvl >= 1
+
+    # 1 → 2
+    if p == 1:
+        return lvl >= 2
+
+    # 2 → 3 (limiar)
     if p == 2:
         return lvl >= 2
+
+    # 3 → 4 (clímax)
     if p == 3:
-        return (lvl >= 3) or _user_explicitly_allows_climax(user_text)
+        return lvl >= 3
+
+    # 4 → 5 (aftercare natural)
     if p == 4:
         return _user_signals_aftercare(user_text)
+
     return False
+    
 # ==========================================================
 # DESVIO CURTO (fidelidade soft) — helpers
 # ==========================================================
@@ -3174,42 +3253,54 @@ def _detect_climax_signal(
     if not nsfw_on:
         return False
 
-    t = (texto or "").lower()
-    u = (user_text or "").lower()
+    t = _t_norm(texto or "")
+    u = _t_norm(user_text or "")
 
+    # Muito curto e fase baixa → ignora
     if len(t) < 120 and phase < 3:
         return False
 
-    signals = (
-        "espasmo",
-        "contraç",
-        "trem",
-        "pernas",
-        "corpo arque",
-        "perde o controle",
-        "onda",
-        "explod no corpo",
-        "goz",
-        "clímax",
-        "chega lá",
+    # -----------------------------
+    # Sinais físicos reais
+    # -----------------------------
+    physical = re.search(
+        r"\b(espasmo|contra[cç][aã]o|trem(e|or|endo)|"
+        r"corpo\s+arque|perde\s+o\s+controle|"
+        r"onda\s+(forte|intensa)|explod\w+\s+no\s+corpo)\b",
+        t,
     )
 
-    score = 0
-    for s in signals:
-        if s in t:
-            score += 1
+    # -----------------------------
+    # Sinais de limiar (pré-clímax)
+    # -----------------------------
+    threshold = re.search(
+        r"\b(no\s+limite|t[oô]\s+no\s+limite|"
+        r"no\s+auge|t[oô]\s+no\s+auge)\b",
+        t,
+    )
+
+    # -----------------------------
+    # Comando explícito do usuário
+    # -----------------------------
+    user_push = False
+    if phase >= 3:
+        if re.search(r"\b(goza|gozou|gozar|cl[ií]max|finaliza|finalizar)\b", u):
+            user_push = True
+
+    # -----------------------------
+    # Lógica por fase
+    # -----------------------------
+    if phase >= 4:
+        # fase alta exige sinal físico OU limiar forte
+        return bool(physical or threshold)
 
     if phase >= 3:
-        for s in ("goza", "gozou", "gozar", "clímax", "finaliza", "finalizar"):
-            if s in u:
-                score += 1
-
-    if phase >= 4 and score >= 1:
-        return True
-    if phase >= 3 and score >= 3:
-        return True
+        # fase média exige combinação
+        score = int(bool(physical)) + int(bool(threshold)) + int(bool(user_push))
+        return score >= 2
 
     return False
+    
 def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
     """
     Valida se Mary verbalizou o orgasmo quando a violação foi detectada.
@@ -3241,9 +3332,10 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
             r"\b("
             r"pode\s+gozar|"
             r"me\s+faz\s+gozar|"
-            r"me\s+faça\s+gozar|"
+            r"me\s+fa[cç]a\s+gozar|"
             r"eu\s+vou\s+gozar|"
-            r"vou\s+gozar"
+            r"vou\s+gozar|"
+            r"to\s+perto\s+de\s+gozar"
             r")\b",
             user_text.lower(),
         )
