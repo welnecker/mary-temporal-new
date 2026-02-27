@@ -2082,6 +2082,9 @@ def main() -> None:
         st.caption(f"🧩 Timeline: {_timeline()}")
         st.caption(f"🔑 usuario_key atual: {_usuario_key_atual()}")
 
+        # ----------------------------
+        # Destravar timeline (visual)
+        # ----------------------------
         if st.session_state.get("mary_timeline_locked", False):
             if st.button("🔓 Destravar timeline (visual)", key="btn_unlock_timeline_visual"):
                 st.session_state["mary_timeline_locked"] = False
@@ -2096,6 +2099,9 @@ def main() -> None:
                 _kill_all_mary_services()
                 st.rerun()
 
+        # ----------------------------
+        # Lista de modelos
+        # ----------------------------
         try:
             all_models = service_router.list_models() or []
             st.session_state["models_debug"] = {
@@ -2124,12 +2130,7 @@ def main() -> None:
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
 
-        st.selectbox(
-            "🧠 Modelo",
-            all_models,
-            index=idx,
-            key="model",
-        )
+        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         with st.expander("🧪 Debug imports (service_router)", expanded=True):
             try:
@@ -2137,6 +2138,7 @@ def main() -> None:
             except Exception as e:
                 st.write(f"falhou: {type(e).__name__}: {e}")
 
+        # Provider detectado
         try:
             prov_detected = None
             if hasattr(service_router, "_provider_for"):
@@ -2155,6 +2157,9 @@ def main() -> None:
         except Exception:
             st.caption("🔌 Provider detectado: **—**")
 
+        # ----------------------------
+        # Ping/Pong
+        # ----------------------------
         st.markdown("---")
         st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
 
@@ -2195,7 +2200,6 @@ def main() -> None:
                 if not used_m:
                     st.warning(
                         "⚠️ O router NÃO retornou o modelo usado no payload. "
-                        "Nesse caso, a confirmação vale por: Provider detectado + Modelo(UI). "
                         "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
                     )
             else:
@@ -2203,6 +2207,9 @@ def main() -> None:
                 err = ping.get("error")
                 st.code(err if isinstance(err, str) and err.strip() else str(ping))
 
+        # ----------------------------
+        # Último erro
+        # ----------------------------
         st.markdown("---")
         st.subheader("🧨 Último erro (service)")
 
@@ -2219,26 +2226,38 @@ def main() -> None:
             st.markdown("**Preview clean (depois do strip):**")
             st.code(st.session_state.get("mary_last_clean_text_preview") or "")
 
-            st.markdown("**RAW summary (resumo do retorno do router/service):**")
+            st.markdown("**RAW summary:**")
             st.json(st.session_state.get("mary_last_raw_resp") or {})
 
-            st.markdown("**Último erro registrado (se existir):**")
+            st.markdown("**Último erro registrado:**")
             st.json(st.session_state.get("mary_last_error") or {})
 
+        # ----------------------------
+        # NSFW + Third-party
+        # ----------------------------
         st.markdown("---")
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
-
+        
         if "mary_allow_third_party_seduction" not in st.session_state:
             st.session_state["mary_allow_third_party_seduction"] = False
-
+        
+        # Se desligou NSFW, força OFF e zera seeds/ciúme no facts (sem derrubar UI)
         if not nsfw_after:
             st.session_state["mary_allow_third_party_seduction"] = False
-
+            try:
+                uk = _usuario_key_atual()
+                set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
+                set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
+            except Exception:
+                pass
+        
+        # Persistência de NSFW por timeline (quando alternar)
         if nsfw_after != nsfw_before:
             _persist_nsfw_for_current_timeline_if_needed_inline()
-
+        
         if nsfw_after:
             st.checkbox(
                 "Permitir Mary ceder a terceiros (segredo)",
@@ -2246,7 +2265,46 @@ def main() -> None:
                 help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
             )
             st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
+        
+            st.markdown("### 🔐 Ciúme / Flerte / Segredo")
+        
+            # defaults vindo dos facts
+            try:
+                facts_rel = get_facts(_usuario_key_atual()) or {}
+                if not isinstance(facts_rel, dict):
+                    facts_rel = {}
+            except Exception:
+                facts_rel = {}
+        
+            seed_default = str(facts_rel.get("rel.ciume_flerte_segredo", "") or "")
+            cooldown_default = int(facts_rel.get("rel.ciume_cooldown_turns", 6) or 6)
+        
+            seed_input = st.text_input(
+                "Seed narrativo (ex: telefonema de Arthur)",
+                value=seed_default,
+                key="rel_ciume_seed_input",
+                help="Vazio desativa. Se preenchido, pode disparar telefone/notificação com suspense.",
+            )
+        
+            cooldown_input = st.slider(
+                "Cooldown (turnos)",
+                min_value=2,
+                max_value=20,
+                value=cooldown_default,
+                key="rel_ciume_cooldown_input",
+            )
+        
+            # grava no facts sem quebrar a UI
+            try:
+                uk = _usuario_key_atual()
+                set_fact(uk, "rel.ciume_flerte_segredo", (seed_input or "").strip(), {"fonte": "sidebar"})
+                set_fact(uk, "rel.ciume_cooldown_turns", int(cooldown_input), {"fonte": "sidebar"})
+            except Exception:
+                pass
 
+        # ======================================================
+        # 🧾 Estado Atual (facts → service_core)
+        # ======================================================
         st.markdown("---")
         st.subheader("🧾 Estado Atual (facts → service_core)")
 
@@ -2289,10 +2347,7 @@ def main() -> None:
                     }
 
                     for k, v in updates.items():
-                        if v:
-                            set_fact(_uk, k, v, {"fonte": "sidebar_state"})
-                        else:
-                            set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
+                        set_fact(_uk, k, v if v else "", {"fonte": "sidebar_state" if v else "sidebar_state_clear"})
 
                     try:
                         set_fact(_uk, "state.horario", "", {"fonte": "sidebar_state_migrate"})
@@ -2321,10 +2376,7 @@ def main() -> None:
                         except Exception:
                             pass
 
-                    for k in (
-                        "local_cena_atual",
-                        "cena",
-                    ):
+                    for k in ("local_cena_atual", "cena"):
                         try:
                             delete_fact(_uk, k)
                         except Exception:
@@ -2358,18 +2410,18 @@ def main() -> None:
 
         current_surprise = int(_facts_surprise.get("mary.surprise_level", 0) or 0)
 
-        surprise_level = st.slider(
+        st.slider(
             "Nível de surpresa ativa da Mary",
             min_value=0,
             max_value=3,
             value=current_surprise,
             step=1,
-            help="""
-0 = Inerte (Mary não muda ritmo sozinha)
-1 = Leve (micro provocação ocasional)
-2 = Ativa (muda ritmo inesperadamente)
-3 = Dominante (vira a energia da cena)
-""",
+            help=(
+                "0 = Inerte (Mary não muda ritmo sozinha)\n"
+                "1 = Leve (micro provocação ocasional)\n"
+                "2 = Ativa (muda ritmo inesperadamente)\n"
+                "3 = Dominante (vira a energia da cena)"
+            ),
             key="sb_surprise_level",
         )
 
@@ -2384,11 +2436,9 @@ def main() -> None:
                         int(st.session_state.get("sb_surprise_level", 0)),
                         {"fonte": "sidebar_surprise"},
                     )
-
                     _invalidate_backend_cache()
                     _clear_mary_caches_all_related()
                     _kill_all_mary_services()
-
                     st.success("✅ surprise_level aplicado.")
                     st.rerun()
                 except Exception as e:
@@ -2404,10 +2454,12 @@ def main() -> None:
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related()
                 _kill_all_mary_services()
-
                 st.success("✅ surprise_level removido.")
                 st.rerun()
 
+        # ======================================================
+        # 🧬 Persona — Debug / Injeção
+        # ======================================================
         st.markdown("---")
         st.subheader("🧬 Persona — Debug / Injeção")
 
@@ -2432,12 +2484,12 @@ def main() -> None:
 
         tl = _timeline()
         fb_key = f"mary_ui_persona_fallback::{tl}"
-        st.checkbox(
-            "Fallback: injetar persona via UI no prompt (se service não injeta)",
-            key=fb_key,
-        )
-        st.caption("Dica: deixe ON até você confirmar que o service está montando messages com SYSTEM+BOOT.")
+        st.checkbox("Fallback: injetar persona via UI no prompt (se service não injeta)", key=fb_key)
+        st.caption("Dica: deixe ON até confirmar que o service injeta SYSTEM+BOOT.")
 
+        # ======================================================
+        # 🧬 Canon — Estado íntimo
+        # ======================================================
         st.markdown("---")
         st.subheader("🧬 Canon — Estado íntimo")
 
@@ -2448,14 +2500,12 @@ def main() -> None:
 
         try:
             facts_now = get_facts(uk_now) or {}
+            if not isinstance(facts_now, dict):
+                facts_now = {}
         except Exception:
             facts_now = {}
 
-        rel_now = (
-            facts_now.get(f"rel.state::{tl_now}")
-            if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict)
-            else {}
-        )
+        rel_now = facts_now.get(f"rel.state::{tl_now}") if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict) else {}
         is_consumado = bool(rel_now.get("consummated")) or (str(rel_now.get("virginity") or "") == "nao_virgem")
 
         label_btn = "✅ Virgem (marcar CONSUMADO)" if not is_consumado else "🔥 Consumado (manter)"
@@ -2469,13 +2519,8 @@ def main() -> None:
                         timeline=tl_now,
                         user_id=uid_now,
                     )
-
-                    # ✅ garante que GLOBAL e REL ficam alinhados imediatamente
                     try:
-                        res = _sync_virginity_global_timeline(
-                            usuario_key=uk_now,
-                            timeline=tl_now,
-                        )
+                        res = _sync_virginity_global_timeline(usuario_key=uk_now, timeline=tl_now)
                         st.session_state["mary_virginity_sync_last"] = res
                     except Exception:
                         pass
@@ -2487,17 +2532,17 @@ def main() -> None:
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
-
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
-
             except Exception as e:
                 st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
 
+        # ======================================================
+        # 🔁 Reset rápido
+        # ======================================================
         st.markdown("---")
         st.subheader("🔁 Reset rápido")
 
-        # ✅ Botão extra: SEMPRE reverte a UNIVERSITÁRIA para VIRGEM (facts/rel/intimacy)
         is_uni = (str(tl_now or "").strip().lower() == "universitaria")
 
         if st.button(
@@ -2509,7 +2554,6 @@ def main() -> None:
             try:
                 force_reset_virginity_universitaria(uk_now)
 
-                # limpa caches/serviços pra refletir na hora
                 st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
@@ -2521,15 +2565,14 @@ def main() -> None:
 
                 st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
                 st.rerun()
-
             except Exception as e:
-                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")              
-
-            except Exception as e:
-                st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
+                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")
 
         st.caption("Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga.")
 
+        # ======================================================
+        # 🔍 Debug
+        # ======================================================
         st.markdown("---")
         st.subheader("🔍 Debug")
         st.caption(
@@ -2543,6 +2586,9 @@ def main() -> None:
             key="mary_debug_rel_panel__ui",
         )
 
+        # ======================================================
+        # Turnos / Limpar
+        # ======================================================
         st.markdown("---")
         st.subheader("Turnos")
 
@@ -2562,6 +2608,9 @@ def main() -> None:
             st.session_state["chat_history"] = []
             st.rerun()
 
+        # ======================================================
+        # 🎭 Persona / Facts quick tools
+        # ======================================================
         st.markdown("---")
         st.subheader("🎭 Persona")
         st.caption("repositories.py ativo:")
