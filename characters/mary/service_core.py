@@ -4744,6 +4744,20 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
+        # ✅ GARANTIA: se o formato nested existir, espelha para o flat (anti phase=0 fantasma)
+        try:
+            intimacy0 = facts0.get("intimacy")
+            if isinstance(intimacy0, dict):
+                if "phase" in intimacy0 and "intimacy.phase" not in facts0:
+                    set_fact_safe(usuario_key, "intimacy.phase", int(intimacy0.get("phase") or 0), {"fonte": "intimacy_shape_fix"})
+                if timeline_final:
+                    ktl = f"phase::{timeline_final}"
+                    kflat = f"intimacy.phase::{timeline_final}"
+                    if ktl in intimacy0 and kflat not in facts0:
+                        set_fact_safe(usuario_key, kflat, int(intimacy0.get(ktl) or 0), {"fonte": "intimacy_shape_fix"})
+        except Exception:
+            pass
+
 
         # 4) Mudança explícita de local/tempo (comando do usuário)
         mudou, novo_local = _user_requested_location_change(prompt)
@@ -6639,71 +6653,102 @@ Direção:
     _INTIMACY_MAX = 5
 
     def _get_intimacy_phase(self, facts: Dict[str, Any]) -> int:
-        if not isinstance(facts, dict):
-            return 0
-
-        tl = getattr(self, "timeline", None) or getattr(self, "tl", None)
-        if not tl:
-            try:
-                tl = str(_ss_get("mary_timeline", "") or "").strip()
-            except Exception:
-                tl = ""
-
-        keys: List[str] = []
-        if tl:
-            keys += [
-                f"intimacy.phase::{tl}",
-                f"intimacy_phase::{tl}",
-                f"mary_intimacy_phase::{tl}",
-            ]
-
-        keys += [
-            "intimacy.phase",
-            "intimacy_phase",
-            "mary_intimacy_phase",
-            "phase_intimacy",
-            "phase",
-        ]
-
-        for k in keys:
-            if k in facts:
-                try:
-                    v = int(facts.get(k))
-                    if v < self._INTIMACY_MIN:
-                        return self._INTIMACY_MIN
-                    if v > self._INTIMACY_MAX:
-                        return self._INTIMACY_MAX
-                    return v
-                except Exception:
-                    pass
+    if not isinstance(facts, dict):
         return 0
 
-    def _set_intimacy_phase(self, usuario_key: str, phase: int, timeline: str = "") -> int:
+    # timeline efetiva (prioriza timeline do objeto / session_state)
+    tl = getattr(self, "timeline", None) or getattr(self, "tl", None)
+    if not tl:
         try:
-            p = int(phase)
+            tl = str(_ss_get("mary_timeline", "") or "").strip()
         except Exception:
-            p = 0
-    
-        maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
-        p = max(self._INTIMACY_MIN, min(p, maxp))
-    
-        # sempre grava global
-        set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
-    
-        # grava também na timeline específica se existir
-        tl = (timeline or "").strip()
-        if tl:
+            tl = ""
+
+    # ---------------------------------------------------------
+    # 1) ✅ LÊ PRIMEIRO do formato NESTED: facts["intimacy"]["phase"]
+    # ---------------------------------------------------------
+    try:
+        intimacy = facts.get("intimacy")
+        if isinstance(intimacy, dict):
+            if tl:
+                k_tl = f"phase::{tl}"
+                if k_tl in intimacy:
+                    v = int(intimacy.get(k_tl))
+                    return max(self._INTIMACY_MIN, min(v, self._INTIMACY_MAX))
+            if "phase" in intimacy:
+                v = int(intimacy.get("phase"))
+                return max(self._INTIMACY_MIN, min(v, self._INTIMACY_MAX))
+    except Exception:
+        pass
+
+    # ---------------------------------------------------------
+    # 2) (fallback) formato FLAT antigo: "intimacy.phase", etc.
+    # ---------------------------------------------------------
+    keys: List[str] = []
+    if tl:
+        keys += [
+            f"intimacy.phase::{tl}",
+            f"intimacy_phase::{tl}",
+            f"mary_intimacy_phase::{tl}",
+        ]
+
+    keys += [
+        "intimacy.phase",
+        "intimacy_phase",
+        "mary_intimacy_phase",
+        "phase_intimacy",
+        "phase",
+    ]
+
+    for k in keys:
+        if k in facts:
             try:
-                set_fact_safe(
-                    usuario_key,
-                    f"intimacy.phase::{tl}",
-                    p,
-                    {"fonte": "intimacy_progression"},
-                )
+                v = int(facts.get(k))
+                return max(self._INTIMACY_MIN, min(v, self._INTIMACY_MAX))
             except Exception:
                 pass
-    
-        return p
+
+    return 0
+    def _set_intimacy_phase(self, usuario_key: str, phase: int, timeline: str = "") -> int:
+    try:
+        p = int(phase)
+    except Exception:
+        p = 0
+
+    maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
+    p = max(self._INTIMACY_MIN, min(p, maxp))
+
+    tl = (timeline or "").strip()
+
+    # ---------------------------------------------------------
+    # ✅ 1) GRAVA SEMPRE no formato FLAT (compat)
+    # ---------------------------------------------------------
+    set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
+    if tl:
+        try:
+            set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_progression"})
+        except Exception:
+            pass
+
+    # ---------------------------------------------------------
+    # ✅ 2) GRAVA TAMBÉM no formato NESTED: facts["intimacy"]["phase"]
+    # ---------------------------------------------------------
+    try:
+        facts_now = cached_get_facts(usuario_key) or {}
+        intimacy = facts_now.get("intimacy")
+        if not isinstance(intimacy, dict):
+            intimacy = {}
+
+        intimacy["phase"] = p
+        if tl:
+            intimacy[f"phase::{tl}"] = p
+
+        set_fact_safe(usuario_key, "intimacy", intimacy, {"fonte": "intimacy_progression"})
+    except Exception:
+        pass
+
+    return p
+        
     def _chat(
         self,
         model: str,
