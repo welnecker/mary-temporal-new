@@ -6415,9 +6415,13 @@ Direção:
             except Exception:
                 pass
 
-        # ✅ Sem violações → aplica corte de finalização e retorna
+        # ✅ Sem violações → só corta finalização quando NÃO é permitido finalizar
         if not violations:
-            texto = _trim_scene_finalization(texto)
+            try:
+                if not _finalization_allowed(user_text or "", int(phase or 0)):
+                    texto = _trim_scene_finalization(texto)
+            except Exception:
+                pass
             return texto, used_model
         # ======================================================
         # ✅ Repair (1 passada)
@@ -6540,25 +6544,34 @@ Direção:
                     data_max, used_model_max, _ = self._chat(
                         used_model2,
                         force_messages_max,
-                        temperature=0.70,  
+                        temperature=0.70,
                         max_tokens=int(max_tokens),
-                        top_p=0.85,  # Conservador
+                        top_p=0.85,
                         extra=extra,
                     )
-                    
+                
                     texto_max = self._extract_text(data_max) if data_max is not None else ""
                     texto_max = (texto_max or "").strip()
-                    
+                
                     if texto_max and _RE_MARY_ORGASM_DECLARATION.search(texto_max):
-                        texto2 = _trim_scene_finalization(texto_max)
+                        texto2 = texto_max
+                        used_model2 = used_model_max or used_model2
                         logger.info("Força máxima bem-sucedida: verbalização detectada.")
                     else:
                         logger.warning("Força máxima falhou. Usando resposta anterior.")
-                        
+                
                 except Exception as e:
-                    logger.error(f"Erro na força máxima: {e}")        
-        texto2 = _trim_scene_finalization(texto2)
-        return texto2, used_model2
+                    logger.error(f"Erro na força máxima: {e}")
+                
+                # 🔒 Só corta finalização se NÃO for permitido finalizar
+                try:
+                    if not _finalization_allowed(user_text or "", int(phase or 0)):
+                        texto2 = _trim_scene_finalization(texto2)
+                except Exception:
+                    pass
+                
+                return texto2, used_model2
+
     @staticmethod
     def _fallback_text() -> str:
         return (
