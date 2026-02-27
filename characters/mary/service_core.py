@@ -6992,7 +6992,7 @@ Direção:
             except Exception:
                 pass
             return int(phase or 0)        
-   def _chat(
+    def _chat(
         self,
         model: str,
         messages: List[Dict[str, str]],
