@@ -492,12 +492,88 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
     - Nunca “decide” progressão aqui; só alinha chaves e canoniza aliases.
     """
     try:
-        tl = (timeline or "").strip().lower()
-        if not tl:
-            return facts
-        if not isinstance(facts, dict):
+        tl = (timeline or "").strip()
+        if not tl or not isinstance(facts, dict):
             return facts
 
+        # canon keys
+        tl_key = f"intimacy.phase::{tl}"
+        global_key = "intimacy.phase"
+
+        # legacy aliases (timeline e global)
+        tl_aliases = [
+            tl_key,
+            f"intimacy_phase::{tl}",
+            f"mary_intimacy_phase::{tl}",
+        ]
+        global_aliases = [
+            global_key,
+            "intimacy_phase",
+            "mary_intimacy_phase",
+            "phase_intimacy",
+            "phase",
+        ]
+
+        def _to_int(v: Any) -> Optional[int]:
+            try:
+                return int(v)
+            except Exception:
+                return None
+
+        # 1) pega tl_phase (prioriza timeline)
+        tl_phase = None
+        for k in tl_aliases:
+            if k in facts:
+                tl_phase = _to_int(facts.get(k))
+                break
+
+        # 2) pega global_phase
+        global_phase = None
+        for k in global_aliases:
+            if k in facts:
+                global_phase = _to_int(facts.get(k))
+                break
+
+        # 3) decide final (apenas sincronização)
+        # tl vence, exceto se tl==0 e global>0 (suspeito)
+        if tl_phase is not None:
+            if tl_phase == 0 and (global_phase is not None and global_phase > 0):
+                final_phase = global_phase
+            else:
+                final_phase = tl_phase
+        else:
+            final_phase = (global_phase if global_phase is not None else 0)
+
+        # clamp
+        try:
+            maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
+        except Exception:
+            maxp = 6
+        if final_phase < 0:
+            final_phase = 0
+        if final_phase > maxp:
+            final_phase = maxp
+
+        # 4) grava canon + aliases (facts + repo)
+        # global
+        if facts.get(global_key) != final_phase:
+            set_fact_safe(usuario_key, global_key, final_phase, {"fonte": "intimacy_sync"})
+            facts[global_key] = final_phase
+        for k in global_aliases:
+            if facts.get(k) != final_phase:
+                set_fact_safe(usuario_key, k, final_phase, {"fonte": "intimacy_sync"})
+                facts[k] = final_phase
+
+        # timeline
+        for k in tl_aliases:
+            if facts.get(k) != final_phase:
+                set_fact_safe(usuario_key, k, final_phase, {"fonte": "intimacy_sync"})
+                facts[k] = final_phase
+
+        return facts
+
+    except Exception:
+        return facts
 def _sync_intimacy_phase_keys(self, usuario_key: str, facts: Dict[str, Any], phase: Any, timeline: str = "") -> int:
     """
     Sincroniza phase em TODOS os formatos:
@@ -635,67 +711,7 @@ def _sync_intimacy_phase_keys(self, usuario_key: str, facts: Dict[str, Any], pha
         pass
 
     return resolved
-        # -----------------------------
-        # Leitura: timeline (com alias)
-        # -----------------------------
-        tl_val = None
-        tl_key_found = None
-        for k in tl_keys:
-            if k in facts:
-                tl_key_found = k
-                tl_val = _clamp(_to_int(facts.get(k) or 0))
-                break
-
-        # -----------------------------
-        # Leitura: global (com alias)
-        # -----------------------------
-        g_val = None
-        g_key_found = None
-        for k in global_keys:
-            if k in facts:
-                g_key_found = k
-                g_val = _clamp(_to_int(facts.get(k) or 0))
-                break
-
-        # -----------------------------
-        # Caso 1: Existe timeline
-        # -----------------------------
-        if tl_val is not None:
-            # ✅ Blindagem anti-reset:
-            # Se timeline veio 0 (muito comum em alias legado/ruim) e global já tem >0,
-            # preferimos manter o global (para não “zerar” a progressão).
-            if tl_val == 0 and (g_val is not None and g_val > 0):
-                tl_val = int(g_val)
-
-            # Canoniza timeline: garante chave canônica tl_key_canon
-            _set_if_needed(tl_key_canon, int(tl_val))
-
-            # Se o valor veio de alias (intimacy_phase::tl etc.), deixa facts coerente
-            # (não precisa apagar alias, só garantir a canônica)
-            # Canoniza global também
-            _set_if_needed(global_key_canon, int(tl_val))
-
-            # Se global estava só em alias, garantimos o canônico (sem depender do alias)
-            # (o _set_if_needed já faz isso)
-
-            return facts
-
-        # -----------------------------
-        # Caso 2: NÃO existe timeline -> cria a partir da global
-        # -----------------------------
-        base = _clamp(_to_int(g_val or 0))
-
-        # cria timeline canônica
-        _set_if_needed(tl_key_canon, int(base))
-
-        # garante global canônico também (mesmo que global estivesse ausente/alias)
-        _set_if_needed(global_key_canon, int(base))
-
-        return facts
-
-    except Exception:
-        return facts
-
+        
 def _build_spatial_context(local: str, tempo: str, acao: str, *, locked: bool) -> str:
     if not locked or not local or local == "—":
         return ""
