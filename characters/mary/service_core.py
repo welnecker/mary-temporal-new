@@ -6082,17 +6082,17 @@ Direção:
                 # Intimacy progression
                            
                 try:
-                    
+                   
                     current_facts = cached_get_facts(usuario_key)
-
-                try:
+               
                     current_facts = _sync_intimacy_phase_facts(
                         usuario_key,
                         current_facts,
                         timeline_final,
                     )
                 except Exception:
-                    pass
+                    # se algo falhar aqui, não derruba o app
+                    current_facts = cached_get_facts(usuario_key)
                 
                 current_phase = self._get_intimacy_phase(current_facts)
                 
