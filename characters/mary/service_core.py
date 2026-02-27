@@ -6961,91 +6961,102 @@ Direção:
 
         return p
 
-    def _update_phase_from_text(self, usuario_key: str, timeline: str, phase: int, user_text: str, final_text: str) -> int:
-    try:
-        next_phase = _compute_next_phase(
-            current_phase=int(phase or 0),
-            user_text=user_text,
-            texto=final_text,
-            engine_meta=None,
-        )
-        if next_phase != int(phase or 0):
-            self._set_intimacy_phase(usuario_key, next_phase, timeline)
+    def _update_phase_from_text(
+        self,
+        usuario_key: str,
+        timeline: str,
+        phase: int,
+        user_text: str,
+        final_text: str,
+    ) -> int:
+        try:
+            next_phase = _compute_next_phase(
+                current_phase=int(phase or 0),
+                user_text=user_text,
+                texto=final_text,
+                engine_meta=None,
+            )
+
+            if next_phase != int(phase or 0):
+                self._set_intimacy_phase(usuario_key, next_phase, timeline)
+                try:
+                    logger.info(f"[INTIMACY] Phase mudou {phase} → {next_phase}")
+                except Exception:
+                    pass
+
+            return next_phase
+
+        except Exception as e:
             try:
-                logger.info(f"[INTIMACY] Phase mudou {phase} → {next_phase}")
+                logger.exception("Erro ao evoluir phase: %s", e)
             except Exception:
                 pass
-        return next_phase
-    except Exception as e:
-        try:
-            logger.exception("Erro ao evoluir phase: %s", e)
-        except Exception:
-            pass
-        return int(phase or 0)
-        
+            return int(phase or 0)        
     def _chat(
-    self,
-    model: str,
-    messages: List[Dict[str, str]],
-    temperature: float,
-    max_tokens: int,
-    *,
-    top_p: float = 0.95,
-    extra: Optional[Dict[str, Any]] = None,
-) -> Tuple[Any, str, Any]:
-    payload: Dict[str, Any] = {
-        "messages": messages,
-        "temperature": float(temperature),
-        "top_p": float(top_p),
-        "max_tokens": int(max_tokens),
-    }
-
-    # tenta com extra (se houver)
-    if isinstance(extra, dict) and extra:
-        payload_with_extra = dict(payload)
-        payload_with_extra.update(extra)
-        try:
-            resp = service_router.route_chat_strict(model, payload_with_extra)
-            return _normalize_chat_return(resp, model)
-        except Exception:
-            # rejeitou extras -> cai para payload base
-            pass
-
-    # tenta payload base
-    try:
-        resp = service_router.route_chat_strict(model, payload)
-        return _normalize_chat_return(resp, model)
-    except Exception as e:
-        # NUNCA devolva None. Devolve 3-tuple com data=None
-        try:
-            logger.exception("Erro em _chat(): %s", e)
-        except Exception:
-            pass
-        return None, model, {"error": str(e)}
-
-def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
-    """
-    Mary NUNCA finaliza o usuário sem autorização clara.
-    Aceita variações comuns (PT-BR) e sinônimos.
-    """
-    if not user_text:
-        return False
-
-    ut = user_text.lower()
-
-    return bool(
-        re.search(
-            r"\b("
-            r"pode\s+(gozar|ejacular)|"
-            r"deixa\s+(eu\s+)?(gozar|ejacular)|"
-            r"quero\s+(gozar|ejacular)|"
-            r"me\s+faz\s+(gozar|ejacular)|"
-            r"me\s+fa[cç]a\s+(gozar|ejacular)|"
-            r"(eu\s+)?vou\s+(gozar|ejacular)|"
-            r"to\s+perto\s+de\s+(gozar|ejacular)|"
-            r"pode\s+me\s+levar\s+ao\s+cl[ií]max|"
-            r"me\s+leva\s+ao\s+cl[ií]max"
-            r")\b",
-            ut,
+        self,
+            model: str,
+            messages: List[Dict[str, str]],
+            temperature: float,
+            max_tokens: int,
+            *,
+            top_p: float = 0.95,
+            extra: Optional[Dict[str, Any]] = None,
+        ) -> Tuple[Any, str, Any]:
+    
+            payload: Dict[str, Any] = {
+                "messages": messages,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "max_tokens": int(max_tokens),
+            }
+    
+            # tenta com extra (se houver)
+            if isinstance(extra, dict) and extra:
+                payload_with_extra = dict(payload)
+                payload_with_extra.update(extra)
+                try:
+                    resp = service_router.route_chat_strict(model, payload_with_extra)
+                    return _normalize_chat_return(resp, model)
+                except Exception:
+                    # rejeitou extras -> cai para payload base
+                    pass
+    
+            # tenta payload base
+            try:
+                resp = service_router.route_chat_strict(model, payload)
+                return _normalize_chat_return(resp, model)
+            except Exception as e:
+                # NUNCA devolva None. Devolve 3-tuple com data=None
+                try:
+                    logger.exception("Erro em _chat(): %s", e)
+                except Exception:
+                    pass
+                return None, model, {"error": str(e)}
+    
+    
+    def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
+        """
+        Mary NUNCA finaliza o usuário sem autorização clara.
+        Aceita variações comuns (PT-BR) e sinônimos.
+        """
+        if not user_text:
+            return False
+    
+        ut = user_text.lower()
+    
+        return bool(
+            re.search(
+                r"\b("
+                r"pode\s+(gozar|ejacular)|"
+                r"deixa\s+(eu\s+)?(gozar|ejacular)|"
+                r"quero\s+(gozar|ejacular)|"
+                r"me\s+faz\s+(gozar|ejacular)|"
+                r"me\s+fa[cç]a\s+(gozar|ejacular)|"
+                r"(eu\s+)?vou\s+(gozar|ejacular)|"
+                r"to\s+perto\s+de\s+(gozar|ejacular)|"
+                r"pode\s+me\s+levar\s+ao\s+cl[ií]max|"
+                r"me\s+leva\s+ao\s+cl[ií]max"
+                r")\b",
+                ut,
+            )
         )
-    )
