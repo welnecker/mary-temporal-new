@@ -498,7 +498,7 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
         if not isinstance(facts, dict):
             return facts
 
-       def _sync_intimacy_phase_keys(self, usuario_key: str, facts: Dict[str, Any], phase: Any, timeline: str = "") -> int:
+def _sync_intimacy_phase_keys(self, usuario_key: str, facts: Dict[str, Any], phase: Any, timeline: str = "") -> int:
     """
     Sincroniza phase em TODOS os formatos:
     - FLAT canon: "intimacy.phase" e "intimacy.phase::{tl}"
