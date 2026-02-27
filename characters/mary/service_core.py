@@ -2485,9 +2485,60 @@ _RE_PHASE_BRAKE = re.compile(
     re.IGNORECASE,
 )
 
+# ==========================================================
+# ✅ ORGASMO DA MARY POR TURNOS (sensação dela, máx 4)
+# ==========================================================
+
+_RE_SEX_ACTIVE = re.compile(
+    r"\b("
+    r"boca\s+se\s+fecha|chupo|chupando|boquete|"
+    r"pau|p[eê]nis|rola|"
+    r"meter|metendo|penetr|"
+    r"bucet|vagin|cl[ií]tor|"
+    r"goz|orgasmo|cl[ií]max|"
+    r"trem(e|endo)|contra[ií]|espasm|"
+    r")\b",
+    re.IGNORECASE,
+)
+
+def _mary_sex_is_active(user_text: str, mary_text: str) -> bool:
+    """Heurística: sexo realmente em andamento (não só flerte)."""
+    t = (mary_text or "").strip()
+    u = (user_text or "").strip()
+    if not t and not u:
+        return False
+    blob = f"{u}\n{t}"
+    return bool(_RE_SEX_ACTIVE.search(blob))
+
+
+def _mary_orgasm_fact_keys(timeline: str) -> tuple[str, str]:
+    """
+    Guarda estado por timeline:
+    - orgasm.mary.active::<tl> : bool
+    - orgasm.mary.turns::<tl>  : int
+    """
+    tl = (timeline or "").strip() or "default"
+    return (f"orgasm.mary.active::{tl}", f"orgasm.mary.turns::{tl}")
+
+
+def _mary_phase_from_turns(turns: int) -> int:
+    """
+    Mapeia turnos -> fase da Mary.
+    Ajuste fino aqui se quiser.
+    1º turno de sexo: fase 2 (ato começou)
+    2º turno: fase 3 (limiar)
+    3º/4º: fase 4 (clímax)
+    """
+    t = max(0, int(turns or 0))
+    if t <= 0:
+        return 0
+    if t == 1:
+        return 2
+    if t == 2:
+        return 3
+    return 4
 def _user_requests_slowdown(user_text: str) -> bool:
     return bool(_RE_PHASE_BRAKE.search(_t_norm(user_text)))
-
 
 def _compute_next_phase(
     current_phase: int,
@@ -6194,13 +6245,41 @@ Direção:
                 current_phase = self._get_intimacy_phase(current_facts)
                 
                 if phase != 5:
-                    desired_next = _compute_next_phase(
-                        current_phase,
-                        prompt,
-                        texto,
-                        engine_meta=meta,
-                    )
-                
+                    sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
+
+                    k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
+                    mary_active = bool((current_facts or {}).get(k_active, False))
+                    mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
+                    
+                    if sex_active:
+                        if not mary_active:
+                            mary_turns = 0
+                    
+                        mary_turns = min(4, mary_turns + 1)
+                    
+                        target_phase = _mary_phase_from_turns(mary_turns)
+                    
+                        desired_next = max(current_phase, target_phase)
+                    
+                        try:
+                            set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
+                            set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
+                        except Exception:
+                            pass
+                    
+                    else:
+                        desired_next = _compute_next_phase(
+                            current_phase,
+                            prompt,
+                            texto,
+                            engine_meta=meta,
+                        )
+                    
+                        try:
+                            set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
+                            set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
+                        except Exception:
+                            pass                
                     if desired_next != current_phase:
                         # 🔒 grava global + timeline
                         self._set_intimacy_phase(
