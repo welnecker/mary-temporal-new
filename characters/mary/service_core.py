@@ -2497,68 +2497,128 @@ def _compute_next_phase(
     engine_meta: Any = None,
 ) -> int:
     """
-    Motor de fase v2 (robusto):
-    - Avança 1 fase por vez quando o nível sustenta (_should_advance_phase).
-    - Regride 1 fase quando o usuário pede desaceleração REAL (devagar/espera/abraço).
-    - Evita falso positivo de 'devagar' usado como intensificador sexual.
-    - Não cai abaixo de 0 nem acima de MAX_INTIMACY_PHASE.
+    Motor de fase v3 (AUTO-SUFICIENTE):
+    - NÃO depende de _should_advance_phase (que pode falhar e travar em 0).
+    - Avança no máximo 1 fase por turno, com gatilhos claros:
+        0 -> 1 : contato/começo de intimidade (beijo/toque/abraço etc.)
+        1 -> 2 : excitação corporal (gemidos, molhada, duro, tremor etc.)
+        2 -> 3 : pré-clímax (tô perto, não para, continua etc.)
+        3 -> 4 : clímax explícito (vou gozar / estou gozando / gozei / etc.)
+    - Regride 1 fase quando desaceleração é REAL (para/espera/pausa/abraço),
+      mas evita falso positivo de "devagar" como intensificador sexual.
+    - Não passa de MAX_INTIMACY_PHASE e não cai abaixo de 0.
     """
     try:
         p = int(current_phase or 0)
     except Exception:
         p = 0
-    p = max(0, min(int(MAX_INTIMACY_PHASE), p))
+
+    try:
+        maxp = int(MAX_INTIMACY_PHASE)
+    except Exception:
+        maxp = 5
+
+    p = max(0, min(maxp, p))
 
     ut = _t_norm(user_text or "")
     at = _t_norm(texto or "")
 
     # ----------------------------------------------------------
-    # 1) Desaceleração: prioridade, mas com blindagem anti falso positivo
+    # 1) Desaceleração REAL (prioridade)
     # ----------------------------------------------------------
     if _user_requests_slowdown(user_text or ""):
-        # ✅ Se o "devagar" é claramente intensificador (não recuo), NÃO regride
-        # exemplos: "devagar... assim... não para", "mais devagar e mais fundo", etc.
+        # "devagar" como intensificador NÃO regride
         if _slowdown_is_intensifier(ut, at, phase=p, engine_meta=engine_meta):
             return p
         return max(0, p - 1)
 
     # ----------------------------------------------------------
-    # 2) Avanço normal (1 fase por vez)
+    # 2) Gatilhos de avanço (no máximo +1 por turno)
+    #    Ordem IMPORTA: clímax > preclímax > excitação > contato
     # ----------------------------------------------------------
-    if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
-        return _cap_next_phase(p)
+
+    # ✅ CLÍMAX (pode “pular” para 4, mas SEMPRE respeita +1 por turno)
+    # Se você estava em 3 e aparece clímax => vai pra 4.
+    # Se você estava em 0/1/2 e aparece clímax => sobe só +1 (não teleporta a fase).
+    climax = bool(
+        re.search(r"\b(vou gozar|estou gozando|to gozando|gozei|me faz gozar|goza comigo)\b", ut)
+        or re.search(r"\b(vou gozar|estou gozando|to gozando|gozei|me faz gozar|goza comigo)\b", at)
+    )
+    if climax:
+        if p >= 3:
+            return min(maxp, 4)
+        return min(maxp, p + 1)
+
+    # ✅ PRÉ-CLÍMAX
+    preclimax = bool(
+        re.search(r"\b(to perto|tô perto|quase|nao para|não para|continua|mais forte|mais fundo)\b", ut)
+        or re.search(r"\b(to perto|tô perto|quase|nao para|não para|continua|mais forte|mais fundo)\b", at)
+    )
+    if preclimax:
+        if p >= 2:
+            return min(maxp, p + 1)  # 2->3 ou 3->4 (mas clímax é o ideal pra 4)
+        return min(maxp, p + 1)      # 0->1 ou 1->2 (sem teleporte)
+
+    # ✅ EXCITAÇÃO CORPORAL
+    arousal = bool(
+        re.search(r"\b(gemer|gemido|ofeg|respiracao|respiração|molhad|duro|tesao|tesão|calor|latej|tremer|tremor)\b", ut)
+        or re.search(r"\b(gemer|gemido|ofeg|respiracao|respiração|molhad|duro|tesao|tesão|calor|latej|tremer|tremor)\b", at)
+    )
+    if arousal:
+        if p >= 1:
+            return min(maxp, p + 1)  # 1->2 ou 2->3
+        return min(maxp, p + 1)      # 0->1
+
+    # ✅ CONTATO / INTIMIDADE INICIAL
+    contact = bool(
+        re.search(r"\b(beijo|beij|tocar|encostar|abrac|abraç|segurar|mao na|mão na|colar|puxo pra perto)\b", ut)
+        or re.search(r"\b(beijo|beij|tocar|encostar|abrac|abraç|segurar|mao na|mão na|colar|puxo pra perto)\b", at)
+    )
+    if contact:
+        return min(maxp, p + 1)
+
+    # ----------------------------------------------------------
+    # 3) Sinal opcional do engine (se você quiser usar)
+    # ----------------------------------------------------------
+    try:
+        if isinstance(engine_meta, dict):
+            # Ex.: engine sugeriu "forced_variation" de aumento de tensão
+            fv = str(engine_meta.get("forced_variation") or "").strip().lower()
+            if fv in ("prazer_corporal", "mudanca_ritmo") and p < maxp:
+                return min(maxp, p + 1)
+    except Exception:
+        pass
 
     return p
 
 
 def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any = None) -> bool:
     """
-    Detecta quando 'devagar'/'calma' está sendo usado como intensificador erótico
-    (manter/continuar) e não como pedido de recuo/pausa.
+    Detecta quando 'devagar'/'calma' é comando de RITMO (continuação),
+    e não pedido de PAUSA/RECUO.
     """
-    # Se já está alto (fase 3+), 'devagar' costuma ser direção de ritmo, não recuo.
-    # Ainda assim, se houver palavras de "para/espera/não", aí é recuo.
-    if re.search(r"\b(para|pare|espera|pausa|calma\s+a[ií]|segura|não\s+continua|não\s+vai)\b", ut):
+    # Se tem palavras de parada/pausa -> não é intensificador
+    if re.search(r"\b(para|pare|espera|pausa|calma ai|calma aí|segura|nao continua|não continua|para agora)\b", ut):
         return False
 
-    # Indicadores fortes de continuação/intensificação
-    if re.search(r"\b(não\s+para|continua|vai|assim|isso|mais|bem\s+assim|desse\s+jeito)\b", ut):
+    # Se tem continuação clara -> intensificador
+    if re.search(r"\b(não para|nao para|continua|assim|desse jeito|vai|mais|isso)\b", ut):
         return True
 
-    # Se o próprio texto da Mary descreve continuidade física intensa, tratar como ritmo, não recuo
-    if re.search(r"\b(ritmo|cadência|mais\s+devagar|diminuo\s+o\s+ritmo|acelero|pauso\s+e\s+volto)\b", at):
+    # Se a Mary descreve continuidade de ritmo -> intensificador
+    if re.search(r"\b(ritmo|cadencia|cadência|mais devagar|diminuo o ritmo|pauso e volto|volto mais forte)\b", at):
         return True
 
-    # Sinal meta do engine (se você quiser usar): forced_variation pode pedir mudança de ritmo
+    # Sinal meta do engine (opcional)
     try:
-        if isinstance(engine_meta, dict) and engine_meta.get("forced_variation") in ("mudanca_ritmo", "pacing"):
-            return True
+        if isinstance(engine_meta, dict):
+            fv = str(engine_meta.get("forced_variation") or "").strip().lower()
+            if fv in ("mudanca_ritmo", "pacing"):
+                return True
     except Exception:
         pass
 
-    # Heurística por fase:
-    # - fase 0/1: 'devagar' pode ser recuo real, então não forçamos intensificador
-    # - fase 2+: tende a ser comando de ritmo -> intensificador
+    # Heurística por fase: fase 2+ geralmente é direção de ritmo, não recuo
     return bool(phase >= 2)
 # ------------------------------------------------------------------
 # Normalização de texto (helper)
