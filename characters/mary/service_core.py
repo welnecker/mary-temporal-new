@@ -2416,6 +2416,11 @@ _RE_INTERNAL_STATE = re.compile(
     re.IGNORECASE,
 )
 
+_RE_USER_ACTION_CONTEXT_OK = re.compile(
+    r"(quando|enquanto|se|caso|depois\s+que|antes\s+que)[\s:,\-–—]*$",
+    re.IGNORECASE,
+)
+
 _RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
 
 # ✅ CORRETO: regex separado, no mesmo nível dos outros
