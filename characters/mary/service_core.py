@@ -6558,12 +6558,10 @@ Direção:
 
         # ✅ Se veio vazio, força erro para cair no try/except externo e entrar no plano seguinte
         if not texto:
-            try:
-                diag.violations = (diag.violations or []) + ["vazio"]
-            except Exception:
-                pass
+            # Se o provider retornou erro explícito, não tratar como vazio lógico
+            if data is None:
+                raise RuntimeError("Provider error during chat")
             raise RuntimeError("Model returned empty text")
-
         # ======================================================
         # ✅ Validações / violações (para repair)
         # ======================================================
@@ -7031,7 +7029,7 @@ Direção:
                 pass
     
             # NUNCA devolve None isolado
-            return None, model, {"error": str(e)}
+            raise e
     
     
     def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
