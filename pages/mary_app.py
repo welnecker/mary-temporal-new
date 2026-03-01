@@ -47,20 +47,24 @@ def _hard_reset_on_boot_if_needed() -> None:
 
         # ✅ evita ficar travado ao reabrir
         st.session_state.pop("mary_timeline_locked", None)
-        # também remove a seleção visual (será recalculada pela timeline)
+
+        # remove a seleção visual (será recalculada pela timeline)
         st.session_state.pop("persona_label", None)
 
         # limpa telemetria do modelo real (se existir)
         st.session_state.pop("mary_last_used_model", None)
         st.session_state.pop("mary_last_used_provider", None)
 
+        # marca novo boot
         st.session_state["mary_last_boot_timeline"] = current_tl
+
         # ✅ Shared key override NÃO pode atravessar timelines
         st.session_state.pop("shared_key_override", None)
         st.session_state.pop("__mem_list", None)
-        st.session_state.pop("shared_key_override", None)
-        st.session_state.pop("__longmem_list", None)st.session_state.pop("__longmem_list", None)
 
+        # limpa cache visual de long memory (UI)
+        st.session_state.pop("__longmem_list", None)
+        
 
 def _cleanup_broken_facts_schema_on_boot() -> None:
     """
