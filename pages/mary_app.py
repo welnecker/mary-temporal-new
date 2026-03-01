@@ -55,6 +55,9 @@ def _hard_reset_on_boot_if_needed() -> None:
         st.session_state.pop("mary_last_used_provider", None)
 
         st.session_state["mary_last_boot_timeline"] = current_tl
+        # ✅ Shared key override NÃO pode atravessar timelines
+        st.session_state.pop("shared_key_override", None)
+        st.session_state.pop("__mem_list", None)
 
 
 def _cleanup_broken_facts_schema_on_boot() -> None:
@@ -406,7 +409,8 @@ def _usuario_key_for_timeline(timeline: str) -> str:
 
 
 def _shared_key_atual() -> str:
-    return f"{_uid()}::mary::shared"
+    # ✅ Shared exclusivo por timeline
+    return f"{_uid()}::mary::{_timeline()}::shared"
 
 
 def _keys_para_mary() -> list[str]:
