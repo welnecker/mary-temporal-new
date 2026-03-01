@@ -2853,22 +2853,25 @@ def _detect_climax_signal(
 
     # thresholds (ajustados pra não dar falso positivo)
     if phase >= 4:
-        return score_total >= 1  # mais permissivo no pico
+        # exige pelo menos 2 sinais corporais OU user_boost
+        return score >= 2 or user_boost >= 1
     if phase >= 3:
         return score_total >= 3  # exige mais sinal antes do pico
     return False
 
 
 def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
-    """
-    Se foi marcada a violação 'mary_nao_verbalizou_orgasmo',
-    só libera se agora existe verbalização explícita.
-    """
     if "mary_nao_verbalizou_orgasmo" not in (violations or []):
         return True
 
-    return _has_mary_orgasm_declaration(text or "")
+    # aceita declaração explícita OU 3+ sinais corporais fortes
+    if _has_mary_orgasm_declaration(text):
+        return True
 
+    if _orgasm_signal_score(text) >= 3:
+        return True
+
+    return False
 # ==================================================================
 # 3️⃣ HELPER: Detecta se é APENAS orgasmo (sem ato explícito)
 # ==================================================================
@@ -3391,8 +3394,9 @@ def _detect_climax_signal(
     # Lógica por fase
     # -----------------------------
     if phase >= 4:
-        # fase alta exige sinal físico OU limiar forte
-        return bool(physical or threshold)
+        # exige pelo menos 2 evidências físicas
+        score = int(bool(physical)) + int(bool(threshold))
+        return score >= 2
 
     if phase >= 3:
         # fase média exige combinação
@@ -3411,6 +3415,10 @@ def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
     
     # Verifica se a resposta agora contém a verbalização
     if _RE_MARY_ORGASM_DECLARATION.search(text):
+        return True
+    
+    # aceita fechamento corporal forte
+    if _orgasm_signal_score(text) >= 3:
         return True
     
     # Se ainda não contém, retorna False (precisa regenerar)
@@ -3735,9 +3743,10 @@ def _violations(
 
         # ✅ Gate de fase: só vira "hard" (mary_nao_verbalizou_orgasmo) em fase 4+
         if climax_signal and int(phase or 0) >= 4:
-            if not _RE_MARY_ORGASM_DECLARATION.search(t):
-                if not re.search(r"\bgoz\w+", t, re.IGNORECASE):
+            if not _has_mary_orgasm_declaration(t):
+                if _orgasm_signal_score(t) < 3:
                     out.append("mary_nao_verbalizou_orgasmo")
+                    
         # ✅ Orgasmo precoce: só marca se ela VERBALIZOU orgasmo em fase < 4
         if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t):
             # se o usuário explicitamente pediu finalização/clímax, não marca precoce
@@ -6714,71 +6723,7 @@ Direção:
             texto = _trim_scene_finalization(texto)
             return texto, used_model
         
-        # ======================================================
-        # 🔥 LOOP DE REGENERAÇÃO PARA VIOLAÇÕES CRÍTICAS
-        # ======================================================
-        # Verifica se a violação crítica "mary_nao_verbalizou_orgasmo" foi corrigida
-        # Se não, tenta regenerar novamente com força explícita
         
-        # ✅ VALIDAÇÃO RIGOROSA: Se ainda não tem verbalização, força máxima
-        if "mary_nao_verbalizou_orgasmo" in violations and nsfw_on and phase >= 4:
-            if not _RE_MARY_ORGASM_DECLARATION.search(texto2):
-                logger.warning(
-                    f"Violação persiste após repair. Aplicando força máxima (tentativa 3/3)."
-                )
-                
-                # Prompt de força MÁXIMA (quase imperativo)
-                force_block_max = f"""
-        [🔥🔥 FORÇA MÁXIMA — VERBALIZAÇÃO OBRIGATÓRIA]
-        Mary está em clímax (fase {phase}). Ela DEVE dizer uma destas palavras:
-        - "Vou gozar"
-        - "Estou gozando"
-        - "Gozei"
-        - "Me faz gozar"
-        - "Goza comigo"
-        
-        Escolha UMA e integre no texto. Sem exceção. Sem eufemismo.
-        Exemplo: "Ahhh... vou gozar!"
-        
-        Isso não é sugestão. É obrigatório.
-        """.strip()
-                
-                # Montar mensagens com força máxima
-                force_messages_max: List[Dict[str, str]] = []
-                
-                try:
-                    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-                        force_messages_max.append(messages[0])
-                except Exception:
-                    pass
-                
-                force_messages_max.append({"role": "system", "content": force_block_max})
-                force_messages_max.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
-                force_messages_max.append({"role": "assistant", "content": texto2})
-                
-                try:
-                    data_max, used_model_max, _ = self._chat(
-                        used_model2,
-                        force_messages_max,
-                        temperature=0.70,  
-                        max_tokens=int(max_tokens),
-                        top_p=0.85,  # Conservador
-                        extra=extra,
-                    )
-                    
-                    texto_max = self._extract_text(data_max) if data_max is not None else ""
-                    texto_max = (texto_max or "").strip()
-                    
-                    if texto_max and _RE_MARY_ORGASM_DECLARATION.search(texto_max):
-                        texto2 = _trim_scene_finalization(texto_max)
-                        logger.info("Força máxima bem-sucedida: verbalização detectada.")
-                    else:
-                        logger.warning("Força máxima falhou. Usando resposta anterior.")
-                        
-                except Exception as e:
-                    logger.error(f"Erro na força máxima: {e}")        
-        texto2 = _trim_scene_finalization(texto2)
-        return texto2, used_model2
     @staticmethod
     def _fallback_text() -> str:
         return (
