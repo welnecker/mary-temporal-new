@@ -158,6 +158,10 @@ def _shared_memory_key() -> str:
     tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
     return _shared_key(uid, tl)
 
+def _long_key(user_id: str) -> str:
+    # ✅ Long memory global legado (mantém suas memórias atuais no Mongo)
+    return f"{user_id}::mary::shared"
+
 # ==========================================================
 # NSFW TOGGLE (fonte de verdade é core.nsfw)
 # ==========================================================
@@ -336,7 +340,7 @@ def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, 
         clear_user_cache(_user_key(user_id, tl))
 
 def append_long_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None) -> None:
-    append_long_memory(shared_key, text, meta=meta or {})
+    append_long_memory_safe(long_key, text, meta=meta)
     # invalida caches relacionados
     clear_mem_cache_for_shared(shared_key)
 
@@ -1082,7 +1086,7 @@ def _inject_long_memory_pins_always(
     Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando meta.kind veio "memory".
     """
     try:
-        rows = list_long_memory(shared_key, limit=400) or []
+        rows = list_long_memory(long_key, limit=400) or []
     except Exception:
         rows = []
 
@@ -1254,7 +1258,7 @@ def _inject_long_memory_textsearch(
     if not q:
         return
 
-    rows = search_long_memory_text(shared_key, q, limit=max(1, int(limit or 10))) or []
+    rows = search_long_memory_text(long_key, q, limit=10) or []
     if not rows:
         return
 
