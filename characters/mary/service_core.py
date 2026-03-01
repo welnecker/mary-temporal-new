@@ -142,8 +142,9 @@ def _normalize_timeline(timeline: Optional[str]) -> str:
 def _user_key(user_id: str, timeline: str) -> str:
     return f"{user_id}::mary::{timeline}"
 
-def _shared_key(user_id: str) -> str:
-    return f"{user_id}::mary::shared"
+def _shared_key(user_id: str, timeline: str) -> str:
+    tl = _normalize_timeline(timeline)
+    return f"{user_id}::mary::{tl}::shared"
 
 def _current_user_key() -> str:
     uid = _current_user_id_fallback()
@@ -153,7 +154,9 @@ def _current_user_key() -> str:
 
 def _shared_memory_key() -> str:
     uid = _current_user_id_fallback()
-    return _shared_key(uid)
+    tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
+    tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
+    return _shared_key(uid, tl)
 
 # ==========================================================
 # NSFW TOGGLE (fonte de verdade é core.nsfw)
@@ -291,12 +294,23 @@ def clear_mem_cache_for_shared(shared_key: str) -> None:
         if isinstance(k, str) and k.startswith(prefix):
             _ss_del(k)
 def clear_shared_memory_cache(user_id: str) -> None:
-    clear_mem_cache_for_shared(_shared_key(user_id))
-
+    # shared agora depende de timeline; usa a timeline atual do session_state
+    tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
+    tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
+    clear_mem_cache_for_shared(_shared_key(user_id, tl))
+    
 def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
     # limpa facts/history do usuário+timeline
     usuario_key = _user_key(_normalize_user_id(user_id), _normalize_timeline(timeline))
     clear_user_cache(usuario_key)
+
+    # limpa mem cache shared (agora por timeline)
+    clear_mem_cache_for_shared(_shared_key(_normalize_user_id(user_id), _normalize_timeline(timeline)))
+
+    # limpa flags de injeção de estilo (para reinjetar corretamente)
+    for k in _ss_keys():
+        if k.startswith(f"{_SS_PREFIX}nsfw_style_injected::"):
+            _ss_del(k)
 
     # limpa mem cache shared
     clear_mem_cache_for_shared(_shared_key(_normalize_user_id(user_id)))
@@ -2270,7 +2284,7 @@ def _sync_rel_state_with_facts_canon(
     Sincroniza REL com memória CANON (shared) de virgindade.
     Regra: se existir CANON virginity=nao_virgem, isso governa o REL (não regride).
     """
-    shared_key = _shared_key(user_id)
+    shared_key = _shared_key(user_id, timeline)
 
     try:
         mems = cached_list_memories(shared_key, limit=200)
@@ -4863,7 +4877,7 @@ class MaryService(BaseCharacter):
         )
 
         usuario_key = _user_key(user_id, timeline_final)
-        shared_key = _shared_key(user_id)
+        shared_key = _shared_key(user_id, timeline_final)
 
         diag = _Diag(
             ts=int(time.time()),
