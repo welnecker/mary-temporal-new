@@ -58,6 +58,8 @@ def _hard_reset_on_boot_if_needed() -> None:
         # ✅ Shared key override NÃO pode atravessar timelines
         st.session_state.pop("shared_key_override", None)
         st.session_state.pop("__mem_list", None)
+        st.session_state.pop("shared_key_override", None)
+        st.session_state.pop("__longmem_list", None)st.session_state.pop("__longmem_list", None)
 
 
 def _cleanup_broken_facts_schema_on_boot() -> None:
@@ -411,6 +413,12 @@ def _usuario_key_for_timeline(timeline: str) -> str:
 def _shared_key_atual() -> str:
     # ✅ Shared exclusivo por timeline
     return f"{_uid()}::mary::{_timeline()}::shared"
+
+def _long_key_atual() -> str:
+    # ✅ Long memory global (comum às duas MARYs)
+    # Mantendo o "usuario" LEGADO para não perder suas 50 memórias já gravadas:
+    # Janio Donisete::mary::shared
+    return f"{_uid()}::mary::shared"
 
 
 def _keys_para_mary() -> list[str]:
@@ -2656,6 +2664,7 @@ def main() -> None:
         # ======================================================
         st.markdown("---")
         st.subheader("🧠 Memórias permanentes (shared)")
+        st.session_state.setdefault("long_key_override", "")
 
         shared_default = _shared_key_atual()
 
@@ -2779,7 +2788,7 @@ def main() -> None:
         st.markdown("---")
         st.subheader("🗃️ Long Memory (DB) — Text Search")
 
-        lm_userkey = (st.session_state.get("shared_key_override") or _shared_key_atual()).strip() or _shared_key_atual()
+        lm_userkey = st.session_state.get("long_key_override") or f"{_uid()}::mary::shared"
 
         st.caption("Key usada na Long Memory:")
         st.code(lm_userkey)
