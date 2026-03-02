@@ -2864,7 +2864,6 @@ def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
     if "mary_nao_verbalizou_orgasmo" not in (violations or []):
         return True
 
-    # aceita declaração explícita OU 3+ sinais corporais fortes
     if _has_mary_orgasm_declaration(text):
         return True
 
@@ -3341,88 +3340,6 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     ctx = "\n".join(last_users + [prompt])
     return ctx
 
-
-# ==========================================================
-# ✅ DETECÇÃO DE CLÍMAX (heurística, não determinística)
-# ==========================================================
-
-def _detect_climax_signal(
-    texto: str,
-    user_text: str,
-    *,
-    nsfw_on: bool,
-    phase: int,
-) -> bool:
-    if not nsfw_on:
-        return False
-
-    t = _t_norm(texto or "")
-    u = _t_norm(user_text or "")
-
-    # Muito curto e fase baixa → ignora
-    if len(t) < 120 and phase < 3:
-        return False
-
-    # -----------------------------
-    # Sinais físicos reais
-    # -----------------------------
-    physical = re.search(
-        r"\b(espasmo|contra[cç][aã]o|trem(e|or|endo)|"
-        r"corpo\s+arque|perde\s+o\s+controle|"
-        r"onda\s+(forte|intensa)|explod\w+\s+no\s+corpo)\b",
-        t,
-    )
-
-    # -----------------------------
-    # Sinais de limiar (pré-clímax)
-    # -----------------------------
-    threshold = re.search(
-        r"\b(no\s+limite|t[oô]\s+no\s+limite|"
-        r"no\s+auge|t[oô]\s+no\s+auge)\b",
-        t,
-    )
-
-    # -----------------------------
-    # Comando explícito do usuário
-    # -----------------------------
-    user_push = False
-    if phase >= 3:
-        if re.search(r"\b(goza|gozou|gozar|cl[ií]max|finaliza|finalizar)\b", u):
-            user_push = True
-
-    # -----------------------------
-    # Lógica por fase
-    # -----------------------------
-    if phase >= 4:
-        # exige pelo menos 2 evidências físicas
-        score = int(bool(physical)) + int(bool(threshold))
-        return score >= 2
-
-    if phase >= 3:
-        # fase média exige combinação
-        score = int(bool(physical)) + int(bool(threshold)) + int(bool(user_push))
-        return score >= 2
-
-    return False
-    
-def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
-    """
-    Valida se Mary verbalizou o orgasmo quando a violação foi detectada.
-    Retorna True se a violação foi corrigida ou não estava presente.
-    """
-    if "mary_nao_verbalizou_orgasmo" not in violations:
-        return True
-    
-    # Verifica se a resposta agora contém a verbalização
-    if _RE_MARY_ORGASM_DECLARATION.search(text):
-        return True
-    
-    # aceita fechamento corporal forte
-    if _orgasm_signal_score(text) >= 3:
-        return True
-    
-    # Se ainda não contém, retorna False (precisa regenerar)
-    return False
 
 # ==========================================================
 # ✅ AUTORIZAÇÃO EXPLÍCITA — orgasmo do USUÁRIO
