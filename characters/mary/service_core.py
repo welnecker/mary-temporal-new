@@ -331,13 +331,26 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
     set_fact(usuario_key, key, value, meta or {})
     clear_user_cache(usuario_key)
 
-def append_memory_safe(shared_key: str, text: str, meta: Optional[dict] = None, *, user_id: Optional[str] = None) -> None:
+
+def append_memory_safe(
+    shared_key: str,
+    text: str,
+    meta: Optional[dict] = None,
+    *,
+    user_id: Optional[str] = None,
+) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
+
     if user_id:
-        tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
+        tl_raw = (
+            _ss_get(f"{_SS_PREFIX}timeline")
+            or _ss_get("mary_timeline")
+            or "cumplice"
+        )
         tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
         clear_user_cache(_user_key(user_id, tl))
+
 
 def append_long_memory_safe(
     shared_key: str,
@@ -351,34 +364,26 @@ def append_long_memory_safe(
     - Long memory é GLOBAL por usuário: {user_id}::mary::shared
     - Não deve recursar e não depende de 'long_key' externo.
     """
-    uid = _normalize_user_id(user_id) if user_id else _current_user_id_fallback()
+    uid = (
+        _normalize_user_id(user_id)
+        if user_id
+        else _current_user_id_fallback()
+    )
+
     lk = _long_key(uid)  # -> f"{user_id}::mary::shared"
 
     append_long_memory(lk, (text or "").strip(), meta=meta or {})
     # Long memory não usa o cache de shared_key (mem::...), então não limpamos aqui.
-    # Se você tiver cache específico de longmem em session_state, limpe aqui.def append_long_memory_safe(
-    shared_key: str,
-    text: str,
-    meta: Optional[dict] = None,
-    *,
-    user_id: Optional[str] = None,
+
+
+def save_interaction_safe(
+    usuario_key: str,
+    prompt: str,
+    texto: str,
+    model_used: str,
 ) -> None:
-    """
-    Wrapper segura para gravar na Long Memory (Mongo).
-    - Long memory é GLOBAL por usuário: {user_id}::mary::shared
-    - Não deve recursar e não depende de 'long_key' externo.
-    """
-    uid = _normalize_user_id(user_id) if user_id else _current_user_id_fallback()
-    lk = _long_key(uid)  # -> f"{user_id}::mary::shared"
-
-    append_long_memory(lk, (text or "").strip(), meta=meta or {})
-    # Long memory não usa o cache de shared_key (mem::...), então não limpamos aqui.
-    # Se você tiver cache específico de longmem em session_state, limpe aqui.
-
-def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
     save_interaction(usuario_key, prompt, texto, model_used)
     clear_user_cache(usuario_key)
-
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
