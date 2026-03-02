@@ -331,7 +331,6 @@ def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] =
     set_fact(usuario_key, key, value, meta or {})
     clear_user_cache(usuario_key)
 
-
 def append_memory_safe(
     shared_key: str,
     text: str,
@@ -341,16 +340,10 @@ def append_memory_safe(
 ) -> None:
     append_memory(shared_key, text, meta=meta or {})
     clear_mem_cache_for_shared(shared_key)
-
     if user_id:
-        tl_raw = (
-            _ss_get(f"{_SS_PREFIX}timeline")
-            or _ss_get("mary_timeline")
-            or "cumplice"
-        )
+        tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
         tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
         clear_user_cache(_user_key(user_id, tl))
-
 
 def append_long_memory_safe(
     shared_key: str,
@@ -364,26 +357,17 @@ def append_long_memory_safe(
     - Long memory é GLOBAL por usuário: {user_id}::mary::shared
     - Não deve recursar e não depende de 'long_key' externo.
     """
-    uid = (
-        _normalize_user_id(user_id)
-        if user_id
-        else _current_user_id_fallback()
-    )
-
+    uid = _normalize_user_id(user_id) if user_id else _current_user_id_fallback()
     lk = _long_key(uid)  # -> f"{user_id}::mary::shared"
-
     append_long_memory(lk, (text or "").strip(), meta=meta or {})
     # Long memory não usa o cache de shared_key (mem::...), então não limpamos aqui.
+    # Se você tiver cache específico de longmem em session_state, limpe aqui.
 
-
-def save_interaction_safe(
-    usuario_key: str,
-    prompt: str,
-    texto: str,
-    model_used: str,
-) -> None:
+def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
     save_interaction(usuario_key, prompt, texto, model_used)
     clear_user_cache(usuario_key)
+
+
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
@@ -3669,32 +3653,6 @@ def _violations(
         out.append("nsfw_off_explicito")
 
     # ----------------------------------------------------------
-    # NSFW ON: orgasmo da Mary deve ser verbalizado quando há sinal de clímax (somente fase >= 4)
-    # ----------------------------------------------------------
-    if nsfw_on:
-        try:
-            climax_signal = _detect_climax_signal(
-                t,
-                user_text or "",
-                nsfw_on=True,
-                phase=int(phase or 0),
-            )
-        except Exception:
-            climax_signal = False
-
-        # ✅ Gate de fase: só vira "hard" (mary_nao_verbalizou_orgasmo) em fase 4+
-        if climax_signal and int(phase or 0) >= 4:
-            if not _has_mary_orgasm_declaration(t):
-                if _orgasm_signal_score(t) < 3:
-                    out.append("mary_nao_verbalizou_orgasmo")
-                    
-        # ✅ Orgasmo precoce: só marca se ela VERBALIZOU orgasmo em fase < 4
-        if int(phase or 0) < 4 and _RE_MARY_ORGASM_DECLARATION.search(t):
-            # se o usuário explicitamente pediu finalização/clímax, não marca precoce
-            if not _RE_SCENE_FINALIZATION.search(u_lower):
-                out.append("orgasmo_precoce")
-
-    # ----------------------------------------------------------
     # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
     # (evita falso positivo quando Mary fala do PRÓPRIO orgasmo)
     # ----------------------------------------------------------
@@ -3741,12 +3699,11 @@ CRITICAL_VIOLATIONS = {
 # 🟠 ALTAS (rejeitam condicionalmente)
 # ========================================================
 HIGH_TIER_VIOLATIONS = {
-    "offscreen_msg_inventada",
-    "conflito_extremo",
-    "finalizou_cena",
+    "explicit_sex_when_nsfw_off",
+    "violence",
+    "hate",
+    # mantém consent/safety do usuário (se existir no seu script):
     "mary_finalizou_orgasmo_do_usuario",
-    "orgasmo_precoce",
-    "mary_nao_verbalizou_orgasmo",
 }
 
 # ========================================================
@@ -4121,31 +4078,7 @@ def _repair_instruction(violations: List[str]) -> str:
             "Cada parágrafo: 1 ação concreta + 1 sensação + 1 consequência física/emocional."
         )
 
-    # =========================
-    # 🔥 ORGASMO (CRÍTICO QUANDO ATIVO)
-    # =========================
-
-    if "mary_nao_verbalizou_orgasmo" in violations:
-        bullets.append(
-            "🔥🔥🔥 OBRIGATÓRIO CRÍTICO: Mary DEVE verbalizar EXPLICITAMENTE seu orgasmo. "
-            "NÃO é opcional. NÃO use eufemismo. "
-            "Use UMA destas: 'Vou gozar', 'Estou gozando', 'Gozei', 'Me faz gozar', 'Goza comigo'. "
-            "Integre naturalmente: '(Ahhh... Janio... vou gozar!)' ou 'Estou gozando... não para!' "
-            "Sem poesia. Direto e adulto. ÚLTIMA CHANCE."
-        )
-
-    if "orgasmo_precoce" in violations:
-        bullets.append(
-            "🟡 Mary não pode atingir clímax antes da fase 4. "
-            "Mantenha tensão e intensidade corporal SEM verbalizar finalização."
-        )
-
-    if "intensidade_orgasmo_baixa" in violations:
-        bullets.append(
-            "🔥 Clímax exige intensidade corporal clara: tremor, contração, respiração falhando, perda de controle físico. "
-            "Corpo inteiro envolvido."
-        )
-
+   
     # =========================
     # 🔥 PROVOCAÇÃO (QUANDO APROPRIADO)
     # =========================
