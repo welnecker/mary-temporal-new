@@ -3005,44 +3005,68 @@ def _low_sensory_density(texto: str) -> bool:
     if not t:
         return True
     hits = len(_RE_SENSORY_SAFE.findall(t))
-    # muito curto não pode ser penalizado demais
     if len(t) < 160:
         return hits == 0
     return hits < 2
 
+
 # ----------------------------------------------------------
-# Progressão íntima (substitui _RE_ESCALATE_0..4)
+# 🔥 NOVA PROGRESSÃO ÍNTIMA REAL (tensão crescente)
 # ----------------------------------------------------------
-# Níveis (heurística leve, robusta):
-# 0: contato/primeiro flerte (beijo/abraço/toque leve)
-# 1: erotização (pele/roupa/entre as pernas)
-# 2: tensão/controle/ritmo (mais forte, devagar, provoca)
-# 3: clímax (gozar/orgasmo)
-_LEVEL0 = re.compile(r"\b(beijo|abrac|abra[cç]o|encost|aproxim|danc|cintura|sussurr|cola)\b", re.I)
-_LEVEL1 = re.compile(r"\b(pele|roupa|calcinh|sutia|mamilo|lingua|boca|pescoc|entre\s+as\s+pernas)\b", re.I)
-_LEVEL2 = re.compile(r"\b(devagar|para|controle|provoc|mais\s+forte|mais\s+rapido|ritmo|quadril|nao\s+aguento|preciso\s+agora)\b", re.I)
-_LEVEL3 = re.compile(r"\b(vou\s+gozar|to\s+goz(ando)?|estou\s+goz(ando)?|gozei|orgasmo|climax)\b", re.I)
+
+_RE_AROUSAL = re.compile(
+    r"\b(pau duro|duro na|calcinha molhada|molhada|mamilos? endurecid|abrindo o ziper|tirando a roupa|entre as pernas)\b",
+    re.I
+)
+
+_RE_ACTIVE_SEX = re.compile(
+    r"\b(vai e vem|rebola|aperta|masturb|esfrega|ritmo|geme|ofega|quadril)\b",
+    re.I
+)
+
+_RE_PRE_CLIMAX = re.compile(
+    r"\b(quase|t[oô] no limite|n[aã]o aguento|vai me fazer|perdendo o controle|arqueio|espasmo|contra[cç][aã]o)\b",
+    re.I
+)
+
+_RE_CLIMAX_BODY = re.compile(
+    r"\b(explode|onda intensa|corpo trava|treme inteiro|desaba|espasmos fortes)\b",
+    re.I
+)
+
 
 def _intimacy_level(user_text: str, texto: str) -> int:
     s = _t_norm((user_text or "") + "\n" + (texto or ""))
     if not s:
         return 0
-    if _LEVEL3.search(s):
+
+    if _RE_CLIMAX_BODY.search(s):
+        return 4
+
+    if _RE_PRE_CLIMAX.search(s):
         return 3
-    if _LEVEL2.search(s):
+
+    if _RE_ACTIVE_SEX.search(s):
         return 2
-    if _LEVEL1.search(s):
+
+    if _RE_AROUSAL.search(s):
         return 1
-    if _LEVEL0.search(s):
-        return 0
+
     return 0
+
 
 def _user_explicitly_allows_climax(user_text: str) -> bool:
     ut = _t_norm(user_text)
     if not ut:
         return False
-    # autorização explícita do usuário (não precisa palavra exata; aqui é geral)
-    return bool(re.search(r"\b(pode|deixa|quero)\b.{0,20}\b(gozar|climax|orgasmo)\b", ut))
+
+    return bool(
+        re.search(
+            r"\b(pode|deixa|quero)\b.{0,20}\b(gozar|climax|orgasmo)\b",
+            ut,
+        )
+    )
+
 
 def _cap_next_phase(current_phase: int) -> int:
     try:
@@ -3050,6 +3074,7 @@ def _cap_next_phase(current_phase: int) -> int:
     except Exception:
         p = 0
     return max(0, min(MAX_INTIMACY_PHASE, p + 1))
+
 
 def _should_advance_phase(
     current_phase: int,
@@ -3060,13 +3085,13 @@ def _should_advance_phase(
     **_kw: Any,
 ) -> bool:
     """
-    Progressão natural e humana:
+    Nova progressão real:
 
-    0 → 1 : qualquer contato
-    1 → 2 : erotização clara
-    2 → 3 : tensão consistente / ritmo estabelecido
-    3 → 4 : nível 3 detectado (clímax iminente)
-    4 → 5 : sinal de desaceleração / exaustão / transição
+    0 → 1 : excitação física visível
+    1 → 2 : ação sexual ativa
+    2 → 3 : pré-clímax / perda de controle
+    3 → 4 : corpo em clímax físico
+    4 → 5 : desaceleração / aftercare
     """
 
     try:
@@ -3076,28 +3101,22 @@ def _should_advance_phase(
 
     lvl = _intimacy_level(user_text, texto)
 
-    # 0 → 1
     if p <= 0:
         return lvl >= 1
 
-    # 1 → 2
     if p == 1:
         return lvl >= 2
 
-    # 2 → 3 (limiar)
     if p == 2:
-        return lvl >= 2
-
-    # 3 → 4 (clímax)
-    if p == 3:
         return lvl >= 3
 
-    # 4 → 5 (aftercare natural)
+    if p == 3:
+        return lvl >= 4
+
     if p == 4:
         return _user_signals_aftercare(user_text)
 
     return False
-    
 # ==========================================================
 # DESVIO CURTO (fidelidade soft) — helpers
 # ==========================================================
