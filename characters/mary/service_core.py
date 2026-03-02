@@ -2998,7 +2998,7 @@ def _user_is_intense(user_text: str) -> bool:
 _RE_SENSORY_SAFE = re.compile(
     r"\b(respir|pele|calor|arrep|trem|ofeg|batimento|pulso|cheiro|toque|pressao|umid|textura|ritmo)\b",
     re.IGNORECASE,
-
+)
 
 def _low_sensory_density(texto: str) -> bool:
     t = _t_norm(texto)
