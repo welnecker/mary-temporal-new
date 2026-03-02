@@ -3447,6 +3447,36 @@ def _third_party_deviation(text: str) -> bool:
         return True
 
     return False
+
+# ==========================================================
+# CLIMAX VERBALIZATION (SOFT HINT — SEM VIOLAÇÃO)
+# ==========================================================
+
+def _should_suggest_climax_verbalization(texto: str, phase: int) -> bool:
+    """
+    Não gera violação.
+    Apenas detecta se está no pico e ainda não houve declaração explícita.
+    """
+    if int(phase or 0) < 4:
+        return False
+
+    t = (texto or "").lower()
+
+    # já verbalizou?
+    if "goz" in t or "orgasmo" in t:
+        return False
+
+    # está claramente em pico físico?
+    peak_signals = (
+        "espasmo",
+        "treme",
+        "explode",
+        "onda intensa",
+        "convuls",
+        "perdendo o controle",
+    )
+
+    return any(s in t for s in peak_signals)
 # ==========================================================
 # TERCEIROS — CLASSIFICAÇÃO DE LOCAIS
 # ==========================================================
@@ -3674,10 +3704,7 @@ def _violations(
         )
     )
 
-    if user_orgasm_claim:
-        if not _user_explicitly_allows_user_orgasm(user_text):
-            out.append("mary_finalizou_orgasmo_do_usuario")
-
+    
     return out
 
 
@@ -3702,8 +3729,7 @@ HIGH_TIER_VIOLATIONS = {
     "explicit_sex_when_nsfw_off",
     "violence",
     "hate",
-    # mantém consent/safety do usuário (se existir no seu script):
-    "mary_finalizou_orgasmo_do_usuario",
+    
 }
 
 # ========================================================
@@ -3779,19 +3805,7 @@ def _should_reject_response(
                 return True
             continue
 
-        if v == "orgasmo_precoce":
-            # só faz sentido rejeitar se ainda não está na fase de clímax
-            if int(phase or 0) < 4:
-                return True
-            continue
-
-        # as demais altas: rejeita sempre (segurança/consentimento)
-        if v in (
-            "offscreen_msg_inventada",
-            "conflito_extremo",
-            "mary_finalizou_orgasmo_do_usuario",
-            "mary_nao_verbalizou_orgasmo",
-        ):
+              
             return True
 
     # 3) suaves: loga e segue
@@ -3863,7 +3877,6 @@ def _repair_fewshot_example(violations: List[str]) -> str:
         "placeholder_reveal",
         "autoria_usuario",
         "finalizou_cena",
-        "mary_nao_verbalizou_orgasmo",
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
         "terceiro_local_perigoso",
