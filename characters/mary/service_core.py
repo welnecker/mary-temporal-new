@@ -4547,35 +4547,34 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
 
 
 def _tp_arc_event(prompt: str, texto: str) -> str:
-    """Heurística leve: detecta se o turno envolve 'teste com terceiros' ou 'retorno'.
-
-    Importante:
-    - NÃO usa apenas 'janio' como gatilho de retorno (isso travava a progressão).
-    - 'return' só quando há intenção explícita de voltar/encerrar o terceiro.
-    """
     p = (prompt or "").lower()
     t = (texto or "").lower()
 
-    # retorno/âncora (intenção explícita)
     ret_kw = (
         "voltar", "de volta", "indo embora", "ir embora", "chegar em casa",
         "vou embora", "vamos embora", "acabou", "encerrar", "parar com isso",
         "desisto", "não quero mais", "quero você", "eu escolho você",
     )
-    if any(k in p for k in ret_kw) or any(k in t for k in ret_kw):
-        return "return"
 
-    # teste com terceiros (sinais de flerte/ato com outro)
     third_kw = (
         "nome falso", "me chama de", "cantada", "convite", "beijo", "beijou",
         "dança", "dançar", "me pega", "me tocou", "encosta", "mãos dele",
         "ele me", "aquele cara", "outro cara", "barman", "garçom", "segurança",
     )
-    if any(k in p for k in third_kw) or any(k in t for k in third_kw):
+
+    # ✅ 1) “test” tem prioridade (se aparecer no prompt do usuário)
+    if any(k in p for k in third_kw):
+        return "test"
+
+    # ✅ 2) “return” só por intenção explícita do usuário (NÃO pelo texto da Mary)
+    if any(k in p for k in ret_kw):
+        return "return"
+
+    # (opcional) ainda permitir “test” por evidência no texto da Mary
+    if any(k in t for k in third_kw):
         return "test"
 
     return "none"
-
 def _update_tp_arc_for_turn(
     usuario_key: str,
     timeline: str,
@@ -5044,11 +5043,8 @@ class MaryService(BaseCharacter):
 
         # ==========================================================
         # 🔒 ARCO TERCEIROS (ATIVO): atualiza anchor/tension/guilt/phase
-        # Regra fixa:
-        # - NSFW OFF  -> anchor=backup (0.85)
-        # - NSFW ON   -> anchor=0.50
-        # - Terceiros ON -> anchor=0.20
         # ==========================================================
+        tp_arc: Dict[str, Any] = {}
         try:
             tp_arc = _update_tp_arc_for_turn(
                 usuario_key=usuario_key,
@@ -5058,10 +5054,13 @@ class MaryService(BaseCharacter):
                 nsfw_on=bool(nsfw_on),
                 allow_third_party_seduction=bool(allow_third_party_seduction_final),
             )
-            # (opcional) se você tem diag, dá pra logar:
-            diag.tp_arc = tp_arc  # se o seu _Diag tiver esse campo; se não tiver, apague esta linha
+        
+            # ✅ BUGFIX: recarrega facts após set_fact_safe() do arc,
+            # para todo o resto do pipeline enxergar o arc atualizado.
+            facts = cached_get_facts(usuario_key)
+        
         except Exception:
-            pass
+            tp_arc = {}
 
         # ==========================================================
         # 🔧 BLOCO DO ARCO (para o SYSTEM PROMPT)
@@ -5418,10 +5417,12 @@ class MaryService(BaseCharacter):
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
         if allow_third_party_seduction_final and nsfw_on:
-
-            # Arco persistente (gradiente + âncora)
-            tp_arc = _get_tp_arc_state(cached_get_facts(usuario_key) or {}, timeline_final)
-
+        
+            # ✅ BUGFIX: usar o tp_arc já atualizado neste turno.
+            # Fallback: se por algum motivo tp_arc vier vazio, recarrega do facts atual.
+            if not isinstance(tp_arc, dict) or not tp_arc:
+                facts_arc_now = cached_get_facts(usuario_key) or {}
+                tp_arc = _get_tp_arc_state(facts_arc_now, timeline_final) or {}
             # ✅ Consciência de virgindade (SEM travar; só muda o "jeito" de ceder)
             third_party_virgin_awareness = ""
             if is_virgin_in_this_timeline:
