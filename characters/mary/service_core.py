@@ -4576,16 +4576,19 @@ def _tp_arc_event(prompt: str, texto: str) -> str:
 
     return "none"
 
-
-
 def _update_tp_arc_for_turn(
     usuario_key: str,
     timeline: str,
-    user_text: str,
-    mary_text: str,
+    user_text: str = "",
+    mary_text: str = "",
     *,
-    nsfw_on: bool,
-    allow_third_party_seduction: bool,
+    nsfw_on: bool = False,
+    allow_third_party_seduction: bool = False,
+    # Compat com chamada antiga (service_core já usa esses nomes em alguns pontos)
+    facts: Optional[Dict[str, Any]] = None,
+    prompt: Optional[str] = None,
+    texto: Optional[str] = None,
+    **_: Any,
 ) -> Dict[str, Any]:
     """
     Atualiza o ARC de terceiros (tension/guilt/anchor) por turno.
@@ -4594,10 +4597,26 @@ def _update_tp_arc_for_turn(
     - NSFW OFF  -> anchor volta pro backup (0.85 por padrão)
     - NSFW ON   -> anchor = 0.50
     - Terceiros ON (allow_third_party_seduction) -> anchor = 0.20
+
+    Compatibilidade:
+    - Aceita chamada "antiga" que passa facts/prompt/texto.
+    - Aceita chamada "nova" user_text/mary_text + flags.
     """
 
-    # ✅ BUGFIX: aqui NÃO existe _load_tp_arc_state. O correto é carregar dos facts.
-    facts_now = cached_get_facts(usuario_key) or {}
+    # -----------------------------
+    # Compat: nomes antigos -> novos
+    # -----------------------------
+    if prompt is not None and not user_text:
+        user_text = prompt or ""
+    if texto is not None and not mary_text:
+        mary_text = texto or ""
+
+    # ✅ BUGFIX: carregar arc SEMPRE dos facts (e não de usuario_key)
+    if facts is None:
+        facts_now = cached_get_facts(usuario_key) or {}
+    else:
+        facts_now = facts or {}
+
     arc = _get_tp_arc_state(facts_now, timeline) or {}
 
     # defaults
@@ -4617,7 +4636,7 @@ def _update_tp_arc_for_turn(
     backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
 
     # -----------------------------
-    # 1) Determina âncora FIXA
+    # 1) Determina ÂNCORA FIXA
     # -----------------------------
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
 
@@ -4658,6 +4677,7 @@ def _update_tp_arc_for_turn(
         test_gain = 0.24
         guilt_gain = 0.12
     else:
+        # anchor 0.20 (terceiros ON) => muito mais livre
         max_phase_allowed = 5
         test_gain = 0.28
         guilt_gain = 0.08
@@ -4690,26 +4710,28 @@ def _update_tp_arc_for_turn(
     return arc
     
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
-    """Gera instruções do arco (gradiente + âncora)."""
+    """Gera instruções do arco (gradiente + âncora) com efeitos narrativos claros."""
     try:
         phase = int(arc.get("phase") or 0)
     except Exception:
         phase = 0
+
     tension = _clamp01(arc.get("tension", 0.0))
     guilt = _clamp01(arc.get("guilt", 0.0))
     anchor = _clamp01(arc.get("anchor", 0.85))
     tl = (timeline or "").strip().lower() or "cumplice"
 
-    # gradiente: quanto maior a tensão, mais volátil e impulsiva ela pode ficar
-    vol = "baixa"
+    # volatilidade por tensão
     if tension >= 0.80:
         vol = "altíssima"
     elif tension >= 0.55:
         vol = "alta"
     elif tension >= 0.35:
         vol = "média"
+    else:
+        vol = "baixa"
 
-    # fase -> comportamento
+    # fase -> comportamento macro
     if phase <= 0:
         phase_txt = "0) estabilidade (flertes leves podem existir, mas com autocontrole)"
     elif phase == 1:
@@ -4721,16 +4743,69 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     else:
         phase_txt = "4) retorno/reconstrução (Mary volta para Janio e reancora)"
 
+    # ==========================================================
+    # ✅ NOVO: efeitos narrativos conforme ANCHOR
+    # ==========================================================
+    if anchor >= 0.75:
+        anchor_mode = "REANCORADA (Janio no centro)"
+        behavior = """
+- Mary deve manter foco em Janio.
+- Terceiros: só provocações CONTROLADAS; corta rápido se avançar.
+- Se houver terceiro: Mary sente incômodo/irritação e reafirma limites.
+- Tom: firme, possessivo, ciúme leve a moderado; retorno rápido.
+""".strip()
+        hard_limits = """
+- PROIBIDO: aceitar fuga/isolamento com terceiro.
+- PROIBIDO: sexo com terceiro.
+- PERMITIDO: provocar verbalmente/olhares, mas sempre com autocontrole e recuo.
+""".strip()
+
+    elif anchor >= 0.45:
+        anchor_mode = "AQUECIDA (NSFW ON, mas Janio-first)"
+        behavior = """
+- Mary está mais quente, mais ousada e mais física com Janio.
+- Terceiros: podem existir como tempero (provocação), mas SEM cruzar linha real.
+- Se surgir terceiro: Mary pode usar como provocação/ciúme, mas volta para Janio.
+- Tom: safado, direto, adulto; com pequenas pontadas de culpa/risco se flertar.
+""".strip()
+        hard_limits = """
+- PROIBIDO: romance paralelo estável.
+- PROIBIDO: decisão “vou com ele”.
+- PERMITIDO: usar terceiro como “jogo psicológico” (provocar, testar, recuar).
+""".strip()
+
+    else:
+        # anchor 0.20 (terceiros ON)
+        anchor_mode = "IMPULSIVA (terceiros ON: risco real)"
+        behavior = """
+- Mary pode testar limites de verdade: provoca, flerta e empurra a tensão.
+- Ela pode oscilar entre tesão e culpa, com micro-quebras emocionais (riso nervoso, raiva defensiva, confissão parcial).
+- Ela NÃO “vira outra personagem”: continua Mary, mas mais volátil/ousada.
+- Mesmo no risco: sempre existe “fio de retorno” para Janio (reancoragem possível).
+""".strip()
+        hard_limits = """
+- AINDA PROIBIDO: romance paralelo estável (não “assumir” outro).
+- AINDA PROIBIDO: locais perigosos/isolados (matagal, beco, etc.).
+- PERMITIDO: flerte forte e situação-limite (com consequências internas claras).
+""".strip()
+
     return f"""
 [ARCO COM TERCEIROS — PERSISTENTE (facts)]
 - Timeline: {tl}
 - Fase atual: {phase_txt}
 - Gradiente: tensão={tension:.2f} (volatilidade {vol}); culpa={guilt:.2f}
-- ÂNCORA: vínculo com Janio = {anchor:.2f} (NÃO abandonar / NÃO virar romance paralelo estável).
-- Se Mary testar limites: mostre CONSEQUÊNCIAS internas (riso nervoso, raiva defensiva, melancolia, culpa, tesão, medo de perder).
-- Mesmo no risco: manter caminho de retorno e reconstrução.
-""".strip()
+- ÂNCORA: vínculo com Janio = {anchor:.2f} → {anchor_mode}
 
+[COMPORTAMENTO (âncora → ação)]
+{behavior}
+
+[LIMITES DUROS]
+{hard_limits}
+
+[REGRA DE COERÊNCIA]
+- Se Mary testar limites: mostre CONSEQUÊNCIAS internas (tesão, culpa, medo de perder, irritação, autoengano, melancolia).
+- Não “finalizar” com terceiro como destino; sempre manter caminho de retorno/reconstrução.
+""".strip()
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -4980,6 +5055,23 @@ class MaryService(BaseCharacter):
             diag.tp_arc = tp_arc  # se o seu _Diag tiver esse campo; se não tiver, apague esta linha
         except Exception:
             pass
+
+        # ==========================================================
+        # 🔧 BLOCO DO ARCO (para o SYSTEM PROMPT)
+        # ==========================================================
+        try:
+            facts_arc = cached_get_facts(usuario_key) or {}
+            tp_arc_state = _get_tp_arc_state(facts_arc, timeline_final)
+        
+            # renderiza SEMPRE quando NSFW está ON
+            # (mesmo que terceiros esteja OFF)
+            if nsfw_on:
+                third_party_arc_rule = _render_tp_arc_rule(tp_arc_state, timeline_final)
+            else:
+                third_party_arc_rule = ""
+        
+        except Exception:
+            third_party_arc_rule = ""
 
 
         # só agora gera o bloco de relacionamento
@@ -5321,7 +5413,7 @@ class MaryService(BaseCharacter):
         if allow_third_party_seduction_final and nsfw_on:
 
             # Arco persistente (gradiente + âncora)
-            tp_arc = _get_tp_arc_state(facts or {}, timeline_final)
+            tp_arc = _get_tp_arc_state(cached_get_facts(usuario_key) or {}, timeline_final)
 
             # ✅ Consciência de virgindade (SEM travar; só muda o "jeito" de ceder)
             third_party_virgin_awareness = ""
@@ -5742,6 +5834,7 @@ Direção:
         {persona_text}
     
         {rel_block}
+        {third_party_arc_rule}
         {behavior_block}
         {patterns_block}
         {scene_lock_rule}
