@@ -5008,12 +5008,19 @@ class MaryService(BaseCharacter):
         if not nsfw_on:
             allow_third_party_seduction_final = False
         elif allow_third_party_seduction is None:
-            # lê diretamente do sidebar/session_state
-            allow_third_party_seduction_final = bool(
+
+            # UI (sidebar)
+            ui_toggle = bool(
                 _ss_get("mary_allow_third_party_seduction", False)
                 or _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", False)
                 or _ss_get(f"{_SS_PREFIX}third_party", False)
             )
+        
+            # FACTS persistido
+            facts_mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+            facts_toggle = bool(facts_mary.get("allow_third_party_seduction", False))
+        
+            allow_third_party_seduction_final = bool(ui_toggle or facts_toggle)
         else:
             allow_third_party_seduction_final = bool(allow_third_party_seduction)
         
