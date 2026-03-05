@@ -4579,77 +4579,75 @@ def _tp_arc_event(prompt: str, texto: str) -> str:
 
 
 def _update_tp_arc_for_turn(
-    *,
     usuario_key: str,
-    facts: Dict[str, Any],
     timeline: str,
-    prompt: str,
-    texto: str,
-    allow_third_party: bool,
+    user_text: str,
+    mary_text: str,
+    *,
     nsfw_on: bool,
+    allow_third_party_seduction: bool,
 ) -> Dict[str, Any]:
-    """Atualiza fase/tensão/culpa e persiste.
-
-    ✅ Correções importantes:
-    - Lê e escreve no mesmo lugar: facts['arc'][third_party::<timeline>]
-    - Anchor dinâmico só muda quando há evidência de TERCEIRO no turno (toggle ON não basta).
-    - Evita "return" travar o arco (isso é tratado no _tp_arc_event).
     """
-    arc = _get_tp_arc_state(facts, timeline)
-    ev = _tp_arc_event(prompt, texto)
+    Atualiza o ARC de terceiros (tension/guilt/anchor) por turno.
 
-    # Estado efetivo
-    allow_eff = bool(nsfw_on and allow_third_party)
+    ✅ Regra FIXA (conforme combinado):
+    - NSFW OFF  -> anchor volta pro backup (0.85 por padrão)
+    - NSFW ON   -> anchor = 0.50
+    - Terceiros ON (allow_third_party_seduction) -> anchor = 0.20
 
-    # --- anchor: defaults + backup 1x ---
-    anchor = _clamp01(float(arc.get("anchor", 0.85) or 0.85))
-    if "anchor_backup" not in arc:
-        arc["anchor_backup"] = float(anchor)
+    Observação:
+    - "Terceiros ON" aqui é permissão do engine (allow_third_party_seduction),
+      não apenas aparecer palavra de terceiro no texto.
+    """
 
-    # evidência de terceiro NO TURNO
-    thirdparty_now = bool(_RE_THIRD_PARTY_WEAK.search((prompt or "") + "\n" + (texto or "")))
-    # se já temos desvio claro (beyond kiss / fuga), também conta
-    try:
-        if _third_party_deviation((prompt or "") + "\n" + (texto or "")):
-            thirdparty_now = True
-    except Exception:
-        pass
+    arc = _load_tp_arc_state(usuario_key, timeline) or {}
 
-    # OFF: volta ao seguro e restaura anchor (backup)
-    if not allow_eff:
-        if arc.get("phase", 0) > 0:
-            arc["phase"] = max(0, int(arc.get("phase", 0) or 0) - 1)
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.85)
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.90)
-        arc["mode"] = "return"
-        arc["last"] = "third_party_off"
+    # defaults
+    arc.setdefault("phase", 0)
+    arc.setdefault("mode", "return")
+    arc.setdefault("tension", 0.0)
+    arc.setdefault("guilt", 0.0)
+    arc.setdefault("anchor", 0.85)
+    arc.setdefault("anchor_backup", arc.get("anchor_backup", 0.85) or 0.85)
+    arc.setdefault("last", "third_party_off")
+    arc.setdefault("last_anchor_mode", "init")
 
-        backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
-        arc["anchor"] = round(backup, 2)
+    # clamp básicos
+    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
+    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
+    backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
 
-    # ON: anchor cai GRADUALMENTE apenas quando há terceiro no turno
-    target = 0.45
-    if thirdparty_now:
-        step = 0.04
-        anchor = max(target, anchor - step)
-        arc["anchor"] = round(anchor, 2)
-        arc["last_anchor_mode"] = "tp_on_drop_by_evidence"
+    # -----------------------------
+    # 1) Determina âncora FIXA
+    # -----------------------------
+    # terceiros só pode estar "on" se nsfw_on também estiver on
+    third_party_on = bool(nsfw_on and allow_third_party_seduction)
+
+    if not nsfw_on:
+        anchor = backup
+        arc["last"] = "nsfw_off"
+        arc["last_anchor_mode"] = "nsfw_off_restore_backup"
+    elif third_party_on:
+        anchor = 0.20
+        arc["last"] = "third_party_on"
+        arc["last_anchor_mode"] = "third_party_on_fixed"
     else:
-        # sem terceiro neste turno: retorno pode recuperar levemente (sem "resetar" tudo)
-        if ev == "return":
-            step_up = 0.03
-            backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
-            anchor = min(backup, anchor + step_up)
-            arc["anchor"] = round(anchor, 2)
-            arc["last_anchor_mode"] = "tp_on_soft_recover"
+        anchor = 0.50
+        arc["last"] = "nsfw_on"
+        arc["last_anchor_mode"] = "nsfw_on_fixed"
 
-    # liberdade cresce quando anchor cai
-    freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.55 (livre)
+    anchor = _clamp01(anchor)
+    arc["anchor"] = round(anchor, 2)
 
-    # limites por anchor
+    # -----------------------------
+    # 2) liberdade cresce quando anchor cai
+    # -----------------------------
+    freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.80 (livre)
+
+    # -----------------------------
+    # 3) limites por anchor (mantive seu shape, só ajustei pra ficar coerente)
+    # -----------------------------
     if anchor >= 0.75:
         max_phase_allowed = 2
         test_gain = 0.12
@@ -4658,77 +4656,48 @@ def _update_tp_arc_for_turn(
         max_phase_allowed = 3
         test_gain = 0.18
         guilt_gain = 0.10
-    else:
+    elif anchor >= 0.30:
         max_phase_allowed = 4
         test_gain = 0.24
         guilt_gain = 0.12
+    else:
+        # anchor 0.20 (terceiros ON) => muito mais livre
+        max_phase_allowed = 5
+        test_gain = 0.28
+        guilt_gain = 0.08
 
-    # ON:
-    if ev == "test":
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) + test_gain * (0.75 + freedom))
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) + guilt_gain * (0.65 + freedom))
+    # -----------------------------
+    # 4) Atualiza tension/guilt conforme contexto (mantém sua lógica)
+    # -----------------------------
+    # Detecta se houve terceiro de fato no turno (evidência textual)
+    thirdparty_now = _third_party_deviation((user_text or "") + "\n" + (mary_text or ""))
 
-        tval = float(arc["tension"])
-        if tval >= 0.80:
-            arc["phase"] = max(int(arc.get("phase", 0) or 0), 3)
-        elif tval >= 0.55:
-            arc["phase"] = max(int(arc.get("phase", 0) or 0), 2)
-        else:
-            arc["phase"] = max(int(arc.get("phase", 0) or 0), 1)
+    # Fase alvo pelo "quanto livre" (simples e estável)
+    # (Se você já tinha sua própria regra de phase, pode manter, mas aqui fica consistente.)
+    desired_phase = 0
+    if anchor < 0.30:
+        desired_phase = 2
+    elif anchor < 0.60:
+        desired_phase = 1
+    else:
+        desired_phase = 0
 
-        arc["phase"] = min(int(arc["phase"]), int(max_phase_allowed))
-        # ambiguidade moral: tentação/conflito/ativo
-        if tval >= 0.65:
-            arc["mode"] = "active"
-        elif tval >= 0.50:
-            arc["mode"] = "conflict"
-        elif tval >= 0.25:
-            arc["mode"] = "temptation"
-        else:
-            arc["mode"] = "return"
-
-        arc["last"] = "test"
-
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
-
-    if ev == "return":
-        # retorno reduz tensão/culpa; quanto mais preso (anchor alto), mais forte a reconstrução
-        k_t = 0.55 if anchor < 0.70 else 0.45
-        k_g = 0.60 if anchor < 0.70 else 0.50
-        arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * k_t)
-        arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * k_g)
-
-        # fase 4 = "retorno consolidado" (tensão baixa + anchor razoável)
-        if float(arc["tension"]) <= 0.35 and anchor >= 0.70:
-            arc["phase"] = 4
-        else:
-            arc["phase"] = max(int(arc.get("phase", 0) or 0), 2)
-
+    # sobe phase com evidência de terceiro, mas respeita max_phase_allowed
+    if thirdparty_now and third_party_on:
+        arc["phase"] = min(int(arc.get("phase", 0) or 0) + 1, max_phase_allowed)
+        arc["mode"] = "push"
+        arc["tension"] = _clamp01(arc["tension"] + test_gain)
+        arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
+    else:
+        # retorno suave
         arc["mode"] = "return"
-        arc["last"] = "return"
-        _save_tp_arc_state(usuario_key, timeline, arc)
-        return arc
+        arc["phase"] = max(desired_phase, int(arc.get("phase", 0) or 0) - 1)
+        arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
+        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
 
-    # none: decai leve
-    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0) * 0.92)
-    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0) * 0.95)
-    if float(arc["tension"]) < 0.25 and int(arc.get("phase", 0) or 0) in (1, 2):
-        arc["phase"] = 0
-
-    # ambiguidade moral: se ainda há tensão, mantém tentação/conflito mesmo sem "test"
-    tval = float(arc.get("tension", 0.0) or 0.0)
-    if thirdparty_now and tval >= 0.50:
-        arc["mode"] = "conflict"
-    elif thirdparty_now and tval >= 0.25:
-        arc["mode"] = "temptation"
-    elif tval < 0.20:
-        arc["mode"] = "return"
-
-    arc["last"] = "none"
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
-
+    
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     """Gera instruções do arco (gradiente + âncora)."""
     try:
