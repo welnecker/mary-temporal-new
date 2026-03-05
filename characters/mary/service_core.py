@@ -4594,13 +4594,11 @@ def _update_tp_arc_for_turn(
     - NSFW OFF  -> anchor volta pro backup (0.85 por padrão)
     - NSFW ON   -> anchor = 0.50
     - Terceiros ON (allow_third_party_seduction) -> anchor = 0.20
-
-    Observação:
-    - "Terceiros ON" aqui é permissão do engine (allow_third_party_seduction),
-      não apenas aparecer palavra de terceiro no texto.
     """
 
-    arc = _load_tp_arc_state(usuario_key, timeline) or {}
+    # ✅ BUGFIX: aqui NÃO existe _load_tp_arc_state. O correto é carregar dos facts.
+    facts_now = cached_get_facts(usuario_key) or {}
+    arc = _get_tp_arc_state(facts_now, timeline) or {}
 
     # defaults
     arc.setdefault("phase", 0)
@@ -4621,7 +4619,6 @@ def _update_tp_arc_for_turn(
     # -----------------------------
     # 1) Determina âncora FIXA
     # -----------------------------
-    # terceiros só pode estar "on" se nsfw_on também estiver on
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
 
     if not nsfw_on:
@@ -4643,10 +4640,10 @@ def _update_tp_arc_for_turn(
     # -----------------------------
     # 2) liberdade cresce quando anchor cai
     # -----------------------------
-    freedom = _clamp01(1.0 - anchor)  # 0.15 (preso) ... 0.80 (livre)
+    freedom = _clamp01(1.0 - anchor)
 
     # -----------------------------
-    # 3) limites por anchor (mantive seu shape, só ajustei pra ficar coerente)
+    # 3) limites por anchor
     # -----------------------------
     if anchor >= 0.75:
         max_phase_allowed = 2
@@ -4661,19 +4658,15 @@ def _update_tp_arc_for_turn(
         test_gain = 0.24
         guilt_gain = 0.12
     else:
-        # anchor 0.20 (terceiros ON) => muito mais livre
         max_phase_allowed = 5
         test_gain = 0.28
         guilt_gain = 0.08
 
     # -----------------------------
-    # 4) Atualiza tension/guilt conforme contexto (mantém sua lógica)
+    # 4) Atualiza tension/guilt conforme contexto
     # -----------------------------
-    # Detecta se houve terceiro de fato no turno (evidência textual)
     thirdparty_now = _third_party_deviation((user_text or "") + "\n" + (mary_text or ""))
 
-    # Fase alvo pelo "quanto livre" (simples e estável)
-    # (Se você já tinha sua própria regra de phase, pode manter, mas aqui fica consistente.)
     desired_phase = 0
     if anchor < 0.30:
         desired_phase = 2
@@ -4682,14 +4675,12 @@ def _update_tp_arc_for_turn(
     else:
         desired_phase = 0
 
-    # sobe phase com evidência de terceiro, mas respeita max_phase_allowed
     if thirdparty_now and third_party_on:
         arc["phase"] = min(int(arc.get("phase", 0) or 0) + 1, max_phase_allowed)
         arc["mode"] = "push"
         arc["tension"] = _clamp01(arc["tension"] + test_gain)
         arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
     else:
-        # retorno suave
         arc["mode"] = "return"
         arc["phase"] = max(desired_phase, int(arc.get("phase", 0) or 0) - 1)
         arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
@@ -4970,16 +4961,23 @@ class MaryService(BaseCharacter):
             pass
 
         # ==========================================================
-        # 🔒 ARCO TERCEIROS (1 BLOCO SÓ): anchor dinâmico + anti "fase fantasma"
-        # Regras:
-        # - NSFW OFF OU terceiros OFF => phase=0, tension=0, guilt=0, anchor restaurado
-        # - NSFW ON + terceiros ON   => anchor cai suavemente até target (mais permissiva)
-        #                              e se phase>=4 sem evidência => degrada para phase=1
+        # 🔒 ARCO TERCEIROS (ATIVO): atualiza anchor/tension/guilt/phase
+        # Regra fixa:
+        # - NSFW OFF  -> anchor=backup (0.85)
+        # - NSFW ON   -> anchor=0.50
+        # - Terceiros ON -> anchor=0.20
         # ==========================================================
         try:
-            # (movido) O arco de terceiros (anchor/tension/guilt/phase) é atualizado por _update_tp_arc_for_turn().
-            # Este bloco antigo foi removido para evitar sobrescrever o arc a cada turno.
-            pass
+            tp_arc = _update_tp_arc_for_turn(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                user_text=prompt,
+                mary_text="",  # ainda não temos a resposta aqui; anchor já ajusta mesmo assim
+                nsfw_on=bool(nsfw_on),
+                allow_third_party_seduction=bool(allow_third_party_seduction_final),
+            )
+            # (opcional) se você tem diag, dá pra logar:
+            diag.tp_arc = tp_arc  # se o seu _Diag tiver esse campo; se não tiver, apague esta linha
         except Exception:
             pass
 
