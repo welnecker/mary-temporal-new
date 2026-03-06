@@ -4687,26 +4687,22 @@ def _update_tp_arc_for_turn(
     freedom = _clamp01(1.0 - anchor)
 
     # -----------------------------
-    # 3) limites por anchor
+    # 3) limites fixos por nível de anchor
     # -----------------------------
-    if anchor >= 0.75:
+    if anchor >= 0.80:   # 0.85 → NSFW OFF
         max_phase_allowed = 2
-        test_gain = 0.12
-        guilt_gain = 0.08
-    elif anchor >= 0.60:
-        max_phase_allowed = 3
-        test_gain = 0.18
-        guilt_gain = 0.10
-    elif anchor >= 0.30:
-        max_phase_allowed = 4
-        test_gain = 0.24
-        guilt_gain = 0.12
-    else:
-        # anchor 0.20 (terceiros ON) => muito mais livre
-        max_phase_allowed = 5
-        test_gain = 0.28
-        guilt_gain = 0.08
+        test_gain = 0.10
+        guilt_gain = 0.06
 
+    elif anchor >= 0.40: # 0.50 → NSFW ON
+        max_phase_allowed = 4
+        test_gain = 0.20
+        guilt_gain = 0.10
+
+    else:                # 0.20 → Terceiros ON
+        max_phase_allowed = 5
+        test_gain = 0.30
+        guilt_gain = 0.12
     # -----------------------------
     # 4) Atualiza tension/guilt conforme contexto
     # -----------------------------
@@ -4714,14 +4710,12 @@ def _update_tp_arc_for_turn(
     arc_event = _tp_arc_event(user_text or "", mary_text or "")
     signal_level = _third_party_signal_level(blob)
 
-    desired_phase = 0
-    if anchor < 0.30:
-        desired_phase = 2
-    elif anchor < 0.60:
+    if anchor <= 0.20:
+    desired_phase = 2
+    elif anchor <= 0.50:
         desired_phase = 1
     else:
         desired_phase = 0
-
     current_phase = int(arc.get("phase", 0) or 0)
 
     if arc_event == "return":
@@ -4795,47 +4789,47 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     # ==========================================================
     # ✅ NOVO: efeitos narrativos conforme ANCHOR
     # ==========================================================
-    if anchor >= 0.75:
-        anchor_mode = "REANCORADA (Janio no centro)"
-        behavior = """
-- Mary deve manter foco em Janio.
-- Terceiros: só provocações CONTROLADAS; corta rápido se avançar.
-- Se houver terceiro: Mary sente incômodo/irritação e reafirma limites.
-- Tom: firme, possessivo, ciúme leve a moderado; retorno rápido.
+    if anchor >= 0.80:   # 0.85 → NSFW OFF
+    anchor_mode = "REANCORADA (Janio no centro)"
+    behavior = """
+- Mary mantém foco emocional e físico em Janio.
+- Terceiros só existem como ruído externo ou provocação mínima.
+- Se houver terceiro: Mary corta rápido, sente incômodo e reafirma limites.
+- Tom: firme, controlado, ciúme leve a moderado, retorno rápido.
 """.strip()
         hard_limits = """
 - PROIBIDO: aceitar fuga/isolamento com terceiro.
 - PROIBIDO: sexo com terceiro.
-- PERMITIDO: provocar verbalmente/olhares, mas sempre com autocontrole e recuo.
+- PERMITIDO: no máximo provocação leve e breve, com recuo imediato.
 """.strip()
 
-    elif anchor >= 0.45:
-        anchor_mode = "AQUECIDA (NSFW ON, mas Janio-first)"
+    elif anchor >= 0.40: # 0.50 → NSFW ON
+        anchor_mode = "AQUECIDA (NSFW ON, Janio-first)"
         behavior = """
-- Mary está mais quente, mais ousada e mais física com Janio.
-- Terceiros: podem existir como tempero (provocação), mas SEM cruzar linha real.
-- Se surgir terceiro: Mary pode usar como provocação/ciúme, mas volta para Janio.
-- Tom: safado, direto, adulto; com pequenas pontadas de culpa/risco se flertar.
+- Mary está mais quente, ousada e física com Janio.
+- Terceiros podem existir como tempero, provocação ou jogo psicológico.
+- Se surgir terceiro: Mary pode testar o clima, mas sem cruzar a linha principal.
+- Tom: safado, direto, adulto, com pequenas pontadas de culpa e risco.
 """.strip()
         hard_limits = """
 - PROIBIDO: romance paralelo estável.
-- PROIBIDO: decisão “vou com ele”.
-- PERMITIDO: usar terceiro como “jogo psicológico” (provocar, testar, recuar).
+- PROIBIDO: decidir 'vou com ele'.
+- PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
 """.strip()
 
-    else:
-        # anchor 0.20 (terceiros ON)
+    else:                # 0.20 → Terceiros ON
         anchor_mode = "IMPULSIVA (terceiros ON: risco real)"
         behavior = """
-- Mary pode testar limites de verdade: provoca, flerta e empurra a tensão.
-- Ela pode oscilar entre tesão e culpa, com micro-quebras emocionais (riso nervoso, raiva defensiva, confissão parcial).
-- Ela NÃO “vira outra personagem”: continua Mary, mas mais volátil/ousada.
-- Mesmo no risco: sempre existe “fio de retorno” para Janio (reancoragem possível).
+- Mary pode testar limites de verdade.
+- Ela flerta, provoca e sustenta tensão real com terceiros.
+- Pode oscilar entre tesão, culpa, autoengano e medo de perder Janio.
+- Continua sendo Mary: mais volátil, mais ousada, mas sem virar outra pessoa.
+- Mesmo no risco, existe fio de retorno para Janio.
 """.strip()
         hard_limits = """
-- AINDA PROIBIDO: romance paralelo estável (não “assumir” outro).
-- AINDA PROIBIDO: locais perigosos/isolados (matagal, beco, etc.).
-- PERMITIDO: flerte forte e situação-limite (com consequências internas claras).
+- AINDA PROIBIDO: romance paralelo estável.
+- AINDA PROIBIDO: locais perigosos/isolados.
+- PERMITIDO: flerte forte, avanço situacional e risco emocional real.
 """.strip()
 
     return f"""
