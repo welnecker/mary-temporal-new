@@ -3374,36 +3374,47 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
         )
     )
 # ==========================================================
-# ✅ TRAIÇÃO / DESVIO CURTO (TERCEIROS) — versão consolidada
+# TERCEIROS — DETECÇÃO EM CAMADAS
 # ==========================================================
 
-# Terceiros (marcadores FRACOS — só indicam presença de outro)
-_RE_THIRD_PARTY_WEAK = re.compile(
+# 1) presença clara de terceiro
+_RE_THIRD_PARTY_PRESENCE = re.compile(
     r"\b("
-    # Profissões / papéis comuns de interação
     r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
-    r"dan[çc]arino|dan[çc]arina|dj|m[uú]sico|seguran[cç]a|"
-    # Descrições genéricas (NÃO decisivas sozinhas)
+    r"seguran[cç]a|dj|m[uú]sico|instrutor|professor|personal|"
     r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
-    r"outro\s+cara|aquele\s+cara"
+    r"outro\s+cara|aquele\s+cara|ele\b"
     r")\b",
     re.IGNORECASE,
 )
 
-
-# "Passou do beijo" — avanço íntimo real
-_RE_BEYOND_KISS = re.compile(
+# 2) sinal de flerte / aproximação com terceiro
+_RE_THIRD_PARTY_INTEREST = re.compile(
     r"\b("
-    # Avanços físicos
+    r"olha(r)?\s+pra\s+ele|"
+    r"sorri(r)?\s+pra\s+ele|"
+    r"encara(r)?\s+ele|"
+    r"flerta(r)?|cantada|convite|provoca(r)?|"
+    r"dan[cç]a(r)?\s+com|"
+    r"ele\s+me\s+olha|"
+    r"ele\s+encosta|"
+    r"ele\s+me\s+toca|"
+    r"m[aã]o\s+dele|m[aã]os\s+dele|"
+    r"me\s+chama|me\s+pega|me\s+puxa"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# 3) avanço íntimo real
+_RE_THIRD_PARTY_ADVANCE = re.compile(
+    r"\b("
+    r"beijo|beijou|beijar|"
     r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
     r"decote|seios?|peitos?|mamil|"
     r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
     r"tirar\s+.*roupa|abrir\s+.*roupa|"
     r"calcinha|suti[aã]|"
     r"encostar\s+.*(entre\s+as\s+pernas|virilha)|"
-    # Locais — SOMENTE com convite ou movimento
-    r"(ir|entra(r)?|leva(r)?)\s+.*(camarim|banheiro|corredor\s+escuro)|"
-    # Sexual explícito
     r"volume\s+ro[cç]a|duro\s+na\s+minha\s+.*|"
     r"penetra[cç][aã]o|penetrar|meter|foder|chupar|boquete|"
     r"buceta|vagina|clit[oó]ris|pau|p[eê]nis|anal"
@@ -3411,9 +3422,8 @@ _RE_BEYOND_KISS = re.compile(
     re.IGNORECASE,
 )
 
-
-# Convite de fuga / isolamento com terceiro
-_RE_RUNAWAY_INVITE = re.compile(
+# 4) fuga / isolamento
+_RE_THIRD_PARTY_ESCAPE = re.compile(
     r"\b("
     r"sumir\s+(com\s+voc[eê]|comigo)|"
     r"noite\s+fora\s+com|"
@@ -3427,27 +3437,39 @@ _RE_RUNAWAY_INVITE = re.compile(
     re.IGNORECASE,
 )
 
-
-def _third_party_deviation(text: str) -> bool:
+def _third_party_signal_level(text: str) -> int:
     """
-    Regra FINAL:
-    TERCEIRO + (AVANÇO ÍNTIMO ou FUGA) = DESVIO
+    Níveis:
+    0 = nada
+    1 = presença/interesse
+    2 = avanço íntimo
+    3 = fuga/isolamento
     """
     if not text:
-        return False
+        return 0
 
     t = text.lower()
 
-    # Sem terceiro, não há desvio
-    if not _RE_THIRD_PARTY_WEAK.search(t):
-        return False
+    has_presence = bool(_RE_THIRD_PARTY_PRESENCE.search(t))
+    has_interest = bool(_RE_THIRD_PARTY_INTEREST.search(t))
+    has_advance = bool(_RE_THIRD_PARTY_ADVANCE.search(t))
+    has_escape = bool(_RE_THIRD_PARTY_ESCAPE.search(t))
 
-    # Terceiro só vira problema com ação concreta
-    if _RE_BEYOND_KISS.search(t) or _RE_RUNAWAY_INVITE.search(t):
-        return True
+    if has_presence and has_escape:
+        return 3
+    if has_presence and has_advance:
+        return 2
+    if has_presence and has_interest:
+        return 1
+    return 0
 
-    return False
 
+def _third_party_deviation(text: str) -> bool:
+    """
+    Compatibilidade com o código antigo:
+    retorna True se houver qualquer sinal relevante de terceiros.
+    """
+    return _third_party_signal_level(text) >= 1
 # ==========================================================
 # CLIMAX VERBALIZATION (SOFT HINT — SEM VIOLAÇÃO)
 # ==========================================================
@@ -4547,34 +4569,33 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
 
 
 def _tp_arc_event(prompt: str, texto: str) -> str:
+    """
+    Evento resumido do arco de terceiros:
+    - return: usuário explicitamente quer voltar / encerrar / reancorar
+    - test: há sinal real de terceiros (medido por _third_party_signal_level)
+    - none: nada relevante no turno
+    """
     p = (prompt or "").lower()
-    t = (texto or "").lower()
+    blob = ((prompt or "") + "\n" + (texto or "")).lower()
 
     ret_kw = (
         "voltar", "de volta", "indo embora", "ir embora", "chegar em casa",
         "vou embora", "vamos embora", "acabou", "encerrar", "parar com isso",
         "desisto", "não quero mais", "quero você", "eu escolho você",
+        "quero o janio", "só o janio", "fica comigo", "volta pra mim"
     )
 
-    third_kw = (
-        "nome falso", "me chama de", "cantada", "convite", "beijo", "beijou",
-        "dança", "dançar", "me pega", "me tocou", "encosta", "mãos dele",
-        "ele me", "aquele cara", "outro cara", "barman", "garçom", "segurança",
-    )
-
-    # ✅ 1) “test” tem prioridade (se aparecer no prompt do usuário)
-    if any(k in p for k in third_kw):
-        return "test"
-
-    # ✅ 2) “return” só por intenção explícita do usuário (NÃO pelo texto da Mary)
+    # 1) retorno tem prioridade total
     if any(k in p for k in ret_kw):
         return "return"
 
-    # (opcional) ainda permitir “test” por evidência no texto da Mary
-    if any(k in t for k in third_kw):
+    # 2) usa o detector em camadas, não palavras soltas
+    signal_level = _third_party_signal_level(blob)
+
+    if signal_level >= 1:
         return "test"
 
-    return "none"
+    return "none"    
 def _update_tp_arc_for_turn(
     usuario_key: str,
     timeline: str,
@@ -4638,17 +4659,22 @@ def _update_tp_arc_for_turn(
     # 1) Determina ÂNCORA FIXA
     # -----------------------------
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
+    
+    base_anchor = backup
+    # reduz pelo estado do arco
+    anchor = base_anchor - (arc["tension"] * 0.30) - (arc["guilt"] * 0.20)
 
+    # limites do modo
     if not nsfw_on:
-        anchor = backup
-        arc["last"] = "nsfw_off"
-        arc["last_anchor_mode"] = "nsfw_off_restore_backup"
+        anchor = base_anchor
+    
     elif third_party_on:
-        anchor = 0.20
-        arc["last"] = "third_party_on"
-        arc["last_anchor_mode"] = "third_party_on_fixed"
+        anchor = min(anchor, 0.20)
+    
     else:
-        anchor = 0.50
+        anchor = min(anchor, 0.50)
+    
+    anchor = _clamp01(anchor)
         arc["last"] = "nsfw_on"
         arc["last_anchor_mode"] = "nsfw_on_fixed"
 
@@ -4684,7 +4710,9 @@ def _update_tp_arc_for_turn(
     # -----------------------------
     # 4) Atualiza tension/guilt conforme contexto
     # -----------------------------
-    thirdparty_now = _third_party_deviation((user_text or "") + "\n" + (mary_text or ""))
+    blob = (user_text or "") + "\n" + (mary_text or "")
+    arc_event = _tp_arc_event(user_text or "", mary_text or "")
+    signal_level = _third_party_signal_level(blob)
 
     desired_phase = 0
     if anchor < 0.30:
@@ -4694,18 +4722,40 @@ def _update_tp_arc_for_turn(
     else:
         desired_phase = 0
 
-    if thirdparty_now and third_party_on:
-        arc["phase"] = min(int(arc.get("phase", 0) or 0) + 1, max_phase_allowed)
+    current_phase = int(arc.get("phase", 0) or 0)
+
+    if arc_event == "return":
+        arc["mode"] = "return"
+        arc["phase"] = max(0, current_phase - 1)
+        arc["tension"] = _clamp01(arc["tension"] * 0.82)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.88)
+
+    elif third_party_on and signal_level >= 1:
         arc["mode"] = "push"
-        arc["tension"] = _clamp01(arc["tension"] + test_gain)
-        arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
+        target_phase = current_phase
+
+        if signal_level == 1:
+            target_phase = max(current_phase, 1)
+            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 0.60))
+            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 0.40))
+
+        elif signal_level == 2:
+            target_phase = max(current_phase + 1, 2)
+            arc["tension"] = _clamp01(arc["tension"] + test_gain)
+            arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
+
+        elif signal_level >= 3:
+            target_phase = max(current_phase + 1, 3)
+            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 1.20))
+            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 1.15))
+
+        arc["phase"] = min(target_phase, max_phase_allowed)
+
     else:
         arc["mode"] = "return"
-        arc["phase"] = max(desired_phase, int(arc.get("phase", 0) or 0) - 1)
+        arc["phase"] = max(desired_phase, current_phase - 1)
         arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
-        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
-
-    _save_tp_arc_state(usuario_key, timeline, arc)
+        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))    _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
     
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
@@ -6911,4 +6961,4 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
             r")\b",
             ut,
         )
-    )
+    
