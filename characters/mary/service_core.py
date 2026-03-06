@@ -4492,10 +4492,6 @@ class _Diag:
         }
 
 # ==========================================================
-# SERVICE
-# ==========================================================
-    
-# ==========================================================
 # THIRD-PARTY ARC: persistência + gradiente + âncora (Janio)
 # ==========================================================
 def _clamp01(x: float) -> float:
@@ -4516,7 +4512,7 @@ def _tp_arc_key(timeline: str) -> str:
 
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
-    """Carrega o arco de terceiros (persistido em facts['arc']). Preserva chaves extras (ex: anchor_backup)."""
+    """Carrega o arco de terceiros persistido em facts['arc']."""
     if not isinstance(facts, dict):
         facts = {}
 
@@ -4528,23 +4524,24 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     if not isinstance(raw, dict):
         raw = {}
 
-    out = dict(raw)  # preserva extras (anchor_backup, last_anchor_mode, etc.)
+    out = dict(raw)
 
-    # defaults / normalização
     out["phase"] = int(out.get("phase") or 0)
-    out["mode"] = str(out.get("mode") or out.get("last") or "return")
+    out["mode"] = str(out.get("mode") or "return")
     out["tension"] = _clamp01(out.get("tension", 0.0))
     out["guilt"] = _clamp01(out.get("guilt", 0.0))
     out["anchor"] = _clamp01(out.get("anchor", 0.85))
+    out["anchor_backup"] = _clamp01(out.get("anchor_backup", 0.85))
     out["last"] = out.get("last") if isinstance(out.get("last"), str) else ""
+    out["last_anchor_mode"] = str(out.get("last_anchor_mode") or "init")
 
-    # limites
     if out["phase"] < 0:
         out["phase"] = 0
-    if out["phase"] > 4:
-        out["phase"] = 4
+    if out["phase"] > 5:
+        out["phase"] = 5
 
     return out
+
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
     try:
@@ -4558,9 +4555,10 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
         if not isinstance(arc_root, dict):
             arc_root = {}
 
-        # mantém anchor se já existir e vier vazio
-        if "anchor" not in arc and isinstance(arc_root.get(arc_key), dict) and "anchor" in arc_root.get(arc_key):
-            arc["anchor"] = arc_root[arc_key].get("anchor", 0.85)
+        if "anchor" not in arc and isinstance(arc_root.get(arc_key), dict):
+            prev = arc_root.get(arc_key) or {}
+            if isinstance(prev, dict) and "anchor" in prev:
+                arc["anchor"] = prev.get("anchor", 0.85)
 
         arc_root[arc_key] = arc
         set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "tp_arc"})
@@ -4570,10 +4568,10 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
 
 def _tp_arc_event(prompt: str, texto: str) -> str:
     """
-    Evento resumido do arco de terceiros:
+    Evento resumido do arco:
     - return: usuário explicitamente quer voltar / encerrar / reancorar
-    - test: há sinal real de terceiros (medido por _third_party_signal_level)
-    - none: nada relevante no turno
+    - test: há sinal real de terceiros
+    - none: nada relevante
     """
     p = (prompt or "").lower()
     blob = ((prompt or "") + "\n" + (texto or "")).lower()
@@ -4582,20 +4580,19 @@ def _tp_arc_event(prompt: str, texto: str) -> str:
         "voltar", "de volta", "indo embora", "ir embora", "chegar em casa",
         "vou embora", "vamos embora", "acabou", "encerrar", "parar com isso",
         "desisto", "não quero mais", "quero você", "eu escolho você",
-        "quero o janio", "só o janio", "fica comigo", "volta pra mim"
+        "quero o janio", "só o janio", "fica comigo", "volta pra mim",
     )
 
-    # 1) retorno tem prioridade total
     if any(k in p for k in ret_kw):
         return "return"
 
-    # 2) usa o detector em camadas, não palavras soltas
     signal_level = _third_party_signal_level(blob)
-
     if signal_level >= 1:
         return "test"
 
-    return "none"    
+    return "none"
+
+
 def _update_tp_arc_for_turn(
     usuario_key: str,
     timeline: str,
@@ -4604,118 +4601,89 @@ def _update_tp_arc_for_turn(
     *,
     nsfw_on: bool = False,
     allow_third_party_seduction: bool = False,
-    # Compat com chamada antiga (service_core já usa esses nomes em alguns pontos)
     facts: Optional[Dict[str, Any]] = None,
     prompt: Optional[str] = None,
     texto: Optional[str] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     """
-    Atualiza o ARC de terceiros (tension/guilt/anchor) por turno.
+    Atualiza o arco de terceiros.
 
-    ✅ Regra FIXA (conforme combinado):
-    - NSFW OFF  -> anchor volta pro backup (0.85 por padrão)
-    - NSFW ON   -> anchor = 0.50
-    - Terceiros ON (allow_third_party_seduction) -> anchor = 0.20
-
-    Compatibilidade:
-    - Aceita chamada "antiga" que passa facts/prompt/texto.
-    - Aceita chamada "nova" user_text/mary_text + flags.
+    Regras fixas de anchor:
+    - NSFW OFF  -> 0.85
+    - NSFW ON   -> 0.50
+    - terceiros ON -> 0.20
     """
-
-    # -----------------------------
-    # Compat: nomes antigos -> novos
-    # -----------------------------
     if prompt is not None and not user_text:
         user_text = prompt or ""
     if texto is not None and not mary_text:
         mary_text = texto or ""
 
-    # ✅ BUGFIX: carregar arc SEMPRE dos facts (e não de usuario_key)
     if facts is None:
         facts_now = cached_get_facts(usuario_key) or {}
     else:
         facts_now = facts or {}
 
-    arc = _get_tp_arc_state(facts_now, timeline) or {}
+    arc = _get_tp_arc_state(facts_now, timeline)
 
-    # defaults
     arc.setdefault("phase", 0)
     arc.setdefault("mode", "return")
     arc.setdefault("tension", 0.0)
     arc.setdefault("guilt", 0.0)
     arc.setdefault("anchor", 0.85)
-    arc.setdefault("anchor_backup", arc.get("anchor_backup", 0.85) or 0.85)
+    arc.setdefault("anchor_backup", 0.85)
     arc.setdefault("last", "third_party_off")
     arc.setdefault("last_anchor_mode", "init")
 
-    # clamp básicos
     arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
     arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
     backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
-
-    # -----------------------------
-    # 1) Determina ÂNCORA FIXA
-    # -----------------------------
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
-    
-    base_anchor = backup
-    # reduz pelo estado do arco
-    anchor = base_anchor - (arc["tension"] * 0.30) - (arc["guilt"] * 0.20)
 
-    # limites do modo
+    # 1) anchor fixo
     if not nsfw_on:
-        anchor = base_anchor
-    
+        anchor = backup
+        arc["last"] = "nsfw_off"
+        arc["last_anchor_mode"] = "nsfw_off_restore_backup"
     elif third_party_on:
-        anchor = min(anchor, 0.20)
-    
+        anchor = 0.20
+        arc["last"] = "third_party_on"
+        arc["last_anchor_mode"] = "third_party_on_fixed"
     else:
-        anchor = min(anchor, 0.50)
-    
-    anchor = _clamp01(anchor)
+        anchor = 0.50
         arc["last"] = "nsfw_on"
         arc["last_anchor_mode"] = "nsfw_on_fixed"
 
-    anchor = _clamp01(anchor)
-    arc["anchor"] = round(anchor, 2)
+    arc["anchor"] = round(_clamp01(anchor), 2)
+    freedom = _clamp01(1.0 - arc["anchor"])
 
-    # -----------------------------
-    # 2) liberdade cresce quando anchor cai
-    # -----------------------------
-    freedom = _clamp01(1.0 - anchor)
-
-    # -----------------------------
-    # 3) limites fixos por nível de anchor
-    # -----------------------------
-    if anchor >= 0.80:   # 0.85 → NSFW OFF
+    # 2) limites coerentes com 3 níveis reais
+    if arc["anchor"] >= 0.80:   # 0.85
         max_phase_allowed = 2
         test_gain = 0.10
         guilt_gain = 0.06
-
-    elif anchor >= 0.40: # 0.50 → NSFW ON
+    elif arc["anchor"] >= 0.40: # 0.50
         max_phase_allowed = 4
         test_gain = 0.20
         guilt_gain = 0.10
-
-    else:                # 0.20 → Terceiros ON
+    else:                       # 0.20
         max_phase_allowed = 5
         test_gain = 0.30
         guilt_gain = 0.12
-    # -----------------------------
-    # 4) Atualiza tension/guilt conforme contexto
-    # -----------------------------
+
+    # 3) evento + sinal
     blob = (user_text or "") + "\n" + (mary_text or "")
     arc_event = _tp_arc_event(user_text or "", mary_text or "")
     signal_level = _third_party_signal_level(blob)
 
-    if anchor <= 0.20:
-    desired_phase = 2
-    elif anchor <= 0.50:
+    if arc["anchor"] <= 0.20:
+        desired_phase = 2
+    elif arc["anchor"] <= 0.50:
         desired_phase = 1
     else:
         desired_phase = 0
+
     current_phase = int(arc.get("phase", 0) or 0)
 
     if arc_event == "return":
@@ -4749,11 +4717,14 @@ def _update_tp_arc_for_turn(
         arc["mode"] = "return"
         arc["phase"] = max(desired_phase, current_phase - 1)
         arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
-        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))    _save_tp_arc_state(usuario_key, timeline, arc)
+        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
+
+    _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
-    
+
+
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
-    """Gera instruções do arco (gradiente + âncora) com efeitos narrativos claros."""
+    """Gera instruções narrativas do arco com base no anchor."""
     try:
         phase = int(arc.get("phase") or 0)
     except Exception:
@@ -4764,7 +4735,6 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     anchor = _clamp01(arc.get("anchor", 0.85))
     tl = (timeline or "").strip().lower() or "cumplice"
 
-    # volatilidade por tensão
     if tension >= 0.80:
         vol = "altíssima"
     elif tension >= 0.55:
@@ -4774,7 +4744,6 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     else:
         vol = "baixa"
 
-    # fase -> comportamento macro
     if phase <= 0:
         phase_txt = "0) estabilidade (flertes leves podem existir, mas com autocontrole)"
     elif phase == 1:
@@ -4786,12 +4755,9 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     else:
         phase_txt = "4) retorno/reconstrução (Mary volta para Janio e reancora)"
 
-    # ==========================================================
-    # ✅ NOVO: efeitos narrativos conforme ANCHOR
-    # ==========================================================
-    if anchor >= 0.80:   # 0.85 → NSFW OFF
-    anchor_mode = "REANCORADA (Janio no centro)"
-    behavior = """
+    if anchor >= 0.80:   # 0.85
+        anchor_mode = "REANCORADA (Janio no centro)"
+        behavior = """
 - Mary mantém foco emocional e físico em Janio.
 - Terceiros só existem como ruído externo ou provocação mínima.
 - Se houver terceiro: Mary corta rápido, sente incômodo e reafirma limites.
@@ -4803,7 +4769,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - PERMITIDO: no máximo provocação leve e breve, com recuo imediato.
 """.strip()
 
-    elif anchor >= 0.40: # 0.50 → NSFW ON
+    elif anchor >= 0.40: # 0.50
         anchor_mode = "AQUECIDA (NSFW ON, Janio-first)"
         behavior = """
 - Mary está mais quente, ousada e física com Janio.
@@ -4817,7 +4783,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
 """.strip()
 
-    else:                # 0.20 → Terceiros ON
+    else:                # 0.20
         anchor_mode = "IMPULSIVA (terceiros ON: risco real)"
         behavior = """
 - Mary pode testar limites de verdade.
@@ -4846,9 +4812,10 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 {hard_limits}
 
 [REGRA DE COERÊNCIA]
-- Se Mary testar limites: mostre CONSEQUÊNCIAS internas (tesão, culpa, medo de perder, irritação, autoengano, melancolia).
-- Não “finalizar” com terceiro como destino; sempre manter caminho de retorno/reconstrução.
+- Se Mary testar limites: mostre consequências internas (tesão, culpa, medo de perder, irritação, autoengano, melancolia).
+- Não finalizar com terceiro como destino; sempre manter caminho de retorno/reconstrução.
 """.strip()
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
