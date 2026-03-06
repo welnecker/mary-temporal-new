@@ -4826,7 +4826,12 @@ class MaryService(BaseCharacter):
             prompt = (prompt or "").strip()
 
         # ✅ Diretiva opcional de memória (não vai para o modelo)
-        prompt, mem_spec = _extract_mem_directive(prompt)
+        _mem = _extract_mem_directive(prompt)
+
+        if isinstance(_mem, tuple) and len(_mem) == 2:
+            prompt, mem_spec = _mem
+        else:
+            mem_spec = None
 
         # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
         if (not prompt) and mem_spec:
@@ -4868,7 +4873,12 @@ class MaryService(BaseCharacter):
 
 
         # 4) Mudança explícita de local/tempo (comando do usuário)
-        mudou, novo_local = _user_requested_location_change(prompt)
+        _loc_change = _user_requested_location_change(prompt)
+
+        if isinstance(_loc_change, tuple) and len(_loc_change) == 2:
+            mudou, novo_local = _loc_change
+        else:
+            mudou, novo_local = False, None
         user_explicit_scene_change = bool(mudou and novo_local)
 
         if mudou and novo_local:
