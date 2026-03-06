@@ -4884,7 +4884,12 @@ class MaryService(BaseCharacter):
         if mudou and novo_local:
             novo_local = str(novo_local).strip()
 
-            loc0, _t0, _a0 = _get_scene_state(facts0)
+            _scene_state = _get_scene_state(facts0)
+
+        if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
+            loc0, _t0, _a0 = _scene_state
+        else:
+            loc0, _t0, _a0 = "", "", ""
             loc0n = (loc0 or "").strip().lower()
             loc1n = novo_local.lower()
 
@@ -4899,7 +4904,12 @@ class MaryService(BaseCharacter):
         scene_parallel = bool(scene_locked_pre and _detect_scene_violation(prompt) and not user_explicit_scene_change)
         
         # 6) Contexto base
-        persona_text, _ = get_persona(timeline_final)
+        _persona = get_persona(timeline_final)
+
+        if isinstance(_persona, tuple) and len(_persona) >= 1:
+            persona_text = _persona[0] or ""
+        else:
+            persona_text = ""
         facts = cached_get_facts(usuario_key)
         
         conflict_mode = _resolve_conflict_mode(timeline_final)
