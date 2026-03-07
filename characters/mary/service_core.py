@@ -801,12 +801,7 @@ def _detect_scene_violation(user_text: str) -> bool:
     if _is_future_intention_only(user_text):
         return False
 
-    if re.search(r"\bcorta\s+para\b", txt):
-        return False
-    if re.search(r"\bhoras\s+depois\b", txt):
-        return False
-        
-
+      
     # 1) Se o usuário está usando comandos EXPLÍCITOS de transição, NÃO é violação.
     if re.search(r"\bcorta\s+para\b", txt):
         return False
@@ -838,8 +833,8 @@ def _detect_scene_violation(user_text: str) -> bool:
 
 def _is_future_intention_only(user_text: str) -> bool:
     """
-    True quando o usuário só quer que Mary declare uma intenção futura,
-    sem executar a mudança de cena agora.
+    True quando o usuário só quer que Mary declare uma intenção,
+    dúvida, recusa ou decisão futura, sem executar a mudança de cena agora.
     """
     txt = _t_norm(user_text)
 
@@ -850,6 +845,7 @@ def _is_future_intention_only(user_text: str) -> bool:
         "vou ",
         "eu vou ",
         "talvez eu va",
+        "talvez eu vá",
         "talvez eu vou",
         "penso em ir",
         "estou pensando em ir",
@@ -859,8 +855,21 @@ def _is_future_intention_only(user_text: str) -> bool:
         "não vou",
         "decido se vou",
         "vai decidir se vai",
+        "deve decidir se vai",
         "decidir entre ir ou nao ir",
         "decidir entre ir ou não ir",
+        "decidir entre ir",
+        "deve decidir entre ir",
+        "vai decidir entre ir",
+        "ficar em casa",
+        "deletar a mensagem",
+        "apagar a mensagem",
+        "dar um pulo ate la",
+        "dar um pulo até lá",
+        "ir malhar",
+        "ir para a academia",
+        "ir pra academia",
+        "ir pro gym",
     )
 
     # sinais de execução imediata / teletransporte / cena consumada
@@ -870,10 +879,15 @@ def _is_future_intention_only(user_text: str) -> bool:
         "estou na academia",
         "entra na academia",
         "foi para a academia",
-        "já foi",
+        "foi pra academia",
         "ja foi",
-        "já chegou",
+        "já foi",
         "ja chegou",
+        "já chegou",
+        "agora na academia",
+        "dentro da academia",
+        "no vestiario da academia",
+        "no vestiário da academia",
     )
 
     if any(x in txt for x in hard_scene_exec):
@@ -881,6 +895,49 @@ def _is_future_intention_only(user_text: str) -> bool:
 
     return any(x in txt for x in future_markers)
 
+
+def _detect_scene_violation(user_text: str) -> bool:
+    """
+    Retorna True quando o usuário tenta forçar pulo temporal/narrativo
+    sem usar um comando explícito de transição ou sem narrar corretamente
+    a mudança de cena.
+    """
+    txt = (user_text or "").strip().lower()
+    if not txt:
+        return False
+
+    # ✅ intenção futura NÃO é salto de cena
+    if _is_future_intention_only(user_text):
+        return False
+
+    # 1) Comandos EXPLÍCITOS de transição: permitidos
+    if re.search(r"\bcorta\s+para\b", txt):
+        return False
+    if re.search(r"\bhoras\s+depois\b", txt):
+        return False
+
+    # 2) Pedido explícito de mudança de local: tratado em outro lugar
+    if re.search(r"\b(vamos|me\s+leva|ir)\s+(pro|pra|para)\b", txt):
+        return False
+
+    # 3) Elipses temporais / saltos narrativos que quebram continuidade
+    patterns = [
+        r"\bap[oó]s\s+isso\b",
+        r"\bdepois\s+disso\b",
+        r"\bmais\s+tarde\b",
+        r"\bmais\s+noite\b",
+        r"\bno\s+outro\s+dia\b",
+        r"\bno\s+dia\s+seguinte\b",
+        r"\bna\s+manh[aã]\s+seguinte\b",
+        r"\bna\s+semana\s+seguinte\b",
+        r"\benquanto\s+isso\b",
+        r"\bdo\s+outro\s+lado\s+da\s+cidade\b",
+        r"\bcena\s+seguinte\b",
+        r"\bcorta\s+a\s+cena\b",
+        r"\bcorta\s+daqui\b",
+    ]
+
+    return any(re.search(p, txt) for p in patterns)
 # ==========================================================
 # INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
