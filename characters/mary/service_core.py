@@ -64,13 +64,25 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 # O modelo pode emitir um bloco curto de raciocínio interno em <think>...</think>.
 # Esse bloco NUNCA deve chegar ao usuário final: usamos apenas como "andaime" para coerência.
-_RE_THINK_BLOCK = re.compile(r"(?is)\s*<think>.*?</think>\s*")
+_RE_THINK_BLOCK = re.compile(r"(?is)<think>.*?</think>")
 
 def _strip_internal_thought(texto: str) -> str:
+    """
+    Remove blocos internos <think>...</think> sem matar a resposta inteira.
+    Se após a limpeza sobrar vazio, preserva o original limpo.
+    """
     if not texto:
         return ""
-    # remove blocos <think>... </think> inteiros (inclusive quebras de linha)
-    return _RE_THINK_BLOCK.sub("", texto).strip()
+
+    original = str(texto).strip()
+    cleaned = _RE_THINK_BLOCK.sub("", original).strip()
+
+    # Se o provider respondeu quase só com <think>...</think>,
+    # NÃO devolver vazio silenciosamente.
+    if not cleaned:
+        return original
+
+    return cleaned
 
 
 # ==========================================================
@@ -6618,7 +6630,12 @@ class MaryService(BaseCharacter):
                     )
                 except Exception:
                     pass
-
+                
+                texto = (texto or "").strip()
+                
+                if not texto:
+                    texto = self._fallback_text()
+                
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
 
@@ -6642,8 +6659,13 @@ class MaryService(BaseCharacter):
                 },
             )
 
+        texto = (texto or "").strip()
+
+        if not texto:
+            texto = self._fallback_text()
+        
         _ss_set("mary_last_diagnostics", diag.as_dict())
-        return self._fallback_text()
+        return texto
 
 
 
