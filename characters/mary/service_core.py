@@ -1266,18 +1266,17 @@ def _inject_long_memory_textsearch(
     # chave da long memory
     long_key = _long_key(shared_key, timeline)
 
-    q = _sanitize_search_query(prompt)
-    
     """
-    ✅ Recupera memórias relevantes via Mongo $text.
+    Recupera memórias relevantes via Mongo $text.
     - Não injeta pins/guide/fixed (isso é função separada).
     - Respeita timeline_at_save / [all]
     """
-    q = _lm_query_from_prompt(user_prompt)
+
+    q = _lm_query_from_prompt(prompt)
     if not q:
         return
 
-    rows = search_long_memory_text(long_key, q, limit=10) or []
+    rows = search_long_memory_text(long_key, q, limit=limit) or []
     if not rows:
         return
 
@@ -1313,13 +1312,11 @@ def _inject_long_memory_textsearch(
         # kinds: NÃO trazer pins/guide/fixed aqui
         kind = str(meta.get("kind") or "").strip().lower()
 
-        # compat: se texto estiver tagueado como pin/guide/fixed, não trazer aqui
         if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", txt, flags=re.IGNORECASE):
             continue
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        # dedupe com texto "limpo" (evita duplicar com pins/itens tagueados)
         txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
 
         if dedupe_bucket is not None:
@@ -1334,7 +1331,6 @@ def _inject_long_memory_textsearch(
 
     if not picked:
         return
-
     lines = [
         "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)] — NÃO altera CENA ATIVA",
         "Use como fonte de verdade para fatos passados (onde/quando/como).",
