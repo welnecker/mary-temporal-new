@@ -793,14 +793,19 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
 
 def _detect_scene_violation(user_text: str) -> bool:
-    """
-    Retorna True quando o usuário tenta forçar pulo temporal/narrativo
-    sem usar um comando explícito de transição (ex: "corta para", "horas depois")
-    ou sem pedir mudança de local (ex: "vamos pra", "me leva pra", "ir para").
-    """
     txt = (user_text or "").strip().lower()
     if not txt:
         return False
+
+    # ✅ intenção futura NÃO é salto de cena
+    if _is_future_intention_only(user_text):
+        return False
+
+    if re.search(r"\bcorta\s+para\b", txt):
+        return False
+    if re.search(r"\bhoras\s+depois\b", txt):
+        return False
+        
 
     # 1) Se o usuário está usando comandos EXPLÍCITOS de transição, NÃO é violação.
     if re.search(r"\bcorta\s+para\b", txt):
@@ -830,6 +835,52 @@ def _detect_scene_violation(user_text: str) -> bool:
     ]
 
     return any(re.search(p, txt) for p in patterns)
+
+def _is_future_intention_only(user_text: str) -> bool:
+    """
+    True quando o usuário só quer que Mary declare uma intenção futura,
+    sem executar a mudança de cena agora.
+    """
+    txt = _t_norm(user_text)
+
+    if not txt:
+        return False
+
+    future_markers = (
+        "vou ",
+        "eu vou ",
+        "talvez eu va",
+        "talvez eu vou",
+        "penso em ir",
+        "estou pensando em ir",
+        "quero ir",
+        "posso ir",
+        "nao vou",
+        "não vou",
+        "decido se vou",
+        "vai decidir se vai",
+        "decidir entre ir ou nao ir",
+        "decidir entre ir ou não ir",
+    )
+
+    # sinais de execução imediata / teletransporte / cena consumada
+    hard_scene_exec = (
+        "chega na academia",
+        "cheguei na academia",
+        "estou na academia",
+        "entra na academia",
+        "foi para a academia",
+        "já foi",
+        "ja foi",
+        "já chegou",
+        "ja chegou",
+    )
+
+    if any(x in txt for x in hard_scene_exec):
+        return False
+
+    return any(x in txt for x in future_markers)
+
 # ==========================================================
 # INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
@@ -4919,9 +4970,10 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - Tom: firme, controlado, ciúme leve a moderado, retorno rápido.
 """.strip()
         hard_limits = """
-- PROIBIDO: aceitar fuga/isolamento com terceiro.
-- PROIBIDO: sexo com terceiro.
-- PERMITIDO: no máximo provocação leve e breve, com recuo imediato.
+- PROIBIDO: romance paralelo estável.
+- PROIBIDO: tratar terceiro como destino já consumado ("já fui", "já cheguei", "estou com ele agora").
+- PERMITIDO: declarar intenção futura, hesitação, recusa ou curiosidade, sem executar a mudança de cena.
+- PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
 """.strip()
 
     elif anchor >= 0.40: # 0.50
