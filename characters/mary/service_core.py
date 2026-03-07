@@ -316,14 +316,7 @@ def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
         if k.startswith(f"{_SS_PREFIX}nsfw_style_injected::"):
             _ss_del(k)
 
-    # limpa mem cache shared
-    clear_mem_cache_for_shared(_shared_key(_normalize_user_id(user_id)))
-
-    # limpa flags de injeção de estilo (para reinjetar corretamente)
-    for k in _ss_keys():
-        if k.startswith(f"{_SS_PREFIX}nsfw_style_injected::"):
-            _ss_del(k)
-
+   
 # ==========================================================
 # WRAPPERS DE ESCRITA (invalida cache automaticamente)
 # ==========================================================
@@ -1263,12 +1256,18 @@ def _inject_long_memory_pins_always(
 def _inject_long_memory_textsearch(
     shared_key: str,
     timeline: str,
-    user_prompt: str,
+    prompt: str,
     messages: List[Dict[str, str]],
     *,
     limit: int = 10,
-    dedupe_bucket: Optional[set] = None,
+    dedupe_bucket: Optional[Set[str]] = None,
 ) -> None:
+
+    # chave da long memory
+    long_key = _long_key(shared_key, timeline)
+
+    q = _sanitize_search_query(prompt)
+    
     """
     ✅ Recupera memórias relevantes via Mongo $text.
     - Não injeta pins/guide/fixed (isso é função separada).
@@ -2684,6 +2683,7 @@ _EXPLICIT_STEMS = [
     "penis",       # pênis
     "pau",         # pau (gíria)
     "pica",        # pica (gíria)
+    "cabaço",      # hímen  
     
     # Atos orais/anais explícitos
     "boquete",     # boquete
@@ -3877,6 +3877,8 @@ def _trim_scene_finalization(texto: str) -> str:
     if len(trimmed) < 80:
         return texto
     
+    trimmed = trimmed.rstrip(",.;: ")
+    
     # Ganchos sensoriais variados (escolhe aleatoriamente ou por contexto)
     hooks = [
         "\n\nMinha respiração ainda está pesada, o corpo todo formigando enquanto espero o próximo movimento.",
@@ -3969,6 +3971,30 @@ def _repair_fewshot_example(violations: List[str]) -> str:
     }
     
     return examples.get(chosen, "")
+
+def _render_pendencia_block(facts: Dict[str, Any]) -> str:
+    try:
+        facts = facts or {}
+        rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
+        pendencia = str(rel.get("pendencia", "") or "").strip()
+    except Exception:
+        pendencia = ""
+
+    if not pendencia:
+        return ""
+
+    return f"""
+[PENDÊNCIA NARRATIVA ATIVA]
+Existe um assunto em aberto que Mary não deve ignorar completamente:
+{pendencia}
+
+Direção:
+- Mary pode tentar resolver, esclarecer, provocar, contornar ou confessar parcialmente.
+- Não precisa mencionar isso em toda resposta.
+- Mas o assunto continua vivo no fundo emocional da cena.
+- Se houver abertura natural, Mary pode puxar esse tema.
+- Não transformar isso em exposição mecânica ou explicação forçada.
+""".strip()
 
 
 def _repair_instruction(violations: List[str]) -> str:
