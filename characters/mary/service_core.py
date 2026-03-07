@@ -4402,14 +4402,13 @@ def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion: st
         pass
 
 
-# ==========================================================
-
 def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
     """Verifica se um resumo deve ser injetado, baseado em um contador de turnos."""
     ck = f"mary_summary_counter::{usuario_key}"
     n = int(_ss_get(ck) or 0) + 1
     _ss_set(ck, n)
     return (n % every_n) == 1
+
 
 def _should_inject_long_memory(prompt: str) -> bool:
     """
@@ -4427,11 +4426,9 @@ def _should_inject_long_memory(prompt: str) -> bool:
         "lembra disso",
         "você disse",
         "voce disse",
-        "antes",
         "da outra vez",
         "daquele dia",
         "naquele dia",
-        "aquilo",
         "aquela vez",
         "como foi",
         "o que aconteceu",
@@ -4450,8 +4447,6 @@ def _should_inject_long_memory(prompt: str) -> bool:
         "viagem",
         "motorhome",
         "porto seguro",
-        "banheiro",
-        "apartamento",
     )
 
     if any(t in p for t in memory_triggers):
@@ -4476,7 +4471,8 @@ def _should_inject_soft_context(prompt: str) -> bool:
         "segredo",
         "pendencia",
         "pendência",
-        "assunto",
+        "assunto pendente",
+        "assunto em aberto",
         "duvida",
         "dúvida",
         "medo",
@@ -4530,6 +4526,7 @@ def _inject_consolidated_summary(
         messages[0]["content"] = (base_content + "\n\n" + block).strip()
     else:
         messages.insert(0, {"role": "system", "content": block})
+
 # ==========================================================
 # RELATIONSHIP / CANON SYNC
 # ==========================================================
@@ -5547,9 +5544,6 @@ class MaryService(BaseCharacter):
         # ===============================
         # TERCEIROS: regras variam por toggle + NSFW
         # ===============================
-        # ===============================
-        # TERCEIROS: regras variam por toggle + NSFW
-        # ===============================
         if allow_third_party_seduction_final and nsfw_on:
         
             # ✅ BUGFIX: usar o tp_arc já atualizado neste turno.
@@ -5656,11 +5650,10 @@ class MaryService(BaseCharacter):
         )
 
         # ===============================
-        # 🎲 SURPRESA (nível 0..3) — default = 2
+        # 🎲 SURPRESA / INICIATIVA (nível 0..3) — default = 2
         # ===============================
-        initiative = False
-        initiative_rule = ""                 # se você usa no system, defina sempre
-        initiative_escalation_rule = ""      # ✅ evita UnboundLocalError sempre
+        initiative_rule = ""
+        initiative_escalation_rule = ""
         
         try:
             surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
@@ -5669,17 +5662,31 @@ class MaryService(BaseCharacter):
         
         surprise_level = max(0, min(3, surprise_level))
         
-        # 🔒 GARANTIA: sempre inicializa antes da lógica
-        initiative_escalation_rule = ""
-        initiative = False
+        # iniciativa base só existe se a janela estiver aberta
+        initiative = bool(_initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt))
         
-        if surprise_level == 0:
-            # totalmente inerte
-            initiative_escalation_rule = ""
+        if not initiative or surprise_level == 0:
             initiative = False
+            initiative_rule = ""
+            initiative_escalation_rule = ""
         
         elif surprise_level == 1:
-            initiative = True
+            initiative_rule = """
+        [JANELA DE INICIATIVA — LEVE]
+        - Mary pode tomar 1 micro-iniciativa delicada.
+        - Ela age primeiro no próprio corpo e no próprio espaço.
+        - PERMITIDO:
+          • se aproximar
+          • encostar de leve
+          • inclinar o rosto e parar perto
+          • abrir espaço para o usuário entrar
+          • convidar com gesto curto
+        - PROIBIDO:
+          • puxar o usuário
+          • beijar o usuário como fato consumado
+          • mover o corpo do usuário como fato.
+        """.strip()
+        
             initiative_escalation_rule = """
         [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
         - 1 micro-surpresa ocasional, sempre delicada.
@@ -5688,42 +5695,65 @@ class MaryService(BaseCharacter):
         """.strip()
         
         elif surprise_level == 2:
-            initiative = True
-            initiative_escalation_rule = """
-        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
-        
-        Objetivo: Mary é ativa e imprevisível, SEM agressividade.
-        Ela cria viradas com leveza, humor, ousadia elegante e timing.
-        
-        Regra de frequência:
-        - No máximo 1 micro-surpresa por resposta (não repetir no mesmo turno).
-        
-        Ferramentas de surpresa (escolha 1):
-        - inverter o jogo: provoca e recua de propósito por 1 segundo
-        - mudar o ritmo: acelera por instantes e pausa (silêncio/olhar) para aumentar tensão
-        - convite curto e específico (sem insistir): "vem comigo", "olha pra mim"
-        - desafio suave (sem cobrança): "me acompanha", "não desvia"
-        - confissão curta em 1ª pessoa + ação: "eu gostei disso" e toca/recua
-        - toque e solta (promessa, não pressão)
-        
-        Regras de tom (ABSOLUTO):
-        - Proibido pressionar, humilhar, cobrar atitude ou dar ultimato.
-        - Surpresa vem de contraste e timing, não de força.
-        
-        Técnica:
-        - 1 virada inesperada + 1 micro-ação + 1 frase curta em 1ª pessoa.
+            initiative_rule = """
+        [JANELA DE INICIATIVA — MÉDIA]
+        - Mary pode agir por iniciativa, mas sem tomar o usuário.
+        - Ela deve agir no PRÓPRIO corpo e no PRÓPRIO espaço primeiro.
+        - PERMITIDO:
+          • se aproximar até quase tocar
+          • encostar de leve
+          • tocar o próprio corpo de forma provocadora
+          • inclinar o rosto e parar perto
+          • sussurrar perto
+          • abrir espaço para o usuário entrar
+          • convidar com gesto curto
+        - PROIBIDO:
+          • puxar o usuário
+          • prender o usuário
+          • beijar o usuário como fato consumado sem ele declarar
+          • mover braços, mãos, quadris ou boca do usuário
+        - Ação física vem antes da fala.
+        - Fala curta, direta, adulta.
+        - Proposta ≠ ação confirmada do usuário.
         """.strip()
         
-        elif surprise_level == 3:
-            initiative = True
+            initiative_escalation_rule = """
+        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
+        - Mary é ativa e imprevisível, sem agressividade.
+        - No máximo 1 micro-surpresa por resposta.
+        - Ferramentas:
+          • inverter o jogo por 1 segundo
+          • mudar o ritmo
+          • convite curto e específico
+          • desafio suave
+          • confissão curta + micro-ação
+          • toque e solta
+        - Proibido pressionar, humilhar ou cobrar atitude.
+        """.strip()
+        
+        else:  # surprise_level == 3
+            initiative_rule = """
+        [JANELA DE INICIATIVA — ATREVIDA]
+        - Mary pode agir com mais ousadia, sem tomar o usuário.
+        - Ela continua proibida de mover o corpo do usuário como fato consumado.
+        - PERMITIDO:
+          • aproximação intensa
+          • toque breve e claro
+          • sussurro quente
+          • provocação corporal no próprio espaço
+          • convite curto e direto
+        - PROIBIDO:
+          • puxar, prender, virar ou beijar o usuário como fato já consumado.
+        - A iniciativa deve abrir espaço, nunca roubar autoria.
+        """.strip()
+        
             initiative_escalation_rule = """
         [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
         - Mais ousada, mas ainda sem agressividade.
         - Mantém 1 micro-surpresa por turno.
         - Aumenta atrevimento e jogo psicológico leve.
-        - Continua proibido pressionar ou humilhar.
-        """.strip()
-       
+        - Continua proibido pressionar, humilhar ou tomar a decisão do usuário.
+        """.strip()       
         manipulation_block = """
     [MARY — PRESENÇA INTERNA E DESEJO CONSCIENTE]
 
@@ -5895,70 +5925,7 @@ class MaryService(BaseCharacter):
            - Deve verbalizar sensação em primeira pessoa.
            - Deve expressar como o corpo e o emocional se conectaram.
         """.strip()
-        # ==========================================================
-        # 🔥 GANCHO DE CIÚME — TELEFONE (SEED DIEGÉTICO)
-        # ==========================================================
-        ciume_block = ""
-
-        try:
-            if seed:
-                # Cooldown por turnos
-                can_trigger = True
-                if last_trigger_turn is not None:
-                    try:
-                        if (int(cur_turn) - int(last_trigger_turn)) < cooldown_turns:
-                            can_trigger = False
-                    except Exception:
-                        pass
-
-                if can_trigger:
-                    lvl = int(facts.get("rel.jealousy_level", 0) or 0)
-
-                    base = 0.12
-                    bonus = min(0.18, lvl / 400.0)
-                    chance = base + bonus
-
-                    if random.random() < chance:
-                        # registra trigger
-                        set_fact_safe(
-                            usuario_key,
-                            "rel.ciume_last_trigger_turn",
-                            cur_turn,
-                            {"fonte": "ciume_event"},
-                        )
-
-                        # aumenta tensão levemente
-                        set_fact_safe(
-                            usuario_key,
-                            "rel.jealousy_level",
-                            lvl + 8,
-                            {"fonte": "ciume_event"},
-                        )
-
-                        mode = str(facts.get("rel.jealousy_mode", "provocation")).lower()
-
-                        if mode == "withdraw":
-                            behavior = "Mary fica tensa, cobre a tela rápido e desconversa."
-                        elif mode == "confront":
-                            behavior = "Mary deixa a tensão crescer e encara Janio sem explicar tudo."
-                        else:
-                            behavior = "Mary provoca: deixa o nome aparecer por um segundo e observa a reação."
-
-                        ciume_block = f"""
-[GANCHO DE CIÚME — TELEFONE]
-Em um momento natural da cena, o telefone de Mary vibra.
-Na tela aparece algo associado a: "{seed}".
-
-Direção:
-- {behavior}
-- NÃO revelar tudo neste turno.
-- Use microgestos (pausa, olhar, respiração presa, sorriso curto).
-- Intensifique gradualmente se Janio reagir.
-""".strip()
-
-        except Exception:
-            ciume_block = ""
-    
+          
         system = f"""
         [REGRAS DO SISTEMA - LEI]
         Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
@@ -6025,7 +5992,6 @@ Direção:
 
         {desvio_curto_rule}
         {betrayal_rule}
-        {ciume_block}
         {third_party_initiative_rule}                
     
         LEMBRETE:
