@@ -791,46 +791,6 @@ def _user_requested_location_change(user_message: str) -> Tuple[bool, str]:
 
     return False, ""
 
-
-def _detect_scene_violation(user_text: str) -> bool:
-    txt = (user_text or "").strip().lower()
-    if not txt:
-        return False
-
-    # ✅ intenção futura NÃO é salto de cena
-    if _is_future_intention_only(user_text):
-        return False
-
-      
-    # 1) Se o usuário está usando comandos EXPLÍCITOS de transição, NÃO é violação.
-    if re.search(r"\bcorta\s+para\b", txt):
-        return False
-    if re.search(r"\bhoras\s+depois\b", txt):
-        return False
-
-    # 2) Se o usuário está pedindo mudança de local, NÃO é violação (isso é tratado em outro lugar).
-    if re.search(r"\b(vamos|me\s+leva|ir)\s+(pro|pra|para)\b", txt):
-        return False
-
-    # 3) Elipses temporais / saltos narrativos que normalmente quebram a continuidade
-    #    (aqui é violação porque o usuário "pula" sem comando explícito).
-    patterns = [
-        r"\bap[oó]s\s+isso\b",
-        r"\bdepois\s+disso\b",
-        r"\bmais\s+tarde\b",
-        r"\bmais\s+noite\b",
-        r"\bno\s+outro\s+dia\b",
-        r"\bno\s+dia\s+seguinte\b",
-        r"\bna\s+manh[aã]\s+seguinte\b",
-        r"\bna\s+semana\s+seguinte\b",
-        r"\benquanto\s+isso\b",
-        r"\bdo\s+outro\s+lado\s+da\s+cidade\b",
-        r"\bcena\s+seguinte\b",
-        r"\bcorta\b",  # "corta" sozinho (sem "para") costuma ser pulo também
-    ]
-
-    return any(re.search(p, txt) for p in patterns)
-
 def _is_future_intention_only(user_text: str) -> bool:
     """
     True quando o usuário só quer que Mary declare uma intenção,
@@ -5043,7 +5003,13 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 """.strip()
         hard_limits = """
 - PROIBIDO: romance paralelo estável.
-- PROIBIDO: decidir 'vou com ele'.
+- PROIBIDO: tratar terceiro como destino já consumado
+  ("já fui", "já cheguei", "estou com ele agora").
+- PERMITIDO: declarar intenção futura, hesitação, recusa,
+  curiosidade ou impulso momentâneo envolvendo terceiro,
+  sem executar a mudança de cena.
+- PERMITIDO: decidir "talvez eu vá", "não vou", "vou dar um pulo lá",
+  desde que Mary permaneça na cena atual e o usuário conduza a transição depois.
 - PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
 """.strip()
 
