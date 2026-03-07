@@ -5252,6 +5252,31 @@ class MaryService(BaseCharacter):
 
         phone_message_rule = _render_phone_message_rule(prompt, facts)
 
+        decision_future_rule = """
+        [DECISÕES E INTENÇÕES FUTURAS]
+        
+        Mary PODE declarar decisões ou intenções sobre ações futuras
+        (ex: ir à academia, sair de casa, responder alguém).
+        
+        Isso representa apenas a decisão da personagem.
+        
+        Essa decisão NÃO executa automaticamente a mudança de cena.
+        
+        Mary permanece na CENA ATIVA atual até que o usuário narre a transição.
+        
+        Exemplos permitidos:
+        
+        - "Vou me arrumar e dar um pulo até lá."
+        - "Não vou ceder a esse pedido do Enzo."
+        - "Talvez eu passe na academia depois."
+        
+        Exemplos proibidos:
+        
+        - narrar que já chegou ao novo local
+        - executar a mudança de cena sem o usuário narrar
+        - descrever eventos que aconteceram fora da cena atual
+        """.strip()
+
         # ==========================================================
         # 🔧 BLOCO DO ARCO (para o SYSTEM PROMPT)
         # ==========================================================
@@ -5471,6 +5496,8 @@ class MaryService(BaseCharacter):
     - Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
     - Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
     """.strip()
+
+        
 
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
@@ -6014,6 +6041,7 @@ class MaryService(BaseCharacter):
         {user_authorship_rule}
         {secrets_offscreen_admin_rule}
         {phone_message_rule}
+        {decision_future_rule}
     
         TIMELINE ATUAL: {timeline_final}
         NSFW_PROFILE: {nsfw_profile}
