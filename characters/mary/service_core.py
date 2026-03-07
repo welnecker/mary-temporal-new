@@ -1259,29 +1259,35 @@ def _inject_long_memory_textsearch(
     prompt: str,
     messages: List[Dict[str, str]],
     *,
-    limit: int = 10,
+    limit: int = 4,
     dedupe_bucket: Optional[Set[str]] = None,
 ) -> None:
+    """
+    Recupera memórias relevantes via Mongo $text.
+    - Não injeta pins/guide/fixed/canon aqui.
+    - Respeita timeline_at_save / [all].
+    - Reduz custo: menos resultados, menos texto, menos repetição.
+    """
 
     # chave da long memory
     long_key = _long_key(shared_key, timeline)
 
-    """
-    Recupera memórias relevantes via Mongo $text.
-    - Não injeta pins/guide/fixed (isso é função separada).
-    - Respeita timeline_at_save / [all]
-    """
+    # só busca quando houver motivo real
+    if not _should_inject_long_memory(prompt):
+        return
 
     q = _lm_query_from_prompt(prompt)
+    q = (q or "").strip()[:180]
     if not q:
         return
 
-    rows = search_long_memory_text(long_key, q, limit=limit) or []
+    rows = search_long_memory_text(long_key, q, limit=max(6, int(limit or 4))) or []
     if not rows:
         return
 
     picked: List[Dict[str, Any]] = []
     tl = _normalize_timeline(timeline)
+    seen_local: Set[str] = set()
 
     def _is_all_marker(x: str) -> bool:
         s = (x or "").strip().lower()
@@ -1295,11 +1301,15 @@ def _inject_long_memory_textsearch(
         try:
             return _normalize_timeline(tms_raw) == tl_norm
         except Exception:
-            return tms_raw.strip() == tl_norm
+            return tms_raw.strip().lower() == tl_norm
 
     for d in rows:
         txt = str(d.get("text") or "").strip()
         if not txt:
+            continue
+
+        # corta ruído muito curto
+        if len(txt) < 40:
             continue
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
@@ -1309,61 +1319,65 @@ def _inject_long_memory_textsearch(
         if not _timeline_matches(tms, tl):
             continue
 
-        # kinds: NÃO trazer pins/guide/fixed aqui
+        # não trazer kinds fixos/canon aqui
         kind = str(meta.get("kind") or "").strip().lower()
-
-        if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", txt, flags=re.IGNORECASE):
-            continue
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
+        # compat com tags embutidas no texto
+        if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed|canon)\s*\]", txt, flags=re.IGNORECASE):
+            continue
 
+        # limpa tags embutidas para dedupe
+        txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
+        txt_key = _t_norm(txt_dedupe)[:140]
+
+        if not txt_key:
+            continue
+
+        # dedupe local
+        if txt_key in seen_local:
+            continue
+        seen_local.add(txt_key)
+
+        # dedupe global
         if dedupe_bucket is not None:
-            h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
+            h = hashlib.sha1(txt_key.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
             dedupe_bucket.add(h)
 
+        # encurta o texto para não inflar prompt
+        d = dict(d)
+        d["text"] = txt_dedupe[:260].rstrip()
+
         picked.append(d)
-        if len(picked) >= int(limit or 10):
+        if len(picked) >= int(limit or 4):
             break
 
     if not picked:
         return
-    lines = [
-        "[FATOS RECUPERADOS — LONG MEMORY ($text/Mongo)] — NÃO altera CENA ATIVA",
-        "Use como fonte de verdade para fatos passados (onde/quando/como).",
-        "Não citar literalmente: recontar com suas palavras mantendo os fatos.",
-        "",
-    ]
 
-    for i, d in enumerate(picked, 1):
-        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-        title = str(meta.get("title") or meta.get("key") or "").strip()
-        ts = d.get("ts") or ""
-        header = f"- LM {i}"
-        if ts:
-            header += f" (ts: {ts})"
-        if title:
-            header += f" — {title}"
-        lines.append(header)
+    bullets: List[str] = []
+    for d in picked:
+        txt = str(d.get("text") or "").strip()
+        if not txt:
+            continue
+        bullets.append(f"- {txt}")
 
-        raw = str(d.get("text") or "").strip()
-        best_chunks = _select_best_chunks(raw, user_prompt, max_pick=2)
-        for j, ch in enumerate(best_chunks, 1):
-            lines.append(f"(chunk {j}/{len(best_chunks)})")
-            lines.append(ch.strip())
-        lines.append("")
+    if not bullets:
+        return
 
-    block = "\n".join(lines).strip()
+    block = (
+        "[LONG MEMORY RELEVANTE]\n"
+        "Use como contexto implícito de continuidade. Não cite literalmente.\n"
+        + "\n".join(bullets)
+    )
 
-    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-        base = str(messages[0].get("content") or "").rstrip()
-        messages[0]["content"] = (base + "\n\n" + block).strip()
-    else:
-        messages.append({"role": "system", "content": block})
-
+    messages.append({
+        "role": "system",
+        "content": block,
+    })
 # ==========================================================
 # BM25 (fallback leve)
 # ==========================================================
@@ -4398,18 +4412,89 @@ def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
     return (n % every_n) == 1
 
 def _should_inject_long_memory(prompt: str) -> bool:
-    """Verifica se a memória longa deve ser acionada por palavras-chave no prompt."""
-    triggers = (
-        "lembra", "antes", "daquele dia",
-        "você disse", "promessa", "quiosque",
-        "viagem", "motorhome", "porto seguro"
+    """
+    Decide se vale buscar long memory neste turno.
+    Prioriza lembrança, continuidade, reaparição de eventos/lugares/pessoas
+    e assuntos pendentes.
+    """
+    p = _t_norm(prompt)
+    if not p:
+        return False
+
+    memory_triggers = (
+        "lembra",
+        "lembrar",
+        "lembra disso",
+        "você disse",
+        "voce disse",
+        "antes",
+        "da outra vez",
+        "daquele dia",
+        "naquele dia",
+        "aquilo",
+        "aquela vez",
+        "como foi",
+        "o que aconteceu",
+        "promessa",
+        "segredo",
+        "pendencia",
+        "pendência",
+        "assunto em aberto",
     )
-    p = (prompt or "").lower()
-    return any(t in p for t in triggers)
+
+    entity_triggers = (
+        "anthony",
+        "arthur",
+        "academia",
+        "quiosque",
+        "viagem",
+        "motorhome",
+        "porto seguro",
+        "banheiro",
+        "apartamento",
+    )
+
+    if any(t in p for t in memory_triggers):
+        return True
+
+    if any(t in p for t in entity_triggers):
+        return True
+
+    return False
+
 
 def _should_inject_soft_context(prompt: str) -> bool:
-    """Verifica se um contexto 'suave' deve ser injetado."""
-    return "segredo" in (prompt or "").lower()
+    """
+    Decide se deve injetar contexto suave:
+    segredos, tensão emocional, assunto pendente, ambiguidade relacional.
+    """
+    p = _t_norm(prompt)
+    if not p:
+        return False
+
+    triggers = (
+        "segredo",
+        "pendencia",
+        "pendência",
+        "assunto",
+        "duvida",
+        "dúvida",
+        "medo",
+        "culpa",
+        "ciume",
+        "ciúme",
+        "tensão",
+        "tensao",
+        "insegurança",
+        "inseguranca",
+        "o que você sente",
+        "o que voce sente",
+        "como você ficou",
+        "como voce ficou",
+    )
+
+    return any(t in p for t in triggers)
+
 
 def _inject_consolidated_summary(
     shared_key: str,
@@ -4420,16 +4505,14 @@ def _inject_consolidated_summary(
 ) -> None:
     """
     Injeta um resumo consolidado do histórico, se existir.
-    Esta função estava sendo chamada mas não existia, causando o NameError.
+    Usa como contexto de fundo, sem citação literal.
     """
-    # Busca por um fato que armazena o resumo.
     summary_text = str(get_fact(shared_key, "consolidated_summary", default="") or "").strip()
-
     if not summary_text:
-        # Se não houver resumo, não faz nada.
         return
 
-    # Evita injetar resumos duplicados
+    summary_text = summary_text[:1200].rstrip()
+
     if dedupe_bucket is not None:
         h = hashlib.sha1(summary_text.encode("utf-8")).hexdigest()
         if h in dedupe_bucket:
@@ -4438,18 +4521,15 @@ def _inject_consolidated_summary(
 
     block = (
         "[RESUMO CONSOLIDADO]\n"
-        "O texto a seguir é um resumo de eventos passados para manter a coerência.\n"
-        "Não o cite literalmente; use-o como contexto de fundo.\n\n"
+        "Use como contexto de continuidade. Não cite literalmente.\n\n"
         f"{summary_text}"
     ).strip()
 
-    # Injeta no início do prompt do sistema
     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
         base_content = str(messages[0].get("content") or "").rstrip()
         messages[0]["content"] = (base_content + "\n\n" + block).strip()
     else:
         messages.insert(0, {"role": "system", "content": block})
-
 # ==========================================================
 # RELATIONSHIP / CANON SYNC
 # ==========================================================
