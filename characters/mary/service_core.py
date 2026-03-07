@@ -476,6 +476,57 @@ def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
     return "SAFE"
 
 # ==========================================================
+# CELULAR / MENSAGEM EM CENA
+# ==========================================================
+def _render_phone_message_rule(prompt: str, facts: Dict[str, Any]) -> str:
+    """
+    Se o usuário trouxer mensagem/celular/notificação para a cena,
+    libera Mary para reagir sem travar o pipeline.
+    """
+    p = _t_norm(prompt)
+
+    phone_terms = (
+        "mensagem",
+        "celular",
+        "telefone",
+        "whatsapp",
+        "notificacao",
+        "notificação",
+        "audio",
+        "áudio",
+        "dm",
+        "instagram",
+        "ligacao",
+        "ligação",
+    )
+
+    if not any(t in p for t in phone_terms):
+        return ""
+
+    pendencia = ""
+    try:
+        rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
+        pendencia = str(rel.get("pendencia", "") or "").strip()
+    except Exception:
+        pendencia = ""
+
+    base = """
+[CELULAR / MENSAGEM EM CENA]
+- O usuário trouxe uma mensagem/notificação/celular para a cena.
+- Mary PODE olhar a tela e entender o contexto geral do que chegou.
+- Mary PODE mencionar nome do remetente, assunto ou trecho curto.
+- Mary NÃO deve inventar conversa longa, sequência inteira de mensagens ou conteúdo excessivamente detalhado.
+- O ideal é criar GANCHO: reação + informação parcial + espaço para continuidade.
+- Se houver segredo, tensão, pendência ou conflito, use isso como lente emocional da reação.
+- Mary pode interromper a leitura, esconder parte, hesitar, resumir ou deixar a frase pela metade.
+""".strip()
+
+    if pendencia:
+        base += f"\n- Pendência narrativa ativa relacionada ao fundo emocional da cena: {pendencia}"
+
+    return base
+
+# ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -4052,9 +4103,14 @@ def _repair_instruction(violations: List[str]) -> str:
         )
 
     if "offscreen_msg_inventada" in violations:
-        bullets.append("🟠 Remova conteúdo inventado de mensagens/telefonemas. "
-                        "Se mencionar telefone, mantenha genérico (ex.: 'o celular vibra') "
-                        "sem transcrever ou interpretar conteúdo.")
+        bullets.append(
+            "🟠 Se houver celular, mensagem, áudio, ligação ou notificação em cena, "
+            "Mary pode reagir ao conteúdo de forma PARCIAL e coerente com a trama. "
+            "Ela pode citar remetente, assunto geral ou trecho curto do que apareceu. "
+            "NÃO invente conversa longa, prints completos, sequência inteira de mensagens "
+            "ou detalhes excessivos offscreen. Priorize GANCHO narrativo: reação, "
+            "hesitação, tensão, segredo, interrupção ou frase pela metade."
+        )
 
     # =========================
     # 🟡 MÉDIAS (COERÊNCIA)
@@ -5022,7 +5078,8 @@ class MaryService(BaseCharacter):
         else:
             persona_text = ""
         facts = cached_get_facts(usuario_key)
-        
+
+              
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
@@ -5192,6 +5249,8 @@ class MaryService(BaseCharacter):
         
         except Exception:
             tp_arc = {}
+
+        phone_message_rule = _render_phone_message_rule(prompt, facts)
 
         # ==========================================================
         # 🔧 BLOCO DO ARCO (para o SYSTEM PROMPT)
@@ -5853,9 +5912,14 @@ class MaryService(BaseCharacter):
 
         secrets_offscreen_admin_rule = """
     [SEGREDO + OFFSCREEN + LOGÍSTICA — ABSOLUTO]
-    - Mary NÃO inventa logística (reserva, pagamentos, check-in, horários, chaves, etc.).
-    - Mary NÃO inventa mensagens/áudios/telefonemas. No máximo: "o celular vibra".
-    - NPCs NÃO sabem segredos (nome, plano, encontro) sem o usuário narrar que contou.
+- Mary NÃO inventa logística (reserva, pagamentos, check-in, horários, chaves, etc.).
+- Se o usuário trouxer celular, mensagem, áudio, ligação ou notificação para a cena,
+  Mary PODE perceber, olhar e reagir ao que apareceu.
+- Mary PODE identificar remetente, assunto geral ou trecho curto da mensagem,
+  desde que isso seja coerente com a trama e com fatos já existentes.
+- Mary NÃO deve inventar conversas longas, prints completos ou trocas inteiras offscreen.
+- Priorize GANCHO narrativo: reação, hesitação, tensão, segredo, interrupção.
+- NPCs NÃO sabem segredos (nome, plano, encontro) sem o usuário narrar que contou.
     """.strip()
 
         language_rule = """
@@ -5949,6 +6013,7 @@ class MaryService(BaseCharacter):
         {pov_rule}
         {user_authorship_rule}
         {secrets_offscreen_admin_rule}
+        {phone_message_rule}
     
         TIMELINE ATUAL: {timeline_final}
         NSFW_PROFILE: {nsfw_profile}
