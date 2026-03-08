@@ -2312,6 +2312,7 @@ def _inject_manual_memory_if_any(
     timeline: str,
     messages: List[Dict[str, str]],
     spec: Optional[Dict[str, Any]],
+    facts: Optional[Dict[str, Any]] = None,
 ) -> None:
     if not spec:
         return
@@ -2346,14 +2347,21 @@ def _inject_manual_memory_if_any(
         mid = _memory_id(mem)
         if not _cooldown_allows(usuario_key, mid, latent=False):
             continue
+
         title, kind, txt = _memory_text_fields(mem)
+        if not txt:
+            continue
+
+        # impede manual memory de competir com facts/canon do turno
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
         tags = _parse_tags_from_memory(txt)
         _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="manual")
         _mark_cooldown(usuario_key, mid, latent=False)
         injected += 1
         if injected >= max_inject:
             break
-
 def _eval_latent_condition(cond: str, *, tp_arc: Dict[str, Any]) -> bool:
     """
     Suporta condições simples:
@@ -2408,6 +2416,7 @@ def _inject_latent_memory_if_any(
     timeline: str,
     messages: List[Dict[str, str]],
     tp_arc: Dict[str, Any],
+    facts: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Procura memórias com [LATENT: ...] e injeta no máximo 1 por turno,
@@ -2444,7 +2453,15 @@ def _inject_latent_memory_if_any(
         mid = _memory_id(mem)
         if not _cooldown_allows(usuario_key, mid, latent=True):
             continue
+
         title, kind, txt = _memory_text_fields(mem)
+        if not txt:
+            continue
+
+        # impede latent memory de competir com facts/canon do turno
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
         tags = _parse_tags_from_memory(txt)
         _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="latent")
         _mark_cooldown(usuario_key, mid, latent=True)
@@ -6486,6 +6503,7 @@ class MaryService(BaseCharacter):
             timeline=timeline_final,
             messages=messages,
             spec=mem_spec,
+            facts=facts,
         )
 
         # Estado do arco de terceiros (para memórias latentes)
@@ -6498,6 +6516,7 @@ class MaryService(BaseCharacter):
             timeline=timeline_final,
             messages=messages,
             tp_arc=tp_arc_state,
+            facts=facts,
         )
 
         messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})        
