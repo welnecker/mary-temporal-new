@@ -2843,7 +2843,13 @@ def main() -> None:
         st.markdown("### ➕ Inserir memória (DB)")
         lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
-        lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
+        lm_terms = st.text_input(
+            "Termos de busca (opcional)",
+            key="lm_terms_inp",
+            value="",
+            placeholder="Ex: mary, formação, psicologia, ufes"
+        )
+        lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)        
 
         if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
             try:
@@ -2854,6 +2860,7 @@ def main() -> None:
                     kind_final = "pin" if bool(lm_pin) else "memory"
                     tl_current = _timeline()
                     timeline_at_save = "[all]" if kind_final == "pin" else tl_current
+                    terms_list = [t.strip() for t in (lm_terms or "").split(",") if t.strip()]
         
                     meta = {
                         "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
@@ -2861,6 +2868,7 @@ def main() -> None:
                         "timeline_at_save": timeline_at_save,
                         "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
                         "source": "ui_long_memory",
+                        "tags": terms_list,
                     }
         
                     append_long_memory_safe(
