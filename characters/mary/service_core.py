@@ -987,6 +987,63 @@ def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
 
     return score
 
+def _fallback_local_long_memory_search(
+    long_key: str,
+    prompt: str,
+    *,
+    limit: int = 6,
+    timeline: str = "",
+    facts: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Fallback genérico quando o Mongo $text não encontra bem.
+    Faz varredura local nas long memories usando:
+    - title
+    - kind
+    - text
+    - tags
+    """
+    rows = list_long_memory(long_key, limit=300) or []
+    if not rows:
+        return []
+
+    tl = _normalize_timeline(timeline)
+    scored: List[Tuple[float, Dict[str, Any]]] = []
+
+    def _is_all_marker(x: str) -> bool:
+        s = (x or "").strip().lower()
+        return s in ("[all]", "all", "*")
+
+    for d in rows:
+        txt = str(d.get("text") or "").strip()
+        if not txt:
+            continue
+
+        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+
+        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+        if tms and not (_is_all_marker(tms) or _normalize_timeline(tms) == tl):
+            continue
+
+        kind = str(meta.get("kind") or "").strip().lower()
+        if kind in ("canon",):
+            continue
+
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
+        score = _score_long_memory_local(d, prompt)
+        if score <= 0:
+            continue
+
+        scored.append((score, d))
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in scored[: max(1, int(limit or 6))]]
+
 # ==========================================================
 # INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
@@ -1622,6 +1679,17 @@ def _inject_long_memory_textsearch(
         return
 
     rows = search_long_memory_text(long_key, q, limit=max(6, int(limit or 4))) or []
+
+    # fallback genérico local se o Mongo não trouxe nada
+    if not rows:
+        rows = _fallback_local_long_memory_search(
+            long_key,
+            prompt,
+            limit=max(6, int(limit or 4)),
+            timeline=timeline,
+            facts=facts,
+        )
+    
     if not rows:
         return
 
@@ -1665,7 +1733,7 @@ def _inject_long_memory_textsearch(
 
         # não trazer kinds fixos/canon aqui
         kind = str(meta.get("kind") or "").strip().lower()
-        if kind in ("canon", "pin", "guide", "fixed"):
+        if kind in ("canon",):
             continue
 
         # compat com tags embutidas no texto
