@@ -20,7 +20,7 @@ import hashlib
 import time
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional, Set
 
 try:
     import streamlit as st  # type: ignore
@@ -64,7 +64,7 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 # O modelo pode emitir um bloco curto de raciocínio interno em <think>...</think>.
 # Esse bloco NUNCA deve chegar ao usuário final: usamos apenas como "andaime" para coerência.
-_RE_THINK_BLOCK = re.compile(r"(?is)<think>.*?</think>")
+_RE_THINK_BLOCK = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
 
 def _strip_internal_thought(texto: str) -> str:
     """
@@ -76,13 +76,9 @@ def _strip_internal_thought(texto: str) -> str:
 
     original = str(texto).strip()
     cleaned = _RE_THINK_BLOCK.sub("", original).strip()
-
-    # Se o provider respondeu quase só com <think>...</think>,
-    # NÃO devolver vazio silenciosamente.
+    
     if not cleaned:
-        return original
-
-    return cleaned
+        return ""
 
 
 # ==========================================================
@@ -205,7 +201,7 @@ Você tem liberdade total para ser direto, intenso e explícito. Siga estes prin
 Criatividade é encorajada. Você conhece Mary; confie seu julgamento.
 """.strip()
 
-_CACHE_TTL_SECONDS = 60  # 60s (pode usar 120, 300 etc.)
+_CACHE_TTL_SECONDS = 300  # 60s (pode usar 120, 300 etc.)
 
 def _cache_get(key: str) -> Any:
     v = _ss_get(key)
@@ -1212,7 +1208,7 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     keep = [t for t in toks if len(t) >= 4 and t not in stop]
 
     # query curta: melhora signal/noise no $text
-    q = " ".join(keep[:14]).strip()
+    q = " ".join(keep[:14] if len(keep) > 6 else keep).strip()
     q = re.sub(r"\s{2,}", " ", q).strip()
     return q or s
 
@@ -1230,6 +1226,7 @@ def _inject_long_memory_pins_always(
     Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando meta.kind veio "memory".
     """
     try:
+        long_key = _long_key(shared_key)
         rows = list_long_memory(long_key, limit=400) or []
     except Exception:
         rows = []
@@ -1401,7 +1398,8 @@ def _inject_long_memory_textsearch(
     """
 
     # chave da long memory
-    long_key = _long_key(shared_key, timeline)
+    user_id = shared_key.split("::")[0]
+    long_key = _long_key(user_id)
 
     # só busca quando houver motivo real
     if not _should_inject_long_memory(prompt):
@@ -1658,6 +1656,11 @@ def _inject_relevant_memories(
         if dedupe_bucket is not None and h_full in dedupe_bucket:
             continue
 
+        if len(text_full) < 200:
+            chunks = [text_full]
+        else:
+            chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
+
         chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
         if not chunks:
             continue
@@ -1731,7 +1734,7 @@ def _inject_now_context(
     """
     try:
         facts = cached_get_facts(usuario_key) or {}
-        facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
+        facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline)
     except Exception:
         facts = {}
 
@@ -1993,7 +1996,7 @@ def _memory_timestamp(mem: Dict[str, Any]) -> Optional[float]:
                 return float(s[:10])
             # tenta iso
             try:
-                dt = datetime.datetime.fromisoformat(s.replace("Z","+00:00"))
+                dt = datetime.datetime.fromisoformat(s.replace("Z","+00:00").replace(" ","T"))
                 return dt.timestamp()
             except Exception:
                 pass
@@ -2078,7 +2081,7 @@ def _select_memories(
         # suporta @last2 etc.
         k = n or 1
         return hits[: max(1, min(6, k))]
-    return hits[:1]
+    return hits[: max(1, min(3, len(hits)))]
 
 def _cooldown_allows(usuario_key: str, mem_id: str, *, latent: bool, cooldown_turns: int = 10) -> bool:
     """Evita repetir a mesma memória com frequência (por sessão)."""
