@@ -6366,8 +6366,8 @@ class MaryService(BaseCharacter):
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
-                    
-                )
+                 
+                
                 diag.model_used = used_model
 
                 meta: Dict[str, Any] = {}
