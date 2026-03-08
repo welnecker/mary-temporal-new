@@ -174,13 +174,9 @@ def _long_key(user_id: str) -> str:
 # NSFW TOGGLE (fonte de verdade é core.nsfw)
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
-[NSFW_OFF — Sensual sem Explícito]
-- Mantenha romance, intimidade emocional e tensão sexual crescente.
-- Use linguagem sensorial rica: calor corporal, respiração, batimentos, tremores, arrepios.
-- Descreva desejo através de reações físicas sutis: olhares prolongados, proximidade, toques leves.
-- Evite nomear órgãos genitais ou descrever atos sexuais explícitos.
-- Permita antecipação e sugestão; o não-dito pode ser mais intenso que o explícito.
-- Não quebre o tom nem a continuidade emocional.
+[NSFW_OFF]
+Mary mantém sensualidade, tensão física e proximidade emocional,
+mas sem linguagem sexual explícita.
 """.strip()
 
 NSFW_TOGGLE_STYLE = """
@@ -199,6 +195,16 @@ Você tem liberdade total para ser direto, intenso e explícito. Siga estes prin
 5. AUTENTICIDADE: Coerência emocional e conexão. Evite vulgaridade gratuita. Finalize com tensão concreta, não abstração.
 
 Criatividade é encorajada. Você conhece Mary; confie seu julgamento.
+""".strip()
+
+NARRATIVE_SPACE = """
+[A CENA CONTINUA VIVA]
+Mary pode observar, hesitar, demonstrar emoções e tomar pequenas iniciativas antes de responder.
+""".strip()
+
+CONTROLLED_UNPREDICTABILITY = """
+[INICIATIVA NARRATIVA]
+Mary pode surpreender de forma sutil e coerente, sem contradizer fatos estabelecidos nem tomar decisões grandes pelo usuário.
 """.strip()
 
 _CACHE_TTL_SECONDS = 300  # 60s (pode usar 120, 300 etc.)
@@ -486,11 +492,13 @@ def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
 # ==========================================================
 # CELULAR / MENSAGEM EM CENA
 # ==========================================================
-def _render_phone_message_rule(prompt: str, facts: Dict[str, Any]) -> str:
-    """
-    Se o usuário trouxer mensagem/celular/notificação para a cena,
-    libera Mary para reagir sem travar o pipeline.
-    """
+def _render_phone_message_rule() -> str:
+    return """
+[CELULAR EM CENA]
+
+Se o usuário mencionar celular ou mensagem, Mary pode reagir naturalmente,
+comentando brevemente ou deixando um gancho para continuidade.
+"""
     p = _t_norm(prompt)
 
     phone_terms = (
@@ -1044,9 +1052,8 @@ def _inject_canon_memories_always(
         pass
 
     lines: List[str] = []
-    lines.append("[MEMÓRIAS CANÔNICAS — COMPARTILHADAS] — NÃO altera CENA ATIVA")
-    lines.append("Estas memórias são fatos do universo e DEVEM ser seguidas.")
-    lines.append("Se a persona contradizer, as memórias vencem.")
+    lines.append("[FATOS CANÔNICOS]")
+    lines.append("Use como verdade do universo.")
     lines.append("")
 
     for i, m in enumerate(selected, 1):
@@ -1568,8 +1575,7 @@ def _inject_long_memory_textsearch(
         return
 
     block = (
-        "[LONG MEMORY RELEVANTE]\n"
-        "Use como contexto implícito de continuidade. Não cite literalmente.\n"
+        "[MEMÓRIAS RELEVANTES]\n"
         + "\n".join(bullets)
     )
 
@@ -1954,8 +1960,8 @@ def _inject_shared_soft_context(
     selected = soft[-max_items:] if len(soft) > max_items else soft
 
     lines = [
-        "[MEMÓRIAS COMPARTILHADAS (suave)] — NÃO altera CENA ATIVA",
-        "Use para coerência, sem citar literalmente.",
+        "[MEMÓRIAS COMPARTILHADAS]",
+        "Use só como coerência de fundo.",
         "",
     ]
 
@@ -5477,15 +5483,11 @@ class MaryService(BaseCharacter):
         nsfw_hard_block = ""
         if nsfw_on:
             nsfw_hard_block = """
-        [LINGUAGEM FÍSICA — NSFW ON]
-        - PERMITIDO: linguagem física direta e explícita
-          (buceta, pênis, boca, língua, penetração, etc.)
-        - PERMITIDO: detalhes sensoriais em camadas
-          (texturas, pressões, umidades, temperaturas, ritmos)
-        - PERMITIDO: reações físicas intensas
-          (tremores, contrações, gemidos, respiração entrecortada)
-        - PROIBIDO APENAS: redenção, destino, prece, voto, para sempre
-        - FOCO: descreva o que Mary SENTE e FAZ, não o que significa
+        [NSFW_ON]
+        Mary pode usar linguagem sexual direta e explícita quando a cena permitir.
+        Descreva sensações físicas, reações corporais e ritmo da interação com intensidade natural.
+        
+        Evite apenas linguagem espiritualizada ou metáforas de destino.
         """.strip()
         
         # ✅ TERCEIROS: respeita o toggle da UI (override) quando NSFW está ON
@@ -6395,6 +6397,16 @@ class MaryService(BaseCharacter):
         """.strip()
 
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+
+        # Espaço narrativo leve
+        messages[0]["content"] = (
+            str(messages[0]["content"]).rstrip()
+            + "\n\n"
+            + NARRATIVE_SPACE
+            + "\n\n"
+            + CONTROLLED_UNPREDICTABILITY
+        ).strip()
+        
         dedupe_hashes: set = set()
         
         # 🔒 CONTEXTO ABSOLUTO
@@ -7085,6 +7097,22 @@ class MaryService(BaseCharacter):
             timeline=str(timeline or ""),
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
+        
+        viol_graves = {
+            "vazio",
+            "meta",
+            "meta_fala",
+            "autoria_usuario",
+            "pov_quebrado",
+            "contradicao_cena",
+            "scene_break",
+            "quebra_personagem",
+        }
+        
+        # se só houver violações leves, aceita a resposta
+        if not any(v in viol_graves for v in (violations or [])):
+            texto = _trim_scene_finalization(texto)
+            return texto, used_model
 
         # ======================================================
         # HYBRID: NSFW OFF — se for "na borda", pede classificação ao modelo
@@ -7154,10 +7182,11 @@ class MaryService(BaseCharacter):
 
         repair_system = (
             "Você está reescrevendo a última resposta da Mary.\n"
-            "A reescrita deve obedecer 100% as regras do system original.\n"
-            "NÃO explique regras.\n"
-            "NÃO mencione violações.\n"
-            "Apenas reescreva a resposta final.\n\n"
+            "Corrija apenas os problemas reais.\n"
+            "Preserve voz, intensidade, subtexto, erotismo e personalidade da personagem.\n"
+            "Não explique regras.\n"
+            "Não mencione violações.\n"
+            "Entregue apenas a nova resposta final.\n\n"
             f"{repair_instr}"
         )
 
