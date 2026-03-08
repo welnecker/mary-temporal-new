@@ -4021,8 +4021,9 @@ def _repair_fewshot_example(violations: List[str]) -> str:
     
     # Prioridade: críticas primeiro, depois contexto
     priority = [
-        "placeholder_reveal",
+       "placeholder_reveal",
         "autoria_usuario",
+        "mary_nao_verbalizou_orgasmo",
         "finalizou_cena",
         "nsfw_off_explicito",
         "nsfw_on_suavizou",
@@ -4147,6 +4148,13 @@ def _repair_instruction(violations: List[str]) -> str:
 
     if "nsfw_off_explicito" in violations:
         bullets.append("🔴 NSFW OFF: remova anatomia explícita. Mantenha sensualidade sem ato sexual.")
+    if "mary_nao_verbalizou_orgasmo" in violations:
+        bullets.append(
+            "🔴 Se Mary estiver em clímax, ela DEVE verbalizar explicitamente o próprio orgasmo. "
+            "Use linguagem direta como 'vou gozar', 'estou gozando', 'gozei' ou 'orgasmo'. "
+            "Não deixe apenas implícito por tremor, espasmo ou metáfora corporal."
+        )
+    
 
     # =========================
     # 🟠 ALTAS (SEGURANÇA)
@@ -4187,7 +4195,7 @@ def _repair_instruction(violations: List[str]) -> str:
     if "finalizou_cena_soft" in violations:
         bullets.append("🟡 Evite encerramento completo. Mantenha o gancho sensual e pare ANTES da conclusão.")
 
-    if "mary_finalizou_orgasmo_do_usuario" in violations:
+    if "orgasmo_usuario_sem_autorizacao" in violations:
         bullets.append(
             "🟡 Mary NÃO finaliza o orgasmo do usuário sem autorização explícita. "
             "Remova ejaculação/clímax dele. Mantenha tensão e convide a decisão dele."
@@ -4329,7 +4337,7 @@ def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
 # ==========================================================
 def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
     uid = (user_id or "").strip().lower()
-    if uid.startswith("janio"):
+    if re.fullmatch(r"janio(?:\s+donisete(?:\s+welnecker)?)?", uid):
         return True
     if "eu sou janio" in ctx_lower or "meu nome é janio" in ctx_lower or "me chamo janio" in ctx_lower:
         return True
@@ -4425,9 +4433,13 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
     ut = (user_text or "")
 
     # ✅ NOVO: fase 0 também pode ter iniciativa quando o usuário dá convite claro
-    if phase < 1:
-        if re.search(r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a|bar|drink)\b", ut, re.IGNORECASE):
-            return True
+    if re.search(
+        r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a)\b|"
+        r"\b(vamos\s+pro\s+bar|vem\s+pro\s+bar|me\s+paga\s+um\s+drink|vamos\s+tomar\s+um\s+drink)\b",
+        ut,
+        re.IGNORECASE,
+    ):
+        return True
         # sem convite, mantém fechado
         return False
 
@@ -4480,7 +4492,10 @@ def _infer_emotion_bucket(texto: str) -> str:
     # buckets positivos / íntimos
     if any(k in t for k in ["eu te amo", "amo você", "amo voce", "apaixon", "saudade", "carinho", "colo"]):
         return "afeto"
-    if any(k in t for k in ["tesão", "tesao", "gozar", "gozo", "pau", "boceta", "clitóris", "clitoris", "gem"]):
+    if any(k in t for k in [
+        "tesão", "tesao", "gozar", "gozo", "pau", "boceta", "clitóris", "clitoris",
+        "gem", "ofego", "arrepio", "calor", "tremo", "latejando", "molhada"
+    ]):
         return "tesao"
     return "neutro"
 
@@ -4525,8 +4540,7 @@ def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
     ck = f"mary_summary_counter::{usuario_key}"
     n = int(_ss_get(ck) or 0) + 1
     _ss_set(ck, n)
-    return (n % every_n) == 1
-
+    return (n % every_n) == 0
 
 def _should_inject_long_memory(prompt: str) -> bool:
     """
@@ -4800,7 +4814,7 @@ def _tp_arc_event(prompt: str, texto: str) -> str:
         "quero o janio", "só o janio", "fica comigo", "volta pra mim",
     )
 
-    if any(k in p for k in ret_kw):
+    if any(re.search(rf"\b{re.escape(k)}\b", p) for k in ret_kw):
         return "return"
 
     signal_level = _third_party_signal_level(blob)
@@ -4969,9 +4983,10 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
         phase_txt = "2) teste insistente (limite sendo cutucado; ambivalência real)"
     elif phase == 3:
         phase_txt = "3) risco real (adrenalina/culpa altas; decisões podem surpreender)"
+    elif phase == 4:
+        phase_txt = "4) tensão crítica (puxão forte entre impulso, culpa e retorno)"
     else:
-        phase_txt = "4) retorno/reconstrução (Mary volta para Janio e reancora)"
-
+        phase_txt = "5) retorno/reconstrução (Mary volta para Janio e reancora)"
     if anchor >= 0.80:   # 0.85
         anchor_mode = "REANCORADA (Janio no centro)"
         behavior = """
@@ -5061,12 +5076,7 @@ class MaryService(BaseCharacter):
             prompt = (prompt or "").strip()
 
         # ✅ Diretiva opcional de memória (não vai para o modelo)
-        _mem = _extract_mem_directive(prompt)
-
-        if isinstance(_mem, tuple) and len(_mem) == 2:
-            prompt, mem_spec = _mem
-        else:
-            mem_spec = None
+            prompt, mem_spec = _extract_mem_directive(prompt)
 
         # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
         if (not prompt) and mem_spec:
@@ -5194,12 +5204,20 @@ class MaryService(BaseCharacter):
         
             # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
             if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
-                mary_fact[tl_key] = "nao_virgem"
-                mary_fact["virginity"] = "nao_virgem"  # fallback global para leituras antigas
-                facts["mary"] = mary_fact  # atualiza o dict em memória (mesmo turno)
-        
-                # persiste nos facts para o próximo turno
-                set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
+                changed = False
+
+                if mary_fact.get(tl_key) != "nao_virgem":
+                    mary_fact[tl_key] = "nao_virgem"
+                    changed = True
+
+                if mary_fact.get("virginity") != "nao_virgem":
+                    mary_fact["virginity"] = "nao_virgem"
+                    changed = True
+
+                if changed:
+                    facts["mary"] = mary_fact
+                    set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
+                
         except Exception:
             pass
         
