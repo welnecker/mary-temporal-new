@@ -2529,7 +2529,7 @@ def _meta_leak(texto: str) -> bool:
     t = _t_norm(texto)
     if not t:
         return False
-   return bool(_RE_PLACEHOLDER_REVEAL.search(t))
+    return bool(_RE_PLACEHOLDER_REVEAL.search(t))
 
 # ----------------------------------------------------------
 # Offscreen inventado (geral)
