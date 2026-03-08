@@ -76,10 +76,11 @@ def _strip_internal_thought(texto: str) -> str:
 
     original = str(texto).strip()
     cleaned = _RE_THINK_BLOCK.sub("", original).strip()
-    
-    if not cleaned:
-        return ""
 
+    if not cleaned:
+        return original
+
+    return cleaned
 
 # ==========================================================
 # SESSION STATE (safe wrappers)
@@ -492,14 +493,8 @@ def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
 # ==========================================================
 # CELULAR / MENSAGEM EM CENA
 # ==========================================================
-def _render_phone_message_rule() -> str:
-    return """
-[CELULAR EM CENA]
-
-Se o usuário mencionar celular ou mensagem, Mary pode reagir naturalmente,
-comentando brevemente ou deixando um gancho para continuidade.
-"""
-    p = _t_norm(prompt)
+def _render_phone_message_rule(prompt: str, facts: Dict[str, Any]) -> str:
+    p = _t_norm(prompt or "")
 
     phone_terms = (
         "mensagem",
@@ -519,24 +514,11 @@ comentando brevemente ou deixando um gancho para continuidade.
     if not any(t in p for t in phone_terms):
         return ""
 
-    pendencia = ""
-    try:
-        rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
-        pendencia = str(rel.get("pendencia", "") or "").strip()
-    except Exception:
-        pendencia = ""
-
-    base = """
-[CELULAR / MENSAGEM EM CENA]
-- O usuário trouxe uma mensagem/notificação/celular para a cena.
-- Mary PODE olhar a tela e entender o contexto geral do que chegou.
-- Mary PODE mencionar nome do remetente, assunto ou trecho curto.
-- Mary NÃO deve inventar conversa longa, sequência inteira de mensagens ou conteúdo excessivamente detalhado.
-- O ideal é criar GANCHO: reação + informação parcial + espaço para continuidade.
-- Se houver segredo, tensão, pendência ou conflito, use isso como lente emocional da reação.
-- Mary pode interromper a leitura, esconder parte, hesitar, resumir ou deixar a frase pela metade.
+    return """
+[CELULAR EM CENA]
+Se o usuário mencionar celular ou mensagem, Mary pode reagir naturalmente,
+comentando brevemente ou deixando um gancho para continuidade.
 """.strip()
-
     if pendencia:
         base += f"\n- Pendência narrativa ativa relacionada ao fundo emocional da cena: {pendencia}"
 
