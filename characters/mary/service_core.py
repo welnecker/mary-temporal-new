@@ -4152,142 +4152,72 @@ def _violations(
     allow_third_party_seduction: bool = False,
 ) -> List[str]:
     """
-    Validações "hard" (não-estéticas) para o mecanismo de repair.
+    Validador mínimo para repair.
 
-    Objetivo:
-    - Proteger autoria do usuário (não narrar ações/falas dele).
-    - Evitar meta-vazamento (regras/prompt/sistema).
-    - Evitar mensagens/logística offscreen inventadas.
-    - Evitar escalada de violência extrema.
-    - Guardrails realistas para "terceiros" (locais perigosos / convite vago).
-    - Se NSFW OFF, bloquear explícito.
-    - Evitar finalizar a cena sem autorização (soft no NSFW ON; hard no SAFE).
-    - (NSFW ON) Se houver sinal de clímax (fase >= 4), Mary deve verbalizar o próprio orgasmo.
-    - (Sempre) Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita dele.
+    Só detecta:
+    - vazio
+    - meta-fala (modelo falando como IA)
+    - contradição grave de cena
+
+    Todo o resto passa direto.
     """
+
     t = (texto or "").strip()
     out: List[str] = []
 
+    # ----------------------------------------------------------
+    # 1️⃣ vazio
+    # ----------------------------------------------------------
     if not t:
         out.append("vazio")
         return out
 
     t_lower = t.lower()
-    u_lower = (user_text or "").strip().lower()
-    ctx_l = (ctx_lower or "").lower()  # ✅ garante lower real
 
     # ----------------------------------------------------------
-    # meta / vazamento
+    # 2️⃣ meta-fala (IA vazando sistema)
     # ----------------------------------------------------------
-    if _RE_PLACEHOLDER_REVEAL.search(t):
-        out.append("placeholder_reveal")
-
-    # ----------------------------------------------------------
-    # mensagens inventadas / offscreen (WhatsApp/SMS/print etc.)
-    # ----------------------------------------------------------
-    if _RE_OFFSCREEN_MSG.search(t):
-        # ✅ usa ctx_lower normalizado
-        user_pasted = any(
-            kw in ctx_l
-            for kw in (
-                "mensagem:",
-                "whatsapp:",
-                "sms:",
-                "print",
-                "segue a mensagem",
-                "segue o texto",
-                "transcrevendo",
-            )
-        )
-        if not user_pasted:
-            out.append("offscreen_msg_inventada")
-
-    # ----------------------------------------------------------
-    # autoria: não inventar ações/falas do usuário
-    # ----------------------------------------------------------
-    if _has_user_action_violation(t):
-        out.append("autoria_usuario")
-
-    # ----------------------------------------------------------
-    # conflito (só se timeline permite)
-    # ----------------------------------------------------------
-    try:
-        mode = _resolve_conflict_mode(timeline or "")
-        if mode != "off" and _RE_CONFLICT_IMMINENT.search(t):
-            # Em "soft": só derruba quando é letal/arma. Caso contrário, apenas sinaliza.
-            if _RE_CONFLICT_LETHAL.search(t):
-                out.append("conflito_extremo")
-            else:
-                out.append("conflito_soft")
-    except Exception:
-        if _RE_CONFLICT_IMMINENT.search(t):
-            if _RE_CONFLICT_LETHAL.search(t):
-                out.append("conflito_extremo")
-            else:
-                out.append("conflito_soft")
-
-    # ----------------------------------------------------------
-    # terceiros: segurança/logística realista
-    # ----------------------------------------------------------
-    if _third_party_deviation(t):
-        if _RE_DANGEROUS_LOCATIONS.search(t):
-            out.append("terceiro_local_perigoso")
-        elif _RE_VAGUE_INVITE.search(t):
-            out.append("terceiro_convite_vago")
-        elif _RE_URBAN_LOCATIONS.search(t):
-            out.append("terceiro_local_urbano")
-        else:
-            out.append("terceiro_desvio_generico")
-
-        # ✅ Se terceiros estiver liberado, rebaixa TUDO exceto local perigoso para "soft"
-        if allow_third_party_seduction and "terceiro_local_perigoso" not in out:
-            downgradable = {"terceiro_convite_vago", "terceiro_local_urbano", "terceiro_desvio_generico"}
-            out = [f"{v}_soft" if v in downgradable else v for v in out]
-
-    # ----------------------------------------------------------
-    # finalização de cena fora de hora
-    # ----------------------------------------------------------
-    if _RE_SCENE_FINALIZATION.search(t):
-        if not _finalization_allowed(user_text or "", int(phase or 0)):
-            out.append("finalizou_cena_soft" if nsfw_on else "finalizou_cena")
-
-    # ----------------------------------------------------------
-    # NSFW OFF: explícito vira violação
-    # ----------------------------------------------------------
-    if (not nsfw_on) and _is_explicit(t):
-        out.append("nsfw_off_explicito")
-
-    # ----------------------------------------------------------
-    # Mary em pico/clímax deve verbalizar explicitamente o orgasmo
-    # ----------------------------------------------------------
-    if nsfw_on and int(phase or 0) >= 4:
-        if _detect_climax_signal(t, user_text or "", nsfw_on=nsfw_on, phase=int(phase or 0)):
-            if not _has_mary_orgasm_declaration(t):
-                out.append("mary_nao_verbalizou_orgasmo")
-    
-    # ----------------------------------------------------------
-    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
-    # ----------------------------------------------------------
-    user_orgasm_claim = bool(
-        re.search(
-            r"\b("
-            r"voc[eê]\s+(?:vai\s+)?goz(?:a|ar|ou)\b|"
-            r"(?:fa[cç]o|vou)\s+te\s+fazer\s+gozar\b|"
-            r"fa[cç]o\s+voc[eê]\s+gozar\b|"
-            r"te\s+fa[cç]o\s+gozar\b|"
-            r"seu\s+cl[ií]max\b|"
-            r"cl[ií]max\s+de\s+voc[eê]\b|"
-            r"cl[ií]max\s+dele\b|"
-            r"ejacul(?:a|ou)\b"
-            r")",
-            t_lower,
-        )
+    meta_patterns = (
+        r"\bcomo ia\b",
+        r"\bcomo assistente\b",
+        r"\bcomo modelo de linguagem\b",
+        r"\bn[aã]o posso ajudar\b",
+        r"\bn[aã]o posso continuar\b",
+        r"\bopenai\b",
+        r"\bpol[ií]tica de conte[uú]do\b",
+        r"\bsou uma ia\b",
+        r"\bn[aã]o tenho corpo\b",
     )
-    
-    if user_orgasm_claim and not _user_explicitly_allows_user_orgasm(user_text or ""):
-        out.append("orgasmo_usuario_sem_autorizacao")
-    
-    return out
+
+    if any(re.search(p, t_lower) for p in meta_patterns):
+        out.append("meta_fala")
+
+    # ----------------------------------------------------------
+    # 3️⃣ contradição grave de cena
+    # ----------------------------------------------------------
+    ctx = (ctx_lower or "").lower()
+
+    if ctx:
+        m_local = re.search(r"local:\s*(.+)", ctx)
+        local_ctx = m_local.group(1).strip().lower() if m_local else ""
+
+        if local_ctx:
+            jump_patterns = (
+                r"\bentro no bar\b",
+                r"\bestou na academia\b",
+                r"\bchego na academia\b",
+                r"\bentro no carro\b",
+                r"\bsaio do quarto\b",
+                r"\bvou embora\b",
+                r"\bsaio daqui\b",
+            )
+
+            jumped = any(re.search(p, t_lower) for p in jump_patterns)
+
+            if jumped and local_ctx not in t_lower:
+                out.append("contradicao_cena")
+
+    return list(dict.fromkeys(out))
 
 
 # ==========================================================
@@ -4432,26 +4362,11 @@ def _update_confidence(usuario_key: str, *, hard_ok: bool, style: float) -> floa
 
 
 def _trim_scene_finalization(texto: str) -> str:
-    """Corta finalizações de cena e devolve um gancho sensorial."""
-    if not texto:
-        return ""
-    m = _RE_SCENE_FINALIZATION.search(texto)
-    if not m:
-        return texto
-    trimmed = texto[: m.start()].rstrip()
-    if len(trimmed) < 80:
-        return trimmed if trimmed else ""
-    
-    trimmed = trimmed.rstrip(",.;: ")
-    
-    # Ganchos sensoriais variados (escolhe aleatoriamente ou por contexto)
-    hooks = [
-        "\n\nMinha respiração ainda está pesada, o corpo todo formigando enquanto espero o próximo movimento.",
-        "\n\nEu tremo, os dedos ainda agarrados em você, sem querer que esse momento acabe.",
-        "\n\nO calor entre nós ainda pulsa, minha pele sensível a cada toque.",
-    ]
-    
-    return trimmed + random.choice(hooks)
+    """
+    Não altera mais a narrativa.
+    Mantido apenas por compatibilidade de pipeline.
+    """
+    return texto or ""
 
 def _repair_fewshot_example(violations: List[str]) -> str:
     """
@@ -7335,23 +7250,28 @@ class MaryService(BaseCharacter):
             timeline=str(timeline or ""),
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
-        
+
+        # ======================================================
+        # Apenas três violações podem disparar repair
+        # ======================================================
         viol_graves = {
             "vazio",
-            "meta",
             "meta_fala",
-            "autoria_usuario",
-            "pov_quebrado",
             "contradicao_cena",
-            "scene_break",
-            "quebra_personagem",
         }
-        
-        # se só houver violações leves, aceita a resposta
-        if not any(v in viol_graves for v in (violations or [])):
+
+        violations = set(violations or [])
+
+        # sem violação grave → aceita resposta imediatamente
+        if not (violations & viol_graves):
+            try:
+                if violations:
+                    diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
+            except Exception:
+                pass
+
             texto = _trim_scene_finalization(texto)
             return texto, used_model
-
         # ======================================================
         # HYBRID: NSFW OFF — se for "na borda", pede classificação ao modelo
         # (não altera prompt NSFW_ON; só reforça o bloqueio quando NSFW está OFF)
@@ -7506,7 +7426,9 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
 
-        if not violations2:
+        violations2 = set(violations2 or [])
+        
+        if not (violations2 & viol_graves):
             texto2 = _trim_scene_finalization(texto2)
             return texto2, used_model2
 
