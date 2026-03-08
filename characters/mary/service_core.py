@@ -6626,6 +6626,8 @@ class MaryService(BaseCharacter):
                 # ----------------------------------------------------------
                 # Arco persistente com terceiros (persistência + gradiente + âncora)
                 # ----------------------------------------------------------
+                texto = texto if 'texto' in locals() else ""
+                
                 try:
                     _update_tp_arc_for_turn(
                         usuario_key=usuario_key,
@@ -6633,7 +6635,7 @@ class MaryService(BaseCharacter):
                         timeline=timeline_final,
                         prompt=prompt,
                         texto=texto,
-                        allow_third_party=allow_third_party_seduction_final,
+                        allow_third_party_seduction=allow_third_party_seduction_final,
                         nsfw_on=nsfw_on,
                     )
                 except Exception:
@@ -6646,7 +6648,6 @@ class MaryService(BaseCharacter):
                 
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
-
             except Exception as e:
                 last_err = e
 
