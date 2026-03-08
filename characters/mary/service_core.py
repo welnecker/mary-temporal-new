@@ -5076,7 +5076,8 @@ class MaryService(BaseCharacter):
             prompt = (prompt or "").strip()
 
         # ✅ Diretiva opcional de memória (não vai para o modelo)
-            prompt, mem_spec = _extract_mem_directive(prompt)
+        mem_spec = None
+        prompt, mem_spec = _extract_mem_directive(prompt)
 
         # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
         if (not prompt) and mem_spec:
@@ -5110,12 +5111,12 @@ class MaryService(BaseCharacter):
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0 = cached_get_facts(usuario_key)
+
         # ✅ Alinha phase global vs timeline (evita divergência "phase:0" vs "phase::timeline:1")
         try:
             facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
         except Exception:
             pass
-
 
         # 4) Mudança explícita de local/tempo (comando do usuário)
         _loc_change = _user_requested_location_change(prompt)
@@ -5143,12 +5144,16 @@ class MaryService(BaseCharacter):
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
                 _lock_scene(usuario_key)
                 diag.scene_transition = {"from": loc0, "to": novo_local}
-                
+
         # 5) Cena paralela (✅ NÃO se o usuário mudou a cena explicitamente)
         facts_pre = cached_get_facts(usuario_key)
         scene_locked_pre = _scene_is_locked(facts_pre)
-        scene_parallel = bool(scene_locked_pre and _detect_scene_violation(prompt) and not user_explicit_scene_change)
-        
+        scene_parallel = bool(
+            scene_locked_pre
+            and _detect_scene_violation(prompt)
+            and not user_explicit_scene_change
+        )
+
         # 6) Contexto base
         _persona = get_persona(timeline_final)
 
@@ -5156,17 +5161,21 @@ class MaryService(BaseCharacter):
             persona_text = _persona[0] or ""
         else:
             persona_text = ""
+
         facts = cached_get_facts(usuario_key)
 
-              
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
-        
+
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
-        
-        canon_rel_default = canon.get("relationship_state") if isinstance(canon.get("relationship_state"), dict) else None
+
+        canon_rel_default = (
+            canon.get("relationship_state")
+            if isinstance(canon.get("relationship_state"), dict)
+            else None
+        )
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
 
         # ==========================================================
@@ -5186,22 +5195,22 @@ class MaryService(BaseCharacter):
             seed = ""
             cooldown_turns = 6
             last_trigger_turn = None
-        
+
         # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
         rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
         try:
             _save_rel_state(usuario_key, timeline_final, rel_state)
         except Exception:
             pass
-        
+
         # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
             if not isinstance(mary_fact, dict):
                 mary_fact = {}
-        
+
             tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-        
+
             # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
             if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
                 changed = False
@@ -5217,7 +5226,6 @@ class MaryService(BaseCharacter):
                 if changed:
                     facts["mary"] = mary_fact
                     set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
-                
         except Exception:
             pass
         
