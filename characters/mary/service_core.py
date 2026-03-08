@@ -6344,7 +6344,7 @@ class MaryService(BaseCharacter):
             user_text=prompt,
         )
         last_err: Optional[Exception] = None
-        texto = ""     
+        texto = ""
 
         for plan in attempts:
             diag.attempts += 1
@@ -6365,6 +6365,8 @@ class MaryService(BaseCharacter):
                     timeline=timeline_final,
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
+                )
+                    
                 )
                 diag.model_used = used_model
 
