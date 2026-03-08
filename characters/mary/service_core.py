@@ -1574,10 +1574,12 @@ def _memory_conflicts_with_truth(
         return True
 
     # arco e relação atual
+    # arco e relação atual
     if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
         return True
-
-    if any(k in t for k in ("janio", "relacao", "relação", "consummated")) and rel_blob:
+    
+    # só bloqueia temas de relação/consumação; NÃO bloqueia toda memória que cite Janio
+    if any(k in t for k in ("relacao", "relação", "consummated", "consumado", "consumada")) and rel_blob:
         return True
 
     # fatos mary persistidos
