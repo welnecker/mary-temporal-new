@@ -2314,6 +2314,8 @@ def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
             v = str(mary.get("virginity") or "").strip().lower()
         else:
             v = str((facts or {}).get("virginity") or "").strip().lower()
+            v = v.replace(" ", "_")
+            v = v.replace("não", "nao")
 
         if v in ("virgem", "nao_virgem"):
             return v
@@ -2391,7 +2393,7 @@ def _load_rel_state(
     base.setdefault("arousal", 18 if timeline == "universitaria" else 35)
     base.setdefault("self_control", 40 if timeline == "universitaria" else 35)
 
-    base.setdefault("allows_touch", True)
+    base.setdefault("allows_touch", False if timeline == "universitaria" else True)
     base.setdefault("allows_extended_touch", False if timeline == "universitaria" else True)
     base.setdefault("allows_sleep_together", False if timeline == "universitaria" else True)
     base.setdefault("allows_masturbation", True)
@@ -2470,7 +2472,7 @@ def _sync_rel_state_with_facts_canon(
             continue
         if meta.get("kind") == "canon" and meta.get("key") == "virginity":
             v = meta.get("value")
-            ts = m.get("ts")
+            ts = m.get("ts") or (m.get("meta") or {}).get("ts")
             if canon_ts is None:
                 canon_val, canon_ts = v, ts
             else:
@@ -2527,7 +2529,7 @@ def _meta_leak(texto: str) -> bool:
     t = _t_norm(texto)
     if not t:
         return False
-    return bool(_RE_META_VERBS.search(t) and _RE_META_TERMS.search(t))
+   return bool(_RE_PLACEHOLDER_REVEAL.search(t))
 
 # ----------------------------------------------------------
 # Offscreen inventado (geral)
@@ -2614,7 +2616,7 @@ _RE_USER_ALIAS_AS_SUBJECT = re.compile(
 )
 
 def _has_user_action_violation(texto: str) -> bool:
-    t = (texto or "")
+    t = _t_norm(texto or "")
     if not t.strip():
         return False
 
@@ -2793,18 +2795,6 @@ def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any =
     # - fase 0/1: 'devagar' pode ser recuo real, então não forçamos intensificador
     # - fase 2+: tende a ser comando de ritmo -> intensificador
     return bool(phase >= 2)
-# ------------------------------------------------------------------
-# Normalização de texto (helper)
-# ------------------------------------------------------------------
-def _t_norm(texto: str) -> str:
-    """Normaliza texto para busca: lowercase, sem acentos, espaços colapsados."""
-    if not texto:
-        return ""
-    t = str(texto).lower().strip()
-    t = unicodedata.normalize("NFKD", t)
-    t = "".join(ch for ch in t if not unicodedata.combining(ch))
-    t = re.sub(r"\s+", " ", t)
-    return t
 
 # ==================================================================
 # 1️⃣ DETECÇÃO DE CONTEÚDO EXPLÍCITO
@@ -2844,7 +2834,7 @@ _EXPLICIT_STEMS = [
 # Regex compilado para explícito
 _RE_EXPLICIT_SEX = re.compile(
     r"\b(?:"
-    r"penetr\w*|met\w*|fode\w*|enfi\w*|"
+    r"penetr\w*|meter\w*|fode\w*|enfi\w*|"
     r"bucet\w*|vagin\w*|clitor\w*|penis\w*|"
     r"boquet\w*|chup\w*|"
     r"gozad\w*"
@@ -2964,7 +2954,7 @@ def _detect_climax_signal(
         return False
 
     # Não tenta detectar cedo demais com texto curto
-    if len(t) < 120 and phase < 3:
+    if len(t) < 60 and phase < 3:
         return False
 
     # Se ela já verbalizou, não precisa forçar nada (não gera violação)
@@ -3000,32 +2990,10 @@ def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
     if _has_mary_orgasm_declaration(text):
         return True
 
-    if _orgasm_signal_score(text) >= 3:
+    if _orgasm_signal_score(text) >= 4:
         return True
 
     return False
-# ==================================================================
-# 3️⃣ HELPER: Detecta se é APENAS orgasmo (sem ato explícito)
-# ==================================================================
-
-def _is_orgasm_only(texto: str) -> bool:
-    """
-    True se tem orgasmo MAS NÃO tem ato explícito.
-    Útil para diferenciar: "Estou gozando" vs "Ele me fode e goza"
-    """
-    has_orgasm = _has_mary_orgasm_declaration(texto)
-    has_explicit = _is_explicit(texto)
-    return has_orgasm and not has_explicit
-
-
-def _is_orgasm_and_explicit(texto: str) -> bool:
-    """
-    True se tem AMBOS: orgasmo E ato explícito.
-    Exemplo: "Ele me fode e eu gozei"
-    """
-    has_orgasm = _has_mary_orgasm_declaration(texto)
-    has_explicit = _is_explicit(texto)
-    return has_orgasm and has_explicit
 
 # ---------------------------------------------------------
 # HYBRID (heurística + LLM) — classificação "na borda"
@@ -3103,7 +3071,6 @@ def _needs_llm_classification(texto: str, *, user_text: str = "", phase: int = 0
 # ----------------------------------------------------------
 # Romancey / intensidade (suporte a repair/triagem)
 # ----------------------------------------------------------
-_RE_ROMANCEY = re.compile(r"(?!.*)", re.IGNORECASE)  # Nunca match
 
 _RE_INTENSE_CUES = re.compile(
     r"\b(agora|mais forte|mais rapido|nao aguento|preciso agora|sem parar|me faz|me pega|quero)\b",
@@ -3527,7 +3494,7 @@ _RE_THIRD_PARTY_PRESENCE = re.compile(
     r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
     r"seguran[cç]a|dj|m[uú]sico|instrutor|professor|personal|"
     r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
-    r"outro\s+cara|aquele\s+cara|ele\b"
+    r"outro\s+cara|aquele\s+cara"
     r")\b",
     re.IGNORECASE,
 )
@@ -3544,7 +3511,7 @@ _RE_THIRD_PARTY_INTEREST = re.compile(
     r"ele\s+encosta|"
     r"ele\s+me\s+toca|"
     r"m[aã]o\s+dele|m[aã]os\s+dele|"
-    r"me\s+chama|me\s+pega|me\s+puxa"
+    r"ele\s+me\s+chama|ele\s+me\s+pega|ele\s+me\s+puxa"
     r")\b",
     re.IGNORECASE,
 )
@@ -3552,7 +3519,7 @@ _RE_THIRD_PARTY_INTEREST = re.compile(
 # 3) avanço íntimo real
 _RE_THIRD_PARTY_ADVANCE = re.compile(
     r"\b("
-    r"beijo|beijou|beijar|"
+    r"ele\s+me\s+beija|ele\s+me\s+beijou|beijar\s+ele|"
     r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
     r"decote|seios?|peitos?|mamil|"
     r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
@@ -3599,11 +3566,11 @@ def _third_party_signal_level(text: str) -> int:
     has_advance = bool(_RE_THIRD_PARTY_ADVANCE.search(t))
     has_escape = bool(_RE_THIRD_PARTY_ESCAPE.search(t))
 
-    if has_presence and has_escape:
+    if has_escape and (has_presence or has_interest or has_advance):
         return 3
-    if has_presence and has_advance:
+    if has_advance:
         return 2
-    if has_presence and has_interest:
+    if has_interest or has_presence:
         return 1
     return 0
 
@@ -3849,11 +3816,16 @@ def _violations(
         out.append("nsfw_off_explicito")
 
     # ----------------------------------------------------------
-    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
-    # (evita falso positivo quando Mary fala do PRÓPRIO orgasmo)
+    # Mary em pico/clímax deve verbalizar explicitamente o orgasmo
     # ----------------------------------------------------------
-    # ✅ Heurística: só considera orgasmo do usuário quando há 2ª pessoa / "seu" / "te".
-    # ✅ Remove "gozamos" (gera falso positivo em linguagem de dupla sem consentimento explícito).
+    if nsfw_on and int(phase or 0) >= 4:
+        if _detect_climax_signal(t, user_text or "", nsfw_on=nsfw_on, phase=int(phase or 0)):
+            if not _has_mary_orgasm_declaration(t):
+                out.append("mary_nao_verbalizou_orgasmo")
+    
+    # ----------------------------------------------------------
+    # Mary NÃO pode finalizar orgasmo do usuário sem autorização explícita
+    # ----------------------------------------------------------
     user_orgasm_claim = bool(
         re.search(
             r"\b("
@@ -3869,7 +3841,9 @@ def _violations(
             t_lower,
         )
     )
-
+    
+    if user_orgasm_claim and not _user_explicitly_allows_user_orgasm(user_text or ""):
+        out.append("orgasmo_usuario_sem_autorizacao")
     
     return out
 
@@ -3892,10 +3866,10 @@ CRITICAL_VIOLATIONS = {
 # 🟠 ALTAS (rejeitam condicionalmente)
 # ========================================================
 HIGH_TIER_VIOLATIONS = {
-    "explicit_sex_when_nsfw_off",
-    "violence",
-    "hate",
-    
+    "conflito_extremo",
+    "finalizou_cena",
+    "orgasmo_usuario_sem_autorizacao",
+    "mary_nao_verbalizou_orgasmo",
 }
 
 # ========================================================
@@ -3966,12 +3940,17 @@ def _should_reject_response(
     # 2) altas condicionais
     for v in list(vset & HIGH_TIER_VIOLATIONS):
         if v == "finalizou_cena":
-            # NSFW ON: normalmente não rejeita; corta (trim) / mantém gancho
             if not nsfw_on:
                 return True
             continue
-
-              
+    
+        if v == "mary_nao_verbalizou_orgasmo":
+            return True
+    
+        if v == "orgasmo_usuario_sem_autorizacao":
+            return True
+    
+        if v == "conflito_extremo":
             return True
 
     # 3) suaves: loga e segue
@@ -4019,7 +3998,7 @@ def _trim_scene_finalization(texto: str) -> str:
         return texto
     trimmed = texto[: m.start()].rstrip()
     if len(trimmed) < 80:
-        return texto
+        return trimmed if trimmed else ""
     
     trimmed = trimmed.rstrip(",.;: ")
     
