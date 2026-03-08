@@ -6329,9 +6329,10 @@ class MaryService(BaseCharacter):
                 # força fase 5 neste turno
                 prev_phase = phase
                 phase = 5
+                diag.intimacy_phase_pre = 5
 
                 # decrementa contador
-                stt["turns_left"] = int(stt.get("turns_left") or 0) - 1
+                stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
                 _ss_set(pk, stt)
         attempts = self._build_attempt_plan(
             model=model,
@@ -6343,6 +6344,7 @@ class MaryService(BaseCharacter):
             user_text=prompt,
         )
         last_err: Optional[Exception] = None
+            texto = ""     
 
         for plan in attempts:
             diag.attempts += 1
@@ -6478,7 +6480,7 @@ class MaryService(BaseCharacter):
                 
                             transition = bool(
                                 re.search(
-                                    r"\b(consumar|consumado|deixei de ser virgem|n[aã]o sou mais virgem|tirou minha virgindade|minha primeira vez)\b",
+                                    r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b"
                                     txt_all,
                                     re.IGNORECASE,
                                 )
@@ -6540,7 +6542,7 @@ class MaryService(BaseCharacter):
                         "nsfw_on": nsfw_on,
                         "model": model,
                         "timeline": timeline_final,
-                        "intimacy_phase": intimacy_phase,
+                        "intimacy_phase": phase,
                         "conflict_mode": conflict_mode,
                         "conflict_now": conflict_now,
                         "initiative_window": initiative,
@@ -6626,12 +6628,11 @@ class MaryService(BaseCharacter):
                 # ----------------------------------------------------------
                 # Arco persistente com terceiros (persistência + gradiente + âncora)
                 # ----------------------------------------------------------
-                texto = texto if 'texto' in locals() else ""
-                
+                               
                 try:
                     _update_tp_arc_for_turn(
                         usuario_key=usuario_key,
-                        facts=facts,
+                        facts=cached_get_facts(usuario_key),
                         timeline=timeline_final,
                         prompt=prompt,
                         texto=texto,
@@ -6917,7 +6918,7 @@ class MaryService(BaseCharacter):
 
         if violations:
             try:
-                diag.violations = (diag.violations or []) + list(violations)
+                diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
             except Exception:
                 pass
 
@@ -6962,7 +6963,7 @@ class MaryService(BaseCharacter):
         data2, used_model2, _provider_meta2 = self._chat(
             used_model,
             repair_messages,
-            temperature=float(temperature) if "nsfw_on" not in violations else float(temperature),
+            temperature=float(temperature),
             max_tokens=int(max_tokens),
             top_p=min(0.98, float(top_p) + 0.02),
             extra=extra,
@@ -6999,7 +7000,26 @@ class MaryService(BaseCharacter):
         if not texto2:
             texto = _trim_scene_finalization(texto)
             return texto, used_model
-        
+            
+                # validação final do repair
+        violations2 = _violations(
+            texto=texto2,
+            ctx_lower=ctx_lower,
+            user_text=user_text,
+            phase=int(phase or 0),
+            nsfw_on=bool(nsfw_on),
+            nsfw_profile=str(nsfw_profile),
+            timeline=str(timeline or ""),
+            allow_third_party_seduction=bool(allow_third_party_seduction),
+        )
+
+        if not violations2:
+            texto2 = _trim_scene_finalization(texto2)
+            return texto2, used_model2
+
+        # se o repair ainda violar, devolve o original aparado
+        texto = _trim_scene_finalization(texto)
+        return texto, used_model
         
     @staticmethod
     def _fallback_text() -> str:
@@ -7162,32 +7182,4 @@ class MaryService(BaseCharacter):
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
-
-
-def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
-    """
-    Mary NUNCA finaliza o usuário sem autorização clara.
-    Aceita variações comuns (PT-BR) e sinônimos.
-    """
-    if not user_text:
-        return False
-
-    ut = user_text.lower()
-
-    return bool(
-        re.search(
-            r"\b("
-            r"pode\s+(gozar|ejacular)|"
-            r"deixa\s+(eu\s+)?(gozar|ejacular)|"
-            r"quero\s+(gozar|ejacular)|"
-            r"me\s+faz\s+(gozar|ejacular)|"
-            r"me\s+fa[cç]a\s+(gozar|ejacular)|"
-            r"(eu\s+)?vou\s+(gozar|ejacular)|"
-            r"to\s+perto\s+de\s+(gozar|ejacular)|"
-            r"pode\s+me\s+levar\s+ao\s+cl[ií]max|"
-            r"me\s+leva\s+ao\s+cl[ií]max"
-            r")\b",
-            ut,
-        )
-    )
-    
+  
