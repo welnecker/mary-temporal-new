@@ -362,15 +362,42 @@ def append_long_memory_safe(
 ) -> None:
     """
     Wrapper segura para gravar na Long Memory (Mongo).
-    - Long memory é GLOBAL por usuário: {user_id}::mary::shared
-    - Não deve recursar e não depende de 'long_key' externo.
+    Agora padroniza metadados para facilitar recuperação futura.
     """
     uid = _normalize_user_id(user_id) if user_id else _current_user_id_fallback()
-    lk = _long_key(uid)  # -> f"{user_id}::mary::shared"
-    append_long_memory(lk, (text or "").strip(), meta=meta or {})
-    # Long memory não usa o cache de shared_key (mem::...), então não limpamos aqui.
-    # Se você tiver cache específico de longmem em session_state, limpe aqui.
+    lk = _long_key(uid)
 
+    txt = str(text or "").strip()
+    if not txt:
+        return
+
+    meta_in = dict(meta or {})
+
+    title = str(meta_in.get("title") or "").strip()
+    kind = str(meta_in.get("kind") or "memory").strip().lower()
+
+    timeline_raw = str(
+        meta_in.get("timeline_at_save")
+        or meta_in.get("timeline")
+        or (_ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice")
+    ).strip()
+
+    tags_user = _normalize_memory_tags(meta_in.get("tags"))
+    tags_auto = _infer_memory_tags(txt, title=title)
+    tags_final = _normalize_memory_tags(tags_user + tags_auto)
+
+    meta_final = dict(meta_in)
+    meta_final["title"] = title
+    meta_final["kind"] = kind or "memory"
+    meta_final["timeline_at_save"] = timeline_raw or "cumplice"
+    meta_final["user_id"] = uid
+    meta_final["tags"] = tags_final
+
+    if "source" not in meta_final:
+        meta_final["source"] = "ui_long_memory"
+
+    append_long_memory(lk, txt, meta=meta_final)
+    
 def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
     save_interaction(usuario_key, prompt, texto, model_used)
     clear_user_cache(usuario_key)
@@ -896,6 +923,70 @@ def _detect_scene_violation(user_text: str) -> bool:
     ]
 
     return any(re.search(p, txt) for p in patterns)
+
+def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
+    """
+    Ranking local simples em cima de title + kind + text + tags.
+    Complementa o Mongo $text.
+    """
+    q = _t_norm(query or "")
+    if not q:
+        return 0.0
+
+    hay = _memory_haystack(mem)
+    if not hay:
+        return 0.0
+
+    score = 0.0
+
+    q_terms = [t for t in re.findall(r"[\w\u00C0-\u017F']+", q, flags=re.UNICODE) if len(t) >= 3]
+    q_terms_norm = [_t_norm(t) for t in q_terms]
+
+    title, kind, txt = _memory_text_fields(mem)
+    title_n = _t_norm(title)
+    txt_n = _t_norm(txt)
+
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    mtags = meta.get("tags")
+    tags: List[str] = []
+    if isinstance(mtags, list):
+        tags = [_t_norm(str(x)) for x in mtags if str(x).strip()]
+    elif isinstance(mtags, str):
+        tags = [_t_norm(t.strip()) for t in mtags.split(",") if t.strip()]
+
+    # título pesa mais
+    for term in q_terms_norm:
+        if term and term in title_n:
+            score += 3.0
+
+    # tags pesam bastante
+    for term in q_terms_norm:
+        if term and term in tags:
+            score += 2.5
+
+    # texto pesa normal
+    for term in q_terms_norm:
+        if term and term in txt_n:
+            score += 1.0
+
+    # bonus por casar query inteira
+    if q and q in hay:
+        score += 2.0
+
+    # leve bônus por recência
+    ts = _memory_timestamp(mem)
+    if ts is not None:
+        try:
+            age_days = max(0.0, (time.time() - float(ts)) / 86400.0)
+            if age_days <= 7:
+                score += 0.6
+            elif age_days <= 30:
+                score += 0.3
+        except Exception:
+            pass
+
+    return score
+
 # ==========================================================
 # INTRO CANÔNICO (1x por sessão) — CONDICIONAL AO CANON
 # ==========================================================
@@ -1174,12 +1265,13 @@ def _inject_intro_as_context_once(
 # ✅ LONG MEMORY (Mongo $text)
 # ==========================================================
 def _lm_query_from_prompt(user_prompt: str) -> str:
-    """Gera uma consulta curta para $text (reduz ruído e melhora recall)."""
+    """
+    Gera consulta curta para Mongo $text, mas preserva termos biográficos/identitários úteis.
+    """
     s = (user_prompt or "").strip().lower()
     if not s:
         return ""
 
-    # remove URLs e lixo comum (reduz ruído no $text)
     s = re.sub(r"https?://\S+", " ", s)
     s = re.sub(r"\bwww\.\S+", " ", s)
     s = re.sub(r"\s{2,}", " ", s).strip()
@@ -1191,16 +1283,26 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
         "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
         "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
         "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
-        "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","lembra","lembrar","pensando","deitado","relaxando",
-        "agora","hoje","ontem","amanhã","mesmo","assim","tipo","cara","garota"
+        "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
     }
-    keep = [t for t in toks if len(t) >= 4 and t not in stop]
 
-    # query curta: melhora signal/noise no $text
-    q = " ".join(keep[:14] if len(keep) > 6 else keep).strip()
+    keep = [t for t in toks if len(t) >= 3 and t not in stop]
+
+    priority_terms = []
+    for t in keep:
+        if t in {
+            "mary", "janio",
+            "formada", "formado", "formação", "formacao", "faculdade", "curso", "graduação", "graduacao",
+            "profissão", "profissao", "trabalho", "carreira",
+            "psicologia", "medicina", "engenharia", "administração", "administracao",
+            "ufes", "instagram", "pacientes", "clínica", "clinica"
+        }:
+            priority_terms.append(t)
+
+    q_terms = list(dict.fromkeys(priority_terms + keep[:12]))
+    q = " ".join(q_terms).strip()
     q = re.sub(r"\s{2,}", " ", q).strip()
     return q or s
-
 
 def _inject_long_memory_pins_always(
     shared_key: str,
@@ -1423,6 +1525,58 @@ def _memory_conflicts_with_truth(
     if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
         return True
 
+    # só bloqueia temas de relação/consumação; NÃO bloqueia toda memória que cite Janio
+    if any(k in t for k in ("relacao", "relação", "consummated", "consumado", "consumada")) and rel_blob:
+        return True
+
+    # fatos mary persistidos
+    if isinstance(world_mary, dict):
+        if any(k in t for k in ("virgem", "virgindade", "primeira vez")) and (
+            world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys())
+        ):
+            return True
+
+    return False
+
+    # -----------------------------
+    # Estado de cena / facts vivos
+    # -----------------------------
+    scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
+    scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
+    scene_acao = _t_norm(str(f.get("cena.acao") or ""))
+
+    state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
+    world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
+    rel_blob = _t_norm(str(f.get("rel") or ""))
+    arc_blob = _t_norm(str(f.get("arc") or ""))
+
+    # -----------------------------
+    # temas críticos governados por facts
+    # -----------------------------
+    if any(k in t for k in ("virgem", "virgindade", "primeira vez", "consumado", "consumada")):
+        if f:
+            return True
+
+    if any(k in t for k in ("fase", "climax", "clímax", "aftercare", "intimidade")):
+        if f:
+            return True
+
+    if scene_local and scene_local in t:
+        return True
+
+    if state_local and state_local in t:
+        return True
+
+    if scene_tempo and scene_tempo in t:
+        return True
+
+    if scene_acao and scene_acao in t:
+        return True
+
+    # arco e relação atual
+    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
+        return True
+
     if any(k in t for k in ("janio", "relacao", "relação", "consummated")) and rel_blob:
         return True
 
@@ -1469,7 +1623,7 @@ def _inject_long_memory_textsearch(
     if not rows:
         return
 
-    picked: List[Dict[str, Any]] = []
+    picked_scored: List[Tuple[float, Dict[str, Any]]] = []
     tl = _normalize_timeline(timeline)
     seen_local: Set[str] = set()
 
@@ -1539,13 +1693,15 @@ def _inject_long_memory_textsearch(
         d = dict(d)
         d["text"] = txt_dedupe[:260].rstrip()
 
-        picked.append(d)
-        if len(picked) >= int(limit or 4):
-            break
+        score = _score_long_memory_local(d, prompt)
+        picked_scored.append((score, d))
 
-    if not picked:
+    if not picked_scored:
         return
-
+    
+    picked_scored.sort(key=lambda x: x[0], reverse=True)
+    picked = [d for _, d in picked_scored[: int(limit or 4)]]
+    
     bullets: List[str] = []
     for d in picked:
         txt = str(d.get("text") or "").strip()
@@ -2167,6 +2323,68 @@ def _memory_haystack(mem: Dict[str, Any]) -> str:
         tags += [t.strip() for t in mtags.split(",") if t.strip()]
     blob = "\n".join([title, kind, txt, " ".join(tags)])
     return _norm_token(blob)
+
+def _normalize_memory_tags(tags: Any) -> List[str]:
+    """
+    Normaliza tags para lista curta, limpa e sem duplicatas.
+    Aceita:
+    - list[str]
+    - string separada por vírgula
+    - None
+    """
+    out: List[str] = []
+
+    if tags is None:
+        return out
+
+    if isinstance(tags, str):
+        raw = [t.strip() for t in tags.split(",")]
+    elif isinstance(tags, (list, tuple, set)):
+        raw = [str(t).strip() for t in tags]
+    else:
+        raw = [str(tags).strip()]
+
+    seen = set()
+    for t in raw:
+        if not t:
+            continue
+        norm = _t_norm(t)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(t[:40])
+
+    return out[:12]
+
+def _infer_memory_tags(text: str, title: str = "") -> List[str]:
+    """
+    Extrai tags simples e úteis a partir do título/texto.
+    Não tenta ser inteligente demais: só cria apoio de recuperação.
+    """
+    blob = _t_norm(f"{title} {text}")
+
+    candidates = [
+        "mary", "janio",
+        "formação", "formado", "formada", "faculdade", "curso", "graduação",
+        "profissão", "trabalho", "carreira",
+        "psicologia", "medicina", "engenharia", "administração",
+        "ufes", "instagram", "pacientes", "clínica", "clinica",
+        "ciúme", "ciume", "segredo", "filho", "bebê", "bebe",
+        "academia", "silvia", "enzo", "arthur",
+    ]
+
+    found: List[str] = []
+    seen = set()
+
+    for c in candidates:
+        if c in blob:
+            key = _t_norm(c)
+            if key not in seen:
+                seen.add(key)
+                found.append(c)
+
+    return found[:10]
+    
 
 def _expr_match(mem: Dict[str, Any], parsed_expr: List[List[str]]) -> bool:
     if not parsed_expr:
@@ -4697,52 +4915,20 @@ def _should_inject_summary(usuario_key: str, every_n: int = 6) -> bool:
     return (n % every_n) == 0
 
 def _should_inject_long_memory(prompt: str) -> bool:
-    """
-    Decide se vale buscar long memory neste turno.
-    Prioriza lembrança, continuidade, reaparição de eventos/lugares/pessoas
-    e assuntos pendentes.
-    """
-    p = _t_norm(prompt)
+    p = _t_norm(prompt or "")
     if not p:
         return False
 
-    memory_triggers = (
-        "lembra",
-        "lembrar",
-        "lembra disso",
-        "você disse",
-        "voce disse",
-        "da outra vez",
-        "daquele dia",
-        "naquele dia",
-        "aquela vez",
-        "como foi",
-        "o que aconteceu",
-        "promessa",
-        "segredo",
-        "pendencia",
-        "pendência",
-        "assunto em aberto",
+    triggers = (
+        "lembra", "lembrar", "memoria", "memória", "passado", "historia", "história",
+        "quem e", "quem é", "como voce", "como você",
+        "formada", "formado", "formacao", "formação", "faculdade", "curso", "graduacao", "graduação",
+        "profissao", "profissão", "trabalha", "trabalho", "carreira",
+        "psicologia", "medicina", "engenharia", "ufes",
+        "segredo", "ciume", "ciúme", "filho", "bebê", "bebe",
     )
 
-    entity_triggers = (
-        "anthony",
-        "arthur",
-        "academia",
-        "quiosque",
-        "viagem",
-        "motorhome",
-        "porto seguro",
-    )
-
-    if any(t in p for t in memory_triggers):
-        return True
-
-    if any(t in p for t in entity_triggers):
-        return True
-
-    return False
-
+    return any(t in p for t in triggers)
 
 def _should_inject_soft_context(
     prompt: str,
