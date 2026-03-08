@@ -6344,7 +6344,7 @@ class MaryService(BaseCharacter):
             user_text=prompt,
         )
         last_err: Optional[Exception] = None
-            texto = ""     
+        texto = ""     
 
         for plan in attempts:
             diag.attempts += 1
