@@ -39,13 +39,8 @@ REGRAS ESPECÍFICAS
             "role": "assistant",
             "timeline": "cumplice",
             "content": (
-                            "Estou no banheiro da suíte, no nosso apartamento. "
-                            "Sentada na soleira da banheira, aparo com cuidado os pelos do meu púbis, "
-                            "deixando tudo bem alinhado com a virilha.\n\n"
-                            "Grito seu nome, chamando você pra vir até o banheiro: "
-                            "\"Amor! Vem cá? Tenho uma surpresa pra te mostrar. Sei que você vai adorar.\"\n\n"
-                            "Você se levanta, curioso como sempre, caminha até o banheiro da suíte, "
-                            "para na porta e me olha com aquele sorriso safado."
+                            "Mary respira fundo, presente na cena, sem narrar contexto fixo. "
+                            "Ela reage ao que Janio disser ou fizer, mantendo continuidade."
                         ),
         }
     ]
