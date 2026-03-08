@@ -1380,7 +1380,72 @@ def _inject_long_memory_pins_always(
     else:
         messages.append({"role": "system", "content": block})
 
+def _memory_conflicts_with_truth(
+    mem_text: str,
+    *,
+    facts: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Retorna True quando a long memory toca em um tema que já está
+    governado por facts/cena/rel/arco no turno atual.
+    Objetivo: evitar redundância e disputa com a verdade viva.
+    """
+    f = facts if isinstance(facts, dict) else {}
+    t = _t_norm(mem_text or "")
+    if not t:
+        return False
 
+    # -----------------------------
+    # Estado de cena / facts vivos
+    # -----------------------------
+    scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
+    scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
+    scene_acao = _t_norm(str(f.get("cena.acao") or ""))
+
+    state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
+    world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
+    rel_blob = _t_norm(str(f.get("rel") or ""))
+    arc_blob = _t_norm(str(f.get("arc") or ""))
+
+    # -----------------------------
+    # temas críticos governados por facts
+    # -----------------------------
+    if any(k in t for k in ("virgem", "virgindade", "primeira vez", "consumado", "consumada")):
+        if f:
+            return True
+
+    if any(k in t for k in ("fase", "climax", "clímax", "aftercare", "intimidade")):
+        if f:
+            return True
+
+    if scene_local and scene_local in t:
+        return True
+
+    if state_local and state_local in t:
+        return True
+
+    if scene_tempo and scene_tempo in t:
+        return True
+
+    if scene_acao and scene_acao in t:
+        return True
+
+    # arco e relação atual
+    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
+        return True
+
+    if any(k in t for k in ("janio", "relacao", "relação", "consummated")) and rel_blob:
+        return True
+
+    # fatos mary persistidos
+    if isinstance(world_mary, dict):
+        if any(k in t for k in ("virgem", "virgindade", "primeira vez")) and (
+            world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys())
+        ):
+            return True
+
+    return False
+    
 def _inject_long_memory_textsearch(
     shared_key: str,
     timeline: str,
@@ -1389,6 +1454,7 @@ def _inject_long_memory_textsearch(
     *,
     limit: int = 4,
     dedupe_bucket: Optional[Set[str]] = None,
+    facts: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Recupera memórias relevantes via Mongo $text.
@@ -1441,6 +1507,10 @@ def _inject_long_memory_textsearch(
         if len(txt) < 40:
             continue
 
+        # evita trazer long memory que disputa com facts/canon atuais
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+        
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
         # timeline
@@ -1612,6 +1682,77 @@ def _select_best_chunks(text: str, query: str, max_pick: int = 2) -> List[str]:
             out.append(chunks[i])
     return out[: max_pick]
 
+def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) -> float:
+    """
+    Peso narrativo extra para priorizar memórias mais úteis ao roleplay:
+    - emoção / vínculo
+    - segredos / promessas / pendências
+    - intimidade / ruptura / culpa
+    - recência leve
+    """
+    score = 0.0
+
+    meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
+    text_full = str(mem.get("text") or "").strip()
+    ch = str(chunk or "").strip().lower()
+    up = _t_norm(user_prompt or "")
+
+    # 1) peso por tipo/meta
+    kind = str(meta.get("kind") or "").strip().lower()
+    if kind in {"summary", "soft", "memory"}:
+        score += 0.10
+
+    title = str(meta.get("title") or meta.get("key") or "").strip().lower()
+    if any(k in title for k in ("segredo", "promessa", "ciume", "ciúme", "culpa", "primeira vez", "janio")):
+        score += 0.18
+
+    # 2) palavras emocionalmente fortes no chunk
+    emotional_terms = (
+        "segredo", "promessa", "culpa", "ciume", "ciúme", "medo", "abandono",
+        "saudade", "amor", "desejo", "tesão", "tesao", "gozar", "orgasmo",
+        "primeira vez", "virgem", "traição", "traicao", "pendência", "pendencia",
+        "janio", "arthur", "academia", "quiosque"
+    )
+    for term in emotional_terms:
+        if term in ch:
+            score += 0.05
+
+    # 3) reforço se o prompt atual toca em tema parecido
+    overlap_terms = (
+        "segredo", "promessa", "culpa", "medo", "ciume", "ciúme", "janio",
+        "academia", "quiosque", "primeira vez", "virgem", "traição", "traicao"
+    )
+    for term in overlap_terms:
+        if term in up and term in ch:
+            score += 0.08
+
+    # 4) recência leve
+    ts = _memory_timestamp(mem)
+    if ts is not None:
+        try:
+            age_days = max(0.0, (time.time() - float(ts)) / 86400.0)
+            if age_days <= 7:
+                score += 0.10
+            elif age_days <= 30:
+                score += 0.06
+            elif age_days <= 90:
+                score += 0.03
+        except Exception:
+            pass
+
+    # 5) chunks muito curtos tendem a ser fracos
+    if len(ch) >= 180:
+        score += 0.06
+    elif len(ch) < 60:
+        score -= 0.05
+
+    # 6) se o texto completo parece muito importante
+    tfull = _t_norm(text_full)
+    if any(k in tfull for k in ("segredo", "promessa", "nunca", "sempre", "primeira vez", "consumado")):
+        score += 0.10
+
+    return score
+
 
 def _inject_relevant_memories(
     shared_key: str,
@@ -1672,23 +1813,31 @@ def _inject_relevant_memories(
     if not chunk_docs:
         return
 
-    idxs = _bm25_topk(chunk_docs, user_prompt, k=max(int(k) * 2, 8))
+    idxs = _bm25_topk(chunk_docs, user_prompt, k=max(int(k) * 3, 12))
     if not idxs:
         return
 
-    selected: List[Tuple[Dict[str, Any], str, str]] = []
-    seen_full: set = set()
+    ranked_candidates: List[Tuple[float, Dict[str, Any], str, str]] = []
 
     for ix in idxs:
         if 0 <= ix < len(chunk_map):
             m, ch, h_full = chunk_map[ix]
-            if h_full in seen_full:
-                continue
-            seen_full.add(h_full)
-            selected.append((m, ch, h_full))
-            if len(selected) >= int(k):
-                break
+            extra_weight = _memory_narrative_weight(m, ch, user_prompt)
+            ranked_candidates.append((extra_weight, m, ch, h_full))
 
+    # ordena por peso narrativo extra (desc)
+    ranked_candidates.sort(key=lambda x: x[0], reverse=True)
+
+    selected: List[Tuple[Dict[str, Any], str, str]] = []
+    seen_full: set = set()
+
+    for _, m, ch, h_full in ranked_candidates:
+        if h_full in seen_full:
+            continue
+        seen_full.add(h_full)
+        selected.append((m, ch, h_full))
+        if len(selected) >= int(k):
+            break
     if not selected:
         return
 
@@ -1709,7 +1858,7 @@ def _inject_relevant_memories(
             header += f" — {title}"
         lines.append(header)
 
-        lines.append(str(ch or "").strip())
+        lines.append(str(ch or "").strip()[:320].rstrip())
         lines.append("")
 
         if dedupe_bucket is not None and h_full:
@@ -4590,39 +4739,75 @@ def _should_inject_long_memory(prompt: str) -> bool:
     return False
 
 
-def _should_inject_soft_context(prompt: str) -> bool:
+def _should_inject_soft_context(
+    prompt: str,
+    *,
+    facts: Optional[Dict[str, Any]] = None,
+    rel_state: Optional[Dict[str, Any]] = None,
+    tp_arc: Optional[Dict[str, Any]] = None,
+) -> bool:
     """
     Decide se deve injetar contexto suave:
     segredos, tensão emocional, assunto pendente, ambiguidade relacional.
+    Usa prompt + estado persistido.
     """
     p = _t_norm(prompt)
-    if not p:
-        return False
+    f = facts if isinstance(facts, dict) else {}
+    rel = rel_state if isinstance(rel_state, dict) else {}
+    arc = tp_arc if isinstance(tp_arc, dict) else {}
 
-    triggers = (
-        "segredo",
-        "pendencia",
-        "pendência",
-        "assunto pendente",
-        "assunto em aberto",
-        "duvida",
-        "dúvida",
-        "medo",
-        "culpa",
-        "ciume",
-        "ciúme",
-        "tensão",
-        "tensao",
-        "insegurança",
-        "inseguranca",
-        "o que você sente",
-        "o que voce sente",
-        "como você ficou",
-        "como voce ficou",
-    )
+    if p:
+        triggers = (
+            "segredo",
+            "pendencia",
+            "pendência",
+            "assunto pendente",
+            "assunto em aberto",
+            "duvida",
+            "dúvida",
+            "medo",
+            "culpa",
+            "ciume",
+            "ciúme",
+            "tensão",
+            "tensao",
+            "insegurança",
+            "inseguranca",
+            "o que você sente",
+            "o que voce sente",
+            "como você ficou",
+            "como voce ficou",
+        )
+        if any(t in p for t in triggers):
+            return True
 
-    return any(t in p for t in triggers)
+    # facts: pendência narrativa ativa
+    try:
+        rel_facts = f.get("rel") if isinstance(f.get("rel"), dict) else {}
+        pend = str(rel_facts.get("pendencia", "") or "").strip()
+        if pend:
+            return True
+    except Exception:
+        pass
 
+    # relacionamento / emoção
+    try:
+        mood = str(rel.get("mood", "") or "").strip().lower()
+        if mood in {"melancolica", "culpada", "ansiosa", "fragil", "vulneravel"}:
+            return True
+    except Exception:
+        pass
+
+    # arco de terceiros
+    try:
+        tension = float(arc.get("tension", 0.0) or 0.0)
+        guilt = float(arc.get("guilt", 0.0) or 0.0)
+        if tension >= 0.35 or guilt >= 0.25:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 def _inject_consolidated_summary(
     shared_key: str,
@@ -6223,20 +6408,11 @@ class MaryService(BaseCharacter):
             max_items=6,
             dedupe_bucket=dedupe_hashes,
         )
-        
-        # 3️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
-        if _should_inject_summary(usuario_key, every_n=6):
-            _inject_consolidated_summary(
-                shared_key,
-                timeline_final,
-                messages,
-                dedupe_bucket=dedupe_hashes,
-            )
-        
+
         # ==========================================
-        # 4️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
+        # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
         # ==========================================
-        
+
         history = cached_get_history(usuario_key, limit=200)
         for d in history[-24:]:  # aumentamos para 24–30
             u = (d.get("mensagem_usuario") or "").strip()
@@ -6245,21 +6421,35 @@ class MaryService(BaseCharacter):
                 messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
             if a:
                 messages.append({"role": "assistant", "content": a})
-        
+
+        # ==========================================
+        # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
+        # entra DEPOIS do histórico para atuar como compressão do passado
+        # ==========================================
+
+        if _should_inject_summary(usuario_key, every_n=6):
+            _inject_consolidated_summary(
+                shared_key,
+                timeline_final,
+                messages,
+                dedupe_bucket=dedupe_hashes,
+            )
+
         # ==========================================
         # 5️⃣ LONG MEMORY SOB DEMANDA
         # ==========================================
-        
+
         if _should_inject_long_memory(prompt):
             _inject_long_memory_textsearch(
                 shared_key,
                 timeline_final,
                 prompt,
                 messages,
-                limit=8,
+                limit=6,
                 dedupe_bucket=dedupe_hashes,
+                facts=facts,
             )
-        
+
             _inject_relevant_memories(
                 shared_key,
                 timeline_final,
@@ -6268,9 +6458,14 @@ class MaryService(BaseCharacter):
                 k=4,
                 dedupe_bucket=dedupe_hashes,
             )
-        
+
         # soft context só se necessário
-        if _should_inject_soft_context(prompt):
+        if _should_inject_soft_context(
+            prompt,
+            facts=facts,
+            rel_state=rel_state,
+            tp_arc=tp_arc,
+        ):
             _inject_shared_soft_context(
                 shared_key,
                 timeline_final,
@@ -6278,7 +6473,7 @@ class MaryService(BaseCharacter):
                 max_items=4,
                 dedupe_bucket=dedupe_hashes,
             )
-        
+
         # Prompt atual sempre por último
 
         # ==========================================
@@ -6949,19 +7144,29 @@ class MaryService(BaseCharacter):
 
         repair_messages: List[Dict[str, str]] = []
 
-        # mantém o system original intacto (messages[0]) e injeta um system extra de repair
+        # mantém o system original intacto
         try:
             if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
                 repair_messages.append(messages[0])
         except Exception:
             pass
 
+        # injeta instrução de repair
         repair_messages.append({"role": "system", "content": repair_system})
 
-        # contexto mínimo: prompt do usuário + resposta atual
+        # preserva um contexto mínimo de memória já injetada
+        # pega até 6 mensagens anteriores ao prompt atual, sem explodir tokens
+        try:
+            memory_context = messages[1:-1] if len(messages) > 2 else []
+            if memory_context:
+                repair_messages.extend(memory_context[-6:])
+        except Exception:
+            pass
+
+        # contexto imediato
         repair_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
         repair_messages.append({"role": "assistant", "content": texto})
-
+        
         data2, used_model2, _provider_meta2 = self._chat(
             used_model,
             repair_messages,
