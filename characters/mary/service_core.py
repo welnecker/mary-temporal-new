@@ -6479,15 +6479,15 @@ class MaryService(BaseCharacter):
                         # ==========================================================
                         if timeline_final == "universitaria":
                             txt_all = f"{prompt}\n{texto}".lower()
-                
+
                             transition = bool(
                                 re.search(
-                                    r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b"
+                                    r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
                                     txt_all,
                                     re.IGNORECASE,
                                 )
                             )
-                
+
                             if transition and rel_state.get("virginity") == "virgem":
                                 rel_state["virginity"] = "nao_virgem"
                                 rel_state["consummated"] = True
