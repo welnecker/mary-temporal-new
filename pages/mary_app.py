@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 from core.repositories import force_reset_virginity_universitaria
+from characters.mary.service_core import append_long_memory_safe
 # mary_app_harmonized_core_v6.py
 
 # ==========================================================
@@ -2853,7 +2854,7 @@ def main() -> None:
                     kind_final = "pin" if bool(lm_pin) else "memory"
                     tl_current = _timeline()
                     timeline_at_save = "[all]" if kind_final == "pin" else tl_current
-
+        
                     meta = {
                         "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
                         "kind": kind_final,
@@ -2861,15 +2862,20 @@ def main() -> None:
                         "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
                         "source": "ui_long_memory",
                     }
-
-                    doc = append_long_memory(lm_userkey, txt, meta=meta)
-                    st.success(f"✅ Gravado: id={doc.get('id')} ts={doc.get('ts')} kind={kind_final} tl={timeline_at_save}")
-
+        
+                    append_long_memory_safe(
+                        lm_userkey,
+                        txt,
+                        meta=meta,
+                        user_id=str(st.session_state.get("user_id", "Janio Donisete")),
+                    )
+        
+                    st.success(f"✅ Gravado: kind={kind_final} tl={timeline_at_save}")
+        
                     st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
                     st.rerun()
             except Exception as e:
                 st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
-
         st.markdown("### 🔎 Buscar (Mongo $text)")
         q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
         lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
