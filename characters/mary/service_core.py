@@ -3748,10 +3748,6 @@ _RE_UNFINISHED_PAREN_FRAGMENT = re.compile(r"\(\s*[^\)]{0,40}$")  # ex: "(Vou", 
 _RE_MULTI_SPACE_END = re.compile(r"[ \t]+$")
 
 def _extract_finish_reason_and_usage(resp: Any) -> Tuple[Optional[str], Dict[str, Any]]:
-    """
-    Extrai finish_reason/native_finish_reason + usage do payload padrão (quando existir).
-    Não explode em providers diferentes.
-    """
     fr: Optional[str] = None
     usage: Dict[str, Any] = {}
 
@@ -3759,30 +3755,17 @@ def _extract_finish_reason_and_usage(resp: Any) -> Tuple[Optional[str], Dict[str
         if not isinstance(resp, dict):
             return fr, usage
 
-        # usage: tenta níveis comuns
-        for keypath in ("usage", "response.usage", "data.usage"):
-            cur: Any = resp
-            ok = True
-            for part in keypath.split("."):
-                if isinstance(cur, dict) and part in cur:
-                    cur = cur[part]
-                else:
-                    ok = False
-                    break
-            if ok and isinstance(cur, dict):
-                usage = cur
-                break
+        usage = resp.get("usage") or {}
 
-        # finish_reason: tenta choices[0].finish_reason / native_finish_reason
         choices = resp.get("choices")
         if isinstance(choices, list) and choices:
             c0 = choices[0] or {}
             if isinstance(c0, dict):
                 fr = c0.get("finish_reason") or c0.get("native_finish_reason")
 
-        # fallback: alguns retornam "finish_reason" no topo
         if not fr:
             fr = resp.get("finish_reason") or resp.get("native_finish_reason")
+
     except Exception:
         pass
 
@@ -3888,30 +3871,6 @@ def _conflict_imminent(user_text: str) -> bool:
 # ✅ FORMAT GUARD (flexível; sem estrutura fixa)
 # ==========================================================
 
-def _split_paragraphs(text: str) -> List[str]:
-    raw = (text or "").strip()
-    if not raw:
-        return []
-    return [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
-
-
-def _count_sentences(paragraph: str) -> int:
-    p = (paragraph or "").strip()
-    if not p:
-        return 0
-    parts = re.split(r"[.!?]+", p)
-    return len([x for x in parts if x.strip()])
-
-
-def _format_ok(text: str) -> bool:
-    """
-    Formato mínimo aceitável:
-    - texto não vazio
-    - não meta
-    """
-    return bool((text or "").strip())
-
-
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     """
     Contexto recente do usuário para detecção de:
@@ -3956,68 +3915,54 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
         )
     )
 # ==========================================================
-# TERCEIROS — DETECÇÃO EM CAMADAS
+# TERCEIROS — DETECÇÃO HIERÁRQUICA (compacta)
 # ==========================================================
 
-# 1) presença clara de terceiro
-_RE_THIRD_PARTY_PRESENCE = re.compile(
-    r"\b("
-    r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
-    r"seguran[cç]a|dj|m[uú]sico|instrutor|professor|personal|"
-    r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
-    r"outro\s+cara|aquele\s+cara"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# 2) sinal de flerte / aproximação com terceiro
-_RE_THIRD_PARTY_INTEREST = re.compile(
-    r"\b("
-    r"olha(r)?\s+pra\s+ele|"
-    r"sorri(r)?\s+pra\s+ele|"
-    r"encara(r)?\s+ele|"
-    r"flerta(r)?|cantada|convite|provoca(r)?|"
-    r"dan[cç]a(r)?\s+com|"
-    r"ele\s+me\s+olha|"
-    r"ele\s+encosta|"
-    r"ele\s+me\s+toca|"
-    r"m[aã]o\s+dele|m[aã]os\s+dele|"
-    r"ele\s+me\s+chama|ele\s+me\s+pega|ele\s+me\s+puxa"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# 3) avanço íntimo real
-_RE_THIRD_PARTY_ADVANCE = re.compile(
-    r"\b("
-    r"ele\s+me\s+beija|ele\s+me\s+beijou|beijar\s+ele|"
-    r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
-    r"decote|seios?|peitos?|mamil|"
-    r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
-    r"tirar\s+.*roupa|abrir\s+.*roupa|"
-    r"calcinha|suti[aã]|"
-    r"encostar\s+.*(entre\s+as\s+pernas|virilha)|"
-    r"volume\s+ro[cç]a|duro\s+na\s+minha\s+.*|"
-    r"penetra[cç][aã]o|penetrar|meter|foder|chupar|boquete|"
-    r"buceta|vagina|clit[oó]ris|pau|p[eê]nis|anal"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# 4) fuga / isolamento
-_RE_THIRD_PARTY_ESCAPE = re.compile(
-    r"\b("
-    r"sumir\s+(com\s+voc[eê]|comigo)|"
-    r"noite\s+fora\s+com|"
-    r"vamos\s+(pro|pra|para)\s+(hotel|motel|matagal|barraco|lugar\s+isolado)|"
-    r"vem\s+comigo|"
-    r"no\s+uber|entra\s+no\s+uber|"
-    r"rep[uú]blica|"
-    r"depois\s+a\s+gente\s+vai|"
-    r"fica\s+comigo\s+hoje"
-    r")\b",
-    re.IGNORECASE,
-)
+_THIRD_PARTY_PATTERNS: Dict[int, re.Pattern] = {
+    1: re.compile(
+        r"\b("
+        r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
+        r"seguran[cç]a|dj|m[uú]sico|instrutor|professor|personal|"
+        r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
+        r"outro\s+cara|aquele\s+cara|"
+        r"olha(r)?\s+pra\s+ele|sorri(r)?\s+pra\s+ele|encara(r)?\s+ele|"
+        r"flerta(r)?|cantada|convite|provoca(r)?|"
+        r"dan[cç]a(r)?\s+com|"
+        r"ele\s+me\s+olha|ele\s+me\s+chama"
+        r")\b",
+        re.IGNORECASE,
+    ),
+    2: re.compile(
+        r"\b("
+        r"ele\s+me\s+beija|ele\s+me\s+beijou|beijar\s+ele|"
+        r"ele\s+encosta|ele\s+me\s+toca|ele\s+me\s+pega|ele\s+me\s+puxa|"
+        r"m[aã]o\s+dele|m[aã]os\s+dele|"
+        r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
+        r"decote|seios?|peitos?|mamil|"
+        r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
+        r"tirar\s+.*roupa|abrir\s+.*roupa|"
+        r"calcinha|suti[aã]|"
+        r"encostar\s+.*(entre\s+as\s+pernas|virilha)|"
+        r"volume\s+ro[cç]a|duro\s+na\s+minha\s+.*|"
+        r"penetra[cç][aã]o|penetrar|meter|foder|chupar|boquete|"
+        r"buceta|vagina|clit[oó]ris|pau|p[eê]nis|anal"
+        r")\b",
+        re.IGNORECASE,
+    ),
+    3: re.compile(
+        r"\b("
+        r"sumir\s+(com\s+voc[eê]|comigo)|"
+        r"noite\s+fora\s+com|"
+        r"vamos\s+(pro|pra|para)\s+(hotel|motel|matagal|barraco|lugar\s+isolado)|"
+        r"vem\s+comigo|"
+        r"no\s+uber|entra\s+no\s+uber|"
+        r"rep[uú]blica|"
+        r"depois\s+a\s+gente\s+vai|"
+        r"fica\s+comigo\s+hoje"
+        r")\b",
+        re.IGNORECASE,
+    ),
+}
 
 def _third_party_signal_level(text: str) -> int:
     """
@@ -4030,19 +3975,14 @@ def _third_party_signal_level(text: str) -> int:
     if not text:
         return 0
 
-    t = text.lower()
+    t = str(text).lower()
 
-    has_presence = bool(_RE_THIRD_PARTY_PRESENCE.search(t))
-    has_interest = bool(_RE_THIRD_PARTY_INTEREST.search(t))
-    has_advance = bool(_RE_THIRD_PARTY_ADVANCE.search(t))
-    has_escape = bool(_RE_THIRD_PARTY_ESCAPE.search(t))
+    # avalia do nível mais alto para o mais baixo
+    for level in (3, 2, 1):
+        pattern = _THIRD_PARTY_PATTERNS[level]
+        if pattern.search(t):
+            return level
 
-    if has_escape and (has_presence or has_interest or has_advance):
-        return 3
-    if has_advance:
-        return 2
-    if has_interest or has_presence:
-        return 1
     return 0
 
 
@@ -4309,27 +4249,6 @@ def _style_score(texto: str) -> float:
     return max(0.0, min(1.0, score))
 
 
-def _should_reject_response(
-    violations: list[str],
-    *,
-    nsfw_on: bool = False,
-    phase: int = 0,
-) -> bool:
-    """
-    Rejeição mínima:
-    só rejeita quando houver violação crítica real do pipeline simplificado.
-    """
-    vset = set(violations or [])
-
-    if vset & CRITICAL_VIOLATIONS:
-        try:
-            logger.warning(f"Rejeição por violação CRÍTICA: {sorted(vset & CRITICAL_VIOLATIONS)}")
-        except Exception:
-            pass
-        return True
-
-    return False
-    
 def _confidence_key(usuario_key: str) -> str:
     return f"mary_confidence::{usuario_key}"
 
@@ -4357,39 +4276,7 @@ def _update_confidence(usuario_key: str, *, hard_ok: bool, style: float) -> floa
 
 
 def _trim_scene_finalization(texto: str) -> str:
-    """
-    Não altera mais a narrativa.
-    Mantido apenas por compatibilidade de pipeline.
-    """
-    return texto or ""
-
-def _repair_fewshot_example(violations: List[str]) -> str:
-    if not violations:
-        return ""
-
-    v = set(violations or [])
-
-    if "meta_fala" in v:
-        return (
-            "[EXEMPLO DE CORREÇÃO]\n"
-            "❌ RUIM: 'Como IA eu não posso.'\n"
-            "✅ BOM: 'Eu te encaro de perto, a voz baixa: \"fala comigo\".'"
-        )
-
-    if "contradicao_cena" in v:
-        return (
-            "[EXEMPLO DE CORREÇÃO]\n"
-            "❌ RUIM: 'Eu entro no carro e vou embora.'\n"
-            "✅ BOM: 'Eu permaneço ali, no mesmo lugar, antes de responder.'"
-        )
-
-    if "vazio" in v:
-        return (
-            "[EXEMPLO DE CORREÇÃO]\n"
-            "✅ BOM: 'Eu respiro devagar e deixo meus olhos voltarem para você, como se a resposta já estivesse na ponta da língua.'"
-        )
-
-    return ""
+    return texto.strip() if texto else ""
 
 def _render_pendencia_block(facts: Dict[str, Any]) -> str:
     try:
