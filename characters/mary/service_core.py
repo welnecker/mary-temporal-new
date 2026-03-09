@@ -1575,36 +1575,22 @@ def _memory_conflicts_with_truth(
     # -----------------------------
     # Estado de cena / facts vivos
     # -----------------------------
-    scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
-    scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
-    scene_acao = _t_norm(str(f.get("cena.acao") or ""))
-
-    state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
-    world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
-    rel_blob = _t_norm(str(f.get("rel") or ""))
-    arc_blob = _t_norm(str(f.get("arc") or ""))
+    scene_local = _t_norm(f.get("cena.local") or f.get("local_cena_atual") or "")
+    scene_tempo = _t_norm(f.get("cena.tempo") or "")
+    scene_acao  = _t_norm(f.get("cena.acao") or "")
+    
+    state_local = _t_norm(_fact_str(f, "state.local") or "")
+    world_mary  = f.get("mary") if isinstance(f.get("mary"), dict) else {}
+    rel_blob    = _t_norm(f.get("rel") or "")
+    arc_blob    = _t_norm(f.get("arc") or "")
 
     # -----------------------------
     # temas críticos governados por facts
     # -----------------------------
-    if any(k in t for k in ("virgem", "virgindade", "primeira vez", "consumado", "consumada")):
-        if f:
-            return True
+    if _has_any(t, ("virgem","virgindade","primeira vez","consumado","consumada")) and f:
+    return True
 
-    if any(k in t for k in ("fase", "climax", "clímax", "aftercare", "intimidade")):
-        if f:
-            return True
-
-    if scene_local and scene_local in t:
-        return True
-
-    if state_local and state_local in t:
-        return True
-
-    if scene_tempo and scene_tempo in t:
-        return True
-
-    if scene_acao and scene_acao in t:
+    if _has_any(t, ("fase","climax","clímax","aftercare","intimidade")) and f:
         return True
 
     # arco e relação atual
@@ -1647,8 +1633,9 @@ def _memory_conflicts_with_truth(
         if f:
             return True
 
-    if scene_local and scene_local in t:
-        return True
+    for val in (scene_local, state_local, scene_tempo, scene_acao):
+        if val and val in t:
+            return True
 
     if state_local and state_local in t:
         return True
@@ -1742,11 +1729,7 @@ def _inject_long_memory_textsearch(
 
     for d in rows:
         txt = str(d.get("text") or "").strip()
-        if not txt:
-            continue
-
-        # corta ruído muito curto
-        if len(txt) < 40:
+        if not txt or len(txt) < 40:
             continue
 
         # evita trazer long memory que disputa com facts/canon atuais
@@ -1873,8 +1856,7 @@ def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
             s += w_idf * (f * (k1 + 1)) / denom
         scores.append(s)
 
-    ranked = sorted(range(N), key=lambda i: scores[i], reverse=True)
-    ranked = [i for i in ranked if scores[i] > 0.0]
+    ranked = [i for i in sorted(range(N), key=lambda i: scores[i], reverse=True) if scores[i] > 0]
     return ranked[: max(0, int(k))]
 
 
@@ -1946,7 +1928,7 @@ def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) 
         score += 0.10
 
     title = str(meta.get("title") or meta.get("key") or "").strip().lower()
-    if any(k in title for k in ("segredo", "promessa", "ciume", "ciúme", "culpa", "primeira vez", "janio")):
+    if any(k in title for k in ("segredo", "promessa", "ciume", "culpa", "primeira vez", "janio")):
         score += 0.18
 
     # 2) palavras emocionalmente fortes no chunk
@@ -2044,8 +2026,6 @@ def _inject_relevant_memories(
             chunks = [text_full]
         else:
             chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
-
-        chunks = _chunk_semantic(text_full, max_chars=520, max_chunks=8)
         if not chunks:
             continue
 
@@ -2752,7 +2732,7 @@ def _inject_latent_memory_if_any(
         return
 
     # prioriza a mais recente
-    candidates.sort(key=lambda x: x[0], reverse=True)
+    candidates.sort(key=lambda x: (x[0], len(x[1].get("text",""))), reverse=True)
 
     for _, mem, _ in candidates[:6]:
         mid = _memory_id(mem)
