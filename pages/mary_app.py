@@ -2105,343 +2105,332 @@ def _clear_sidebar_state_fields(usuario_key: str) -> None:
     st.session_state["sb_state_horarios"] = ""
     st.session_state["sb_state_assunto"] = ""
 
-    # ==========================================================
-    # SIDEBAR
-    # ==========================================================
-    with st.sidebar:
-        st.header("Mary – Controles")
 
-        st.text_input(
-            "👤 Usuário",
-            value=st.session_state.get("user_id", "Janio Donisete"),
-            disabled=True,
-            key="inp_user_disabled",
-        )
-        st.caption(f"🧩 Timeline: {_timeline()}")
-        st.caption(f"🔑 usuario_key atual: {_usuario_key_atual()}")
+# ==========================================================
+# SIDEBAR
+# ==========================================================
+with st.sidebar:
+    st.header("Mary – Controles")
 
-        # ----------------------------
-        # Destravar timeline (visual)
-        # ----------------------------
-        if st.session_state.get("mary_timeline_locked", False):
-            if st.button("🔓 Destravar timeline (visual)", key="btn_unlock_timeline_visual"):
-                st.session_state["mary_timeline_locked"] = False
-                st.session_state["chat_history"] = []
-                st.session_state["mary_intro_done"] = False
-                st.session_state["mary_last_used_model"] = None
-                st.session_state["mary_last_used_provider"] = None
-                st.session_state["mary_allow_third_party_seduction"] = False
-                st.session_state["persona_label"] = None
-                _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
-                st.rerun()
+    st.text_input(
+        "👤 Usuário",
+        value=st.session_state.get("user_id", "Janio Donisete"),
+        disabled=True,
+        key="inp_user_disabled",
+    )
+    st.caption(f"🧩 Timeline: {_timeline()}")
+    st.caption(f"🔑 usuario_key atual: {_usuario_key_atual()}")
 
-        # ----------------------------
-        # Lista de modelos
-        # ----------------------------
+    # ----------------------------
+    # Destravar timeline (visual)
+    # ----------------------------
+    if st.session_state.get("mary_timeline_locked", False):
+        if st.button("🔓 Destravar timeline (visual)", key="btn_unlock_timeline_visual"):
+            st.session_state["mary_timeline_locked"] = False
+            st.session_state["chat_history"] = []
+            st.session_state["mary_intro_done"] = False
+            st.session_state["mary_last_used_model"] = None
+            st.session_state["mary_last_used_provider"] = None
+            st.session_state["mary_allow_third_party_seduction"] = False
+            st.session_state["persona_label"] = None
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related(also_clear_other_timeline=True)
+            _kill_all_mary_services()
+            st.rerun()
+
+    # ----------------------------
+    # Lista de modelos
+    # ----------------------------
+    try:
+        all_models = service_router.list_models() or []
+        st.session_state["models_debug"] = {
+            "ok": True,
+            "len": len(all_models),
+            "head": all_models[:10],
+            "providers": (service_router.available_providers() if hasattr(service_router, "available_providers") else "—"),
+            "err": None,
+        }
+    except Exception as e:
+        all_models = []
+        st.session_state["models_debug"] = {
+            "ok": False,
+            "len": 0,
+            "head": [],
+            "providers": "—",
+            "err": f"{type(e).__name__}: {e}",
+        }
+
+    if not all_models:
+        all_models = [FALLBACK_MODEL]
+
+    if st.session_state.get("model") not in all_models:
+        st.session_state["model"] = _choose_default_model(all_models)
+
+    current = st.session_state.get("model")
+    idx = all_models.index(current) if current in all_models else 0
+
+    st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
+
+    with st.expander("🧪 Debug imports (service_router)", expanded=True):
         try:
-            all_models = service_router.list_models() or []
-            st.session_state["models_debug"] = {
-                "ok": True,
-                "len": len(all_models),
-                "head": all_models[:10],
-                "providers": (service_router.available_providers() if hasattr(service_router, "available_providers") else "—"),
-                "err": None,
-            }
+            st.json(service_router.import_errors())
         except Exception as e:
-            all_models = []
-            st.session_state["models_debug"] = {
-                "ok": False,
-                "len": 0,
-                "head": [],
-                "providers": "—",
-                "err": f"{type(e).__name__}: {e}",
-            }
+            st.write(f"falhou: {type(e).__name__}: {e}")
 
-        if not all_models:
-            all_models = [FALLBACK_MODEL]
+    # Provider detectado
+    try:
+        prov_detected = None
+        if hasattr(service_router, "_provider_for"):
+            prov_detected = service_router._provider_for(str(st.session_state.get("model") or "").strip())
 
-        if st.session_state.get("model") not in all_models:
-            st.session_state["model"] = _choose_default_model(all_models)
-
-        current = st.session_state.get("model")
-        idx = all_models.index(current) if current in all_models else 0
-
-        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
-
-        with st.expander("🧪 Debug imports (service_router)", expanded=True):
-            try:
-                st.json(service_router.import_errors())
-            except Exception as e:
-                st.write(f"falhou: {type(e).__name__}: {e}")
-
-        # Provider detectado
-        try:
-            prov_detected = None
-            if hasattr(service_router, "_provider_for"):
-                prov_detected = service_router._provider_for(str(st.session_state.get("model") or "").strip())
-
-            if not prov_detected:
-                msel = str(st.session_state.get("model") or "").strip().lower()
-                if msel.startswith("together/"):
-                    prov_detected = "Together"
-                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
-                    prov_detected = "HuggingFace"
-                else:
-                    prov_detected = "OpenRouter"
-
-            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
-        except Exception:
-            st.caption("🔌 Provider detectado: **—**")
-
-        # ----------------------------
-        # Ping/Pong
-        # ----------------------------
-        st.markdown("---")
-        st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
-
-        if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
-            res = _router_ping_once(
-                user=str(st.session_state.get("user_id", "Janio Donisete")),
-                model=str(st.session_state.get("model") or DEFAULT_MODEL),
-            )
-            st.session_state["mary_ping_result"] = res
-
-        ping = st.session_state.get("mary_ping_result")
-        if isinstance(ping, dict):
-            if ping.get("ok"):
-                st.success("✅ Ping executado (router confirmou provider/model).")
-
-                if not ping.get("pong_ok"):
-                    st.warning(
-                        "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
-                        "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
-                    )
-                st.write("Modelo (UI):", ping.get("ui_model") or "—")
-
-                used_p = ping.get("used_provider")
-                used_m = ping.get("used_model")
-
-                if not used_p:
-                    try:
-                        if hasattr(service_router, "_provider_for"):
-                            used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
-                    except Exception:
-                        used_p = None
-
-                st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
-
-                st.caption("PONG (trecho retornado):")
-                st.code(ping.get("text") or "")
-
-                if not used_m:
-                    st.warning(
-                        "⚠️ O router NÃO retornou o modelo usado no payload. "
-                        "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
-                    )
+        if not prov_detected:
+            msel = str(st.session_state.get("model") or "").strip().lower()
+            if msel.startswith("together/"):
+                prov_detected = "Together"
+            elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
+                prov_detected = "HuggingFace"
             else:
-                st.error("❌ Falha no ping.")
-                err = ping.get("error")
-                st.code(err if isinstance(err, str) and err.strip() else str(ping))
+                prov_detected = "OpenRouter"
 
-        # ----------------------------
-        # Último erro
-        # ----------------------------
-        st.markdown("---")
-        st.subheader("🧨 Último erro (service)")
+        st.caption(f"🔌 Provider detectado: **{prov_detected}**")
+    except Exception:
+        st.caption("🔌 Provider detectado: **—**")
 
-        if st.button("📌 Mostrar diagnóstico completo", key="btn_show_last_error"):
-            st.markdown("**Modelo/Provider capturados (última call):**")
-            st.write(
-                "Usado:",
-                f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
-            )
+    # ----------------------------
+    # Ping/Pong
+    # ----------------------------
+    st.markdown("---")
+    st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
 
-            st.markdown("**Preview extracted (antes do strip):**")
-            st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
+    if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
+        res = _router_ping_once(
+            user=str(st.session_state.get("user_id", "Janio Donisete")),
+            model=str(st.session_state.get("model") or DEFAULT_MODEL),
+        )
+        st.session_state["mary_ping_result"] = res
 
-            st.markdown("**Preview clean (depois do strip):**")
-            st.code(st.session_state.get("mary_last_clean_text_preview") or "")
+    ping = st.session_state.get("mary_ping_result")
+    if isinstance(ping, dict):
+        if ping.get("ok"):
+            st.success("✅ Ping executado (router confirmou provider/model).")
 
-            st.markdown("**RAW summary:**")
-            st.json(st.session_state.get("mary_last_raw_resp") or {})
-
-            st.markdown("**Último erro registrado:**")
-            st.json(st.session_state.get("mary_last_error") or {})
-
-        # ----------------------------
-        # NSFW + Third-party
-        # ----------------------------
-        st.markdown("---")
-        nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
-        st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
-        nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
-        
-        if "mary_allow_third_party_seduction" not in st.session_state:
-            st.session_state["mary_allow_third_party_seduction"] = False
-        
-        # Se desligou NSFW, força OFF e zera seeds/ciúme no facts (sem derrubar UI)
-        if not nsfw_after:
-            st.session_state["mary_allow_third_party_seduction"] = False
-            try:
-                uk = _usuario_key_atual()
-                set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
-                set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
-                set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
-            except Exception:
-                pass
-        
-        # Persistência de NSFW por timeline (quando alternar)
-        if nsfw_after != nsfw_before:
-            _persist_nsfw_for_current_timeline_if_needed_inline()
-        
-        if nsfw_after:
-            st.checkbox(
-                "Permitir Mary ceder a terceiros (segredo)",
-                key="mary_allow_third_party_seduction",
-                help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
-            )
-            st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
-        
-            # ======================================================
-            # 🧾 Estado Atual (facts → service_core)
-            # ======================================================
-            st.markdown("---")
-            st.subheader("🧾 Estado Atual (facts → service_core)")
-    
-            try:
-                _uk = _usuario_key_atual()
-                _facts_now = get_facts(_uk) or {}
-                if not isinstance(_facts_now, dict):
-                    _facts_now = {}
-            except Exception:
-                _uk = _usuario_key_atual()
-                _facts_now = {}
-    
-            def _f(k: str) -> str:
-                v = _facts_now.get(k, "")
-                return "" if v is None else str(v).strip()
-    
-            _horarios_default = _f("state.horarios") or _f("state.horario")
-    
-            with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
-                st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
-                st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
-                st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
-    
-                st.markdown("**Opcionais**")
-                st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
-                st.text_input(
-                    "(+) Assunto",
-                    value=_f("state.assunto"),
-                    key="sb_state_assunto",
-                    placeholder="Ex.: supermercado, Enzo, academia, ciúme",
-                    help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary."
+            if not ping.get("pong_ok"):
+                st.warning(
+                    "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
+                    "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
                 )
-    
-                c1, c2 = st.columns(2)
-    
-                
-                with c1:
-                    if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                        updates = {
-                            "state.local": st.session_state.get("sb_state_local", "").strip(),
-                            "state.roupa": st.session_state.get("sb_state_roupa", "").strip(),
-                            "state.cabelo": st.session_state.get("sb_state_cabelo", "").strip(),
-                            "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
-                            "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
-                        }
-                
-                        try:
-                            for k, v in updates.items():
-                                set_fact(_uk, k, v, {"fonte": "sidebar_state"})
-                            st.success("✅ Estado atual atualizado.")
-                        except Exception as e:
-                            st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-                
-                with c2:
-                    st.button(
-                        "🧹 Limpar Estado",
-                        key="btn_clear_state",
-                        on_click=_clear_sidebar_state_fields,
-                        args=(_uk,),
-                    )                                set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
-    
-                            st.session_state["sb_state_local"] = ""
-                            st.session_state["sb_state_roupa"] = ""
-                            st.session_state["sb_state_cabelo"] = ""
-                            st.session_state["sb_state_horarios"] = ""
-                            st.session_state["sb_state_assunto"] = ""
-    
-                            st.success("✅ Estado atual limpo.")
-                        except Exception as e:
-                            st.error(f"Falha ao limpar estado: {type(e).__name__}: {e}")
+            st.write("Modelo (UI):", ping.get("ui_model") or "—")
 
-        # ======================================================
-        # 🎲 SURPRESA / DINÂMICA
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🎲 Dinâmica de Surpresa")
+            used_p = ping.get("used_provider")
+            used_m = ping.get("used_model")
 
-        try:
-            _uk_surprise = _usuario_key_atual()
-            _facts_surprise = get_facts(_uk_surprise) or {}
-            if not isinstance(_facts_surprise, dict):
-                _facts_surprise = {}
-        except Exception:
-            _uk_surprise = _usuario_key_atual()
-            _facts_surprise = {}
+            if not used_p:
+                try:
+                    if hasattr(service_router, "_provider_for"):
+                        used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
+                except Exception:
+                    used_p = None
 
-        current_surprise = int(_facts_surprise.get("mary.surprise_level", 0) or 0)
+            st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
 
-        st.slider(
-            "Nível de surpresa ativa da Mary",
-            min_value=0,
-            max_value=3,
-            value=current_surprise,
-            step=1,
-            help=(
-                "0 = Inerte (Mary não muda ritmo sozinha)\n"
-                "1 = Leve (micro provocação ocasional)\n"
-                "2 = Ativa (muda ritmo inesperadamente)\n"
-                "3 = Dominante (vira a energia da cena)"
-            ),
-            key="sb_surprise_level",
+            st.caption("PONG (trecho retornado):")
+            st.code(ping.get("text") or "")
+
+            if not used_m:
+                st.warning(
+                    "⚠️ O router NÃO retornou o modelo usado no payload. "
+                    "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
+                )
+        else:
+            st.error("❌ Falha no ping.")
+            err = ping.get("error")
+            st.code(err if isinstance(err, str) and err.strip() else str(ping))
+
+    # ----------------------------
+    # Último erro
+    # ----------------------------
+    st.markdown("---")
+    st.subheader("🧨 Último erro (service)")
+
+    if st.button("📌 Mostrar diagnóstico completo", key="btn_show_last_error"):
+        st.markdown("**Modelo/Provider capturados (última call):**")
+        st.write(
+            "Usado:",
+            f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
         )
 
-        col_s1, col_s2 = st.columns(2)
+        st.markdown("**Preview extracted (antes do strip):**")
+        st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
 
-        with col_s1:
-            if st.button("💾 Aplicar surpresa", key="btn_apply_surprise"):
-                try:
-                    set_fact(
-                        _uk_surprise,
-                        "mary.surprise_level",
-                        int(st.session_state.get("sb_surprise_level", 0)),
-                        {"fonte": "sidebar_surprise"},
-                    )
-                    _invalidate_backend_cache()
-                    _clear_mary_caches_all_related()
-                    _kill_all_mary_services()
-                    st.success("✅ surprise_level aplicado.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Falha ao aplicar surpresa: {type(e).__name__}: {e}")
+        st.markdown("**Preview clean (depois do strip):**")
+        st.code(st.session_state.get("mary_last_clean_text_preview") or "")
 
-        with col_s2:
-            if st.button("🧹 Resetar surpresa", key="btn_clear_surprise"):
-                try:
-                    delete_fact(_uk_surprise, "mary.surprise_level")
-                except Exception:
-                    pass
+        st.markdown("**RAW summary:**")
+        st.json(st.session_state.get("mary_last_raw_resp") or {})
 
+        st.markdown("**Último erro registrado:**")
+        st.json(st.session_state.get("mary_last_error") or {})
+
+    # ----------------------------
+    # NSFW + Third-party
+    # ----------------------------
+    st.markdown("---")
+    nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
+    st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
+    nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
+
+    if "mary_allow_third_party_seduction" not in st.session_state:
+        st.session_state["mary_allow_third_party_seduction"] = False
+
+    # Se desligou NSFW, força OFF e zera seeds/ciúme no facts (sem derrubar UI)
+    if not nsfw_after:
+        st.session_state["mary_allow_third_party_seduction"] = False
+        try:
+            uk = _usuario_key_atual()
+            set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
+            set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
+            set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
+        except Exception:
+            pass
+
+    # Persistência de NSFW por timeline (quando alternar)
+    if nsfw_after != nsfw_before:
+        _persist_nsfw_for_current_timeline_if_needed_inline()
+
+    if nsfw_after:
+        st.checkbox(
+            "Permitir Mary ceder a terceiros (segredo)",
+            key="mary_allow_third_party_seduction",
+            help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
+        )
+        st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
+
+        # ======================================================
+        # 🧾 Estado Atual (facts → service_core)
+        # ======================================================
+        st.markdown("---")
+        st.subheader("🧾 Estado Atual (facts → service_core)")
+
+        try:
+            _uk = _usuario_key_atual()
+            _facts_now = get_facts(_uk) or {}
+            if not isinstance(_facts_now, dict):
+                _facts_now = {}
+        except Exception:
+            _uk = _usuario_key_atual()
+            _facts_now = {}
+
+        def _f(k: str) -> str:
+            v = _facts_now.get(k, "")
+            return "" if v is None else str(v).strip()
+
+        _horarios_default = _f("state.horarios") or _f("state.horario")
+
+        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+            st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
+            st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
+            st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
+
+            st.markdown("**Opcionais**")
+            st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
+            st.text_input(
+                "(+) Assunto",
+                value=_f("state.assunto"),
+                key="sb_state_assunto",
+                placeholder="Ex.: supermercado, Enzo, academia, ciúme",
+                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary."
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
+                    updates = {
+                        "state.local": st.session_state.get("sb_state_local", "").strip(),
+                        "state.roupa": st.session_state.get("sb_state_roupa", "").strip(),
+                        "state.cabelo": st.session_state.get("sb_state_cabelo", "").strip(),
+                        "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
+                        "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
+                    }
+
+                    try:
+                        for k, v in updates.items():
+                            set_fact(_uk, k, v, {"fonte": "sidebar_state"})
+                        st.success("✅ Estado atual atualizado.")
+                    except Exception as e:
+                        st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
+
+            with c2:
+                st.button(
+                    "🧹 Limpar Estado",
+                    key="btn_clear_state",
+                    on_click=_clear_sidebar_state_fields,
+                    args=(_uk,),
+                )
+
+    # ======================================================
+    # 🎲 SURPRESA / DINÂMICA
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🎲 Dinâmica de Surpresa")
+
+    try:
+        _uk_surprise = _usuario_key_atual()
+        _facts_surprise = get_facts(_uk_surprise) or {}
+        if not isinstance(_facts_surprise, dict):
+            _facts_surprise = {}
+    except Exception:
+        _uk_surprise = _usuario_key_atual()
+        _facts_surprise = {}
+
+    current_surprise = int(_facts_surprise.get("mary.surprise_level", 0) or 0)
+
+    st.slider(
+        "Nível de surpresa ativa da Mary",
+        min_value=0,
+        max_value=3,
+        value=current_surprise,
+        step=1,
+        help=(
+            "0 = Inerte (Mary não muda ritmo sozinha)\n"
+            "1 = Leve (micro provocação ocasional)\n"
+            "2 = Ativa (muda ritmo inesperadamente)\n"
+            "3 = Dominante (vira a energia da cena)"
+        ),
+        key="sb_surprise_level",
+    )
+
+    col_s1, col_s2 = st.columns(2)
+
+    with col_s1:
+        if st.button("💾 Aplicar surpresa", key="btn_apply_surprise"):
+            try:
+                set_fact(
+                    _uk_surprise,
+                    "mary.surprise_level",
+                    int(st.session_state.get("sb_surprise_level", 0)),
+                    {"fonte": "sidebar_surprise"},
+                )
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related()
                 _kill_all_mary_services()
-                st.success("✅ surprise_level removido.")
+                st.success("✅ surprise_level aplicado.")
                 st.rerun()
+            except Exception as e:
+                st.error(f"Falha ao aplicar surpresa: {type(e).__name__}: {e}")
 
+    with col_s2:
+        if st.button("🧹 Resetar surpresa", key="btn_clear_surprise"):
+            try:
+                delete_fact(_uk_surprise, "mary.surprise_level")
+            except Exception:
+                pass
+
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related()
+            _kill_all_mary_services()
+            st.success("✅ surprise_level removido.")
+            st.rerun()
         # ======================================================
         # 🧬 Persona — Debug / Injeção
         # ======================================================
