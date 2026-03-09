@@ -1588,7 +1588,7 @@ def _memory_conflicts_with_truth(
     # temas críticos governados por facts
     # -----------------------------
     if _has_any(t, ("virgem","virgindade","primeira vez","consumado","consumada")) and f:
-    return True
+        return True
 
     if _has_any(t, ("fase","climax","clímax","aftercare","intimidade")) and f:
         return True
