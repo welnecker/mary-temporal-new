@@ -4414,26 +4414,25 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
     local = _fact_str(facts, "state.local")
     roupa = _fact_str(facts, "state.roupa")
     cabelo = _fact_str(facts, "state.cabelo")
-    desculpa = _fact_str(facts, "state.desculpa")
     horarios = _fact_str(facts, "state.horarios") or _fact_str(facts, "state.horario")
-    pend = _fact_str(facts, "state.pendencias")
+    assunto = _fact_str(facts, "state.assunto")
 
-    if not any([local, roupa, cabelo, desculpa, horarios, pend]):
+    if not any([local, roupa, cabelo, horarios, assunto]):
         return ""
 
     lines = [
         f"1) Local: {local or '—'}",
         f"2) Roupa: {roupa or '—'}",
         f"3) Cabelo: {cabelo or '—'}",
-        f"4) Desculpa oficial: {desculpa or '—'}",
     ]
+
     if horarios:
         lines.append(f"(+) Horários: {horarios}")
-    if pend:
-        lines.append(f"(+) Pendências: {pend}")
+
+    if assunto:
+        lines.append(f"(+) Assunto: {assunto}")
 
     return "\n".join(lines).strip()
-
 # ==========================================================
 # ✅ Iniciativa destravada
 # ==========================================================
@@ -5575,6 +5574,17 @@ class MaryService(BaseCharacter):
       sem mover o usuario.
     """.strip()
 
+        topic_rule = """
+    [ASSUNTO ATIVO]
+    - O assunto ativo é um foco temático e mental da cena.
+    - Ele pode influenciar pensamentos, falas, intenções e preocupações da Mary.
+    - O assunto NÃO muda automaticamente o local, não executa ações e não obriga a resposta a girar em torno dele o tempo todo.
+    - Se o assunto estiver vazio, ignore este eixo e siga a cena normalmente.
+    - Use o assunto como inclinação suave, nunca como roteiro.
+    """.strip()
+
+    
+
         emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
         emotional_persistence_rule = f"""
     [EMOÇÃO — CONTINUIDADE]
@@ -5991,6 +6001,7 @@ class MaryService(BaseCharacter):
         {patterns_block}
 
         {janio_focus_rule}
+        {topic_rule}
         {style_rule}
         {emotional_persistence_rule}
         {virginity_rule}
