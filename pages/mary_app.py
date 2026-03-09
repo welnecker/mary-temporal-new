@@ -2333,7 +2333,6 @@ with st.sidebar:
         _horarios_default = _f("state.horarios") or _f("state.horario")
 
         with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
-            # aplica limpeza visual ANTES de instanciar os widgets
             if st.session_state.get("_clear_state_form", False):
                 st.session_state["sb_state_local"] = ""
                 st.session_state["sb_state_roupa"] = ""
@@ -2342,19 +2341,30 @@ with st.sidebar:
                 st.session_state["sb_state_assunto"] = ""
                 st.session_state["_clear_state_form"] = False
 
-            st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
-            st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
-            st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
+            st.text_input("1) Local", key="sb_state_local")
+            st.text_input("2) Roupa", key="sb_state_roupa")
+            st.text_input("3) Cabelo", key="sb_state_cabelo")
 
             st.markdown("**Opcionais**")
-            st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
+            st.text_input("(+) Horários", key="sb_state_horarios")
             st.text_input(
                 "(+) Assunto",
-                value=_f("state.assunto"),
                 key="sb_state_assunto",
                 placeholder="Ex.: supermercado, Enzo, academia, ciúme",
-                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary."
+                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
             )
+
+            # inicializa session_state dos widgets se estiver faltando
+            if "sb_state_local" not in st.session_state:
+                st.session_state["sb_state_local"] = _f("state.local")
+            if "sb_state_roupa" not in st.session_state:
+                st.session_state["sb_state_roupa"] = _f("state.roupa")
+            if "sb_state_cabelo" not in st.session_state:
+                st.session_state["sb_state_cabelo"] = _f("state.cabelo")
+            if "sb_state_horarios" not in st.session_state:
+                st.session_state["sb_state_horarios"] = _horarios_default
+            if "sb_state_assunto" not in st.session_state:
+                st.session_state["sb_state_assunto"] = _f("state.assunto")
 
             c1, c2 = st.columns(2)
 
@@ -2606,287 +2616,296 @@ with st.sidebar:
     if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
         st.session_state["chat_history"] = []
         st.rerun()
-        # ======================================================
-        # 🎭 Persona / Facts quick tools
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🎭 Persona")
-        st.caption("repositories.py ativo:")
-        st.code(inspect.getfile(crep.delete_last_interaction))
 
-        if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
-            uk = _usuario_key_atual()
-            st.write("usuario_key:", uk)
+    # ======================================================
+    # 🎭 Persona / Facts quick tools
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🎭 Persona")
+    st.caption("repositories.py ativo:")
+    st.code(inspect.getfile(crep.delete_last_interaction))
+
+    if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
+        uk = _usuario_key_atual()
+        st.write("usuario_key:", uk)
+        try:
+            st.json(get_facts(uk) or {})
+        except Exception as e:
+            st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+
+    if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
+        _kill_all_mary_services()
+        st.session_state["mary_intro_done"] = False
+        st.session_state["chat_history"] = []
+        st.session_state["mary_timeline_locked"] = False
+        st.session_state["mary_rel_meta_last"] = None
+        st.session_state["mary_last_used_model"] = None
+        st.session_state["mary_last_used_provider"] = None
+
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
+
+        _invalidate_backend_cache()
+        _clear_mary_caches_all_related()
+        st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
+        st.rerun()
+
+    # ======================================================
+    # 🧠 MEMÓRIAS PERMANENTES (shared)
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🧠 Memórias permanentes (shared)")
+    st.session_state.setdefault("long_key_override", "")
+
+    shared_default = _shared_key_atual()
+
+    if "shared_key_override" not in st.session_state:
+        st.session_state["shared_key_override"] = ""
+
+    with st.form("shared_key_form", clear_on_submit=False):
+        shared_in = st.text_input(
+            "Key compartilhada (editável):",
+            value=st.session_state.get("shared_key_override") or shared_default,
+            help="Ex: Janio Donisete::mary::shared",
+        ).strip()
+        apply_shared = st.form_submit_button("✅ Aplicar key")
+
+    if apply_shared:
+        st.session_state["shared_key_override"] = shared_in or shared_default
+        st.session_state["__mem_list"] = None
+        st.rerun()
+
+    shared_key = (st.session_state.get("shared_key_override") or shared_default).strip() or shared_default
+
+    st.caption("Key efetiva:")
+    st.code(shared_key)
+
+    st.markdown("**➕ Inserir memória (shared)**")
+    mem_text = st.text_area(
+        "Texto da memória",
+        placeholder="Ex: Mary e Janio moram em Vitória.\nEx: Estão de férias em Balneário Camboriú.\nEx: Evento no quiosque com Canobio (não altera a cena ativa).",
+        height=120,
+        key="shared_mem_text",
+    )
+    mem_title = st.text_input(
+        "Título (opcional)",
+        placeholder="Ex: Moradia / Férias em BC / Evento quiosque",
+        key="shared_mem_title",
+    )
+
+    mem_kind = st.selectbox(
+        "Tipo da memória",
+        ["estado_ativo", "evento_passado", "canon", "nota"],
+        index=0,
+        key="shared_mem_kind",
+    )
+
+    mem_tags = st.text_input(
+        "Tags (opcional) — use vírgula",
+        placeholder="Ex: Arthur, telefone, uber",
+        key="shared_mem_tags",
+        help="Essas tags viram o cabeçalho [TAGS: ...] e são usadas para gatilhos compostos (ex: Arthur+telefone).",
+    )
+
+    mem_latent = st.text_input(
+        "Latente (opcional) — regra de ativação automática",
+        placeholder="Ex: tension>0.5; guilt<0.2",
+        key="shared_mem_latent",
+        help="Vira o cabeçalho [LATENT: ...]. Use quando quiser memórias que 'acordam' automaticamente por estado (tensão, culpa, etc.).",
+    )
+
+    if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
+        t_raw = (mem_text or "").strip()
+        if not t_raw:
+            st.warning("Escreva o texto da memória antes de salvar.")
+        else:
+            tags_raw = (st.session_state.get("shared_mem_tags") or mem_tags or "").strip()
+            latent_raw = (st.session_state.get("shared_mem_latent") or mem_latent or "").strip()
+
+            header_lines = []
+            if tags_raw:
+                tags_norm = ", ".join([x.strip() for x in re.split(r"[;,]", tags_raw) if x.strip()])
+                header_lines.append(f"[TAGS: {tags_norm}]")
+            if latent_raw:
+                header_lines.append(f"[LATENT: {latent_raw}]")
+
+            t = ("\n".join(header_lines) + ("\n" if header_lines else "") + t_raw).strip()
+
+            meta = {
+                "kind": str(st.session_state.get("shared_mem_kind") or mem_kind).strip(),
+                "source": "ui_shared_memory",
+            }
+            if (mem_title or "").strip():
+                meta["title"] = mem_title.strip()
+
             try:
-                st.json(get_facts(uk) or {})
+                append_memory(shared_key, t, meta=meta)
+                st.success("✅ Memória salva em (shared).")
+
+                st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+                _clear_service_caches_for_keys([shared_key])
+                _clear_mary_caches_all_related()
+                st.rerun()
             except Exception as e:
-                st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+                st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
 
-        if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
-            _kill_all_mary_services()
-            st.session_state["mary_intro_done"] = False
-            st.session_state["chat_history"] = []
-            st.session_state["mary_timeline_locked"] = False
-            st.session_state["mary_rel_meta_last"] = None
-            st.session_state["mary_last_used_model"] = None
-            st.session_state["mary_last_used_provider"] = None
+    if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
+        st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+        st.success("Lista atualizada ✅")
 
+    if st.button("🧽 Apagar última memória", key="btn_delete_last_mem"):
+        ok = delete_last_memory(shared_key)
+        st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
+        st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
+        _clear_service_caches_for_keys([shared_key])
+        _clear_mary_caches_all_related()
+        st.rerun()
+
+    if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
+        n = delete_all_memories(shared_key)
+        st.success(f"✅ Apaguei {n} memórias.")
+        st.session_state["__mem_list"] = []
+        _clear_service_caches_for_keys([shared_key])
+        _clear_mary_caches_all_related()
+        st.rerun()
+
+    mems_view = st.session_state.get("__mem_list")
+    if mems_view is not None:
+        st.json(mems_view)
+
+    # ======================================================
+    # 🗃️ LONG MEMORY (DB) — 1 doc por memória + Text Search
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🗃️ Long Memory (DB) — Text Search")
+
+    lm_userkey = st.session_state.get("long_key_override") or f"{_uid()}::mary::shared"
+
+    st.caption("Key usada na Long Memory:")
+    st.code(lm_userkey)
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("🧱 Criar índices Long Memory (Mongo)", key="btn_lm_indexes"):
             try:
-                st.cache_data.clear()
-            except Exception:
-                pass
-            try:
-                st.cache_resource.clear()
-            except Exception:
-                pass
+                ensure_long_memory_indexes()
+                st.success("✅ Índices da long_memory garantidos (se backend=mongo).")
+            except Exception as e:
+                st.error(f"Falha ao criar índices: {type(e).__name__}: {e}")
 
-            _invalidate_backend_cache()
-            _clear_mary_caches_all_related()
-            st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
+    with col2:
+        if st.button("📚 Listar últimas 50 (DB)", key="btn_lm_list"):
+            try:
+                st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
+            except Exception as e:
+                st.error(f"Falha ao listar: {type(e).__name__}: {e}")
+                st.session_state["__lm_list"] = []
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        if st.button("🧽 Apagar última (DB)", key="btn_lm_delete_last"):
+            try:
+                ok = delete_last_long_memory(lm_userkey)
+                st.success("✅ Última memória (DB) apagada." if ok else "Nada para apagar (DB).")
+                st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
+            except Exception as e:
+                st.error(f"Falha ao apagar última (DB): {type(e).__name__}: {e}")
             st.rerun()
 
-        # ======================================================
-        # 🧠 MEMÓRIAS PERMANENTES (shared)
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🧠 Memórias permanentes (shared)")
-        st.session_state.setdefault("long_key_override", "")
-
-        shared_default = _shared_key_atual()
-
-        if "shared_key_override" not in st.session_state:
-            st.session_state["shared_key_override"] = ""
-
-        with st.form("shared_key_form", clear_on_submit=False):
-            shared_in = st.text_input(
-                "Key compartilhada (editável):",
-                value=st.session_state.get("shared_key_override") or shared_default,
-                help="Ex: Janio Donisete::mary::shared",
-            ).strip()
-            apply_shared = st.form_submit_button("✅ Aplicar key")
-
-        if apply_shared:
-            st.session_state["shared_key_override"] = shared_in or shared_default
-            st.session_state["__mem_list"] = None
+    with col4:
+        confirm_all = st.checkbox("Confirmo apagar TODAS (DB)", key="lm_confirm_delete_all")
+        if st.button("💣 Apagar TODAS (DB)", key="btn_lm_delete_all", disabled=not confirm_all):
+            try:
+                n = delete_all_long_memory(lm_userkey)
+                st.success(f"✅ Apaguei {n} memórias (DB).")
+                st.session_state["__lm_list"] = []
+                st.session_state["__lm_search"] = []
+                st.session_state["lm_confirm_delete_all"] = False
+            except Exception as e:
+                st.error(f"Falha ao apagar todas (DB): {type(e).__name__}: {e}")
             st.rerun()
 
-        shared_key = (st.session_state.get("shared_key_override") or shared_default).strip() or shared_default
+    st.markdown("### ➕ Inserir memória (DB)")
+    lm_text = st.text_area(
+        "Texto da memória",
+        key="lm_text_area",
+        height=90,
+        placeholder="Ex: Mary odeia amendoim #500..."
+    )
+    lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
+    lm_terms = st.text_input(
+        "Termos de busca (opcional)",
+        key="lm_terms_inp",
+        value="",
+        placeholder="Ex: mary, formação, psicologia, ufes"
+    )
+    lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
 
-        st.caption("Key efetiva:")
-        st.code(shared_key)
-
-        st.markdown("**➕ Inserir memória (shared)**")
-        mem_text = st.text_area(
-            "Texto da memória",
-            placeholder="Ex: Mary e Janio moram em Vitória.\nEx: Estão de férias em Balneário Camboriú.\nEx: Evento no quiosque com Canobio (não altera a cena ativa).",
-            height=120,
-            key="shared_mem_text",
-        )
-        mem_title = st.text_input(
-            "Título (opcional)",
-            placeholder="Ex: Moradia / Férias em BC / Evento quiosque",
-            key="shared_mem_title",
-        )
-
-        mem_kind = st.selectbox(
-            "Tipo da memória",
-            ["estado_ativo", "evento_passado", "canon", "nota"],
-            index=0,
-            key="shared_mem_kind",
-        )
-
-        mem_tags = st.text_input(
-            "Tags (opcional) — use vírgula",
-            placeholder="Ex: Arthur, telefone, uber",
-            key="shared_mem_tags",
-            help="Essas tags viram o cabeçalho [TAGS: ...] e são usadas para gatilhos compostos (ex: Arthur+telefone).",
-        )
-
-        mem_latent = st.text_input(
-            "Latente (opcional) — regra de ativação automática",
-            placeholder="Ex: tension>0.5; guilt<0.2",
-            key="shared_mem_latent",
-            help="Vira o cabeçalho [LATENT: ...]. Use quando quiser memórias que 'acordam' automaticamente por estado (tensão, culpa, etc.).",
-        )
-
-        if st.button("✅ Salvar memória (shared)", key="btn_save_shared_mem"):
-            t_raw = (mem_text or "").strip()
-            if not t_raw:
-                st.warning("Escreva o texto da memória antes de salvar.")
+    if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
+        try:
+            txt = (lm_text or "").strip()
+            if not txt:
+                st.warning("⚠️ Texto da memória está vazio.")
             else:
-                tags_raw = (st.session_state.get("shared_mem_tags") or mem_tags or "").strip()
-                latent_raw = (st.session_state.get("shared_mem_latent") or mem_latent or "").strip()
-
-                header_lines = []
-                if tags_raw:
-                    tags_norm = ", ".join([x.strip() for x in re.split(r"[;,]", tags_raw) if x.strip()])
-                    header_lines.append(f"[TAGS: {tags_norm}]")
-                if latent_raw:
-                    header_lines.append(f"[LATENT: {latent_raw}]")
-
-                t = ("\n".join(header_lines) + ("\n" if header_lines else "") + t_raw).strip()
+                kind_final = "pin" if bool(lm_pin) else "memory"
+                tl_current = _timeline()
+                timeline_at_save = "[all]" if kind_final == "pin" else tl_current
+                terms_list = [t.strip() for t in (lm_terms or "").split(",") if t.strip()]
 
                 meta = {
-                    "kind": str(st.session_state.get("shared_mem_kind") or mem_kind).strip(),
-                    "source": "ui_shared_memory",
+                    "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
+                    "kind": kind_final,
+                    "timeline_at_save": timeline_at_save,
+                    "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
+                    "source": "ui_long_memory",
+                    "tags": terms_list,
                 }
-                if (mem_title or "").strip():
-                    meta["title"] = mem_title.strip()
 
-                try:
-                    append_memory(shared_key, t, meta=meta)
-                    st.success("✅ Memória salva em (shared).")
+                append_long_memory_safe(
+                    lm_userkey,
+                    txt,
+                    meta=meta,
+                    user_id=str(st.session_state.get("user_id", "Janio Donisete")),
+                )
 
-                    st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-                    _clear_service_caches_for_keys([shared_key])
-                    _clear_mary_caches_all_related()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
+                st.success(f"✅ Gravado: kind={kind_final} tl={timeline_at_save}")
 
-        if st.button("🔄 Atualizar lista", key="btn_refresh_shared_list"):
-            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-            st.success("Lista atualizada ✅")
-
-        if st.button("🧽 Apagar última memória", key="btn_delete_last_mem"):
-            ok = delete_last_memory(shared_key)
-            st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
-            st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
-            _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
-            st.rerun()
-
-        if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
-            n = delete_all_memories(shared_key)
-            st.success(f"✅ Apaguei {n} memórias.")
-            st.session_state["__mem_list"] = []
-            _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
-            st.rerun()
-
-        mems_view = st.session_state.get("__mem_list")
-        if mems_view is not None:
-            st.json(mems_view)
-
-        # ======================================================
-        # 🗃️ LONG MEMORY (DB) — 1 doc por memória + Text Search
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🗃️ Long Memory (DB) — Text Search")
-
-        lm_userkey = st.session_state.get("long_key_override") or f"{_uid()}::mary::shared"
-
-        st.caption("Key usada na Long Memory:")
-        st.code(lm_userkey)
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            if st.button("🧱 Criar índices Long Memory (Mongo)", key="btn_lm_indexes"):
-                try:
-                    ensure_long_memory_indexes()
-                    st.success("✅ Índices da long_memory garantidos (se backend=mongo).")
-                except Exception as e:
-                    st.error(f"Falha ao criar índices: {type(e).__name__}: {e}")
-
-        with col2:
-            if st.button("📚 Listar últimas 50 (DB)", key="btn_lm_list"):
-                try:
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                except Exception as e:
-                    st.error(f"Falha ao listar: {type(e).__name__}: {e}")
-                    st.session_state["__lm_list"] = []
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            if st.button("🧽 Apagar última (DB)", key="btn_lm_delete_last"):
-                try:
-                    ok = delete_last_long_memory(lm_userkey)
-                    st.success("✅ Última memória (DB) apagada." if ok else "Nada para apagar (DB).")
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                except Exception as e:
-                    st.error(f"Falha ao apagar última (DB): {type(e).__name__}: {e}")
+                st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
                 st.rerun()
+        except Exception as e:
+            st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
 
-        with col4:
-            confirm_all = st.checkbox("Confirmo apagar TODAS (DB)", key="lm_confirm_delete_all")
-            if st.button("💣 Apagar TODAS (DB)", key="btn_lm_delete_all", disabled=not confirm_all):
-                try:
-                    n = delete_all_long_memory(lm_userkey)
-                    st.success(f"✅ Apaguei {n} memórias (DB).")
-                    st.session_state["__lm_list"] = []
-                    st.session_state["__lm_search"] = []
-                    st.session_state["lm_confirm_delete_all"] = False
-                except Exception as e:
-                    st.error(f"Falha ao apagar todas (DB): {type(e).__name__}: {e}")
-                st.rerun()
+    st.markdown("### 🔎 Buscar (Mongo $text)")
+    q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
+    lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
 
-        st.markdown("### ➕ Inserir memória (DB)")
-        lm_text = st.text_area("Texto da memória", key="lm_text_area", height=90, placeholder="Ex: Mary odeia amendoim #500...")
-        lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
-        lm_terms = st.text_input(
-            "Termos de busca (opcional)",
-            key="lm_terms_inp",
-            value="",
-            placeholder="Ex: mary, formação, psicologia, ufes"
-        )
-        lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)        
-
-        if st.button("💾 Salvar na long_memory", key="btn_lm_save"):
+    if st.button("🔍 Buscar agora", key="btn_lm_search"):
+        qq = (q or "").strip()
+        if not qq:
+            st.warning("Digite uma consulta antes de buscar.")
+        else:
             try:
-                txt = (lm_text or "").strip()
-                if not txt:
-                    st.warning("⚠️ Texto da memória está vazio.")
-                else:
-                    kind_final = "pin" if bool(lm_pin) else "memory"
-                    tl_current = _timeline()
-                    timeline_at_save = "[all]" if kind_final == "pin" else tl_current
-                    terms_list = [t.strip() for t in (lm_terms or "").split(",") if t.strip()]
-        
-                    meta = {
-                        "title": (lm_title or "").strip() or ("PIN (UI)" if kind_final == "pin" else ""),
-                        "kind": kind_final,
-                        "timeline_at_save": timeline_at_save,
-                        "user_id": str(st.session_state.get("user_id", "Janio Donisete")),
-                        "source": "ui_long_memory",
-                        "tags": terms_list,
-                    }
-        
-                    append_long_memory_safe(
-                        lm_userkey,
-                        txt,
-                        meta=meta,
-                        user_id=str(st.session_state.get("user_id", "Janio Donisete")),
-                    )
-        
-                    st.success(f"✅ Gravado: kind={kind_final} tl={timeline_at_save}")
-        
-                    st.session_state["__lm_list"] = list_long_memory(lm_userkey, limit=50) or []
-                    st.rerun()
+                st.session_state["__lm_search"] = search_long_memory_text(
+                    lm_userkey, qq, limit=int(lim)
+                ) or []
             except Exception as e:
-                st.error(f"Falha ao gravar: {type(e).__name__}: {e}")
-        st.markdown("### 🔎 Buscar (Mongo $text)")
-        q = st.text_input("Consulta", key="lm_q_inp", value="", placeholder="Ex: amendoim 500")
-        lim = st.slider("Limite de resultados", min_value=5, max_value=50, value=20, step=5, key="lm_lim_slider")
+                st.error(f"Falha na busca: {type(e).__name__}: {e}")
+                st.session_state["__lm_search"] = []
 
-        if st.button("🔍 Buscar agora", key="btn_lm_search"):
-            qq = (q or "").strip()
-            if not qq:
-                st.warning("Digite uma consulta antes de buscar.")
-            else:
-                try:
-                    st.session_state["__lm_search"] = search_long_memory_text(lm_userkey, qq, limit=int(lim)) or []
-                except Exception as e:
-                    st.error(f"Falha na busca: {type(e).__name__}: {e}")
-                    st.session_state["__lm_search"] = []
+    if st.session_state.get("__lm_search") is not None:
+        st.caption("Resultados da busca:")
+        st.json(st.session_state.get("__lm_search") or [])
 
-        if st.session_state.get("__lm_search") is not None:
-            st.caption("Resultados da busca:")
-            st.json(st.session_state.get("__lm_search") or [])
-
-        if st.session_state.get("__lm_list") is not None:
-            st.caption("Últimas memórias (DB):")
-            st.json(st.session_state.get("__lm_list") or [])
+    if st.session_state.get("__lm_list") is not None:
+        st.caption("Últimas memórias (DB):")
+        st.json(st.session_state.get("__lm_list") or [])
 
     # ===== BOOT =====
     _boot_visual_if_empty()
