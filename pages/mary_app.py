@@ -2434,7 +2434,13 @@ def _render_sidebar() -> None:
         except Exception:
             st.code("(não consegui resolver path)")
 
-        st.write({"system_len": len(sys_txt or ""), "boot_len": len(boot_txt or ""), "timeline": _timeline()})
+        st.write(
+            {
+                "system_len": len(sys_txt or ""),
+                "boot_len": len(boot_txt or ""),
+                "timeline": _timeline(),
+            }
+        )
 
         if not sys_txt and not boot_txt:
             st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
@@ -2508,7 +2514,7 @@ def _render_sidebar() -> None:
         st.markdown("---")
         st.subheader("🔁 Reset rápido")
 
-        is_uni = (str(tl_now or "").strip().lower() == "universitaria")
+        is_uni = str(tl_now or "").strip().lower() == "universitaria"
 
         if st.button(
             "🟢 Forçar VIRGEM (Universitária)",
@@ -2777,14 +2783,14 @@ def _render_sidebar() -> None:
             "Texto da memória",
             key="lm_text_area",
             height=90,
-            placeholder="Ex: Mary odeia amendoim #500..."
+            placeholder="Ex: Mary odeia amendoim #500...",
         )
         lm_title = st.text_input("Título (opcional)", key="lm_title_inp", value="")
         lm_terms = st.text_input(
             "Termos de busca (opcional)",
             key="lm_terms_inp",
             value="",
-            placeholder="Ex: mary, formação, psicologia, ufes"
+            placeholder="Ex: mary, formação, psicologia, ufes",
         )
         lm_pin = st.checkbox("📌 Fixar (sempre presente nas respostas)", key="lm_pin_chk", value=False)
 
@@ -2846,7 +2852,11 @@ def _render_sidebar() -> None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
 
-      # ===== BOOT =====
+
+def main() -> None:
+    _render_sidebar()
+
+    # ===== BOOT =====
     _boot_visual_if_empty()
 
     # ===== DEBUG VISUAL (opcional) =====
@@ -2901,7 +2911,12 @@ def _render_sidebar() -> None:
         third_active = bool(st.session_state.get("mary_allow_third_party_seduction", False))
 
         try:
-            set_fact(_usuario_key_atual(), "mary.allow_third_party_seduction", third_active, {"fonte": "ui_toggle"})
+            set_fact(
+                _usuario_key_atual(),
+                "mary.allow_third_party_seduction",
+                third_active,
+                {"fonte": "ui_toggle"},
+            )
         except Exception:
             pass
 
@@ -2939,7 +2954,8 @@ def _render_sidebar() -> None:
                 st.write("Modelo (UI):", st.session_state.get("model"))
                 st.write(
                     "Usado (capturado):",
-                    f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
+                    f"{st.session_state.get('mary_last_used_provider') or '—'} / "
+                    f"{st.session_state.get('mary_last_used_model') or '—'}",
                 )
 
                 st.write("Preview extracted (antes do strip):")
@@ -2959,6 +2975,7 @@ def _render_sidebar() -> None:
         st.session_state["chat_history"].append(("assistant", resposta))
         _invalidate_backend_cache()
         st.rerun()
+
 
 if __name__ == "__main__":
     main()
