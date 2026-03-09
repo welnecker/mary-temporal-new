@@ -2098,13 +2098,9 @@ def _clear_sidebar_state_fields(usuario_key: str) -> None:
     ):
         set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
 
-    # limpa widgets do sidebar
-    st.session_state["sb_state_local"] = ""
-    st.session_state["sb_state_roupa"] = ""
-    st.session_state["sb_state_cabelo"] = ""
-    st.session_state["sb_state_horarios"] = ""
-    st.session_state["sb_state_assunto"] = ""
-
+    # marca limpeza visual para o próximo rerun
+    st.session_state["_clear_state_form"] = True
+    st.rerun()
 
 # ==========================================================
 # SIDEBAR
@@ -2327,10 +2323,19 @@ with st.sidebar:
         _horarios_default = _f("state.horarios") or _f("state.horario")
 
         with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+            # aplica limpeza visual ANTES de instanciar os widgets
+            if st.session_state.get("_clear_state_form", False):
+                st.session_state["sb_state_local"] = ""
+                st.session_state["sb_state_roupa"] = ""
+                st.session_state["sb_state_cabelo"] = ""
+                st.session_state["sb_state_horarios"] = ""
+                st.session_state["sb_state_assunto"] = ""
+                st.session_state["_clear_state_form"] = False
+        
             st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
             st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
             st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
-
+        
             st.markdown("**Opcionais**")
             st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
             st.text_input(
@@ -2340,9 +2345,9 @@ with st.sidebar:
                 placeholder="Ex.: supermercado, Enzo, academia, ciúme",
                 help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary."
             )
-
+        
             c1, c2 = st.columns(2)
-
+        
             with c1:
                 if st.button("💾 Aplicar Estado", key="btn_apply_state"):
                     updates = {
@@ -2352,14 +2357,14 @@ with st.sidebar:
                         "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
                         "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
                     }
-
+        
                     try:
                         for k, v in updates.items():
                             set_fact(_uk, k, v, {"fonte": "sidebar_state"})
                         st.success("✅ Estado atual atualizado.")
                     except Exception as e:
                         st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-
+        
             with c2:
                 st.button(
                     "🧹 Limpar Estado",
@@ -2367,7 +2372,6 @@ with st.sidebar:
                     on_click=_clear_sidebar_state_fields,
                     args=(_uk,),
                 )
-
     # ======================================================
     # 🎲 SURPRESA / DINÂMICA
     # ======================================================
