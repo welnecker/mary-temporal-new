@@ -2102,6 +2102,7 @@ def _clear_sidebar_state_fields(usuario_key: str) -> None:
     st.session_state["_clear_state_form"] = True
     st.rerun()
 
+
 # ==========================================================
 # SIDEBAR
 # ==========================================================
@@ -2143,7 +2144,11 @@ with st.sidebar:
             "ok": True,
             "len": len(all_models),
             "head": all_models[:10],
-            "providers": (service_router.available_providers() if hasattr(service_router, "available_providers") else "—"),
+            "providers": (
+                service_router.available_providers()
+                if hasattr(service_router, "available_providers")
+                else "—"
+            ),
             "err": None,
         }
     except Exception as e:
@@ -2177,7 +2182,9 @@ with st.sidebar:
     try:
         prov_detected = None
         if hasattr(service_router, "_provider_for"):
-            prov_detected = service_router._provider_for(str(st.session_state.get("model") or "").strip())
+            prov_detected = service_router._provider_for(
+                str(st.session_state.get("model") or "").strip()
+            )
 
         if not prov_detected:
             msel = str(st.session_state.get("model") or "").strip().lower()
@@ -2215,6 +2222,7 @@ with st.sidebar:
                     "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
                     "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
                 )
+
             st.write("Modelo (UI):", ping.get("ui_model") or "—")
 
             used_p = ping.get("used_provider")
@@ -2223,7 +2231,9 @@ with st.sidebar:
             if not used_p:
                 try:
                     if hasattr(service_router, "_provider_for"):
-                        used_p = service_router._provider_for(str(ping.get("ui_model") or "").strip())
+                        used_p = service_router._provider_for(
+                            str(ping.get("ui_model") or "").strip()
+                        )
                 except Exception:
                     used_p = None
 
@@ -2331,11 +2341,11 @@ with st.sidebar:
                 st.session_state["sb_state_horarios"] = ""
                 st.session_state["sb_state_assunto"] = ""
                 st.session_state["_clear_state_form"] = False
-        
+
             st.text_input("1) Local", value=_f("state.local"), key="sb_state_local")
             st.text_input("2) Roupa", value=_f("state.roupa"), key="sb_state_roupa")
             st.text_input("3) Cabelo", value=_f("state.cabelo"), key="sb_state_cabelo")
-        
+
             st.markdown("**Opcionais**")
             st.text_input("(+) Horários", value=_horarios_default, key="sb_state_horarios")
             st.text_input(
@@ -2345,9 +2355,9 @@ with st.sidebar:
                 placeholder="Ex.: supermercado, Enzo, academia, ciúme",
                 help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary."
             )
-        
+
             c1, c2 = st.columns(2)
-        
+
             with c1:
                 if st.button("💾 Aplicar Estado", key="btn_apply_state"):
                     updates = {
@@ -2357,14 +2367,14 @@ with st.sidebar:
                         "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
                         "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
                     }
-        
+
                     try:
                         for k, v in updates.items():
                             set_fact(_uk, k, v, {"fonte": "sidebar_state"})
                         st.success("✅ Estado atual atualizado.")
                     except Exception as e:
                         st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-        
+
             with c2:
                 st.button(
                     "🧹 Limpar Estado",
@@ -2372,6 +2382,7 @@ with st.sidebar:
                     on_click=_clear_sidebar_state_fields,
                     args=(_uk,),
                 )
+
     # ======================================================
     # 🎲 SURPRESA / DINÂMICA
     # ======================================================
@@ -2435,157 +2446,166 @@ with st.sidebar:
             _kill_all_mary_services()
             st.success("✅ surprise_level removido.")
             st.rerun()
-        # ======================================================
-        # 🧬 Persona — Debug / Injeção
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🧬 Persona — Debug / Injeção")
 
-        sys_txt, boot = _get_persona_bundle(_timeline())
-        boot_txt = _flatten_boot_messages(boot, _timeline())
+    # ======================================================
+    # 🧬 Persona — Debug / Injeção
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🧬 Persona — Debug / Injeção")
 
-        st.caption("Arquivo persona ativo:")
-        try:
-            st.code(getattr(mary_persona, "__file__", "—"))
-        except Exception:
-            st.code("(não consegui resolver path)")
+    sys_txt, boot = _get_persona_bundle(_timeline())
+    boot_txt = _flatten_boot_messages(boot, _timeline())
 
-        st.write({"system_len": len(sys_txt or ""), "boot_len": len(boot_txt or ""), "timeline": _timeline()})
+    st.caption("Arquivo persona ativo:")
+    try:
+        st.code(getattr(mary_persona, "__file__", "—"))
+    except Exception:
+        st.code("(não consegui resolver path)")
 
-        if not sys_txt and not boot_txt:
-            st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
-        else:
-            with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
-                st.code((sys_txt or "")[:500])
-            with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
-                st.code((boot_txt or "")[:800])
+    st.write({"system_len": len(sys_txt or ""), "boot_len": len(boot_txt or ""), "timeline": _timeline()})
 
-        tl = _timeline()
-        fb_key = f"mary_ui_persona_fallback::{tl}"
-        st.checkbox("Fallback: injetar persona via UI no prompt (se service não injeta)", key=fb_key)
-        st.caption("Dica: deixe ON até confirmar que o service injeta SYSTEM+BOOT.")
+    if not sys_txt and not boot_txt:
+        st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
+    else:
+        with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
+            st.code((sys_txt or "")[:500])
+        with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
+            st.code((boot_txt or "")[:800])
 
-        # ======================================================
-        # 🧬 Canon — Estado íntimo
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🧬 Canon — Estado íntimo")
+    tl = _timeline()
+    fb_key = f"mary_ui_persona_fallback::{tl}"
+    st.checkbox("Fallback: injetar persona via UI no prompt (se service não injeta)", key=fb_key)
+    st.caption("Dica: deixe ON até confirmar que o service injeta SYSTEM+BOOT.")
 
-        uk_now = _usuario_key_atual()
-        tl_now = _timeline()
-        sk_now = _shared_key_atual()
-        uid_now = str(st.session_state.get("user_id", "Janio Donisete"))
+    # ======================================================
+    # 🧬 Canon — Estado íntimo
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🧬 Canon — Estado íntimo")
 
-        try:
-            facts_now = get_facts(uk_now) or {}
-            if not isinstance(facts_now, dict):
-                facts_now = {}
-        except Exception:
+    uk_now = _usuario_key_atual()
+    tl_now = _timeline()
+    sk_now = _shared_key_atual()
+    uid_now = str(st.session_state.get("user_id", "Janio Donisete"))
+
+    try:
+        facts_now = get_facts(uk_now) or {}
+        if not isinstance(facts_now, dict):
             facts_now = {}
+    except Exception:
+        facts_now = {}
 
-        rel_now = facts_now.get(f"rel.state::{tl_now}") if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict) else {}
-        is_consumado = bool(rel_now.get("consummated")) or (str(rel_now.get("virginity") or "") == "nao_virgem")
+    rel_now = (
+        facts_now.get(f"rel.state::{tl_now}")
+        if isinstance(facts_now.get(f"rel.state::{tl_now}"), dict)
+        else {}
+    )
+    is_consumado = bool(rel_now.get("consummated")) or (
+        str(rel_now.get("virginity") or "") == "nao_virgem"
+    )
 
-        label_btn = "✅ Virgem (marcar CONSUMADO)" if not is_consumado else "🔥 Consumado (manter)"
+    label_btn = "✅ Virgem (marcar CONSUMADO)" if not is_consumado else "🔥 Consumado (manter)"
 
-        if st.button(label_btn, key="btn_canon_virginity_consumado"):
-            try:
-                if not is_consumado:
-                    _set_virginity_canon(
+    if st.button(label_btn, key="btn_canon_virginity_consumado"):
+        try:
+            if not is_consumado:
+                _set_virginity_canon(
+                    usuario_key=uk_now,
+                    shared_key=sk_now,
+                    timeline=tl_now,
+                    user_id=uid_now,
+                )
+                try:
+                    res = _sync_virginity_global_timeline(
                         usuario_key=uk_now,
-                        shared_key=sk_now,
                         timeline=tl_now,
-                        user_id=uid_now,
                     )
-                    try:
-                        res = _sync_virginity_global_timeline(usuario_key=uk_now, timeline=tl_now)
-                        st.session_state["mary_virginity_sync_last"] = res
-                    except Exception:
-                        pass
+                    st.session_state["mary_virginity_sync_last"] = res
+                except Exception:
+                    pass
 
-                st.session_state["chat_history"] = []
-                st.session_state["mary_intro_done"] = False
-                st.session_state["mary_last_used_model"] = None
-                st.session_state["mary_last_used_provider"] = None
-                _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
-                st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
-
-        # ======================================================
-        # 🔁 Reset rápido
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🔁 Reset rápido")
-
-        is_uni = (str(tl_now or "").strip().lower() == "universitaria")
-
-        if st.button(
-            "🟢 Forçar VIRGEM (Universitária)",
-            key="btn_force_virginity_universitaria",
-            disabled=not is_uni,
-            help="Reverte virginity/consummated/permissões e zera intimacy.phase::universitaria.",
-        ):
-            try:
-                force_reset_virginity_universitaria(uk_now)
-
-                st.session_state["chat_history"] = []
-                st.session_state["mary_intro_done"] = False
-                st.session_state["mary_last_used_model"] = None
-                st.session_state["mary_last_used_provider"] = None
-
-                _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
-
-                st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")
-
-        st.caption("Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga.")
-
-        # ======================================================
-        # 🔍 Debug
-        # ======================================================
-        st.markdown("---")
-        st.subheader("🔍 Debug")
-        st.caption(
-            f"NSFW={bool(st.session_state.get('mary_nsfw_on', False))} | "
-            f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
-        )
-
-        st.session_state["mary_debug_rel_panel"] = st.checkbox(
-            "Mostrar painel Relationship",
-            value=bool(st.session_state.get("mary_debug_rel_panel", False)),
-            key="mary_debug_rel_panel__ui",
-        )
-
-        # ======================================================
-        # Turnos / Limpar
-        # ======================================================
-        st.markdown("---")
-        st.subheader("Turnos")
-
-        if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
-            ok = _delete_last_turn_active()
-            if ok:
-                st.session_state["chat_history"] = []
-                st.session_state["mary_intro_done"] = False
-                st.success("✅ Último turno apagado (timeline ativa).")
-            else:
-                st.warning("Nada para apagar (backend não retornou sucesso).")
-            st.rerun()
-
-        st.markdown("---")
-        st.subheader("Limpar tela")
-        if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
             st.session_state["chat_history"] = []
+            st.session_state["mary_intro_done"] = False
+            st.session_state["mary_last_used_model"] = None
+            st.session_state["mary_last_used_provider"] = None
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related(also_clear_other_timeline=True)
+            _kill_all_mary_services()
+            st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
             st.rerun()
+        except Exception as e:
+            st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
 
+    # ======================================================
+    # 🔁 Reset rápido
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🔁 Reset rápido")
+
+    is_uni = (str(tl_now or "").strip().lower() == "universitaria")
+
+    if st.button(
+        "🟢 Forçar VIRGEM (Universitária)",
+        key="btn_force_virginity_universitaria",
+        disabled=not is_uni,
+        help="Reverte virginity/consummated/permissões e zera intimacy.phase::universitaria.",
+    ):
+        try:
+            force_reset_virginity_universitaria(uk_now)
+
+            st.session_state["chat_history"] = []
+            st.session_state["mary_intro_done"] = False
+            st.session_state["mary_last_used_model"] = None
+            st.session_state["mary_last_used_provider"] = None
+
+            _invalidate_backend_cache()
+            _clear_mary_caches_all_related(also_clear_other_timeline=True)
+            _kill_all_mary_services()
+
+            st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")
+
+    st.caption("Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga.")
+
+    # ======================================================
+    # 🔍 Debug
+    # ======================================================
+    st.markdown("---")
+    st.subheader("🔍 Debug")
+    st.caption(
+        f"NSFW={bool(st.session_state.get('mary_nsfw_on', False))} | "
+        f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
+    )
+
+    st.session_state["mary_debug_rel_panel"] = st.checkbox(
+        "Mostrar painel Relationship",
+        value=bool(st.session_state.get("mary_debug_rel_panel", False)),
+        key="mary_debug_rel_panel__ui",
+    )
+
+    # ======================================================
+    # Turnos / Limpar
+    # ======================================================
+    st.markdown("---")
+    st.subheader("Turnos")
+
+    if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
+        ok = _delete_last_turn_active()
+        if ok:
+            st.session_state["chat_history"] = []
+            st.session_state["mary_intro_done"] = False
+            st.success("✅ Último turno apagado (timeline ativa).")
+        else:
+            st.warning("Nada para apagar (backend não retornou sucesso).")
+        st.rerun()
+
+    st.markdown("---")
+    st.subheader("Limpar tela")
+    if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
+        st.session_state["chat_history"] = []
+        st.rerun()
         # ======================================================
         # 🎭 Persona / Facts quick tools
         # ======================================================
