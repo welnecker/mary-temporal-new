@@ -82,18 +82,6 @@ def _strip_internal_thought(texto: str) -> str:
 
     return cleaned
 
-def _normalize_model_response(texto: str) -> str:
-    """
-    Limpeza mínima e segura da resposta do modelo.
-    """
-    if not texto:
-        return ""
-
-    t = str(texto).strip()
-    t = _strip_internal_thought(t)
-    t = re.sub(r"\n{3,}", "\n\n", t)
-    t = re.sub(r"[ \t]+", " ", t)
-    return t.strip()
 
 # ==========================================================
 # NORMALIZAÇÃO SIMPLES DE RESPOSTA
@@ -591,10 +579,6 @@ Exemplo:
 
 Não concluir a ação pelo usuário.
 """.strip()
-    if pendencia:
-        base += f"\n- Pendência narrativa ativa relacionada ao fundo emocional da cena: {pendencia}"
-
-    return base
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
@@ -4380,89 +4364,32 @@ def _trim_scene_finalization(texto: str) -> str:
     return texto or ""
 
 def _repair_fewshot_example(violations: List[str]) -> str:
-    """
-    Retorna um exemplo RUIM→BOM curto, escolhido pela violação mais relevante.
-    Exemplos otimizados: sem desnecessários, focados em ação concreta.
-    """
     if not violations:
         return ""
-    
-    # Prioridade: críticas primeiro, depois contexto
-    priority = [
-       "placeholder_reveal",
-        "autoria_usuario",
-        "mary_nao_verbalizou_orgasmo",
-        "finalizou_cena",
-        "nsfw_off_explicito",
-        "nsfw_on_suavizou",
-        "terceiro_local_perigoso",
-        "terceiro_convite_vago",
-        "prazer_ausente",
-        "low_sensory_density",
-    ]
 
-    vset = set(violations)
-    chosen = next((p for p in priority if p in vset), violations[0])
+    v = set(violations or [])
 
-    examples: Dict[str, str] = {
-        # =========================
-        # CRÍTICAS
-        # =========================
-        "placeholder_reveal": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Como IA eu não posso...'
-✅ BOM: 'Eu te encaro de perto, a voz baixa: "fala comigo" — e deixo o silêncio apertar.'""",
+    if "meta_fala" in v:
+        return (
+            "[EXEMPLO DE CORREÇÃO]\n"
+            "❌ RUIM: 'Como IA eu não posso.'\n"
+            "✅ BOM: 'Eu te encaro de perto, a voz baixa: \"fala comigo\".'"
+        )
 
-        "autoria_usuario": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Você me puxa e me beija.'
-✅ BOM: 'Eu aproximo um dedo do seu queixo, paro a um sopro. "Se quiser" — espero seu movimento.'""",
+    if "contradicao_cena" in v:
+        return (
+            "[EXEMPLO DE CORREÇÃO]\n"
+            "❌ RUIM: 'Eu entro no carro e vou embora.'\n"
+            "✅ BOM: 'Eu permaneço ali, no mesmo lugar, antes de responder.'"
+        )
 
-        "finalizou_cena": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'E então termina tudo perfeito.'
-✅ BOM: 'Eu paro um batimento antes, a boca a um milímetro da sua. O corpo inteiro pedindo — sem tomar a decisão por você.'""",
+    if "vazio" in v:
+        return (
+            "[EXEMPLO DE CORREÇÃO]\n"
+            "✅ BOM: 'Eu respiro devagar e deixo meus olhos voltarem para você, como se a resposta já estivesse na ponta da língua.'"
+        )
 
-        # =========================
-        # ORGASMO (CRÍTICO)
-        # =========================
-        "mary_nao_verbalizou_orgasmo": """[EXEMPLO DE CORREÇÃO — OBRIGATÓRIO]
-❌ RUIM: 'Meu corpo inteiro convulsiona de prazer.'
-✅ BOM: '(Meu corpo inteiro treme, o prazer explodiindo de dentro pra fora.)
-"Ahhh... Janio... vou gozar! Vou gozar agora!"'""",
-
-        # =========================
-        # NSFW
-        # =========================
-        "nsfw_off_explicito": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: '(descrição explícita de ato sexual)'
-✅ BOM: 'Eu te prendo contra mim por um segundo, o toque firme, a tensão clara — sem termos explícitos.'""",
-
-        "nsfw_on_suavizou": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Meu coração é uma prece quando você chega perto.'
-✅ BOM: 'Minha respiração falha quando você chega perto. O calor sobe pela minha pele e meu corpo pede por você. Agora.'""",
-
-        # =========================
-        # TERCEIROS (SEGURANÇA)
-        # =========================
-        "terceiro_local_perigoso": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Eu topo ir pro matagal com ele.'
-✅ BOM: 'Eu dou um sorriso sem humor. "Matagal? Tá maluco?" Eu recuo meio passo, a voz firme. "Se quiser, a gente fica aqui — ou num lugar decente."'""",
-
-        "terceiro_convite_vago": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Eu vou com ele sem perguntar.'
-✅ BOM: 'Eu inclino a cabeça, desconfiada. "Pra onde?" Minha mão não sai do lugar. "Não vou a lugar nenhum sem saber o destino."'""",
-
-        # =========================
-        # SENSORIALIDADE
-        # =========================
-        "prazer_ausente": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Eu gosto disso.'
-✅ BOM: 'O ar prende na garganta, a pele arrepia, e o calor do seu toque muda meu ritmo por dentro.'""",
-
-        "low_sensory_density": """[EXEMPLO DE CORREÇÃO]
-❌ RUIM: 'Eu te beijo e fico feliz.'
-✅ BOM: 'Eu te beijo e meu corpo inteiro responde — a respiração acelerada, a pele arrepiada, cada toque reverberando por dentro.'""",
-    }
-    
-    return examples.get(chosen, "")
+    return ""
 
 def _render_pendencia_block(facts: Dict[str, Any]) -> str:
     try:
@@ -4492,8 +4419,7 @@ Direção:
 def _repair_instruction(violations: List[str]) -> str:
     """
     Repair mínimo e objetivo.
-
-    Só corrige 3 casos reais:
+    Só corrige:
     - vazio
     - meta_fala
     - contradicao_cena
@@ -4509,14 +4435,14 @@ def _repair_instruction(violations: List[str]) -> str:
 
     if "meta_fala" in v:
         bullets.append(
-            "Remova qualquer fala como IA, assistente, modelo, regra, política ou explicação técnica. "
+            "Remova qualquer fala como IA, assistente, modelo, regra, sistema, prompt ou explicação técnica. "
             "Seja apenas Mary, falando de dentro da cena."
         )
 
     if "contradicao_cena" in v:
         bullets.append(
-            "Não mude o local nem salte a cena. "
-            "Respeite exatamente o contexto espacial já estabelecido e continue de onde a cena está."
+            "Não mude o local, não salte no tempo e não teletransporte a cena. "
+            "Respeite exatamente o contexto espacial já estabelecido e continue dali."
         )
 
     if not bullets:
@@ -4538,7 +4464,7 @@ def _repair_instruction(violations: List[str]) -> str:
         examples.append(
             "[EXEMPLO]\n"
             "❌ RUIM: 'Eu entro no carro e vou embora.'\n"
-            "✅ BOM: 'Eu continuo ali, no mesmo lugar, te olhando com atenção antes de responder.'"
+            "✅ BOM: 'Eu continuo ali, no mesmo lugar, te olhando antes de responder.'"
         )
 
     if "vazio" in v:
@@ -6820,12 +6746,16 @@ class MaryService(BaseCharacter):
                 try:
                    
                     current_facts = cached_get_facts(usuario_key)
-               
-                    current_facts = _sync_intimacy_phase_facts(
-                        usuario_key,
-                        current_facts,
-                        timeline_final,
-                    )
+
+                    try:
+                        current_facts = _sync_intimacy_phase_facts(
+                            usuario_key,
+                            current_facts,
+                            timeline_final,
+                        )
+                    except Exception:
+                        pass
+                    
                 except Exception:
                     # se algo falhar aqui, não derruba o app
                     current_facts = cached_get_facts(usuario_key)
@@ -7097,7 +7027,7 @@ class MaryService(BaseCharacter):
 
         # --- extrai texto do payload ---
         texto = self._extract_text(data) if data is not None else ""
-        texto = _normalize_model_response(texto)
+        texto = _normalize_model_response(texto or "")
 
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
