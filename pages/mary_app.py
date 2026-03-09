@@ -2084,6 +2084,27 @@ def main() -> None:
                     st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
 
+def _clear_sidebar_state_fields(usuario_key: str) -> None:
+    # limpa facts persistidos
+    for k in (
+        "state.local",
+        "state.roupa",
+        "state.cabelo",
+        "state.horarios",
+        "state.horario",
+        "state.assunto",
+        "state.desculpa",
+        "state.pendencias",
+    ):
+        set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
+
+    # limpa widgets do sidebar
+    st.session_state["sb_state_local"] = ""
+    st.session_state["sb_state_roupa"] = ""
+    st.session_state["sb_state_cabelo"] = ""
+    st.session_state["sb_state_horarios"] = ""
+    st.session_state["sb_state_assunto"] = ""
+
     # ==========================================================
     # SIDEBAR
     # ==========================================================
@@ -2321,6 +2342,7 @@ def main() -> None:
     
                 c1, c2 = st.columns(2)
     
+                
                 with c1:
                     if st.button("💾 Aplicar Estado", key="btn_apply_state"):
                         updates = {
@@ -2330,28 +2352,21 @@ def main() -> None:
                             "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
                             "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
                         }
-    
+                
                         try:
                             for k, v in updates.items():
                                 set_fact(_uk, k, v, {"fonte": "sidebar_state"})
                             st.success("✅ Estado atual atualizado.")
                         except Exception as e:
                             st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-    
+                
                 with c2:
-                    if st.button("🧹 Limpar Estado", key="btn_clear_state"):
-                        try:
-                            for k in (
-                                "state.local",
-                                "state.roupa",
-                                "state.cabelo",
-                                "state.horarios",
-                                "state.horario",
-                                "state.assunto",
-                                "state.desculpa",
-                                "state.pendencias",
-                            ):
-                                set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
+                    st.button(
+                        "🧹 Limpar Estado",
+                        key="btn_clear_state",
+                        on_click=_clear_sidebar_state_fields,
+                        args=(_uk,),
+                    )                                set_fact(_uk, k, "", {"fonte": "sidebar_state_clear"})
     
                             st.session_state["sb_state_local"] = ""
                             st.session_state["sb_state_roupa"] = ""
