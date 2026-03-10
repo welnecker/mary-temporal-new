@@ -5937,30 +5937,36 @@ class MaryService(BaseCharacter):
 
         user_explicit_scene_change = bool(mudou and novo_local)
 
-        if mudou and novo_local:
+       if mudou and novo_local:
             novo_local = str(novo_local).strip()
-
+        
             _scene_state = _get_scene_state(facts0)
             if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
                 loc0, _t0, _a0 = _scene_state
             else:
                 loc0, _t0, _a0 = "", "", ""
-
+        
             loc0n = (loc0 or "").strip().lower()
             loc1n = novo_local.lower()
-
+        
             if loc1n and loc1n != loc0n:
+                # atualiza a cena principal primeiro
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-
+        
                 try:
                     set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
                     set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
+                    set_fact_safe(usuario_key, "cena.local", novo_local, {"fonte": "scene_sync"})
+                    set_fact_safe(usuario_key, "cena.tempo", "agora", {"fonte": "scene_sync"})
+                    set_fact_safe(usuario_key, "cena.acao", "transição", {"fonte": "scene_sync"})
+                    set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_sync"})
                 except Exception:
                     pass
-
-                _lock_scene(usuario_key)
+        
+                facts0 = cached_get_facts(usuario_key) or {}
+                facts0 = _normalize_scene_local_facts(facts0)
+        
                 diag.scene_transition = {"from": loc0, "to": novo_local}
-
         # 5) Cena paralela (mantido por compatibilidade)
         facts_pre = cached_get_facts(usuario_key)
         scene_locked_pre = _scene_is_locked(facts_pre)
