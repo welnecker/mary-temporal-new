@@ -5612,9 +5612,9 @@ class MaryService(BaseCharacter):
         # HISTÓRICO RECENTE
         # ==========================================================
     
-        history = cached_get_history(usuario_key, limit=24)
+        history = cached_get_history(usuario_key, limit=80)
     
-        for d in history[-4:]:  # antes 10
+        for d in history[-10:]:  # antes 10
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
     
