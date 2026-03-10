@@ -5424,7 +5424,7 @@ class MaryService(BaseCharacter):
     
         return system
 
-    def _build_messages_for_turn(
+       def _build_messages_for_turn(
         self,
         *,
         system: str,
@@ -5440,123 +5440,123 @@ class MaryService(BaseCharacter):
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
         dedupe_hashes: set = set()
 
-    # 🔒 CONTEXTO ABSOLUTO
-    _inject_now_context(messages, usuario_key, timeline_final)
+        # 🔒 CONTEXTO ABSOLUTO
+        _inject_now_context(messages, usuario_key, timeline_final)
 
-    # 🔁 INTRO (1x)
-    _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
+        # 🔁 INTRO (1x)
+        _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
 
-    # ==========================================
-    # 🔥 NOVA HIERARQUIA DE MEMÓRIA
-    # ==========================================
+        # ==========================================
+        # 🔥 NOVA HIERARQUIA DE MEMÓRIA
+        # ==========================================
 
-    # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
-    _inject_canon_memories_always(
-        shared_key,
-        timeline_final,
-        messages,
-        max_items=24,
-        dedupe_bucket=dedupe_hashes,
-    )
-
-    # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
-    _inject_long_memory_pins_always(
-        shared_key,
-        timeline_final,
-        messages,
-        max_items=6,
-        dedupe_bucket=dedupe_hashes,
-    )
-
-    # ==========================================
-    # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
-    # ==========================================
-    history = cached_get_history(usuario_key, limit=200)
-    for d in history[-24:]:
-        u = (d.get("mensagem_usuario") or "").strip()
-        a = (d.get("resposta_mary") or "").strip()
-        if u:
-            messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
-        if a:
-            messages.append({"role": "assistant", "content": a})
-
-    # ==========================================
-    # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
-    # ==========================================
-    if _should_inject_summary(usuario_key, every_n=6):
-        _inject_consolidated_summary(
+        # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
+        _inject_canon_memories_always(
             shared_key,
             timeline_final,
             messages,
+            max_items=24,
             dedupe_bucket=dedupe_hashes,
         )
 
-    # ==========================================
-    # 5️⃣ LONG MEMORY SOB DEMANDA
-    # ==========================================
-    if _should_inject_long_memory(prompt):
-        _inject_long_memory_textsearch(
+        # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
+        _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
-            prompt,
             messages,
-            limit=6,
+            max_items=6,
             dedupe_bucket=dedupe_hashes,
+        )
+
+        # ==========================================
+        # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
+        # ==========================================
+        history = cached_get_history(usuario_key, limit=200)
+        for d in history[-24:]:
+            u = (d.get("mensagem_usuario") or "").strip()
+            a = (d.get("resposta_mary") or "").strip()
+            if u:
+                messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
+            if a:
+                messages.append({"role": "assistant", "content": a})
+
+        # ==========================================
+        # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
+        # ==========================================
+        if _should_inject_summary(usuario_key, every_n=6):
+            _inject_consolidated_summary(
+                shared_key,
+                timeline_final,
+                messages,
+                dedupe_bucket=dedupe_hashes,
+            )
+
+        # ==========================================
+        # 5️⃣ LONG MEMORY SOB DEMANDA
+        # ==========================================
+        if _should_inject_long_memory(prompt):
+            _inject_long_memory_textsearch(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                limit=6,
+                dedupe_bucket=dedupe_hashes,
+                facts=facts,
+            )
+
+            _inject_relevant_memories(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                k=4,
+                dedupe_bucket=dedupe_hashes,
+            )
+
+        # soft context só se necessário
+        if _should_inject_soft_context(
+            prompt,
+            facts=facts,
+            rel_state=rel_state,
+            tp_arc=tp_arc,
+        ):
+            _inject_shared_soft_context(
+                shared_key,
+                timeline_final,
+                messages,
+                max_items=4,
+                dedupe_bucket=dedupe_hashes,
+            )
+
+        # ==========================================
+        # MEMÓRIAS — manual (#mem ...) e latentes
+        # ==========================================
+        _inject_manual_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            spec=mem_spec,
             facts=facts,
         )
 
-        _inject_relevant_memories(
-            shared_key,
-            timeline_final,
-            prompt,
-            messages,
-            k=4,
-            dedupe_bucket=dedupe_hashes,
+        # ✅ _get_tp_arc_state espera facts, não usuario_key
+        tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
+
+        _inject_latent_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            tp_arc=tp_arc_state,
+            facts=facts,
         )
 
-    # soft context só se necessário
-    if _should_inject_soft_context(
-        prompt,
-        facts=facts,
-        rel_state=rel_state,
-        tp_arc=tp_arc,
-    ):
-        _inject_shared_soft_context(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=4,
-            dedupe_bucket=dedupe_hashes,
-        )
+        # Prompt atual sempre por último
+        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
 
-    # ==========================================
-    # MEMÓRIAS — manual (#mem ...) e latentes
-    # ==========================================
-    _inject_manual_memory_if_any(
-        usuario_key=usuario_key,
-        shared_key=shared_key,
-        timeline=timeline_final,
-        messages=messages,
-        spec=mem_spec,
-        facts=facts,
-    )
-
-    # ✅ BUGFIX: _get_tp_arc_state espera facts, não usuario_key
-    tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
-
-    _inject_latent_memory_if_any(
-        usuario_key=usuario_key,
-        shared_key=shared_key,
-        timeline=timeline_final,
-        messages=messages,
-        tp_arc=tp_arc_state,
-        facts=facts,
-    )
-
-    # Prompt atual sempre por último
-    messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
-
-    return messages
+        return messages
 
     def reply(
         self,
