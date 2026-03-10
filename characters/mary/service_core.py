@@ -6633,6 +6633,52 @@ class MaryService(BaseCharacter):
 
         texto = (texto or "").strip()
 
+        # ==========================================================
+        # 🔒 FACTS VALIDATION (LOCAL / ROUPA / CENA)
+        # ==========================================================
+        try:
+            facts_now = cached_get_facts(usuario_key) or {}
+        
+            roupa_fact = (
+                ((facts_now.get("state") or {}).get("roupa")) or ""
+            ).lower()
+        
+            local_fact = (
+                ((facts_now.get("cena") or {}).get("local")) or ""
+            ).lower()
+        
+            t = texto.lower()
+        
+            # -----------------------------
+            # Contradição de roupa
+            # -----------------------------
+            if roupa_fact:
+                if "roupão" in roupa_fact or "roupao" in roupa_fact:
+                    if any(x in t for x in ["short", "shorts", "saia", "vestido", "calça", "calca", "jeans"]):
+                        texto = texto.replace("shorts", "roupão")
+                        texto = texto.replace("short", "roupão")
+                        texto = texto.replace("saia", "roupão")
+                        texto = texto.replace("vestido", "roupão")
+        
+            # -----------------------------
+            # Contradição de local
+            # -----------------------------
+            if local_fact:
+                if "cozinha" in local_fact:
+                    if any(x in t for x in ["na cama", "no quarto", "no banheiro"]):
+                        texto = texto.replace("no quarto", "na cozinha")
+                        texto = texto.replace("na cama", "encostada na bancada")
+                        texto = texto.replace("no banheiro", "na cozinha")
+        
+                if "quarto" in local_fact:
+                    if any(x in t for x in ["na cozinha", "no fogão", "na despensa"]):
+                        texto = texto.replace("na cozinha", "no quarto")
+                        texto = texto.replace("no fogão", "perto da cama")
+        
+        except Exception:
+            pass
+        # ==========================================================
+        
         if not texto:
             texto = self._fallback_text()
         
