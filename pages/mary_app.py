@@ -2887,7 +2887,7 @@ def main() -> None:
     # ===== INPUT =====
     prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
     if prompt:
-        if not st.session_state["mary_timeline_locked"]:
+        if not st.session_state.get("mary_timeline_locked", False):
             st.session_state["mary_timeline_locked"] = True
 
         now = time.time()
