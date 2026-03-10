@@ -5436,9 +5436,7 @@ class MaryService(BaseCharacter):
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
                 
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-        
+              
         try:
             facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
         except Exception:
