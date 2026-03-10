@@ -5839,6 +5839,18 @@ class MaryService(BaseCharacter):
 
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
+        
+        # ==========================================================
+        # RELATIONSHIP BLOCK (para o SYSTEM PROMPT)
+        # ==========================================================
+        rel_block = _render_relationship_block(rel_state, timeline_final)
+        
+        canon_rel_default = (
+            canon.get("relationship_state")
+            if isinstance(canon.get("relationship_state"), dict)
+            else None
+        )
+        
 
         canon_rel_default = (
             canon.get("relationship_state")
