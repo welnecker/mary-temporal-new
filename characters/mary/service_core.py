@@ -5840,54 +5840,42 @@ class MaryService(BaseCharacter):
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
         
+        canon_rel_default = (
+            canon.get("relationship_state")
+            if isinstance(canon.get("relationship_state"), dict)
+            else None
+        )
+
+        rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+
+        # ==========================================================
+        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
+        # ==========================================================
+        try:
+            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
+            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
+            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
+
+            if "rel.jealousy_level" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
+            if "rel.jealousy_mode" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
+        except Exception:
+            seed = ""
+            cooldown_turns = 6
+            last_trigger_turn = None
+
+        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
+        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
+        try:
+            _save_rel_state(usuario_key, timeline_final, rel_state)
+        except Exception:
+            pass
+
         # ==========================================================
         # RELATIONSHIP BLOCK (para o SYSTEM PROMPT)
         # ==========================================================
-        rel_block = _render_relationship_block(rel_state, timeline_final)
-        
-        canon_rel_default = (
-            canon.get("relationship_state")
-            if isinstance(canon.get("relationship_state"), dict)
-            else None
-        )
-        
-
-        canon_rel_default = (
-            canon.get("relationship_state")
-            if isinstance(canon.get("relationship_state"), dict)
-            else None
-        )
-                rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-
-                # ==========================================================
-                # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
-                # ==========================================================
-                try:
-                    seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-                    cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-                    last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-        
-                    if "rel.jealousy_level" not in facts:
-                        set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-                    if "rel.jealousy_mode" not in facts:
-                        set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-                except Exception:
-                    seed = ""
-                    cooldown_turns = 6
-                    last_trigger_turn = None
-        
-                # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
-                rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-                try:
-                    _save_rel_state(usuario_key, timeline_final, rel_state)
-                except Exception:
-                    pass
-        
-                # ==========================================================
-                # RELATIONSHIP BLOCK (para o SYSTEM PROMPT)
-                # ==========================================================
-                rel_block = rel_state_to_prompt_block(rel_state)
-
+        rel_block = rel_state_to_prompt_block(rel_state)
         # ==========================================================
         # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
         # ==========================================================
