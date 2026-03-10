@@ -2502,7 +2502,6 @@ def _render_sidebar() -> None:
                     except Exception:
                         pass
 
-                st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
@@ -2528,15 +2527,14 @@ def _render_sidebar() -> None:
             try:
                 force_reset_virginity_universitaria(uk_now)
 
-                st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
-
+                
                 _invalidate_backend_cache()
                 _clear_mary_caches_all_related(also_clear_other_timeline=True)
                 _kill_all_mary_services()
-
+                
                 st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
                 st.rerun()
             except Exception as e:
@@ -2563,7 +2561,9 @@ def _render_sidebar() -> None:
         if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
             ok = _delete_last_turn_active()
             if ok:
-                st.session_state["chat_history"] = []
+                hist = st.session_state.get("chat_history", [])
+                if len(hist) >= 2:
+                    st.session_state["chat_history"] = hist[:-2]
                 st.session_state["mary_intro_done"] = False
                 st.success("✅ Último turno apagado (timeline ativa).")
             else:
@@ -2592,12 +2592,11 @@ def _render_sidebar() -> None:
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             _kill_all_mary_services()
             st.session_state["mary_intro_done"] = False
-            st.session_state["chat_history"] = []
             st.session_state["mary_timeline_locked"] = False
             st.session_state["mary_rel_meta_last"] = None
             st.session_state["mary_last_used_model"] = None
             st.session_state["mary_last_used_provider"] = None
-
+        
             try:
                 st.cache_data.clear()
             except Exception:
@@ -2606,7 +2605,7 @@ def _render_sidebar() -> None:
                 st.cache_resource.clear()
             except Exception:
                 pass
-
+        
             _invalidate_backend_cache()
             _clear_mary_caches_all_related()
             st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
