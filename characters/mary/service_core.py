@@ -4807,6 +4807,35 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 
     return out
 
+def _normalize_scene_local_facts(facts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Elimina dualidade de local entre:
+    - cena.local
+    - state.local
+    - local_cena_atual
+    """
+
+    f = dict(facts or {})
+
+    cena = f.get("cena") if isinstance(f.get("cena"), dict) else {}
+    state = f.get("state") if isinstance(f.get("state"), dict) else {}
+
+    cena_local = str(cena.get("local") or "").strip()
+    state_local = str(state.get("local") or "").strip()
+    atual_local = str(f.get("local_cena_atual") or "").strip()
+
+    # decide qual local usar
+    local_final = cena_local or atual_local or state_local
+
+    if local_final:
+        cena["local"] = local_final
+        state["local"] = local_final
+        f["local_cena_atual"] = local_final
+
+    f["cena"] = cena
+    f["state"] = state
+    return f
+
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
     try:
@@ -5137,18 +5166,23 @@ class MaryService(BaseCharacter):
         )
 
         # 3) Garantir mínimos
-        facts0 = cached_get_facts(usuario_key)
+        facts0 = cached_get_facts(usuario_key) or {}
+        facts0 = _normalize_scene_local_facts(facts0)
+        
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
-            facts0 = cached_get_facts(usuario_key)
-
+            facts0 = cached_get_facts(usuario_key) or {}
+            facts0 = _normalize_scene_local_facts(facts0)
+        
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
-            facts0 = cached_get_facts(usuario_key)
-
+            facts0 = cached_get_facts(usuario_key) or {}
+            facts0 = _normalize_scene_local_facts(facts0)
+        
         # ✅ Alinha phase global vs timeline (evita divergência "phase:0" vs "phase::timeline:1")
         try:
             facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
+            facts0 = _normalize_scene_local_facts(facts0)
         except Exception:
             pass
 
@@ -5176,6 +5210,13 @@ class MaryService(BaseCharacter):
 
             if loc1n and loc1n != loc0n:
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
+            
+                try:
+                    set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
+                    set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
+                except Exception:
+                    pass
+            
                 _lock_scene(usuario_key)
                 diag.scene_transition = {"from": loc0, "to": novo_local}
 
@@ -5196,7 +5237,8 @@ class MaryService(BaseCharacter):
         else:
             persona_text = ""
 
-        facts = cached_get_facts(usuario_key)
+        facts = cached_get_facts(usuario_key) or {}
+        facts = _normalize_scene_local_facts(facts)
 
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
@@ -5370,7 +5412,8 @@ class MaryService(BaseCharacter):
         
             # ✅ BUGFIX: recarrega facts após set_fact_safe() do arc,
             # para todo o resto do pipeline enxergar o arc atualizado.
-            facts = cached_get_facts(usuario_key)
+            facts = cached_get_facts(usuario_key) or {}
+            facts = _normalize_scene_local_facts(facts)
         
         except Exception:
             tp_arc = {}
