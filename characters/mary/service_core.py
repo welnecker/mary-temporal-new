@@ -5305,6 +5305,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
+    
 
     def _build_system_prompt(
         self,
@@ -5558,6 +5559,170 @@ class MaryService(BaseCharacter):
 
         return messages
 
+    def _resolve_turn_policy(
+        self,
+        *,
+        usuario_key: str,
+        user_id: str,
+        timeline_final: str,
+        prompt: str,
+        facts: Dict[str, Any],
+        rel_state: Dict[str, Any],
+        nsfw: Optional[bool],
+        allow_third_party_seduction: Optional[bool],
+        diag: _Diag,
+    ) -> Dict[str, Any]:
+        # ==========================================================
+        # NSFW / conflito
+        # ==========================================================
+        nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
+        diag.nsfw_on = bool(nsfw_on)
+    
+        conflict_mode = _resolve_conflict_mode(timeline_final)
+        conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
+        diag.conflict_now = bool(conflict_now)
+    
+        # ==========================================================
+        # Sync UI -> facts (debug persistido refletir sidebar)
+        # ==========================================================
+        try:
+            ss = st.session_state  # type: ignore[attr-defined]
+            nsfw_keys = (
+                "mary_nsfw_on",
+                "nsfw_on",
+                f"{_SS_PREFIX}nsfw_on",
+                f"{_SS_PREFIX}nsfw",
+                "mary::nsfw_on",
+            )
+            tp_keys = (
+                "mary_allow_third_party_seduction",
+                "allow_third_party_seduction",
+                f"{_SS_PREFIX}allow_third_party_seduction",
+                f"{_SS_PREFIX}third_party",
+                "mary::allow_third_party_seduction",
+            )
+    
+            ui_has_nsfw = any(k in ss for k in nsfw_keys)
+            ui_has_tp = any(k in ss for k in tp_keys)
+    
+            if ui_has_nsfw or ui_has_tp:
+                facts_now = cached_get_facts(usuario_key) or {}
+                mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+                mary_now = dict(mary_now)
+    
+                if ui_has_nsfw:
+                    mary_now["nsfw"] = bool(nsfw_on)
+                    if timeline_final:
+                        mary_now[f"nsfw::{timeline_final}"] = bool(nsfw_on)
+    
+                if ui_has_tp:
+                    tp_on = bool(
+                        third_party_enabled(
+                            usuario_key,
+                            third_party_override=allow_third_party_seduction,
+                            timeline=timeline_final,
+                        )
+                    )
+                    tp_on = bool(tp_on and nsfw_on)
+                    mary_now["allow_third_party_seduction"] = tp_on
+    
+                old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+                if mary_now != old_mary:
+                    set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
+                    facts = cached_get_facts(usuario_key) or {}
+                    facts = _normalize_scene_local_facts(facts)
+    
+        except Exception:
+            pass
+    
+        # ==========================================================
+        # Toggle final de terceiros
+        # ==========================================================
+        if not nsfw_on:
+            allow_third_party_seduction_final = False
+        elif allow_third_party_seduction is None:
+            ui_toggle = bool(
+                _ss_get("mary_allow_third_party_seduction", False)
+                or _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", False)
+                or _ss_get(f"{_SS_PREFIX}third_party", False)
+            )
+    
+            facts_mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+            facts_toggle = bool(facts_mary.get("allow_third_party_seduction", False))
+    
+            allow_third_party_seduction_final = bool(ui_toggle or facts_toggle)
+        else:
+            allow_third_party_seduction_final = bool(allow_third_party_seduction)
+    
+        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
+    
+        nsfw_profile = _nsfw_profile(
+            nsfw_on=bool(nsfw_on),
+            allow_third_party_seduction=bool(allow_third_party_seduction_final),
+        )
+        _ss_set("mary_nsfw_profile", nsfw_profile)
+    
+        # ==========================================================
+        # Consistência: NSFW OFF => terceiros OFF
+        # ==========================================================
+        try:
+            enforce_third_party_consistency(
+                usuario_key,
+                timeline=timeline_final,
+                nsfw_on=bool(nsfw_on),
+            )
+        except Exception:
+            pass
+    
+        # ==========================================================
+        # Arco de terceiros (pré-resposta)
+        # ==========================================================
+        try:
+            tp_arc = _update_tp_arc_for_turn(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                user_text=prompt,
+                mary_text="",
+                nsfw_on=bool(nsfw_on),
+                allow_third_party_seduction=bool(allow_third_party_seduction_final),
+            )
+            facts = cached_get_facts(usuario_key) or {}
+            facts = _normalize_scene_local_facts(facts)
+        except Exception:
+            tp_arc = {}
+    
+        # ==========================================================
+        # Intimidade / iniciativa / emoção / fidelidade
+        # ==========================================================
+        try:
+            facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
+        except Exception:
+            pass
+    
+        intimacy_phase = self._get_intimacy_phase(facts)
+        diag.intimacy_phase_pre = int(intimacy_phase)
+    
+        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
+        diag.initiative_window = bool(initiative)
+
+        emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
+        fidelity_mode = _fidelity_mode(timeline_final)
+            
+            
+        return {
+            "facts": facts,
+            "nsfw_on": bool(nsfw_on),
+            "allow_third_party_seduction_final": bool(allow_third_party_seduction_final),
+            "nsfw_profile": nsfw_profile,
+            "conflict_mode": conflict_mode,
+            "conflict_now": bool(conflict_now),
+            "tp_arc": tp_arc if isinstance(tp_arc, dict) else {},
+            "intimacy_phase": int(intimacy_phase),
+            "initiative": bool(initiative),
+            "emotion_now": str(emotion_now or "neutro"),
+            "fidelity_mode": str(fidelity_mode or "soft"),
+        }
+
     def reply(
         self,
         user: str,
@@ -5741,200 +5906,29 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
         
-        # ==========================================================
-        # ✅ NSFW + TOGGLE TERCEIROS (calcular ANTES de usar)
-        # ==========================================================
-        nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
-        diag.nsfw_on = bool(nsfw_on)
-
-        # ----------------------------------------------------------
-        # 🔄 SYNC UI -> FACTS (para debug persistido refletir o sidebar)
-        # Só sincroniza se o toggle existir no session_state (evita sobrescrever fatos antigos sem intenção).
-        # ----------------------------------------------------------
-        try:
-            ss = st.session_state  # type: ignore[attr-defined]
-            nsfw_keys = ("mary_nsfw_on", "nsfw_on", f"{_SS_PREFIX}nsfw_on", f"{_SS_PREFIX}nsfw", "mary::nsfw_on")
-            tp_keys   = ("mary_allow_third_party_seduction", "allow_third_party_seduction",
-                         f"{_SS_PREFIX}allow_third_party_seduction", f"{_SS_PREFIX}third_party", "mary::allow_third_party_seduction")
-
-            ui_has_nsfw = any(k in ss for k in nsfw_keys)
-            ui_has_tp   = any(k in ss for k in tp_keys)
-
-            if ui_has_nsfw or ui_has_tp:
-                facts_now = cached_get_facts(usuario_key)
-                mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
-                mary_now = dict(mary_now)  # copia
-
-                if ui_has_nsfw:
-                    mary_now["nsfw"] = bool(nsfw_on)
-                    if timeline_final:
-                        mary_now[f"nsfw::{timeline_final}"] = bool(nsfw_on)
-
-                if ui_has_tp:
-                    # terceiros só pode ficar ON se NSFW ON
-                    tp_on = bool(third_party_enabled(usuario_key, third_party_override=allow_third_party_seduction, timeline=timeline_final))
-                    tp_on = bool(tp_on and nsfw_on)
-                    mary_now["allow_third_party_seduction"] = tp_on
-
-                # grava somente se mudou
-                if mary_now != (facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}):
-                    set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
-        except Exception:
-            pass
-
-        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
-        
-        nsfw_hard_block = ""
-        if nsfw_on:
-            nsfw_hard_block = """
-        [NSFW_ON]
-        Mary pode usar linguagem sexual direta e explícita quando a cena permitir.
-        Descreva sensações físicas, reações corporais e ritmo da interação com intensidade natural.
-        
-        Evite apenas linguagem espiritualizada ou metáforas de destino.
-        """.strip()
-        
-        # ✅ TERCEIROS: respeita o toggle da UI (override) quando NSFW está ON
-        if not nsfw_on:
-            allow_third_party_seduction_final = False
-        elif allow_third_party_seduction is None:
-
-            # UI (sidebar)
-            ui_toggle = bool(
-                _ss_get("mary_allow_third_party_seduction", False)
-                or _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", False)
-                or _ss_get(f"{_SS_PREFIX}third_party", False)
-            )
-        
-            # FACTS persistido
-            facts_mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-            facts_toggle = bool(facts_mary.get("allow_third_party_seduction", False))
-        
-            allow_third_party_seduction_final = bool(ui_toggle or facts_toggle)
-        else:
-            allow_third_party_seduction_final = bool(allow_third_party_seduction)
-        
-        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
-        
-        nsfw_profile = _nsfw_profile(
-            nsfw_on=bool(nsfw_on),
-            allow_third_party_seduction=bool(allow_third_party_seduction_final),
+        policy = self._resolve_turn_policy(
+            usuario_key=usuario_key,
+            user_id=user_id,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            facts=facts,
+            rel_state=rel_state,
+            nsfw=nsfw,
+            allow_third_party_seduction=allow_third_party_seduction,
+            diag=diag,
         )
-        _ss_set("mary_nsfw_profile", nsfw_profile)
 
-        # ==========================================================
-        # ✅ CONSISTÊNCIA: se NSFW OFF, terceiros OFF (facts)
-        # (evita mary.nsfw=false e allow_third_party=true)
-        # ==========================================================
-        try:
-            from core.nsfw import enforce_third_party_consistency
-            enforce_third_party_consistency(usuario_key, timeline=timeline_final, nsfw_on=bool(nsfw_on))
-        except Exception:
-            pass
-
-        # ==========================================================
-        # 🔒 ARCO TERCEIROS (ATIVO): atualiza anchor/tension/guilt/phase
-        # ==========================================================
-        tp_arc: Dict[str, Any] = {}
-        try:
-            tp_arc = _update_tp_arc_for_turn(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
-                user_text=prompt,
-                mary_text="",  # ainda não temos a resposta aqui; anchor já ajusta mesmo assim
-                nsfw_on=bool(nsfw_on),
-                allow_third_party_seduction=bool(allow_third_party_seduction_final),
-            )
-        
-            # ✅ BUGFIX: recarrega facts após set_fact_safe() do arc,
-            # para todo o resto do pipeline enxergar o arc atualizado.
-            facts = cached_get_facts(usuario_key) or {}
-            facts = _normalize_scene_local_facts(facts)
-        
-        except Exception:
-            tp_arc = {}
-
-        phone_message_rule = _render_phone_message_rule(prompt, facts)
-
-        decision_future_rule = """
-        [DECISÕES E INTENÇÕES FUTURAS]
-        
-        Mary PODE declarar decisões ou intenções sobre ações futuras
-        (ex: ir à academia, sair de casa, responder alguém).
-        
-        Isso representa apenas a decisão da personagem.
-        
-        Essa decisão NÃO executa automaticamente a mudança de cena.
-        
-        Mary permanece na CENA ATIVA atual até que o usuário narre a transição.
-        
-        Exemplos permitidos:
-        
-        - "Vou me arrumar e dar um pulo até lá."
-        - "Não vou ceder a esse pedido do Enzo."
-        - "Talvez eu passe na academia depois."
-        
-        Exemplos proibidos:
-        
-        - narrar que já chegou ao novo local
-        - executar a mudança de cena sem o usuário narrar
-        - descrever eventos que aconteceram fora da cena atual
-        """.strip()
-
-        # ==========================================================
-        # 🔧 BLOCO DO ARCO (para o SYSTEM PROMPT)
-        # ==========================================================
-        try:
-            facts_arc = cached_get_facts(usuario_key) or {}
-            tp_arc_state = _get_tp_arc_state(facts_arc, timeline_final)
-        
-            # renderiza SEMPRE quando NSFW está ON
-            # (mesmo que terceiros esteja OFF)
-            if nsfw_on:
-                third_party_arc_rule = _render_tp_arc_rule(tp_arc_state, timeline_final)
-            else:
-                third_party_arc_rule = ""
-        
-        except Exception:
-            third_party_arc_rule = ""
-
-
-        # só agora gera o bloco de relacionamento
-        rel_block = rel_state_to_prompt_block(rel_state)
-        
-        scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        scene_locked = _scene_is_locked(facts)
-        
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
-        )
-        
-        ctx_lower = _build_context_for_guard(usuario_key, prompt)
-        user_name_block = _build_user_name_block(user_id, ctx_lower)
-                
-              
-        try:
-            facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
-        except Exception:
-            pass
-        
-        intimacy_phase = self._get_intimacy_phase(facts)
-        # ==========================================================
-        # 🎲 CONTADOR DE TURNOS (para cooldown de ciúme)
-        # ==========================================================
-        try:
-            turn_key = f"_mary_turn_counter::{usuario_key}"
-            cur_turn = int(_ss_get(turn_key, 0) or 0) + 1
-            _ss_set(turn_key, cur_turn)
-        except Exception:
-            cur_turn = 0
-        diag.intimacy_phase_pre = int(intimacy_phase)
-        
-        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
-        diag.initiative_window = bool(initiative)
+        facts = policy["facts"]
+        nsfw_on = bool(policy["nsfw_on"])
+        allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
+        nsfw_profile = str(policy["nsfw_profile"])
+        conflict_mode = str(policy["conflict_mode"])
+        conflict_now = bool(policy["conflict_now"])
+        tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
+        intimacy_phase = int(policy["intimacy_phase"])
+        initiative = bool(policy["initiative"])
+        emotion_now = str(policy["emotion_now"] or "neutro")
+        fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
         # ==========================================================
         # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
@@ -6020,8 +6014,7 @@ class MaryService(BaseCharacter):
     """.strip()
 
         # 7) Regras
-        fidelity_mode = _fidelity_mode(timeline_final)
-
+       
         continuity_rule = """
     [CONTINUIDADE — ABSOLUTO]
     - Mary permanece na CENA ATIVA até o usuário atualizar explicitamente local/tempo.
@@ -6061,8 +6054,7 @@ class MaryService(BaseCharacter):
     """.strip()
 
     
-
-        emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
+        
         emotional_persistence_rule = f"""
     [EMOÇÃO — CONTINUIDADE]
     - Estado emocional atual (persistido): {emotion_now}.
@@ -6432,6 +6424,19 @@ class MaryService(BaseCharacter):
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
 
+        guard_context = _build_context_for_guard(usuario_key, prompt)
+        user_name_block = _build_user_name_block(user_id, guard_context)
+
+        scene_loc, scene_time, scene_action = _get_scene_state(facts)
+        scene_locked = _scene_is_locked(facts)
+
+        spatial_context = _build_spatial_context(
+            scene_loc,
+            scene_time,
+            scene_action,
+            locked=scene_locked,
+        )
+       
         system = self._build_system_prompt(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
