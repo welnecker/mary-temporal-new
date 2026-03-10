@@ -58,6 +58,81 @@ from .persona import get_persona
 
 logger = logging.getLogger(__name__)
 
+# ==========================================================
+# TERMOS CONFIGURÁVEIS / DOMÍNIO NARRATIVO
+# ==========================================================
+DEFAULT_STOPWORDS_PT = {
+    "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
+    "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
+    "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
+    "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
+}
+
+DOMAIN_PRIORITY_TERMS = {
+    "mary","janio","enzo","arthur","bianca","silvia","ricardo",
+    "formada","formado","formação","formacao","faculdade","curso","graduação","graduacao",
+    "profissão","profissao","trabalho","carreira",
+    "psicologia","medicina","engenharia","administração","administracao",
+    "ufes","instagram","pacientes","clínica","clinica",
+    "academia","quiosque","casamento","beijo","transa","primeira vez"
+}
+
+DOMAIN_EMOTIONAL_TERMS = {
+    "segredo","promessa","culpa","ciume","ciúme","medo","abandono",
+    "saudade","amor","desejo","tesão","tesao","gozar","orgasmo",
+    "primeira vez","virgem","traição","traicao","pendência","pendencia",
+    "janio","arthur","enzo","academia","quiosque","casamento","beijo"
+}
+
+DOMAIN_OVERLAP_TERMS = {
+    "segredo","promessa","culpa","medo","ciume","ciúme","janio",
+    "enzo","arthur","academia","quiosque","primeira vez","virgem",
+    "traição","traicao","casamento","beijo"
+}
+
+FACT_GOVERNED_TERMS = {
+    "virgindade": {"virgem","virgindade","primeira vez"},
+    "consumacao": {"consummated","consumado","consumada","relacao","relação"},
+    "fase_intima": {"fase","climax","clímax","aftercare","intimidade"},
+    "arco": {"anchor","tension","guilt","third party","terceiro"},
+}
+
+def _ss_get_set(key: str, default: set[str]) -> set[str]:
+    try:
+        val = _ss_get(key, None)
+        if isinstance(val, (list, set, tuple)):
+            return {str(x).strip().lower() for x in val if str(x).strip()}
+    except Exception:
+        pass
+    return {str(x).strip().lower() for x in default if str(x).strip()}
+
+def _domain_terms(name: str) -> set[str]:
+    mapping = {
+        "stopwords": DEFAULT_STOPWORDS_PT,
+        "priority": DOMAIN_PRIORITY_TERMS,
+        "emotional": DOMAIN_EMOTIONAL_TERMS,
+        "overlap": DOMAIN_OVERLAP_TERMS,
+    }
+    return _ss_get_set(f"{_SS_PREFIX}terms::{name}", mapping.get(name, set()))
+
+def _fact_terms(group: str) -> set[str]:
+    base = FACT_GOVERNED_TERMS.get(group, set())
+    return _ss_get_set(f"{_SS_PREFIX}terms::fact::{group}", base)
+
+def _contains_any_term(text: str, terms: set[str]) -> bool:
+    txt = _t_norm(text or "")
+    if not txt or not terms:
+        return False
+    return any(term in txt for term in terms if term)
+
+def _count_matching_terms(text: str, terms: set[str]) -> int:
+    txt = _t_norm(text or "")
+    if not txt or not terms:
+        return 0
+    return sum(1 for term in terms if term and term in txt)
+
+
+
 
 # ==========================================================
 # HIDDEN-THOUGHT STRIPPER (initiative CoT scaffolding)
@@ -1352,7 +1427,8 @@ def _inject_intro_as_context_once(
 # ==========================================================
 def _lm_query_from_prompt(user_prompt: str) -> str:
     """
-    Gera consulta curta para Mongo $text, mas preserva termos biográficos/identitários úteis.
+    Gera consulta curta para Mongo $text, preservando termos relevantes
+    do domínio narrativo sem depender de lista espalhada no corpo da função.
     """
     s = (user_prompt or "").strip().lower()
     if not s:
@@ -1365,25 +1441,12 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
         return ""
 
     toks = re.findall(r"[\w\u00C0-\u017F']+", s, flags=re.UNICODE)
-    stop = {
-        "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
-        "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
-        "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
-        "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
-    }
 
+    stop = _domain_terms("stopwords")
     keep = [t for t in toks if len(t) >= 3 and t not in stop]
 
-    priority_terms = []
-    for t in keep:
-        if t in {
-            "mary", "janio",
-            "formada", "formado", "formação", "formacao", "faculdade", "curso", "graduação", "graduacao",
-            "profissão", "profissao", "trabalho", "carreira",
-            "psicologia", "medicina", "engenharia", "administração", "administracao",
-            "ufes", "instagram", "pacientes", "clínica", "clinica"
-        }:
-            priority_terms.append(t)
+    priority_terms_cfg = _domain_terms("priority")
+    priority_terms = [t for t in keep if t in priority_terms_cfg]
 
     q_terms = list(dict.fromkeys(priority_terms + keep[:12]))
     q = " ".join(q_terms).strip()
@@ -1601,6 +1664,42 @@ def _memory_conflicts_with_truth(
     if not t:
         return False
 
+    scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
+    scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
+    scene_acao = _t_norm(str(f.get("cena.acao") or ""))
+    state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
+
+    world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
+    rel_blob = _t_norm(str(f.get("rel") or ""))
+    arc_blob = _t_norm(str(f.get("arc") or ""))
+
+    virg_terms = _fact_terms("virgindade")
+    cons_terms = _fact_terms("consumacao")
+    phase_terms = _fact_terms("fase_intima")
+    arc_terms = _fact_terms("arco")
+
+    if _contains_any_term(t, virg_terms):
+        if world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys()):
+            return True
+
+    if _contains_any_term(t, cons_terms):
+        if rel_blob:
+            return True
+
+    if _contains_any_term(t, phase_terms):
+        if f:
+            return True
+
+    for val in (scene_local, state_local, scene_tempo, scene_acao):
+        if val and val in t:
+            return True
+
+    if _contains_any_term(t, arc_terms):
+        if arc_blob:
+            return True
+
+    return False
+    
     # -----------------------------
     # Estado de cena / facts vivos
     # -----------------------------
@@ -1894,11 +1993,8 @@ def _select_best_chunks(text: str, query: str, max_pick: int = 2) -> List[str]:
 
 def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) -> float:
     """
-    Peso narrativo extra para priorizar memórias mais úteis ao roleplay:
-    - emoção / vínculo
-    - segredos / promessas / pendências
-    - intimidade / ruptura / culpa
-    - recência leve
+    Peso narrativo extra para priorizar memórias mais úteis ao roleplay.
+    Usa vocabulário configurável em vez de listas hardcoded espalhadas.
     """
     score = 0.0
 
@@ -1907,36 +2003,23 @@ def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) 
     ch = str(chunk or "").strip().lower()
     up = _t_norm(user_prompt or "")
 
-    # 1) peso por tipo/meta
     kind = str(meta.get("kind") or "").strip().lower()
     if kind in {"summary", "soft", "memory"}:
         score += 0.10
 
     title = str(meta.get("title") or meta.get("key") or "").strip().lower()
-    if any(k in title for k in ("segredo", "promessa", "ciume", "culpa", "primeira vez", "janio")):
+    emotional_terms = _domain_terms("emotional")
+    overlap_terms = _domain_terms("overlap")
+
+    if _contains_any_term(title, emotional_terms):
         score += 0.18
 
-    # 2) palavras emocionalmente fortes no chunk
-    emotional_terms = (
-        "segredo", "promessa", "culpa", "ciume", "ciúme", "medo", "abandono",
-        "saudade", "amor", "desejo", "tesão", "tesao", "gozar", "orgasmo",
-        "primeira vez", "virgem", "traição", "traicao", "pendência", "pendencia",
-        "janio", "arthur", "academia", "quiosque"
-    )
-    for term in emotional_terms:
-        if term in ch:
-            score += 0.05
+    score += 0.05 * _count_matching_terms(ch, emotional_terms)
 
-    # 3) reforço se o prompt atual toca em tema parecido
-    overlap_terms = (
-        "segredo", "promessa", "culpa", "medo", "ciume", "ciúme", "janio",
-        "academia", "quiosque", "primeira vez", "virgem", "traição", "traicao"
-    )
     for term in overlap_terms:
         if term in up and term in ch:
             score += 0.08
 
-    # 4) recência leve
     ts = _memory_timestamp(mem)
     if ts is not None:
         try:
@@ -1950,19 +2033,16 @@ def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) 
         except Exception:
             pass
 
-    # 5) chunks muito curtos tendem a ser fracos
     if len(ch) >= 180:
         score += 0.06
     elif len(ch) < 60:
         score -= 0.05
 
-    # 6) se o texto completo parece muito importante
     tfull = _t_norm(text_full)
-    if any(k in tfull for k in ("segredo", "promessa", "nunca", "sempre", "primeira vez", "consumado")):
+    if _contains_any_term(tfull, emotional_terms):
         score += 0.10
 
     return score
-
 
 def _inject_relevant_memories(
     shared_key: str,
@@ -2086,8 +2166,16 @@ def _inject_now_context(
     timeline: str,
 ) -> None:
     """
-    Injeta o CONTEXTO ATUAL ABSOLUTO da cena.
-    Anti-teleporte: impede mudança de local/situação sem base no histórico.
+    Injeta o CONTEXTO ATUAL ABSOLUTO da cena, priorizando a fonte de verdade
+    principal do core:
+      1) cena.*
+      2) local_cena_atual / state.*
+      3) chaves legadas *_atual
+
+    Objetivo:
+    - evitar disputa entre contexto paralelo e cena viva
+    - impedir teleporte narrativo
+    - não duplicar informações equivalentes
     """
     try:
         facts = cached_get_facts(usuario_key) or {}
@@ -2095,33 +2183,71 @@ def _inject_now_context(
     except Exception:
         facts = {}
 
-    local = facts.get("local_atual")
-    companhia = facts.get("companhia_atual")
-    momento = facts.get("momento_atual")
+    def _pick_str(*values: Any) -> str:
+        for v in values:
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
 
-    if not any([local, companhia, momento]):
+    def _same(a: str, b: str) -> bool:
+        return bool(a and b and _t_norm(a) == _t_norm(b))
+
+    # ------------------------------------------------------
+    # Fonte principal: cena viva
+    # ------------------------------------------------------
+    scene_local = _pick_str(
+        facts.get("cena.local"),
+        facts.get("local_cena_atual"),
+        _fact_str(facts, "state.local"),
+        facts.get("local_atual"),   # legado por último
+    )
+
+    scene_tempo = _pick_str(
+        facts.get("cena.tempo"),
+        facts.get("momento_atual"),  # legado / fallback
+    )
+
+    scene_acao = _pick_str(
+        facts.get("cena.acao"),
+    )
+
+    companhia = _pick_str(
+        facts.get("companhia_atual"),   # legado
+        _fact_str(facts, "state.companhia"),
+        _fact_str(facts, "companhia"),
+    )
+
+    if not any([scene_local, scene_tempo, scene_acao, companhia]):
         return
 
-    blocos = []
-    if local:
-        blocos.append(f"Local atual: {local}.")
-    if companhia:
-        blocos.append(f"Companhia atual: {companhia}.")
-    if momento:
-        blocos.append(f"Situação atual: {momento}.")
+    lines: List[str] = []
+    lines.append("[CONTEXTO ATUAL — NÃO ASSUMA MUDANÇAS AUTOMÁTICAS]")
 
-    texto = (
-        "[CONTEXTO ATUAL — NÃO ASSUMA MUDANÇAS AUTOMÁTICAS]\n"
-        + " ".join(blocos)
-        + "\nMudanças de local ou situação só podem ocorrer se forem explicitamente iniciadas na narrativa."
-    ).strip()
+    if scene_local:
+        lines.append(f"Local atual: {scene_local}.")
+
+    if scene_tempo:
+        lines.append(f"Tempo atual: {scene_tempo}.")
+
+    # só injeta ação se não for rótulo técnico inútil
+    if scene_acao and _t_norm(scene_acao) not in {"transicao", "transição", "transition", "em andamento"}:
+        lines.append(f"Situação atual: {scene_acao}.")
+
+    # só injeta companhia se não duplicar local/situação por engano
+    if companhia and not _same(companhia, scene_local) and not _same(companhia, scene_acao):
+        lines.append(f"Companhia atual: {companhia}.")
+
+    lines.append(
+        "Mudanças de local, tempo ou situação só podem ocorrer se forem explicitamente iniciadas na narrativa."
+    )
+
+    texto = "\n".join(lines).strip()
 
     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
         base = str(messages[0].get("content") or "").rstrip()
         messages[0]["content"] = (base + "\n\n" + texto).strip()
     else:
         messages.insert(0, {"role": "system", "content": texto})
-
 
 def _inject_shared_soft_context(
     shared_key: str,
@@ -2953,85 +3079,134 @@ def _t_norm(text: str) -> str:
 # ----------------------------------------------------------
 # Meta / vazamento (geral)
 # ----------------------------------------------------------
-_RE_META_TERMS = re.compile(r"\b(prompt|system|instrucao|instru[cç][aã]o|persona|regras?|policy|guardrails?)\b", re.I)
-_RE_META_VERBS = re.compile(r"\b(revela|mostra|exibe|vaza|imprime|quote)\b", re.I)
-
 # Mantém o nome esperado pelo resto do código.
+
+_USER_NAME_ALIASES = ("janio", "arthur")
+_THIRD_PARTY_GENERIC_TERMS = (
+    "ele", "ela",
+    "o cara", "o homem", "o rapaz", "o garoto",
+    "aquele cara", "um cara",
+)
+
+_META_REVEAL_VERBS = (
+    "revela", "mostra", "exibe", "vaza", "imprime", "quote",
+    "copia", "cola", "transcreve", "descreve", "repete",
+)
+
+_META_TARGET_TERMS = (
+    "prompt", "system", "instrucao", "instrução", "persona",
+    "regras", "regra", "policy", "guardrail", "guardrails",
+    "mensagem de sistema", "texto do sistema",
+)
+
+def _build_alt_pattern_str(items: tuple[str, ...] | list[str]) -> str:
+    safe = []
+    for x in items:
+        s = str(x or "").strip()
+        if s:
+            safe.append(re.escape(s))
+    return "|".join(safe)
+
+_USER_ALIASES_PATTERN = _build_alt_pattern_str(_USER_NAME_ALIASES)
+_THIRD_PARTY_GENERIC_PATTERN = _build_alt_pattern_str(_THIRD_PARTY_GENERIC_TERMS)
+_META_REVEAL_PATTERN = _build_alt_pattern_str(_META_REVEAL_VERBS)
+_META_TARGET_PATTERN = _build_alt_pattern_str(_META_TARGET_TERMS)
+
 _RE_PLACEHOLDER_REVEAL = re.compile(
-    r"(?is)\b(revela|mostra|exibe|vaza|imprime|quote)\b.{0,80}\b(prompt|system|instrucao|instru[cç][aã]o|persona|regras?|policy|guardrails?)\b"
+    rf"(?is)\b(?:{_META_REVEAL_PATTERN})\b.{{0,120}}\b(?:{_META_TARGET_PATTERN})\b"
+)
+
+_RE_META_DIRECT_ASK = re.compile(
+    rf"(?is)\b(?:qual|quais|mostra|me diz|me fala|quero ver|manda|envia)\b.{{0,120}}\b(?:{_META_TARGET_PATTERN})\b"
 )
 
 def _meta_leak(texto: str) -> bool:
     t = _t_norm(texto)
     if not t:
         return False
-    return bool(_RE_PLACEHOLDER_REVEAL.search(t))
+    return bool(
+        _RE_PLACEHOLDER_REVEAL.search(t)
+        or _RE_META_DIRECT_ASK.search(t)
+    )
 
 # ----------------------------------------------------------
 # Offscreen inventado (geral)
 # ----------------------------------------------------------
 _RE_OFFSCREEN_MSG = re.compile(
-    r"\b(whatsapp|sms|dm|direct|telegram|mensagem|notifica[cç][aã]o|lig(a|ou)\s*para|telefonou)\b",
+    r"\b("
+    r"whatsapp|sms|dm|direct|telegram|mensagem|notificacao|notificação|"
+    r"liga\s*para|ligou\s*para|telefonou|"
+    r"audio|áudio|chamada|ligacao|ligação"
+    r")\b",
     re.IGNORECASE,
 )
+
 _RE_OFFSCREEN_PASTE_HINT = re.compile(
-    r"\b(mensagem:|whatsapp:|sms:|print|segue a mensagem|segue o texto|transcrevendo)\b",
+    r"\b("
+    r"mensagem:|whatsapp:|sms:|dm:|"
+    r"print|segue a mensagem|segue o texto|"
+    r"transcrevendo|copiei aqui|colei aqui|"
+    r"o texto diz|a mensagem diz"
+    r")\b",
     re.IGNORECASE,
 )
+
+def _looks_like_user_pasted_message(contexto: str) -> bool:
+    t = _t_norm(contexto or "")
+    if not t:
+        return False
+    return bool(_RE_OFFSCREEN_PASTE_HINT.search(t))
+
+def _looks_like_offscreen_message_reference(texto: str) -> bool:
+    t = _t_norm(texto or "")
+    if not t:
+        return False
+    return bool(_RE_OFFSCREEN_MSG.search(t))
 
 # ----------------------------------------------------------
 # Autoria / voz (ROBUSTO)
 # ----------------------------------------------------------
 # Contrato:
-# - Mary NÃO "fala pelo usuário" nem por outros personagens (Janio/Arthur/terceiros).
-# - Mary pode descrever ações observáveis de terceiros, mas NÃO deve escrever diálogos atribuídos a eles
-#   (ex.: 'Arthur: ...', '"..." — disse Arthur').
-# - Mary também não deve atribuir pensamentos/decisões internas a "você/Janio/Arthur".
-#
-# Observação: isso NÃO mexe em NSFW/ intensidade; só impede "boca alheia".
+# - Mary NÃO fala pelo usuário nem por terceiros.
+# - Mary pode observar ações externas, mas não escrever fala alheia.
+# - Mary também não deve atribuir pensamentos/decisões internas ao usuário/terceiros.
 
-# 1) Atribuição direta de ação ao usuário por 2ª pessoa (a clássica)
 _RE_USER_2P_ACTION = re.compile(
-    r"\b(voc[eê]|vc|tu)\b.{0,22}\b(puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|abre|fecha|entra|sai|segura|deita|vira|pede|decide|resolve|escolhe)\b",
+    r"\b(voc[eê]|vc|tu)\b.{0,22}\b("
+    r"puxa|beija|toca|agarra|diz|fala|sussurra|encosta|coloca|empurra|leva|"
+    r"abre|fecha|entra|sai|segura|deita|vira|pede|decide|resolve|escolhe"
+    r")\b",
     re.IGNORECASE,
 )
 
-# 2) Fala atribuída a QUALQUER personagem que não seja Mary (bloqueia "Nome: ...")
 _RE_OTHER_SPEAKER_TAG = re.compile(
     r"(?mi)^\s*(?!mary\b)([A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30})\s*:\s+"
 )
 
-# 3) Fala atribuída via travessão/descritor ("... — disse Fulano")
 _RE_QUOTED_ATTRIBUTION = re.compile(
     r"(?i)"
     r"(\"[^\"]{2,}\"|“[^”]{2,}”)"
     r"\s*[,\-–—]\s*"
-    r"(?:diz|disse|fala|falou|responde|respondeu|pergunta|perguntou|sussurra|sussurrou|comenta|comentou|murmura|murmurou|provoca|provocou)\s+"
+    r"(?:diz|disse|fala|falou|responde|respondeu|pergunta|perguntou|"
+    r"sussurra|sussurrou|comenta|comentou|murmura|murmurou|provoca|provocou)\s+"
     r"(?!mary\b)[A-ZÁÉÍÓÚÂÊÔÃÕÇ][A-Za-zÁÉÍÓÚÂÊÔÃÕÇáéíóúâêôãõç]{1,30}\b"
 )
 
-# 3b) Citação atribuída implicitamente a terceiros (sem "disse Fulano")
-# Ex.: Ele sorri e "Então, Mary..." / "..." — ele pergunta.
 _RE_THIRD_PARTY_QUOTE_BEFORE = re.compile(
-    r"(?is)\b("
-    r"ele|ela|"
-    r"janio|arthur|"
-    r"o\s+cara|o\s+homem|o\s+rapaz|o\s+garoto|"
-    r"aquele\s+cara|um\s+cara"
-    r")\b[^\n\"]{0,160}\"[^\n\"]{2,}\""
+    rf"(?is)\b(?:{_THIRD_PARTY_GENERIC_PATTERN}|{_USER_ALIASES_PATTERN})\b[^\n\"]{{0,160}}\"[^\n\"]{{2,}}\""
 )
 
 _RE_THIRD_PARTY_QUOTE_AFTER = re.compile(
-    r"(?is)\"[^\n\"]{2,}\"[^\n]{0,60}\b(ele|ela|janio|arthur)\b"
+    rf"(?is)\"[^\n\"]{{2,}}\"[^\n]{{0,60}}\b(?:{_THIRD_PARTY_GENERIC_PATTERN}|{_USER_ALIASES_PATTERN})\b"
 )
 
-
-# 4) Pensamento/decisão interna atribuída ao usuário ou a nomes comuns do usuário
 _RE_INTERNAL_STATE = re.compile(
-    r"\b(pensa|pensei|pensou|acha|achei|achou|imagina|imaginei|imaginou|"
+    r"\b("
+    r"pensa|pensei|pensou|acha|achei|achou|imagina|imaginei|imaginou|"
     r"quer|queria|quis|deseja|desejava|"
     r"sente|sentiu|sentia|"
-    r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b",
+    r"decide|decidiu|resolve|resolveu|escolhe|escolheu"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -3040,20 +3215,31 @@ _RE_USER_ACTION_CONTEXT_OK = re.compile(
     re.IGNORECASE,
 )
 
-_RE_USER_NAME_ALIASES = re.compile(r"\b(janio|arthur)\b", re.IGNORECASE)
+_RE_USER_NAME_ALIASES = re.compile(
+    rf"\b(?:{_USER_ALIASES_PATTERN})\b",
+    re.IGNORECASE,
+)
 
-# ✅ CORRETO: regex separado, no mesmo nível dos outros
 _RE_USER_ALIAS_AS_SUBJECT = re.compile(
-    r"(?i)\b(janio|arthur)\b\s*(?:,|\-|–|—)?\s*"
-    r"\b(pensa|pensou|acha|achou|imagina|imaginou|"
+    rf"(?i)\b(?:{_USER_ALIASES_PATTERN})\b\s*(?:,|\-|–|—)?\s*"
+    r"\b("
+    r"pensa|pensou|acha|achou|imagina|imaginou|"
     r"quer|queria|quis|deseja|desejava|"
     r"sente|sentiu|sentia|"
-    r"decide|decidiu|resolve|resolveu|escolhe|escolheu)\b"
+    r"decide|decidiu|resolve|resolveu|escolhe|escolheu"
+    r")\b"
+)
+
+_RE_SECOND_PERSON_INTERNAL = re.compile(
+    r"\b(voc[eê]|vc|tu)\b.{0,18}\b("
+    r"pensa|acha|imagina|quer|deseja|sente|decide|resolve|escolhe"
+    r")\b",
+    re.IGNORECASE,
 )
 
 def _has_user_action_violation(texto: str) -> bool:
     t = _t_norm(texto or "")
-    if not t.strip():
+    if not t:
         return False
 
     if _RE_OTHER_SPEAKER_TAG.search(t):
@@ -3064,6 +3250,8 @@ def _has_user_action_violation(texto: str) -> bool:
         return True
     if _RE_THIRD_PARTY_QUOTE_AFTER.search(t):
         return True
+    if _RE_SECOND_PERSON_INTERNAL.search(t):
+        return True
 
     for m in _RE_USER_2P_ACTION.finditer(t):
         start = m.start()
@@ -3072,11 +3260,12 @@ def _has_user_action_violation(texto: str) -> bool:
             continue
         return True
 
-    # ✅ só marca se Janio/Arthur forem SUJEITO do verbo interno
     if _RE_USER_ALIAS_AS_SUBJECT.search(t):
         return True
 
     return False
+
+
 # ----------------------------------------------------------
 # Aftercare / signals
 # ----------------------------------------------------------
@@ -3268,14 +3457,24 @@ _EXPLICIT_STEMS = [
 ]
 
 # Regex compilado para explícito
-_RE_EXPLICIT_SEX = re.compile(
-    r"\b(?:"
-    r"penetr\w*|meter\w*|fode\w*|enfi\w*|"
-    r"bucet\w*|vagin\w*|clitor\w*|penis\w*|"
-    r"boquet\w*|chup\w*|"
-    r"gozad\w*"
-    r")\b",
-    re.IGNORECASE
+def _build_explicit_regex(stems: list[str]) -> re.Pattern:
+    parts = []
+    for s in stems:
+        s = (s or "").strip()
+        if not s:
+            continue
+
+        # suporta stems com espaço ("vai e vem")
+        if " " in s:
+            parts.append(re.escape(s))
+        else:
+            parts.append(re.escape(s) + r"\w*")
+
+    pattern = r"\b(?:" + "|".join(parts) + r")\b"
+    return re.compile(pattern, re.IGNORECASE)
+
+_RE_EXPLICIT_SEX = _build_explicit_regex(_EXPLICIT_STEMS)
+    
 )
 def _is_explicit(texto: str) -> bool:
     """
@@ -5107,6 +5306,258 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
 
+    def _build_system_prompt(
+        self,
+        *,
+        timeline_final: str,
+        nsfw_profile: str,
+        user_name_block: str,
+        spatial_context: str,
+        state_section: str,
+        canon_txt: str,
+        persona_text: str,
+        rel_block: str,
+        third_party_arc_rule: str,
+        behavior_block: str,
+        patterns_block: str,
+        janio_focus_rule: str,
+        topic_rule: str,
+        style_rule: str,
+        emotional_persistence_rule: str,
+        virginity_rule: str,
+        memory_fidelity_rule: str,
+        user_finalizes_rule: str,
+        initiative_rule: str,
+        initiative_escalation_rule: str,
+        manipulation_block: str,
+        conflict_block: str,
+        desvio_curto_rule: str,
+        betrayal_rule: str,
+        third_party_initiative_rule: str,
+        intimacy_control_block: str,
+        nsfw_hard_block: str,
+        nsfw_block: str,
+        language_rule: str,
+        pov_rule: str,
+        user_authorship_rule: str,
+        continuity_rule: str,
+        phone_message_rule: str,
+    ) -> str:
+        system = f"""
+    [REGRAS DO SISTEMA - LEI]
+    Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
+    
+    HIERARQUIA (o que manda mais -> menos):
+    1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
+    2) Regras do sistema.
+    3) CANON.
+    4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
+    5) MEMORIAS CANONICAS/SHARED.
+    6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
+    7) Historico curto = continuidade; nao muda fatos.
+    
+    PROIBICOES ABSOLUTAS:
+    - NAO invente local, tempo, roupa, posicao, acao, horario.
+    - NAO teleporte.
+    - NAO invente acoes ou falas do usuario.
+    - Sem logistica offscreen.
+    
+    {language_rule}
+    {pov_rule}
+    {user_authorship_rule}
+    {continuity_rule}
+    {phone_message_rule}
+    
+    TIMELINE ATUAL: {timeline_final}
+    NSFW_PROFILE: {nsfw_profile}
+    
+    {user_name_block}
+    
+    [CENA ATIVA - FATOS IMUTAVEIS]
+    {spatial_context}
+    {state_section}
+    
+    [CANON]
+    {canon_txt}
+    
+    [PERSONA]
+    {persona_text}
+    
+    {rel_block}
+    {third_party_arc_rule}
+    {behavior_block}
+    {patterns_block}
+    
+    {janio_focus_rule}
+    {topic_rule}
+    {style_rule}
+    {emotional_persistence_rule}
+    {virginity_rule}
+    {memory_fidelity_rule}
+    {user_finalizes_rule}
+    {initiative_rule}
+    {initiative_escalation_rule}
+    {manipulation_block}
+    {conflict_block}
+    
+    {desvio_curto_rule}
+    {betrayal_rule}
+    {third_party_initiative_rule}
+    
+    LEMBRETE:
+    - CENA ATIVA manda.
+    - CANON manda.
+    - Memorias NAO mudam a CENA ATIVA.
+    
+    {intimacy_control_block}
+    {nsfw_hard_block}
+    {nsfw_block}
+    """.strip()
+    
+        system = (
+            str(system).rstrip()
+            + "\n\n"
+            + NARRATIVE_SPACE
+            + "\n\n"
+            + CONTROLLED_UNPREDICTABILITY
+        ).strip()
+    
+        return system
+
+    def _build_messages_for_turn(
+    self,
+    *,
+    system: str,
+    usuario_key: str,
+    shared_key: str,
+    timeline_final: str,
+    prompt: str,
+    mem_spec: Optional[Dict[str, Any]],
+    facts: Dict[str, Any],
+    rel_state: Dict[str, Any],
+    tp_arc: Dict[str, Any],
+) -> List[Dict[str, str]]:
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    dedupe_hashes: set = set()
+
+    # 🔒 CONTEXTO ABSOLUTO
+    _inject_now_context(messages, usuario_key, timeline_final)
+
+    # 🔁 INTRO (1x)
+    _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
+
+    # ==========================================
+    # 🔥 NOVA HIERARQUIA DE MEMÓRIA
+    # ==========================================
+
+    # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
+    _inject_canon_memories_always(
+        shared_key,
+        timeline_final,
+        messages,
+        max_items=24,
+        dedupe_bucket=dedupe_hashes,
+    )
+
+    # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
+    _inject_long_memory_pins_always(
+        shared_key,
+        timeline_final,
+        messages,
+        max_items=6,
+        dedupe_bucket=dedupe_hashes,
+    )
+
+    # ==========================================
+    # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
+    # ==========================================
+    history = cached_get_history(usuario_key, limit=200)
+    for d in history[-24:]:
+        u = (d.get("mensagem_usuario") or "").strip()
+        a = (d.get("resposta_mary") or "").strip()
+        if u:
+            messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
+        if a:
+            messages.append({"role": "assistant", "content": a})
+
+    # ==========================================
+    # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
+    # ==========================================
+    if _should_inject_summary(usuario_key, every_n=6):
+        _inject_consolidated_summary(
+            shared_key,
+            timeline_final,
+            messages,
+            dedupe_bucket=dedupe_hashes,
+        )
+
+    # ==========================================
+    # 5️⃣ LONG MEMORY SOB DEMANDA
+    # ==========================================
+    if _should_inject_long_memory(prompt):
+        _inject_long_memory_textsearch(
+            shared_key,
+            timeline_final,
+            prompt,
+            messages,
+            limit=6,
+            dedupe_bucket=dedupe_hashes,
+            facts=facts,
+        )
+
+        _inject_relevant_memories(
+            shared_key,
+            timeline_final,
+            prompt,
+            messages,
+            k=4,
+            dedupe_bucket=dedupe_hashes,
+        )
+
+    # soft context só se necessário
+    if _should_inject_soft_context(
+        prompt,
+        facts=facts,
+        rel_state=rel_state,
+        tp_arc=tp_arc,
+    ):
+        _inject_shared_soft_context(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=4,
+            dedupe_bucket=dedupe_hashes,
+        )
+
+    # ==========================================
+    # MEMÓRIAS — manual (#mem ...) e latentes
+    # ==========================================
+    _inject_manual_memory_if_any(
+        usuario_key=usuario_key,
+        shared_key=shared_key,
+        timeline=timeline_final,
+        messages=messages,
+        spec=mem_spec,
+        facts=facts,
+    )
+
+    # ✅ BUGFIX: _get_tp_arc_state espera facts, não usuario_key
+    tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
+
+    _inject_latent_memory_if_any(
+        usuario_key=usuario_key,
+        shared_key=shared_key,
+        timeline=timeline_final,
+        messages=messages,
+        tp_arc=tp_arc_state,
+        facts=facts,
+    )
+
+    # Prompt atual sempre por último
+    messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
+
+    return messages
+
     def reply(
         self,
         user: str,
@@ -5981,213 +6432,53 @@ class MaryService(BaseCharacter):
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
 
-        system = f"""
-        [REGRAS DO SISTEMA - LEI]
-        Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
-
-        HIERARQUIA (o que manda mais -> menos):
-        1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-        2) Regras do sistema.
-        3) CANON.
-        4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
-        5) MEMORIAS CANONICAS/SHARED.
-        6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
-        7) Historico curto = continuidade; nao muda fatos.
-
-        PROIBICOES ABSOLUTAS:
-        - NAO invente local, tempo, roupa, posicao, acao, horario.
-        - NAO teleporte.
-        - NAO invente acoes ou falas do usuario.
-        - Sem logistica offscreen.
-
-        {language_rule}
-        {pov_rule}
-        {user_authorship_rule}
-        {continuity_rule}
-        {phone_message_rule}
-
-        TIMELINE ATUAL: {timeline_final}
-        NSFW_PROFILE: {nsfw_profile}
-
-        {user_name_block}
-
-        [CENA ATIVA - FATOS IMUTAVEIS]
-        {spatial_context}
-        {state_section}
-
-        [CANON]
-        {canon_txt}
-
-        [PERSONA]
-        {persona_text}
-
-        {rel_block}
-        {third_party_arc_rule}
-        {behavior_block}
-        {patterns_block}
-
-        {janio_focus_rule}
-        {topic_rule}
-        {style_rule}
-        {emotional_persistence_rule}
-        {virginity_rule}
-        {memory_fidelity_rule}
-        {user_finalizes_rule}
-        {initiative_rule}
-        {initiative_escalation_rule}
-        {manipulation_block}
-        {conflict_block}
-
-        {desvio_curto_rule}
-        {betrayal_rule}
-        {third_party_initiative_rule}
-
-        LEMBRETE:
-        - CENA ATIVA manda.
-        - CANON manda.
-        - Memorias NAO mudam a CENA ATIVA.
-
-        {intimacy_control_block}
-        {nsfw_hard_block}
-        {nsfw_block}
-        """.strip()
-
-        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
-
-        # Espaço narrativo leve
-        messages[0]["content"] = (
-            str(messages[0]["content"]).rstrip()
-            + "\n\n"
-            + NARRATIVE_SPACE
-            + "\n\n"
-            + CONTROLLED_UNPREDICTABILITY
-        ).strip()
-        
-        dedupe_hashes: set = set()
-        
-        # 🔒 CONTEXTO ABSOLUTO
-        _inject_now_context(messages, usuario_key, timeline_final)
-        
-        # 🔁 INTRO (1x)
-        _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
-        
-        # ==========================================
-        # 🔥 NOVA HIERARQUIA DE MEMÓRIA
-        # ==========================================
-        
-        # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
-        _inject_canon_memories_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=24,
-            dedupe_bucket=dedupe_hashes,
-        )
-        
-        # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
-        # só as marcadas como "pin" ou "estado_ativo"
-        _inject_long_memory_pins_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=6,
-            dedupe_bucket=dedupe_hashes,
+        system = self._build_system_prompt(
+            timeline_final=timeline_final,
+            nsfw_profile=nsfw_profile,
+            user_name_block=user_name_block,
+            spatial_context=spatial_context,
+            state_section=state_section,
+            canon_txt=canon_txt,
+            persona_text=persona_text,
+            rel_block=rel_block,
+            third_party_arc_rule=third_party_arc_rule,
+            behavior_block=behavior_block,
+            patterns_block=patterns_block,
+            janio_focus_rule=janio_focus_rule,
+            topic_rule=topic_rule,
+            style_rule=style_rule,
+            emotional_persistence_rule=emotional_persistence_rule,
+            virginity_rule=virginity_rule,
+            memory_fidelity_rule=memory_fidelity_rule,
+            user_finalizes_rule=user_finalizes_rule,
+            initiative_rule=initiative_rule,
+            initiative_escalation_rule=initiative_escalation_rule,
+            manipulation_block=manipulation_block,
+            conflict_block=conflict_block,
+            desvio_curto_rule=desvio_curto_rule,
+            betrayal_rule=betrayal_rule,
+            third_party_initiative_rule=third_party_initiative_rule,
+            intimacy_control_block=intimacy_control_block,
+            nsfw_hard_block=nsfw_hard_block,
+            nsfw_block=nsfw_block,
+            language_rule=language_rule,
+            pov_rule=pov_rule,
+            user_authorship_rule=user_authorship_rule,
+            continuity_rule=continuity_rule,
+            phone_message_rule=phone_message_rule,
         )
 
-        # ==========================================
-        # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
-        # ==========================================
-
-        history = cached_get_history(usuario_key, limit=200)
-        for d in history[-24:]:  # aumentamos para 24–30
-            u = (d.get("mensagem_usuario") or "").strip()
-            a = (d.get("resposta_mary") or "").strip()
-            if u:
-                messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
-            if a:
-                messages.append({"role": "assistant", "content": a})
-
-        # ==========================================
-        # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
-        # entra DEPOIS do histórico para atuar como compressão do passado
-        # ==========================================
-
-        if _should_inject_summary(usuario_key, every_n=6):
-            _inject_consolidated_summary(
-                shared_key,
-                timeline_final,
-                messages,
-                dedupe_bucket=dedupe_hashes,
-            )
-
-        # ==========================================
-        # 5️⃣ LONG MEMORY SOB DEMANDA
-        # ==========================================
-
-        if _should_inject_long_memory(prompt):
-            _inject_long_memory_textsearch(
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                limit=6,
-                dedupe_bucket=dedupe_hashes,
-                facts=facts,
-            )
-
-            _inject_relevant_memories(
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                k=4,
-                dedupe_bucket=dedupe_hashes,
-            )
-
-        # soft context só se necessário
-        if _should_inject_soft_context(
-            prompt,
+        messages = self._build_messages_for_turn(
+            system=system,
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            mem_spec=mem_spec,
             facts=facts,
             rel_state=rel_state,
             tp_arc=tp_arc,
-        ):
-            _inject_shared_soft_context(
-                shared_key,
-                timeline_final,
-                messages,
-                max_items=4,
-                dedupe_bucket=dedupe_hashes,
-            )
-
-        # Prompt atual sempre por último
-
-        # ==========================================
-        # MEMÓRIAS — chamada manual (#mem ...) e latentes
-        # (não altera prompt NSFW; só injeta contexto)
-        # ==========================================
-        _inject_manual_memory_if_any(
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline=timeline_final,
-            messages=messages,
-            spec=mem_spec,
-            facts=facts,
-        )
-
-        # Estado do arco de terceiros (para memórias latentes)
-        tp_arc_state = _get_tp_arc_state(usuario_key, timeline_final)
-
-        # Latentes: ativam automaticamente quando condições baterem (ex: tension/anchor/mode)
-        _inject_latent_memory_if_any(
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline=timeline_final,
-            messages=messages,
-            tp_arc=tp_arc_state,
-            facts=facts,
-        )
-
-        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})        
+        )      
         # Fase efetiva usada no decoding (pode ser forçada para aftercare)
         phase = int(intimacy_phase)
 
