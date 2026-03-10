@@ -1879,18 +1879,16 @@ def _call_service_reply_safe(
 # ==========================================================
 # APP
 # ==========================================================
-def main() -> None:
+def _render_app_shell() -> None:
     _apply_dark_ui_once()
     _garantir_estado_inicial()
 
     # ✅ MIGRAÇÃO DE MODELO (default novo)
-    # - se ainda estiver no antigo, troca automaticamente
-    # - se não existir "model" por algum motivo, seta o novo default
     try:
         if not st.session_state.get("model"):
             st.session_state["model"] = DEFAULT_MODEL
         elif st.session_state.get("model") == "tngtech/deepseek-r1t2-chimera":
-            st.session_state["model"] = DEFAULT_MODEL  # "tngtech/deepseek-r1t2-chimera"
+            st.session_state["model"] = DEFAULT_MODEL
     except Exception:
         pass
 
@@ -1976,8 +1974,14 @@ def main() -> None:
 
             st.write("📌 persona.py ativo:", getattr(mary_persona, "__file__", "—"))
 
-            st.write("✅ import OK:", (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
-            st.write("❌ import ERR:", (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"))
+            st.write(
+                "✅ import OK:",
+                (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+            )
+            st.write(
+                "❌ import ERR:",
+                (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+            )
 
             spec = importlib.util.find_spec("characters.mary.persona_universitaria")
             st.write("🔎 find_spec(persona_universitaria):", "ENCONTRADO" if spec else "NÃO ENCONTRADO")
@@ -2083,7 +2087,6 @@ def main() -> None:
 
                     st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
-
 def _clear_sidebar_state_fields(usuario_key: str) -> None:
     for k in (
         "state.local",
@@ -2854,6 +2857,7 @@ def _render_sidebar() -> None:
 
 
 def main() -> None:
+    _render_app_shell()
     _render_sidebar()
 
     # ===== BOOT =====
@@ -2975,7 +2979,6 @@ def main() -> None:
         st.session_state["chat_history"].append(("assistant", resposta))
         _invalidate_backend_cache()
         st.rerun()
-
 
 if __name__ == "__main__":
     main()
