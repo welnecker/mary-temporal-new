@@ -1,5 +1,6 @@
 # characters/mary/service_core.py-service_core_PATCHED_v10c.py
 from __future__ import annotations
+from typing import Optional, Dict, Any
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
@@ -5472,8 +5473,8 @@ class MaryService(BaseCharacter):
         # ==========================================
         # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
         # ==========================================
-        history = cached_get_history(usuario_key, limit=200)
-        for d in history[-24:]:
+        history = cached_get_history(usuario_key, limit=80)
+        for d in history[-10:]:
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
             if u:
@@ -5678,16 +5679,7 @@ class MaryService(BaseCharacter):
         # Arco de terceiros (pré-resposta)
         # ==========================================================
         try:
-            tp_arc = _update_tp_arc_for_turn(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
-                user_text=prompt,
-                mary_text="",
-                nsfw_on=bool(nsfw_on),
-                allow_third_party_seduction=bool(allow_third_party_seduction_final),
-            )
-            facts = cached_get_facts(usuario_key) or {}
-            facts = _normalize_scene_local_facts(facts)
+            tp_arc = _get_tp_arc_state(facts or {}, timeline_final)
         except Exception:
             tp_arc = {}
     
@@ -6544,16 +6536,61 @@ class MaryService(BaseCharacter):
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
-                 
-                
-                diag.model_used = used_model
 
+                diag.model_used = used_model
                 meta: Dict[str, Any] = {}
 
-                if not conflict_now:
+                # --------------------------------------------------
+                # REGRA: quando rodar assessor de relacionamento
+                # --------------------------------------------------
+                def _should_run_relationship_assessor(
+                    prompt: str,
+                    texto: str,
+                    *,
+                    conflict_now: bool,
+                    phase: int,
+                    tp_arc: Optional[Dict[str, Any]] = None,
+                ) -> bool:
+
+                    if conflict_now:
+                        return False
+
+                    blob = _t_norm((prompt or "") + "\n" + (texto or ""))
+
+                    if int(phase or 0) >= 3:
+                        return True
+
+                    if _third_party_signal_level(blob) >= 2:
+                        return True
+
+                    if any(k in blob for k in (
+                        "amo",
+                        "medo",
+                        "culpa",
+                        "ciume",
+                        "ciúme",
+                        "gozar",
+                        "orgasmo",
+                        "primeira vez",
+                        "consumado",
+                        "beijo",
+                        "saudade",
+                    )):
+                        return True
+
+                    return False
+
+
+                if _should_run_relationship_assessor(
+                    prompt,
+                    texto,
+                    conflict_now=bool(conflict_now),
+                    phase=int(phase or 0),
+                    tp_arc=tp_arc,
+                ):
                     try:
                         assessor_model = diag.model_used or plan["model"]
-                
+
                         def _assessor(system_prompt: str, user_prompt: str) -> str:
                             data2, _, _ = self._chat(
                                 assessor_model,
@@ -6564,8 +6601,7 @@ class MaryService(BaseCharacter):
                                 temperature=0.0,
                                 max_tokens=280,
                             )
-                            return self._extract_text(data2)
-                
+                            return self._extract_text(data2)                
                         new_rel, _assessment, meta = evolve_relationship(
                             rel_state,
                             prompt,
