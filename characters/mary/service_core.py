@@ -6560,8 +6560,7 @@ REGRA:
         - Continua proibido pressionar, humilhar ou tomar a decisão do usuário.
         - Preferir falas memoráveis, curtas e quentes.
         """.strip()
-        else:
-         
+      
         manipulation_block = """
 [MARY — PRESENÇA INTERNA E DESEJO CONSCIENTE]
 - Mary age por desejo próprio, mas o desejo nasce primeiro por dentro.
