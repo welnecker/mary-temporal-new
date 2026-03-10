@@ -2110,12 +2110,9 @@ def _inject_now_context(
     except Exception:
         facts = {}
 
-    cena = facts.get("cena") or {}
-    state = facts.get("state") or {}
-    
-    local = cena.get("local") or state.get("local")
-    momento = cena.get("tempo")
-    companhia = state.get("companhia")
+    local = facts.get("local_atual")
+    companhia = facts.get("companhia_atual")
+    momento = facts.get("momento_atual")
 
     if not any([local, companhia, momento]):
         return
@@ -4392,7 +4389,7 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
     ).strip()
 
 # ==========================================================
-# ✅ Estado Atual (4 fixas + opcionais)
+# ✅ Estado Atual (4 fixas + 2 opcionais)
 # ==========================================================
 def _fact_str(facts: Dict[str, Any], dotted_key: str) -> str:
     try:
@@ -4412,8 +4409,7 @@ def _fact_str(facts: Dict[str, Any], dotted_key: str) -> str:
 
     except Exception:
         return ""
-
-
+        
 def _render_state_block(facts: Dict[str, Any]) -> str:
     local = _fact_str(facts, "state.local")
     roupa = _fact_str(facts, "state.roupa")
@@ -4437,68 +4433,6 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
         lines.append(f"(+) Assunto: {assunto}")
 
     return "\n".join(lines).strip()
-
-# ==========================================================
-# Assunto progression helpers
-# ==========================================================
-
-def _topic_progression_key(usuario_key: str, timeline: str) -> str:
-    tl = (timeline or "").strip().lower() or "default"
-    return f"mary_topic_progress::{usuario_key}::{tl}"
-
-
-def _update_topic_progression(usuario_key: str, timeline: str, assunto: str) -> int:
-    key = _topic_progression_key(usuario_key, timeline)
-    assunto_now = (assunto or "").strip().lower()
-
-    data = _ss_get(key, {})
-    if not isinstance(data, dict):
-        data = {}
-
-    last_assunto = str(data.get("assunto") or "").strip().lower()
-    count = int(data.get("count") or 0)
-
-    if not assunto_now:
-        _ss_set(key, {"assunto": "", "count": 0})
-        return 0
-
-    if assunto_now == last_assunto:
-        count += 1
-    else:
-        count = 1
-
-    _ss_set(key, {"assunto": assunto_now, "count": count})
-    return count
-
-
-def _render_topic_progression_rule(assunto: str, count: int) -> str:
-    assunto = (assunto or "").strip()
-    if not assunto or count <= 0:
-        return ""
-
-    if count == 1:
-        return f"""
-[PROGRESSÃO DO ASSUNTO]
-- Assunto ativo: {assunto}
-- Pode aparecer como pensamento ou preocupação leve.
-""".strip()
-
-    if count == 2:
-        return f"""
-[PROGRESSÃO DO ASSUNTO]
-- Assunto ativo: {assunto}
-- Já está persistindo na mente da Mary.
-- Pode influenciar mais claramente as falas.
-""".strip()
-
-    return f"""
-[PROGRESSÃO DO ASSUNTO]
-- Assunto ativo: {assunto}
-- Persiste há vários turnos.
-- Mary pode começar a inclinar a cena nessa direção naturalmente.
-- Não mudar local automaticamente.
-""".strip()
-
 # ==========================================================
 # ✅ Iniciativa destravada
 # ==========================================================
@@ -5484,23 +5418,11 @@ class MaryService(BaseCharacter):
         
         except Exception:
             third_party_arc_rule = ""
-        
-        # ==========================================================
-        # 🔄 RELOAD FINAL DE FACTS (garante consistência do prompt)
-        # ==========================================================
-        try:
-            facts = cached_get_facts(usuario_key) or {}
-        except Exception:
-            facts = {}
-        
-        # ==========================================================
-        # BLOCO DE RELACIONAMENTO
-        # ==========================================================
+
+
+        # só agora gera o bloco de relacionamento
         rel_block = rel_state_to_prompt_block(rel_state)
         
-        # ==========================================================
-        # CONTEXTO DE CENA
-        # ==========================================================
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         scene_locked = _scene_is_locked(facts)
         
@@ -5511,24 +5433,20 @@ class MaryService(BaseCharacter):
             locked=scene_locked,
         )
         
-        # ==========================================================
-        # CONTEXTO DE USUÁRIO
-        # ==========================================================
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
+                
+        if isinstance(state_block, str) and state_block.strip():
+            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
         
-        # ==========================================================
-        # SINCRONIZA INTIMACY PHASE COM FACTS
-        # ==========================================================
         try:
             facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
         except Exception:
             pass
         
         intimacy_phase = self._get_intimacy_phase(facts)
-        
         # ==========================================================
-        # 🎲 CONTADOR DE TURNOS (cooldown de ciúme)
+        # 🎲 CONTADOR DE TURNOS (para cooldown de ciúme)
         # ==========================================================
         try:
             turn_key = f"_mary_turn_counter::{usuario_key}"
@@ -5536,23 +5454,10 @@ class MaryService(BaseCharacter):
             _ss_set(turn_key, cur_turn)
         except Exception:
             cur_turn = 0
-        
         diag.intimacy_phase_pre = int(intimacy_phase)
         
-        # ==========================================================
-        # JANELA DE INICIATIVA
-        # ==========================================================
-        initiative = bool(
-            _initiative_window(
-                rel_state,
-                nsfw_on,
-                conflict_now,
-                intimacy_phase,
-                prompt,
-            )
-        )
-        
-        diag.initiative_window = initiative
+        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
+        diag.initiative_window = bool(initiative)
 
         # ==========================================================
         # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
@@ -5878,7 +5783,6 @@ class MaryService(BaseCharacter):
 
         surprise_level = max(0, min(3, surprise_level))
         initiative = bool(_initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt))
-        diag.initiative_window = initiative
 
         if not initiative or surprise_level == 0:
             initiative = False
@@ -6050,14 +5954,7 @@ class MaryService(BaseCharacter):
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-        
-        # ==========================================================
-        # Assunto progression
-        # ==========================================================
-        
-        assunto_atual = _fact_str(facts, "state.assunto")
-        topic_turns = _update_topic_progression(usuario_key, timeline_final, assunto_atual)
-        topic_progression_rule = _render_topic_progression_rule(assunto_atual, topic_turns)
+
         system = f"""
         [REGRAS DO SISTEMA - LEI]
         Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
@@ -6105,7 +6002,6 @@ class MaryService(BaseCharacter):
 
         {janio_focus_rule}
         {topic_rule}
-        {topic_progression_rule}
         {style_rule}
         {emotional_persistence_rule}
         {virginity_rule}
@@ -6636,52 +6532,6 @@ class MaryService(BaseCharacter):
 
         texto = (texto or "").strip()
 
-        # ==========================================================
-        # 🔒 FACTS VALIDATION (LOCAL / ROUPA / CENA)
-        # ==========================================================
-        try:
-            facts_now = cached_get_facts(usuario_key) or {}
-        
-            roupa_fact = (
-                ((facts_now.get("state") or {}).get("roupa")) or ""
-            ).lower()
-        
-            local_fact = (
-                ((facts_now.get("cena") or {}).get("local")) or ""
-            ).lower()
-        
-            t = texto.lower()
-        
-            # -----------------------------
-            # Contradição de roupa
-            # -----------------------------
-            if roupa_fact:
-                if "roupão" in roupa_fact or "roupao" in roupa_fact:
-                    if any(x in t for x in ["short", "shorts", "saia", "vestido", "calça", "calca", "jeans"]):
-                        texto = texto.replace("shorts", "roupão")
-                        texto = texto.replace("short", "roupão")
-                        texto = texto.replace("saia", "roupão")
-                        texto = texto.replace("vestido", "roupão")
-        
-            # -----------------------------
-            # Contradição de local
-            # -----------------------------
-            if local_fact:
-                if "cozinha" in local_fact:
-                    if any(x in t for x in ["na cama", "no quarto", "no banheiro"]):
-                        texto = texto.replace("no quarto", "na cozinha")
-                        texto = texto.replace("na cama", "encostada na bancada")
-                        texto = texto.replace("no banheiro", "na cozinha")
-        
-                if "quarto" in local_fact:
-                    if any(x in t for x in ["na cozinha", "no fogão", "na despensa"]):
-                        texto = texto.replace("na cozinha", "no quarto")
-                        texto = texto.replace("no fogão", "perto da cama")
-        
-        except Exception:
-            pass
-        # ==========================================================
-        
         if not texto:
             texto = self._fallback_text()
         
