@@ -5344,6 +5344,7 @@ class MaryService(BaseCharacter):
         user_authorship_rule: str,
         continuity_rule: str,
         phone_message_rule: str,
+        dialogue_density_rule: str,
     ) -> str:
         # ==========================================================
         # OVERRIDE DE ESTILO — MARY MAIS FALANTE E MENOS DESCRITIVA
@@ -5497,6 +5498,8 @@ class MaryService(BaseCharacter):
     {janio_focus_rule}
     {topic_rule}
     {style_rule}
+    {dialogue_density_rule}
+    {emotional_persistence_rule}
     {dialogue_dominance_rule}
     {dialogue_energy_rule}
     {dialogue_format_rule}
@@ -5593,9 +5596,9 @@ class MaryService(BaseCharacter):
         # HISTÓRICO RECENTE
         # ==========================================================
     
-        history = cached_get_history(usuario_key, limit=40)
+        history = cached_get_history(usuario_key, limit=24)
     
-        for d in history[-8:]:  # antes 10
+        for d in history[-4:]:  # antes 10
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
     
@@ -6694,6 +6697,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             user_authorship_rule=user_authorship_rule,
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
+            dialogue_density_rule=dialogue_density_rule,
         )
 
         messages = self._build_messages_for_turn(
@@ -6779,32 +6783,28 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 ) -> bool:
                     if conflict_now:
                         return False
-
+                
                     blob = _t_norm((prompt or "") + "\n" + (texto or ""))
-
-                    if int(phase or 0) >= 3:
+                
+                    # só roda em momentos realmente estruturais
+                    if int(phase or 0) >= 4:
                         return True
-
-                    if _third_party_signal_level(blob) >= 2:
+                
+                    if _third_party_signal_level(blob) >= 3:
                         return True
-
+                
                     if any(k in blob for k in (
-                        "amo",
-                        "medo",
-                        "culpa",
-                        "ciume",
-                        "ciúme",
-                        "gozar",
-                        "orgasmo",
                         "primeira vez",
                         "consumado",
-                        "beijo",
-                        "saudade",
+                        "consumada",
+                        "orgasmo",
+                        "gozei",
+                        "vou gozar",
+                        "estou gozando",
                     )):
                         return True
-
+                
                     return False
-
                 if _should_run_relationship_assessor(
                     prompt,
                     texto,
