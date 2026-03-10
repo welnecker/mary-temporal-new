@@ -1557,6 +1557,34 @@ def _inject_long_memory_pins_always(
     else:
         messages.append({"role": "system", "content": block})
 
+def _norm_any(value: Any) -> str:
+    """
+    Normaliza com segurança strings, dicts, listas e escalares.
+    Evita quebrar _t_norm() quando facts traz estruturas aninhadas.
+    """
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return _t_norm(value)
+
+    if isinstance(value, dict):
+        parts = []
+        for k, v in value.items():
+            try:
+                parts.append(f"{k} {v}")
+            except Exception:
+                parts.append(str(k))
+        return _t_norm(" ".join(parts))
+
+    if isinstance(value, (list, tuple, set)):
+        try:
+            return _t_norm(" ".join(str(x) for x in value))
+        except Exception:
+            return _t_norm(str(value))
+
+    return _t_norm(str(value))
+
 def _memory_conflicts_with_truth(
     mem_text: str,
     *,
@@ -1575,23 +1603,28 @@ def _memory_conflicts_with_truth(
     # -----------------------------
     # Estado de cena / facts vivos
     # -----------------------------
-    scene_local = _t_norm(f.get("cena.local") or f.get("local_cena_atual") or "")
-    scene_tempo = _t_norm(f.get("cena.tempo") or "")
-    scene_acao  = _t_norm(f.get("cena.acao") or "")
-    
-    state_local = _t_norm(_fact_str(f, "state.local") or "")
+    scene_local = _norm_any(f.get("cena.local") or f.get("local_cena_atual"))
+    scene_tempo = _norm_any(f.get("cena.tempo"))
+    scene_acao  = _norm_any(f.get("cena.acao"))
+
+    state_local = _norm_any(_fact_str(f, "state.local") or "")
     world_mary  = f.get("mary") if isinstance(f.get("mary"), dict) else {}
-    rel_blob    = _t_norm(f.get("rel") or "")
-    arc_blob    = _t_norm(f.get("arc") or "")
+    rel_blob    = _norm_any(f.get("rel"))
+    arc_blob    = _norm_any(f.get("arc"))
 
     # -----------------------------
     # temas críticos governados por facts
     # -----------------------------
-    if _has_any(t, ("virgem","virgindade","primeira vez","consumado","consumada")) and f:
+    if _has_any(t, ("virgem", "virgindade", "primeira vez", "consumado", "consumada")) and f:
         return True
 
-    if _has_any(t, ("fase","climax","clímax","aftercare","intimidade")) and f:
+    if _has_any(t, ("fase", "climax", "clímax", "aftercare", "intimidade")) and f:
         return True
+
+    # conflito direto com cena/local/tempo/ação já vivos
+    for val in (scene_local, state_local, scene_tempo, scene_acao):
+        if val and val in t:
+            return True
 
     # arco e relação atual
     if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
@@ -1609,7 +1642,6 @@ def _memory_conflicts_with_truth(
             return True
 
     return False
-
     # -----------------------------
     # Estado de cena / facts vivos
     # -----------------------------
