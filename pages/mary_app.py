@@ -2088,6 +2088,7 @@ def _render_app_shell() -> None:
                     st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
 def _clear_sidebar_state_fields(usuario_key: str) -> None:
+    # limpa estado visual
     for k in (
         "state.local",
         "state.roupa",
@@ -2100,10 +2101,20 @@ def _clear_sidebar_state_fields(usuario_key: str) -> None:
     ):
         set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
 
+    # limpa cena real
+    for k in (
+        "cena.local",
+        "cena.tempo",
+        "cena.acao",
+        "local_cena_atual",
+    ):
+        set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
+
+    # destrava a cena
+    set_fact(usuario_key, "cena.locked", False, {"fonte": "sidebar_state_clear"})
+
     st.session_state["_clear_state_form"] = True
     st.rerun()
-
-
 def _render_sidebar() -> None:
     with st.sidebar:
         st.header("Mary – Controles")
@@ -2338,24 +2349,37 @@ def _render_sidebar() -> None:
                 )
 
                 c1, c2 = st.columns(2)
-
+                
                 with c1:
                     if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                        updates = {
-                            "state.local": st.session_state.get("sb_state_local", "").strip(),
-                            "state.roupa": st.session_state.get("sb_state_roupa", "").strip(),
-                            "state.cabelo": st.session_state.get("sb_state_cabelo", "").strip(),
-                            "state.horarios": st.session_state.get("sb_state_horarios", "").strip(),
-                            "state.assunto": st.session_state.get("sb_state_assunto", "").strip(),
-                        }
-
+                        novo_local = st.session_state.get("sb_state_local", "").strip()
+                        nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
+                        novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
+                        novo_horario = st.session_state.get("sb_state_horarios", "").strip()
+                        novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
+                
                         try:
-                            for k, v in updates.items():
-                                set_fact(_uk, k, v, {"fonte": "sidebar_state"})
+                            # estado visual / sidebar
+                            set_fact(_uk, "state.local", novo_local, {"fonte": "sidebar_state"})
+                            set_fact(_uk, "state.roupa", nova_roupa, {"fonte": "sidebar_state"})
+                            set_fact(_uk, "state.cabelo", novo_cabelo, {"fonte": "sidebar_state"})
+                            set_fact(_uk, "state.horarios", novo_horario, {"fonte": "sidebar_state"})
+                            set_fact(_uk, "state.assunto", novo_assunto, {"fonte": "sidebar_state"})
+                
+                            # sync da cena real
+                            if novo_local:
+                                set_fact(_uk, "cena.local", novo_local, {"fonte": "sidebar_state_sync"})
+                                set_fact(_uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
+                                set_fact(_uk, "cena.tempo", "agora", {"fonte": "sidebar_state_sync"})
+                                set_fact(_uk, "cena.acao", "em andamento", {"fonte": "sidebar_state_sync"})
+                                set_fact(_uk, "cena.locked", True, {"fonte": "sidebar_state_sync"})
+                
                             st.success("✅ Estado atual atualizado.")
+                            st.rerun()
+                
                         except Exception as e:
                             st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-
+                
                 with c2:
                     st.button(
                         "🧹 Limpar Estado",
@@ -2363,7 +2387,6 @@ def _render_sidebar() -> None:
                         on_click=_clear_sidebar_state_fields,
                         args=(_uk,),
                     )
-
         st.markdown("---")
         st.subheader("🎲 Dinâmica de Surpresa")
 
