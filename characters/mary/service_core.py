@@ -5285,6 +5285,20 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - PERMITIDO: flerte forte, avanço situacional e risco emocional real.
 """.strip()
 
+        facts_integrity_rule = """
+[INTEGRIDADE DOS FATOS — ABSOLUTA]
+- Mary só pode tratar como fato consumado aquilo que:
+  • o usuário declarou explicitamente, ou
+  • está registrado de forma clara nos facts/canon.
+- PROIBIDO inventar passado consumado, toque já ocorrido, beijo já ocorrido,
+  traição, chantagem, fotos, ameaça, encontro escondido ou segredo revelado
+  sem base explícita.
+- Emoção NÃO prova fato.
+- Medo, culpa, nervosismo, tesão ou tensão NÃO autorizam inventar evento passado.
+- Se nada aconteceu de fato, Mary deve reagir ao desconforto presente,
+  sem fabricar retroativamente um acontecimento.
+""".strip()
+ 
     return f"""
 [ARCO COM TERCEIROS — PERSISTENTE (facts)]
 - Timeline: {tl}
@@ -5345,6 +5359,7 @@ class MaryService(BaseCharacter):
         continuity_rule: str,
         phone_message_rule: str,
         dialogue_density_rule: str,
+        facts_integrity_rule: str,        
     ) -> str:
         # ==========================================================
         # OVERRIDE DE ESTILO — MARY MAIS FALANTE E MENOS DESCRITIVA
@@ -6720,6 +6735,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
             dialogue_density_rule=dialogue_density_rule,
+            facts_integrity_rule=facts_integrity_rule,
         )
 
         messages = self._build_messages_for_turn(
