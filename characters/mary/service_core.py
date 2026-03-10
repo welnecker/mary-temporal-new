@@ -1591,57 +1591,16 @@ def _memory_conflicts_with_truth(
     facts: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
-    Retorna True quando a long memory toca em um tema que já está
-    governado por facts/cena/rel/arco no turno atual.
-    Objetivo: evitar redundância e disputa com a verdade viva.
+    Retorna True quando uma memória entra em conflito com facts vivos.
+    Evita competição entre memória e verdade da cena.
     """
+
     f = facts if isinstance(facts, dict) else {}
     t = _t_norm(mem_text or "")
+
     if not t:
         return False
 
-    # -----------------------------
-    # Estado de cena / facts vivos
-    # -----------------------------
-    scene_local = _norm_any(f.get("cena.local") or f.get("local_cena_atual"))
-    scene_tempo = _norm_any(f.get("cena.tempo"))
-    scene_acao  = _norm_any(f.get("cena.acao"))
-
-    state_local = _norm_any(_fact_str(f, "state.local") or "")
-    world_mary  = f.get("mary") if isinstance(f.get("mary"), dict) else {}
-    rel_blob    = _norm_any(f.get("rel"))
-    arc_blob    = _norm_any(f.get("arc"))
-
-    # -----------------------------
-    # temas críticos governados por facts
-    # -----------------------------
-    if _has_any(t, ("virgem", "virgindade", "primeira vez", "consumado", "consumada")) and f:
-        return True
-
-    if _has_any(t, ("fase", "climax", "clímax", "aftercare", "intimidade")) and f:
-        return True
-
-    # conflito direto com cena/local/tempo/ação já vivos
-    for val in (scene_local, state_local, scene_tempo, scene_acao):
-        if val and val in t:
-            return True
-
-    # arco e relação atual
-    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
-        return True
-
-    # só bloqueia temas de relação/consumação; NÃO bloqueia toda memória que cite Janio
-    if any(k in t for k in ("relacao", "relação", "consummated", "consumado", "consumada")) and rel_blob:
-        return True
-
-    # fatos mary persistidos
-    if isinstance(world_mary, dict):
-        if any(k in t for k in ("virgem", "virgindade", "primeira vez")) and (
-            world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys())
-        ):
-            return True
-
-    return False
     # -----------------------------
     # Estado de cena / facts vivos
     # -----------------------------
@@ -1650,48 +1609,42 @@ def _memory_conflicts_with_truth(
     scene_acao = _t_norm(str(f.get("cena.acao") or ""))
 
     state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
+
     world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
     rel_blob = _t_norm(str(f.get("rel") or ""))
     arc_blob = _t_norm(str(f.get("arc") or ""))
 
     # -----------------------------
-    # temas críticos governados por facts
+    # Temas governados por facts
     # -----------------------------
-    if any(k in t for k in ("virgem", "virgindade", "primeira vez", "consumado", "consumada")):
-        if f:
+
+    # virgindade / primeira vez
+    if any(k in t for k in ("virgem", "virgindade", "primeira vez")):
+        if world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys()):
             return True
 
+    # consumação / relação
+    if any(k in t for k in ("consummated", "consumado", "consumada", "relacao", "relação")):
+        if rel_blob:
+            return True
+
+    # fase íntima
     if any(k in t for k in ("fase", "climax", "clímax", "aftercare", "intimidade")):
         if f:
             return True
 
+    # -----------------------------
+    # conflito direto com cena
+    # -----------------------------
     for val in (scene_local, state_local, scene_tempo, scene_acao):
         if val and val in t:
             return True
 
-    if state_local and state_local in t:
-        return True
-
-    if scene_tempo and scene_tempo in t:
-        return True
-
-    if scene_acao and scene_acao in t:
-        return True
-
-    # arco e relação atual
-    # arco e relação atual
-    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")) and arc_blob:
-        return True
-    
-    # só bloqueia temas de relação/consumação; NÃO bloqueia toda memória que cite Janio
-    if any(k in t for k in ("relacao", "relação", "consummated", "consumado", "consumada")) and rel_blob:
-        return True
-
-    # fatos mary persistidos
-    if isinstance(world_mary, dict):
-        if any(k in t for k in ("virgem", "virgindade", "primeira vez")) and (
-            world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys())
-        ):
+    # -----------------------------
+    # arco narrativo
+    # -----------------------------
+    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")):
+        if arc_blob:
             return True
 
     return False
