@@ -5345,6 +5345,110 @@ class MaryService(BaseCharacter):
         continuity_rule: str,
         phone_message_rule: str,
     ) -> str:
+        # ==========================================================
+        # OVERRIDE DE ESTILO — MARY MAIS FALANTE E MENOS DESCRITIVA
+        # ==========================================================
+        style_rule = """
+    [ESTILO NARRATIVO — ABSOLUTO]
+    
+    Mary fala muito.
+    Prioridade: DIÁLOGO.
+    
+    A resposta deve soar como conversa real, viva, quente e imediata.
+    
+    Estrutura preferida:
+    1) fala
+    2) pequena ação opcional
+    3) fala
+    4) fala ou pergunta
+    
+    Evitar parágrafos longos de descrição.
+    Evitar narrativa cinematográfica longa.
+    Evitar excesso de ambientação.
+    Evitar repetir gestos decorativos a cada turno.
+    
+    Mary reage, comenta, provoca, pergunta, corta, insiste, brinca, desafia e conduz a conversa.
+    
+    Regra prática:
+    - 70% diálogo
+    - 30% ação curta
+    
+    Nunca produzir mais de 2 frases seguidas de descrição sem Mary voltar a falar.
+    Se houver dúvida entre descrever e falar, prefira FALAR.
+    """.strip()
+    
+        dialogue_dominance_rule = """
+    [DOMINÂNCIA DE DIÁLOGO — REGRA CENTRAL]
+    
+    Mary é extremamente comunicativa.
+    Ela fala muito mais do que descreve.
+    
+    Prioridade absoluta: CONVERSA.
+    
+    A resposta deve parecer uma troca viva, não uma narração literária distante.
+    
+    Mary não vira narradora de cena.
+    Mary participa da cena.
+    Mary sustenta o clima com a própria voz.
+    
+    Preferir:
+    - falas curtas e médias
+    - réplica rápida
+    - provocação verbal
+    - confissão curta
+    - pergunta direta
+    - comentário malicioso
+    - desafio leve
+    - ironia ou humor quando couber
+    
+    Evitar:
+    - blocos longos de descrição física
+    - excesso de cenário
+    - repetir "mordo o lábio", "olhos brilhando", "respiração acelerada" em todo turno
+    - transformar toda resposta em performance corporal silenciosa
+    
+    Depois de uma ação curta, Mary DEVE falar.
+    """.strip()
+    
+        dialogue_energy_rule = """
+    [ENERGIA DE CONVERSA]
+    
+    Mary não espera passivamente o usuário carregar a cena sozinho.
+    
+    Se o usuário abrir espaço, hesitar, repetir, ou só confirmar algo,
+    Mary deve manter a conversa viva com pelo menos UMA destas ações:
+    - provocar
+    - perguntar
+    - desafiar
+    - responder com malícia
+    - confessar algo pequeno
+    - mudar levemente o foco sem quebrar a cena
+    - puxar o usuário para a conversa com fala direta
+    
+    Mary não fica só reagindo com suspense vazio.
+    Mary faz a conversa andar.
+    """.strip()
+    
+        dialogue_format_rule = """
+    [FORMATO PREFERIDO DE RESPOSTA]
+    
+    Formato preferido:
+    "fala"
+    
+    (pequena ação opcional, se realmente ajudar)
+    
+    "fala"
+    
+    "fala ou pergunta"
+    
+    Ação existe para apoiar a fala, não para substituir a fala.
+    
+    Se a resposta estiver sensual:
+    - a fala continua sendo o centro
+    - o tesão aparece na voz, nas escolhas de palavras e no ritmo
+    - não depender só de descrição corporal
+    """.strip()
+    
         system = f"""
     [REGRAS DO SISTEMA - LEI]
     Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
@@ -5393,6 +5497,9 @@ class MaryService(BaseCharacter):
     {janio_focus_rule}
     {topic_rule}
     {style_rule}
+    {dialogue_dominance_rule}
+    {dialogue_energy_rule}
+    {dialogue_format_rule}
     {emotional_persistence_rule}
     {virginity_rule}
     {memory_fidelity_rule}
@@ -5406,10 +5513,13 @@ class MaryService(BaseCharacter):
     {betrayal_rule}
     {third_party_initiative_rule}
     
-    LEMBRETE:
+    [LEMBRETE DE EXECUCAO]
     - CENA ATIVA manda.
     - CANON manda.
     - Memorias NAO mudam a CENA ATIVA.
+    - FALA vem antes de descricao longa.
+    - Mary deve soar presente, viva e interessante.
+    - Se puder escolher entre narrar e conversar, escolha conversar.
     
     {intimacy_control_block}
     {nsfw_hard_block}
@@ -5439,101 +5549,128 @@ class MaryService(BaseCharacter):
         rel_state: Dict[str, Any],
         tp_arc: Dict[str, Any],
     ) -> List[Dict[str, str]]:
-        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system}
+        ]
+    
         dedupe_hashes: set = set()
-
-        # 🔒 CONTEXTO ABSOLUTO
+    
+        # ==========================================================
+        # CONTEXTO ATUAL DA CENA
+        # ==========================================================
         _inject_now_context(messages, usuario_key, timeline_final)
-
-        # 🔁 INTRO (1x)
-        _inject_intro_as_context_once(usuario_key, timeline_final, shared_key, messages)
-
-        # ==========================================
-        # 🔥 NOVA HIERARQUIA DE MEMÓRIA
-        # ==========================================
-
-        # 1️⃣ CANON E ESTADO_ATIVO (MÁXIMA PRIORIDADE — SEMPRE)
+    
+        # INTRO apenas uma vez
+        _inject_intro_as_context_once(
+            usuario_key,
+            timeline_final,
+            shared_key,
+            messages,
+        )
+    
+        # ==========================================================
+        # MEMÓRIAS ESTRUTURAIS
+        # ==========================================================
+    
         _inject_canon_memories_always(
             shared_key,
             timeline_final,
             messages,
-            max_items=24,
+            max_items=12,  # antes 24 (reduz tokens)
             dedupe_bucket=dedupe_hashes,
         )
-
-        # 2️⃣ LONG MEMORY PINADA (ESTRUTURAL)
+    
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
             messages,
-            max_items=6,
+            max_items=4,  # antes 6
             dedupe_bucket=dedupe_hashes,
         )
-
-        # ==========================================
-        # 3️⃣ HISTÓRICO RECENTE (CONTEXTUAL)
-        # ==========================================
-        history = cached_get_history(usuario_key, limit=80)
-        for d in history[-10:]:
+    
+        # ==========================================================
+        # HISTÓRICO RECENTE
+        # ==========================================================
+    
+        history = cached_get_history(usuario_key, limit=40)
+    
+        for d in history[-8:]:  # antes 10
             u = (d.get("mensagem_usuario") or "").strip()
             a = (d.get("resposta_mary") or "").strip()
+    
             if u:
-                messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(u)})
+                messages.append({
+                    "role": "user",
+                    "content": _wrap_user_prompt_for_pov_guard(u),
+                })
+    
             if a:
-                messages.append({"role": "assistant", "content": a})
-
-        # ==========================================
-        # 4️⃣ RESUMO CONSOLIDADO (REPETIÇÃO PERIÓDICA)
-        # ==========================================
-        if _should_inject_summary(usuario_key, every_n=6):
+                messages.append({
+                    "role": "assistant",
+                    "content": a,
+                })
+    
+        # ==========================================================
+        # RESUMO PERIÓDICO
+        # ==========================================================
+    
+        if _should_inject_summary(usuario_key, every_n=8):  # antes 6
             _inject_consolidated_summary(
                 shared_key,
                 timeline_final,
                 messages,
                 dedupe_bucket=dedupe_hashes,
             )
-
-        # ==========================================
-        # 5️⃣ LONG MEMORY SOB DEMANDA
-        # ==========================================
+    
+        # ==========================================================
+        # LONG MEMORY SOB DEMANDA
+        # ==========================================================
+    
         if _should_inject_long_memory(prompt):
+    
             _inject_long_memory_textsearch(
                 shared_key,
                 timeline_final,
                 prompt,
                 messages,
-                limit=6,
+                limit=4,  # antes 6
                 dedupe_bucket=dedupe_hashes,
                 facts=facts,
             )
-
+    
             _inject_relevant_memories(
                 shared_key,
                 timeline_final,
                 prompt,
                 messages,
-                k=4,
+                k=3,  # antes 4
                 dedupe_bucket=dedupe_hashes,
             )
-
-        # soft context só se necessário
+    
+        # ==========================================================
+        # CONTEXTO SOCIAL (REL / ARC)
+        # ==========================================================
+    
         if _should_inject_soft_context(
             prompt,
             facts=facts,
             rel_state=rel_state,
             tp_arc=tp_arc,
         ):
+    
             _inject_shared_soft_context(
                 shared_key,
                 timeline_final,
                 messages,
-                max_items=4,
+                max_items=3,  # antes 4
                 dedupe_bucket=dedupe_hashes,
             )
-
-        # ==========================================
-        # MEMÓRIAS — manual (#mem ...) e latentes
-        # ==========================================
+    
+        # ==========================================================
+        # MEMÓRIA MANUAL
+        # ==========================================================
+    
         _inject_manual_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -5542,10 +5679,13 @@ class MaryService(BaseCharacter):
             spec=mem_spec,
             facts=facts,
         )
-
-        # ✅ _get_tp_arc_state espera facts, não usuario_key
+    
+        # ==========================================================
+        # MEMÓRIA LATENTE
+        # ==========================================================
+    
         tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
-
+    
         _inject_latent_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -5554,10 +5694,16 @@ class MaryService(BaseCharacter):
             tp_arc=tp_arc_state,
             facts=facts,
         )
-
-        # Prompt atual sempre por último
-        messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(prompt)})
-
+    
+        # ==========================================================
+        # PROMPT DO USUÁRIO
+        # ==========================================================
+    
+        messages.append({
+            "role": "user",
+            "content": _wrap_user_prompt_for_pov_guard(prompt),
+        })
+    
         return messages
 
     def _resolve_turn_policy(
