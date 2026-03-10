@@ -3475,7 +3475,7 @@ def _build_explicit_regex(stems: list[str]) -> re.Pattern:
 
 _RE_EXPLICIT_SEX = _build_explicit_regex(_EXPLICIT_STEMS)
     
-)
+
 def _is_explicit(texto: str) -> bool:
     """
     Retorna True se o texto contém descrição direta de ato sexual explícito.
