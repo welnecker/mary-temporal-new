@@ -5425,20 +5425,20 @@ class MaryService(BaseCharacter):
         return system
 
     def _build_messages_for_turn(
-    self,
-    *,
-    system: str,
-    usuario_key: str,
-    shared_key: str,
-    timeline_final: str,
-    prompt: str,
-    mem_spec: Optional[Dict[str, Any]],
-    facts: Dict[str, Any],
-    rel_state: Dict[str, Any],
-    tp_arc: Dict[str, Any],
-) -> List[Dict[str, str]]:
-    messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
-    dedupe_hashes: set = set()
+        self,
+        *,
+        system: str,
+        usuario_key: str,
+        shared_key: str,
+        timeline_final: str,
+        prompt: str,
+        mem_spec: Optional[Dict[str, Any]],
+        facts: Dict[str, Any],
+        rel_state: Dict[str, Any],
+        tp_arc: Dict[str, Any],
+    ) -> List[Dict[str, str]]:
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+        dedupe_hashes: set = set()
 
     # 🔒 CONTEXTO ABSOLUTO
     _inject_now_context(messages, usuario_key, timeline_final)
