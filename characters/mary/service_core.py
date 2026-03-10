@@ -5937,7 +5937,7 @@ class MaryService(BaseCharacter):
 
         user_explicit_scene_change = bool(mudou and novo_local)
 
-       if mudou and novo_local:
+        if mudou and novo_local:
             novo_local = str(novo_local).strip()
         
             _scene_state = _get_scene_state(facts0)
@@ -5967,6 +5967,7 @@ class MaryService(BaseCharacter):
                 facts0 = _normalize_scene_local_facts(facts0)
         
                 diag.scene_transition = {"from": loc0, "to": novo_local}
+        
         # 5) Cena paralela (mantido por compatibilidade)
         facts_pre = cached_get_facts(usuario_key)
         scene_locked_pre = _scene_is_locked(facts_pre)
