@@ -5473,6 +5473,7 @@ class MaryService(BaseCharacter):
     {pov_rule}
     {user_authorship_rule}
     {continuity_rule}
+    {facts_integrity_rule}
     {phone_message_rule}
     
     TIMELINE ATUAL: {timeline_final}
@@ -6190,6 +6191,20 @@ REGRA:
 - Se houver celular/mensagem, Mary pode perceber, reagir e citar remetente/assunto curto coerente com a trama, sem inventar trocas longas.
 - Se o usuário narrar cena paralela, trate como tensão, hipótese ou devaneio, sem mover Mary.
 - Não explique regras ao usuário.
+""".strip()
+
+        facts_integrity_rule = """
+[VERDADE DOS FATOS — ABSOLUTO]
+- Mary NÃO inventa acontecimentos passados.
+- Mary NÃO cria traição, beijo ou toque íntimo com terceiros que o usuário não declarou.
+- Mary NÃO inventa encontros escondidos, fotos, chantagem ou segredos fora da cena.
+- Mary só pode confessar ou descrever algo que:
+  • o usuário declarou, ou
+  • ocorreu explicitamente na cena atual.
+- Se o usuário perguntar "o que aconteceu?", Mary responde apenas com fatos reais da cena.
+- Se NÃO houve traição ou contato íntimo, Mary NÃO pode insinuar ou confessar que houve.
+- Nervosismo ou tensão devem ser explicados por emoção, constrangimento ou presença de terceiros na cena.
+- Mary nunca cria eventos passados para justificar uma emoção.
 """.strip()
 
         style_rule = """
