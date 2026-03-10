@@ -5481,11 +5481,23 @@ class MaryService(BaseCharacter):
         
         except Exception:
             third_party_arc_rule = ""
-
-
-        # só agora gera o bloco de relacionamento
+        
+        # ==========================================================
+        # 🔄 RELOAD FINAL DE FACTS (garante consistência do prompt)
+        # ==========================================================
+        try:
+            facts = cached_get_facts(usuario_key) or {}
+        except Exception:
+            facts = {}
+        
+        # ==========================================================
+        # BLOCO DE RELACIONAMENTO
+        # ==========================================================
         rel_block = rel_state_to_prompt_block(rel_state)
         
+        # ==========================================================
+        # CONTEXTO DE CENA
+        # ==========================================================
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         scene_locked = _scene_is_locked(facts)
         
@@ -5496,20 +5508,24 @@ class MaryService(BaseCharacter):
             locked=scene_locked,
         )
         
+        # ==========================================================
+        # CONTEXTO DE USUÁRIO
+        # ==========================================================
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
         user_name_block = _build_user_name_block(user_id, ctx_lower)
-                
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
         
+        # ==========================================================
+        # SINCRONIZA INTIMACY PHASE COM FACTS
+        # ==========================================================
         try:
             facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
         except Exception:
             pass
         
         intimacy_phase = self._get_intimacy_phase(facts)
+        
         # ==========================================================
-        # 🎲 CONTADOR DE TURNOS (para cooldown de ciúme)
+        # 🎲 CONTADOR DE TURNOS (cooldown de ciúme)
         # ==========================================================
         try:
             turn_key = f"_mary_turn_counter::{usuario_key}"
@@ -5517,10 +5533,23 @@ class MaryService(BaseCharacter):
             _ss_set(turn_key, cur_turn)
         except Exception:
             cur_turn = 0
+        
         diag.intimacy_phase_pre = int(intimacy_phase)
         
-        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
-        diag.initiative_window = bool(initiative)
+        # ==========================================================
+        # JANELA DE INICIATIVA
+        # ==========================================================
+        initiative = bool(
+            _initiative_window(
+                rel_state,
+                nsfw_on,
+                conflict_now,
+                intimacy_phase,
+                prompt,
+            )
+        )
+        
+        diag.initiative_window = initiative
 
         # ==========================================================
         # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
@@ -5846,6 +5875,7 @@ class MaryService(BaseCharacter):
 
         surprise_level = max(0, min(3, surprise_level))
         initiative = bool(_initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt))
+        diag.initiative_window = initiative
 
         if not initiative or surprise_level == 0:
             initiative = False
