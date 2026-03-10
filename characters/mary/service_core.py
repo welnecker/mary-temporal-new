@@ -2110,9 +2110,12 @@ def _inject_now_context(
     except Exception:
         facts = {}
 
-    local = facts.get("local_atual")
-    companhia = facts.get("companhia_atual")
-    momento = facts.get("momento_atual")
+    cena = facts.get("cena") or {}
+    state = facts.get("state") or {}
+    
+    local = cena.get("local") or state.get("local")
+    momento = cena.get("tempo")
+    companhia = state.get("companhia")
 
     if not any([local, companhia, momento]):
         return
