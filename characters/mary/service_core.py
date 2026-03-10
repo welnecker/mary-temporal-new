@@ -5424,7 +5424,7 @@ class MaryService(BaseCharacter):
     
         return system
 
-       def _build_messages_for_turn(
+    def _build_messages_for_turn(
         self,
         *,
         system: str,
