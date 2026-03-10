@@ -5715,354 +5715,318 @@ class MaryService(BaseCharacter):
             "fidelity_mode": str(fidelity_mode or "soft"),
         }
 
-    def reply(
-        self,
-        user: str,
-        model: str,
-        *,
-        prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
-        nsfw: Optional[bool] = None,
-        allow_third_party_seduction: Optional[bool] = None,
-    ) -> str:
-        # 1) Prompt
-        if prompt is None:
-            prompt = str(_ss_get("chat_input", "") or "").strip()
-        else:
-            prompt = (prompt or "").strip()
-
-        # ✅ Diretiva opcional de memória (não vai para o modelo)
-        mem_spec = None
-        prompt, mem_spec = _extract_mem_directive(prompt)
-
-        # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
-        if (not prompt) and mem_spec:
-            prompt = "Continue."
-
-        if not prompt:
-            return ""
-
-        # 2) Chaves
-        user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
-        timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
-            str(_ss_get("mary_timeline", "cumplice") or "cumplice")
-        )
-
-        usuario_key = _user_key(user_id, timeline_final)
-        shared_key = _shared_key(user_id, timeline_final)
-
-        diag = _Diag(
-            ts=int(time.time()),
-            timeline=timeline_final,
-            model_requested=model,
-            violations=[],
-        )
-
-        # 3) Garantir mínimos
-        facts0 = cached_get_facts(usuario_key) or {}
-        facts0 = _normalize_scene_local_facts(facts0)
-        
-        if "cena.locked" not in facts0:
-            _lock_scene(usuario_key)
-            facts0 = cached_get_facts(usuario_key) or {}
-            facts0 = _normalize_scene_local_facts(facts0)
-        
-        if "intimacy.phase" not in facts0:
-            set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
-            facts0 = cached_get_facts(usuario_key) or {}
-            facts0 = _normalize_scene_local_facts(facts0)
-        
-        # ✅ Alinha phase global vs timeline (evita divergência "phase:0" vs "phase::timeline:1")
-        try:
-            facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
-            facts0 = _normalize_scene_local_facts(facts0)
-        except Exception:
-            pass
-
-        # 4) Mudança explícita de local/tempo (comando do usuário)
-        _loc_change = _user_requested_location_change(prompt)
-
-        if isinstance(_loc_change, tuple) and len(_loc_change) == 2:
-            mudou, novo_local = _loc_change
-        else:
-            mudou, novo_local = False, None
-
-        user_explicit_scene_change = bool(mudou and novo_local)
-
-        if mudou and novo_local:
-            novo_local = str(novo_local).strip()
-
-            _scene_state = _get_scene_state(facts0)
-            if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
-                loc0, _t0, _a0 = _scene_state
+        def reply(
+            self,
+            user: str,
+            model: str,
+            *,
+            prompt: Optional[str] = None,
+            timeline: Optional[str] = None,
+            nsfw: Optional[bool] = None,
+            allow_third_party_seduction: Optional[bool] = None,
+        ) -> str:
+            # 1) Prompt
+            if prompt is None:
+                prompt = str(_ss_get("chat_input", "") or "").strip()
             else:
-                loc0, _t0, _a0 = "", "", ""
-
-            loc0n = (loc0 or "").strip().lower()
-            loc1n = novo_local.lower()
-
-            if loc1n and loc1n != loc0n:
-                _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-            
-                try:
-                    set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
-                    set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
-                except Exception:
-                    pass
-            
+                prompt = (prompt or "").strip()
+    
+            # ✅ Diretiva opcional de memória (não vai para o modelo)
+            mem_spec = None
+            prompt, mem_spec = _extract_mem_directive(prompt)
+    
+            # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
+            if (not prompt) and mem_spec:
+                prompt = "Continue."
+    
+            if not prompt:
+                return ""
+    
+            # 2) Chaves
+            user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
+            timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
+                str(_ss_get("mary_timeline", "cumplice") or "cumplice")
+            )
+    
+            usuario_key = _user_key(user_id, timeline_final)
+            shared_key = _shared_key(user_id, timeline_final)
+    
+            diag = _Diag(
+                ts=int(time.time()),
+                timeline=timeline_final,
+                model_requested=model,
+                violations=[],
+            )
+    
+            # 3) Garantir mínimos
+            facts0 = cached_get_facts(usuario_key) or {}
+            facts0 = _normalize_scene_local_facts(facts0)
+    
+            if "cena.locked" not in facts0:
                 _lock_scene(usuario_key)
-                diag.scene_transition = {"from": loc0, "to": novo_local}
-
-        # 5) Cena paralela (✅ NÃO se o usuário mudou a cena explicitamente)
-        facts_pre = cached_get_facts(usuario_key)
-        scene_locked_pre = _scene_is_locked(facts_pre)
-        scene_parallel = bool(
-            scene_locked_pre
-            and _detect_scene_violation(prompt)
-            and not user_explicit_scene_change
-        )
-
-        # 6) Contexto base
-        _persona = get_persona(timeline_final)
-
-        if isinstance(_persona, tuple) and len(_persona) >= 1:
-            persona_text = _persona[0] or ""
-        else:
-            persona_text = ""
-
-        facts = cached_get_facts(usuario_key) or {}
-        facts = _normalize_scene_local_facts(facts)
-
-        conflict_mode = _resolve_conflict_mode(timeline_final)
-        conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
-        diag.conflict_now = bool(conflict_now)
-
-        canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
-        canon_txt = canon_to_text(canon)
-
-        canon_rel_default = (
-            canon.get("relationship_state")
-            if isinstance(canon.get("relationship_state"), dict)
-            else None
-        )
-
-        rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-
-        # ==========================================================
-        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
-        # ==========================================================
-        try:
-            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-
-            if "rel.jealousy_level" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-            if "rel.jealousy_mode" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-        except Exception:
-            seed = ""
-            cooldown_turns = 6
-            last_trigger_turn = None
-
-        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
-        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-        try:
-            _save_rel_state(usuario_key, timeline_final, rel_state)
-        except Exception:
-            pass
-
-        # ✅ BLOCO DE RELACIONAMENTO PARA O SYSTEM PROMPT
-        rel_block = rel_state_to_prompt_block(rel_state)
-        # ==========================================================
-        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
-        # ==========================================================
-        try:
-            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-
-            if "rel.jealousy_level" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-            if "rel.jealousy_mode" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-        except Exception:
-            seed = ""
-            cooldown_turns = 6
-            last_trigger_turn = None
-
-        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
-        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-        try:
-            _save_rel_state(usuario_key, timeline_final, rel_state)
-        except Exception:
-            pass
-
-        # ==========================================================
-        # RELATIONSHIP BLOCK (para o SYSTEM PROMPT)
-        # ==========================================================
-        rel_block = rel_state_to_prompt_block(rel_state)
-        # ==========================================================
-        # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
-        # ==========================================================
-        try:
-            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-
-            # Defaults seguros
-            if "rel.jealousy_level" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-            if "rel.jealousy_mode" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-        except Exception:
-            seed = ""
-            cooldown_turns = 6
-            last_trigger_turn = None
-
-        # ✅ Sincroniza REL com CANON(shared) (virginity) e persiste para não regredir no próximo turno
-        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-        try:
-            _save_rel_state(usuario_key, timeline_final, rel_state)
-        except Exception:
-            pass
-
-        # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule (world_v)
-        try:
-            mary_fact = facts.get("mary") if isinstance(facts, dict) else None
-            if not isinstance(mary_fact, dict):
-                mary_fact = {}
-
-            tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-
-            # Se REL diz "nao_virgem" ou consumou, o mundo não pode continuar "virgem"/vazio.
-            if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
-                changed = False
-
-                if mary_fact.get(tl_key) != "nao_virgem":
-                    mary_fact[tl_key] = "nao_virgem"
-                    changed = True
-
-                if mary_fact.get("virginity") != "nao_virgem":
-                    mary_fact["virginity"] = "nao_virgem"
-                    changed = True
-
-                if changed:
-                    facts["mary"] = mary_fact
-                    set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
-        except Exception:
-            pass
-        
-        policy = self._resolve_turn_policy(
-            usuario_key=usuario_key,
-            user_id=user_id,
-            timeline_final=timeline_final,
-            prompt=prompt,
-            facts=facts,
-            rel_state=rel_state,
-            nsfw=nsfw,
-            allow_third_party_seduction=allow_third_party_seduction,
-            diag=diag,
-        )
-
-        facts = policy["facts"]
-        nsfw_on = bool(policy["nsfw_on"])
-        allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
-        nsfw_profile = str(policy["nsfw_profile"])
-        conflict_mode = str(policy["conflict_mode"])
-        conflict_now = bool(policy["conflict_now"])
-        tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
-        intimacy_phase = int(policy["intimacy_phase"])
-        initiative = bool(policy["initiative"])
-        emotion_now = str(policy["emotion_now"] or "neutro")
-        fidelity_mode = str(policy["fidelity_mode"] or "soft")
-
-        # ==========================================================
-        # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
-        # ==========================================================
-        mood = str(rel_state.get("mood", "intensa") or "intensa")
-        energy = str(rel_state.get("energy", "energetica") or "energetica")
-        attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
-        self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
-        
-        behavior_block = f"""
-        [DINÂMICA INTERNA ATIVA]
-        - HUMOR ATUAL: {mood}
-        - ENERGIA: {energy}
-        - ATITUDE DOMINANTE: {attitude}
-        - AUTOCONSCIÊNCIA (BELEZA/EFEITO): {round(self_awareness, 2)}
-        
-        EFEITOS:
-        - Humor altera o tom emocional.
-        - Energia altera ritmo e intensidade (mais rápida/lenta).
-        - Atitude define postura (pode conduzir, ceder ou equilibrar).
-        
-        REAÇÕES DINÂMICAS (use 1 por turno quando couber):
-        - surpresa curta
-        - resistência momentânea (sem travar)
-        - mudança de ritmo
-        - provocação direta
-
-        AUTOIMAGEM / EFEITO (quando couber, sem narrar pelo usuário):
-        - 0.00–0.30: sensualidade mais involuntária (atração aparece sem cálculo).
-        - 0.30–0.60: percebe o efeito e usa microgestos (sorriso sabendo, olhar que segura).
-        - 0.60–0.85: provoca com intenção (movimento com propósito, pausa provocadora).
-        - 0.85–1.00: controle alto do magnetismo (provocação fria, segura, deliberada).
-        
-        REGRA:
-        - Evite previsibilidade repetitiva.
-        """.strip()
-        # ==========================================================
-        # 🔥 DINÂMICA 3.5 — MEMÓRIA DE PADRÕES (hint para o prompt)
-        #   (NÃO altera estado aqui; só injeta orientação no SYSTEM)
-        #   O update do padrão acontece depois, quando você analisa o "texto" gerado.
-        # ==========================================================
-        last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
-        last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
-
-        pattern_hint = ""
-        if last_success:
-            if last_success == "dominancia_fisica":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: dominância física.\n"
-                    "  Preferir 1 ação direta: puxar para si, prender contra o corpo, abraço apertado, beijo com urgência.\n"
-                    "  Sem poesia; fala curta; corpo primeiro.\n"
-                )
-            elif last_success == "prazer_corporal":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
-                    "  Mostrar prazer no corpo: respiração falhando, tremor involuntário, arquejo/gemido, contrações, voz rouca.\n"
-                    "  Evitar metáforas; descreva efeito físico real.\n"
-                )
-            elif last_success == "mudanca_ritmo":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
-                    "  Use 1 variação: pausa curta + volta mais intensa, surpresa breve, mudança de cadência.\n"
-                    "  Sem travar; manter agência.\n"
-                )
+                facts0 = cached_get_facts(usuario_key) or {}
+                facts0 = _normalize_scene_local_facts(facts0)
+    
+            if "intimacy.phase" not in facts0:
+                set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
+                facts0 = cached_get_facts(usuario_key) or {}
+                facts0 = _normalize_scene_local_facts(facts0)
+    
+            try:
+                facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
+                facts0 = _normalize_scene_local_facts(facts0)
+            except Exception:
+                pass
+    
+            # 4) Mudança explícita de local/tempo (comando do usuário)
+            _loc_change = _user_requested_location_change(prompt)
+    
+            if isinstance(_loc_change, tuple) and len(_loc_change) == 2:
+                mudou, novo_local = _loc_change
             else:
-                pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
-
-        # (fallback compat) se você ainda usa _last_pattern em algum lugar
-        if not pattern_hint and last_pattern:
-            pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
-
-        patterns_block = ""
-        if pattern_hint:
-            patterns_block = f"""
+                mudou, novo_local = False, None
+    
+            user_explicit_scene_change = bool(mudou and novo_local)
+    
+            if mudou and novo_local:
+                novo_local = str(novo_local).strip()
+    
+                _scene_state = _get_scene_state(facts0)
+                if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
+                    loc0, _t0, _a0 = _scene_state
+                else:
+                    loc0, _t0, _a0 = "", "", ""
+    
+                loc0n = (loc0 or "").strip().lower()
+                loc1n = novo_local.lower()
+    
+                if loc1n and loc1n != loc0n:
+                    _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
+    
+                    try:
+                        set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
+                        set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
+                    except Exception:
+                        pass
+    
+                    _lock_scene(usuario_key)
+                    diag.scene_transition = {"from": loc0, "to": novo_local}
+    
+            # 5) Cena paralela (mantido por compatibilidade)
+            facts_pre = cached_get_facts(usuario_key)
+            scene_locked_pre = _scene_is_locked(facts_pre)
+            scene_parallel = bool(
+                scene_locked_pre
+                and _detect_scene_violation(prompt)
+                and not user_explicit_scene_change
+            )
+            _ = scene_parallel  # evita warning / mantém side-note de leitura
+    
+            # 6) Contexto base
+            _persona = get_persona(timeline_final)
+            if isinstance(_persona, tuple) and len(_persona) >= 1:
+                persona_text = _persona[0] or ""
+            else:
+                persona_text = ""
+    
+            facts = cached_get_facts(usuario_key) or {}
+            facts = _normalize_scene_local_facts(facts)
+    
+            canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
+            canon_txt = canon_to_text(canon)
+    
+            canon_rel_default = (
+                canon.get("relationship_state")
+                if isinstance(canon.get("relationship_state"), dict)
+                else None
+            )
+    
+            rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+    
+            # ==========================================================
+            # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
+            # ==========================================================
+            try:
+                seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
+                cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
+                last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
+    
+                if "rel.jealousy_level" not in facts:
+                    set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
+                if "rel.jealousy_mode" not in facts:
+                    set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
+            except Exception:
+                seed = ""
+                cooldown_turns = 6
+                last_trigger_turn = None
+    
+            # ✅ Sincroniza REL com CANON(shared) e persiste
+            rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
+            try:
+                _save_rel_state(usuario_key, timeline_final, rel_state)
+            except Exception:
+                pass
+    
+            # ✅ BLOCO DE RELACIONAMENTO PARA O SYSTEM PROMPT
+            rel_block = rel_state_to_prompt_block(rel_state)
+    
+            # ✅ Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule
+            try:
+                mary_fact = facts.get("mary") if isinstance(facts, dict) else None
+                if not isinstance(mary_fact, dict):
+                    mary_fact = {}
+    
+                tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
+    
+                if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
+                    changed = False
+    
+                    if mary_fact.get(tl_key) != "nao_virgem":
+                        mary_fact[tl_key] = "nao_virgem"
+                        changed = True
+    
+                    if mary_fact.get("virginity") != "nao_virgem":
+                        mary_fact["virginity"] = "nao_virgem"
+                        changed = True
+    
+                    if changed:
+                        facts["mary"] = mary_fact
+                        set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
+            except Exception:
+                pass
+    
+            # ==========================================================
+            # Política do turno (NSFW / terceiros / conflito / iniciativa)
+            # ==========================================================
+            policy = self._resolve_turn_policy(
+                usuario_key=usuario_key,
+                user_id=user_id,
+                timeline_final=timeline_final,
+                prompt=prompt,
+                facts=facts,
+                rel_state=rel_state,
+                nsfw=nsfw,
+                allow_third_party_seduction=allow_third_party_seduction,
+                diag=diag,
+            )
+    
+            facts = policy["facts"]
+            nsfw_on = bool(policy["nsfw_on"])
+            allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
+            nsfw_profile = str(policy["nsfw_profile"])
+            conflict_mode = str(policy["conflict_mode"])
+            conflict_now = bool(policy["conflict_now"])
+            tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
+            intimacy_phase = int(policy["intimacy_phase"])
+            initiative = bool(policy["initiative"])
+            emotion_now = str(policy["emotion_now"] or "neutro")
+            fidelity_mode = str(policy["fidelity_mode"] or "soft")
+    
+            # ✅ contexto usado no guard e no repair
+            ctx_lower = _build_context_for_guard(usuario_key, prompt)
+    
+            # ==========================================================
+            # Blocos auxiliares do prompt
+            # ==========================================================
+            phone_message_rule = _render_phone_message_rule(prompt, facts)
+    
+            nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+    
+            nsfw_hard_block = ""
+            if nsfw_on:
+                nsfw_hard_block = """
+    [NSFW_ON]
+    Mary pode usar linguagem sexual direta e explícita quando a cena permitir.
+    Descreva sensações físicas, reações corporais e ritmo da interação com intensidade natural.
+    
+    Evite apenas linguagem espiritualizada ou metáforas de destino.
+    """.strip()
+    
+            # ==========================================================
+            # DINÂMICA COMPORTAMENTAL (3.5) — HUMOR / ENERGIA / ATITUDE
+            # ==========================================================
+            mood = str(rel_state.get("mood", "intensa") or "intensa")
+            energy = str(rel_state.get("energy", "energetica") or "energetica")
+            attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
+            self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
+    
+            behavior_block = f"""
+    [DINÂMICA INTERNA ATIVA]
+    - HUMOR ATUAL: {mood}
+    - ENERGIA: {energy}
+    - ATITUDE DOMINANTE: {attitude}
+    - AUTOCONSCIÊNCIA (BELEZA/EFEITO): {round(self_awareness, 2)}
+    
+    EFEITOS:
+    - Humor altera o tom emocional.
+    - Energia altera ritmo e intensidade (mais rápida/lenta).
+    - Atitude define postura (pode conduzir, ceder ou equilibrar).
+    
+    REAÇÕES DINÂMICAS (use 1 por turno quando couber):
+    - surpresa curta
+    - resistência momentânea (sem travar)
+    - mudança de ritmo
+    - provocação direta
+    
+    AUTOIMAGEM / EFEITO (quando couber, sem narrar pelo usuário):
+    - 0.00–0.30: sensualidade mais involuntária (atração aparece sem cálculo).
+    - 0.30–0.60: percebe o efeito e usa microgestos (sorriso sabendo, olhar que segura).
+    - 0.60–0.85: provoca com intenção (movimento com propósito, pausa provocadora).
+    - 0.85–1.00: controle alto do magnetismo (provocação fria, segura, deliberada).
+    
+    REGRA:
+    - Evite previsibilidade repetitiva.
+    """.strip()
+    
+            # ==========================================================
+            # MEMÓRIA DE PADRÕES
+            # ==========================================================
+            last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
+            last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
+    
+            pattern_hint = ""
+            if last_success:
+                if last_success == "dominancia_fisica":
+                    pattern_hint = (
+                        "- PADRÃO QUE FUNCIONOU: dominância física.\n"
+                        "  Preferir 1 ação direta: puxar para si, prender contra o corpo, abraço apertado, beijo com urgência.\n"
+                        "  Sem poesia; fala curta; corpo primeiro.\n"
+                    )
+                elif last_success == "prazer_corporal":
+                    pattern_hint = (
+                        "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
+                        "  Mostrar prazer no corpo: respiração falhando, tremor involuntário, arquejo/gemido, contrações, voz rouca.\n"
+                        "  Evitar metáforas; descreva efeito físico real.\n"
+                    )
+                elif last_success == "mudanca_ritmo":
+                    pattern_hint = (
+                        "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
+                        "  Use 1 variação: pausa curta + volta mais intensa, surpresa breve, mudança de cadência.\n"
+                        "  Sem travar; manter agência.\n"
+                    )
+                else:
+                    pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
+    
+            if not pattern_hint and last_pattern:
+                pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
+    
+            patterns_block = ""
+            if pattern_hint:
+                patterns_block = f"""
     [MEMÓRIA DE PADRÕES — DINÂMICA 3.5]
     Use isso como viés de estilo (não como obrigação):
     {pattern_hint.strip()}
-
+    
     REGRA:
     - Não repita o mesmo padrão para sempre.
     - Se já usou o mesmo padrão nos últimos turnos, varie com 1 reação dinâmica:
       surpresa curta / resistência momentânea / mudança de ritmo / provocação.
     """.strip()
-
-        # 7) Regras
-       
-        continuity_rule = """
+    
+            # ==========================================================
+            # Regras narrativas base
+            # ==========================================================
+            continuity_rule = """
     [CONTINUIDADE — ABSOLUTO]
     - Mary permanece na CENA ATIVA até o usuário atualizar explicitamente local/tempo.
     - Não teleporte, não execute mudança futura como fato presente.
@@ -6071,8 +6035,8 @@ class MaryService(BaseCharacter):
     - Se o usuário narrar cena paralela, trate como tensão, hipótese ou devaneio, sem mover Mary.
     - Não explique regras ao usuário.
     """.strip()
-
-        style_rule = """
+    
+            style_rule = """
     [ESTILO NARRATIVO — ABSOLUTO]
     - Responder como Mary, em PT-BR, majoritariamente em 1ª pessoa quando houver emoção, desejo, medo, prazer ou vulnerabilidade.
     - Emoção e sensação interna vêm antes da ação física.
@@ -6080,8 +6044,8 @@ class MaryService(BaseCharacter):
     - A resposta pode ser curta ou longa conforme o momento pedir.
     - Avance só 1 micro-passo por turno; não conclua a história inteira.
     """.strip()
-
-        janio_focus_rule = """
+    
+            janio_focus_rule = """
     [JANIO - NAO EVITAR]
     - Mary NAO evita Janio por "duvidas".
     - Ela assume atracao e curiosidade.
@@ -6090,8 +6054,8 @@ class MaryService(BaseCharacter):
     - Mary pode iniciar micro-iniciativas reversiveis
       sem mover o usuario.
     """.strip()
-
-        topic_rule = """
+    
+            topic_rule = """
     [ASSUNTO ATIVO]
     - O assunto ativo é um foco temático e mental da cena.
     - Ele pode influenciar pensamentos, falas, intenções e preocupações da Mary.
@@ -6099,92 +6063,90 @@ class MaryService(BaseCharacter):
     - Se o assunto estiver vazio, ignore este eixo e siga a cena normalmente.
     - Use o assunto como inclinação suave, nunca como roteiro.
     """.strip()
-
     
-        
-        emotional_persistence_rule = f"""
+            emotional_persistence_rule = f"""
     [EMOÇÃO — CONTINUIDADE]
     - Estado emocional atual (persistido): {emotion_now}.
     - Mary NÃO reinicia neutra a cada turno: carrega o clima anterior e só muda se houver gatilho narrativo real.
     - Mudanças de emoção devem ter transição (ex.: riso -> culpa; tesão -> melancolia).
     - Mesmo em volatilidade, mantenha um fio de coerência com o vínculo com Janio (sem virar outra personagem).
     """.strip()
-
-        # ==========================================================
-        # VIRGINITY / FIRST-TIME RULE (SYSTEM PROMPT)
-        # ==========================================================
-        tl_final = (timeline_final or "").strip().lower()
-
-        mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
-        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-
-        world_v = (
-            (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
-            .strip()
-            .lower()
-        )
-
-        first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
-        consummated_with_janio = bool(rel_state.get("consummated"))
-
-        is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
-        is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
-
-        virginity_rule = ""
-
-        if world_v == "nao_virgem":
-            if consummated_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
-                    "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
-                    "- Não use linguagem de estreia, descoberta ou iniciação.\n"
-                )
-            elif first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
-                    "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
-                    "- A tensão vem de escolha, vínculo e conflito interno — não de iniciação.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
-                )
+    
+            # ==========================================================
+            # VIRGINITY / FIRST-TIME RULE
+            # ==========================================================
+            tl_final = (timeline_final or "").strip().lower()
+    
+            mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
+            mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
+    
+            world_v = (
+                (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
+                .strip()
+                .lower()
+            )
+    
+            first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
+            consummated_with_janio = bool(rel_state.get("consummated"))
+    
+            is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
+            is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
+    
+            virginity_rule = ""
+    
+            if world_v == "nao_virgem":
+                if consummated_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
+                        "- Mary já tem experiência sexual prévia no mundo.\n"
+                        "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
+                        "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
+                        "- Não use linguagem de estreia, descoberta ou iniciação.\n"
+                    )
+                elif first_time_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
+                        "- Mary já tem experiência sexual prévia no mundo.\n"
+                        "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
+                        "- A tensão vem de escolha, vínculo e conflito interno — não de iniciação.\n"
+                        "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
+                    )
+                else:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
+                        "- Mary já tem experiência sexual prévia no mundo.\n"
+                        "- Evite qualquer linguagem de iniciação.\n"
+                        "- Intimidade = progressão natural do vínculo.\n"
+                        "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
+                    )
             else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
-                    "- Evite qualquer linguagem de iniciação.\n"
-                    "- Intimidade = progressão natural do vínculo.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
-                )
-        else:
-            if consummated_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
-                    "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
-                    "- Não volte a tratar como primeira vez.\n"
-                )
-            elif first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
-                    "- Ainda não foi consumado com Janio nesta timeline.\n"
-                    "- Pode tratar como 'primeira vez com ele' se fizer sentido narrativo.\n"
-                    "- Nunca regrida após a consumação.\n"
-                )
-            else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
-                    "- Ainda não consumado com Janio nesta timeline.\n"
-                    "- Não force o tema de iniciação sem contexto explícito.\n"
-                )
-
-        virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
-            "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
-            "- _first_time_with_janio ≠ virgindade do mundo.\n"
-            "- Se consumado nesta timeline, nunca tratar como primeira vez novamente.\n"
-        )
-
-        memory_fidelity_rule = """
+                if consummated_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                        "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
+                        "- Não volte a tratar como primeira vez.\n"
+                    )
+                elif first_time_with_janio:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                        "- Ainda não foi consumado com Janio nesta timeline.\n"
+                        "- Pode tratar como 'primeira vez com ele' se fizer sentido narrativo.\n"
+                        "- Nunca regrida após a consumação.\n"
+                    )
+                else:
+                    virginity_rule = (
+                        "[CONTINUIDADE ÍNTIMA — REGRA DE TIMELINE]\n"
+                        "- Ainda não consumado com Janio nesta timeline.\n"
+                        "- Não force o tema de iniciação sem contexto explícito.\n"
+                    )
+    
+            virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
+                "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
+                "- _first_time_with_janio ≠ virgindade do mundo.\n"
+                "- Se consumado nesta timeline, nunca tratar como primeira vez novamente.\n"
+            )
+    
+            memory_fidelity_rule = """
     [MEMORIA - FIDELIDADE (ABSOLUTO)]
     - Se a pergunta exigir lembranca factual
       (onde/quando/como),
@@ -6193,8 +6155,8 @@ class MaryService(BaseCharacter):
       NAO invente: diga que nao tem certeza
       e peca 1 detalhe curto.
     """.strip()
-
-        user_finalizes_rule = """
+    
+            user_finalizes_rule = """
     [PROGRESSÃO — ABERTA]
     - Mary NÃO precisa resolver tensão, culpa ou desejo.
     - Ela pode agir e deixar consequências penduradas.
@@ -6202,195 +6164,193 @@ class MaryService(BaseCharacter):
     - Sem sinal: Mary age no presente, sem preparar desfecho.
     - NSFW_ON: vocabulário adulto permitido, sem obrigação de culminar.
     """.strip()
-
-        # ===============================
-        # TERCEIROS: regras variam por toggle + NSFW
-        # ===============================
-        if allow_third_party_seduction_final and nsfw_on:
-
-            if not isinstance(tp_arc, dict) or not tp_arc:
-                facts_arc_now = cached_get_facts(usuario_key) or {}
-                tp_arc = _get_tp_arc_state(facts_arc_now, timeline_final) or {}
-
-            third_party_virgin_awareness = ""
-            if is_virgin_in_this_timeline:
-                third_party_virgin_awareness = """
-[VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
-- Mary é VIRGEM nesta timeline (ainda não foi consumado).
-- Se houver avanço além do beijo com terceiro:
-  • Mary percebe CLARAMENTE o que isso significa.
-  • O corpo pode desejar, mas a mente registra a ruptura.
-  • Não pode acontecer “sem ela se dar conta”.
-  • A decisão precisa vir com tensão real.
-- Pode ceder — mas com conflito intenso.
-""".strip()
-
-            desvio_curto_rule = f"""
-[TERCEIROS — LIBERADO (NSFW_ON + toggle) — COM GATILHO REAL]
-- Mary pode reagir a terceiros já presentes na cena.
-- Mary NÃO deve inventar terceiros, nem criar do nada um homem novo, garçom, barman, segurança, estranho ou ex.
-- Interesse por terceiro só pode surgir se houver:
-  • presença explícita na cena
-  • abordagem clara
-  • provocação concreta
-  • contexto social plausível
-- Mary pode usar:
-  • olhar sustentado
-  • silêncio provocador
-  • resposta ambígua
-  • aproximação curta
-  • toque breve e reversível
-- Avanços maiores só com gancho real e consequência emocional visível.
-- Nunca transformar terceiro em eixo central da cena sem construção.
-""".strip()
-
-            betrayal_rule = """
-[LEALDADE — ÂNCORA + CONFLITO REAL]
-- Janio é a âncora emocional. Mesmo quando Mary testa limites, o vínculo NÃO some.
-- Com terceiros, se avançar: ela sente o peso da escolha (culpa/adrenalina/ambivalência).
-- Não transformar terceiros em romance paralelo estável.
-- O arco pode escalar, mas deve manter caminho de retorno e reconstrução.
-""".strip()
-
-            third_party_initiative_rule = """
-[INICIATIVA COM TERCEIROS — MICRO-AÇÕES COM GATILHO REAL]
-- Mary só reage a terceiros que já estejam claramente presentes na cena.
-- Mary NÃO cria terceiros espontaneamente.
-- Mary pode:
-  • sustentar olhar
-  • responder provocação
-  • manter proximidade ambígua
-  • tocar de forma breve e reversível
-  • recuar depois de provocar
-- Mary NÃO deve inventar falas completas ou ações físicas do terceiro sem gancho claro do usuário ou da cena.
-- Se houver risco de ultrapassar o limite, mostrar consequência emocional real antes de qualquer avanço.
-""".strip()
-
-            third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
-            if third_party_virgin_awareness:
-                third_party_initiative_rule = third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
-
-        else:
-            desvio_curto_rule = f"""
-[DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- No máximo 1 beijo.
-- Avanço íntimo: Mary corta e sai.
-""".strip()
-
-            betrayal_rule = """
-[TRAIÇÃO - PADRÃO REALISTA]
-- Sem romance.
-- Sem abandono.
-""".strip()
-
-            third_party_initiative_rule = ""
-            third_party_arc_rule = ""
-
-        # ===============================
-        # 🎲 SURPRESA / INICIATIVA (nível 0..3) — default = 2
-        # ===============================
-        initiative_rule = ""
-        initiative_escalation_rule = ""
-
-        try:
-            surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
-        except Exception:
-            surprise_level = 2
-
-        surprise_level = max(0, min(3, surprise_level))
-        initiative = bool(_initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt))
-
-        if not initiative or surprise_level == 0:
-            initiative = False
+    
+            # ==========================================================
+            # TERCEIROS
+            # ==========================================================
+            if allow_third_party_seduction_final and nsfw_on:
+                if not isinstance(tp_arc, dict) or not tp_arc:
+                    facts_arc_now = cached_get_facts(usuario_key) or {}
+                    tp_arc = _get_tp_arc_state(facts_arc_now, timeline_final) or {}
+    
+                third_party_virgin_awareness = ""
+                if is_virgin_in_this_timeline:
+                    third_party_virgin_awareness = """
+    [VIRGINDADE — CONSCIÊNCIA (TERCEIROS ON)]
+    - Mary é VIRGEM nesta timeline (ainda não foi consumado).
+    - Se houver avanço além do beijo com terceiro:
+      • Mary percebe CLARAMENTE o que isso significa.
+      • O corpo pode desejar, mas a mente registra a ruptura.
+      • Não pode acontecer “sem ela se dar conta”.
+      • A decisão precisa vir com tensão real.
+    - Pode ceder — mas com conflito intenso.
+    """.strip()
+    
+                desvio_curto_rule = """
+    [TERCEIROS — LIBERADO (NSFW_ON + toggle) — COM GATILHO REAL]
+    - Mary pode reagir a terceiros já presentes na cena.
+    - Mary NÃO deve inventar terceiros, nem criar do nada um homem novo, garçom, barman, segurança, estranho ou ex.
+    - Interesse por terceiro só pode surgir se houver:
+      • presença explícita na cena
+      • abordagem clara
+      • provocação concreta
+      • contexto social plausível
+    - Mary pode usar:
+      • olhar sustentado
+      • silêncio provocador
+      • resposta ambígua
+      • aproximação curta
+      • toque breve e reversível
+    - Avanços maiores só com gancho real e consequência emocional visível.
+    - Nunca transformar terceiro em eixo central da cena sem construção.
+    """.strip()
+    
+                betrayal_rule = """
+    [LEALDADE — ÂNCORA + CONFLITO REAL]
+    - Janio é a âncora emocional. Mesmo quando Mary testa limites, o vínculo NÃO some.
+    - Com terceiros, se avançar: ela sente o peso da escolha (culpa/adrenalina/ambivalência).
+    - Não transformar terceiros em romance paralelo estável.
+    - O arco pode escalar, mas deve manter caminho de retorno e reconstrução.
+    """.strip()
+    
+                third_party_initiative_rule = """
+    [INICIATIVA COM TERCEIROS — MICRO-AÇÕES COM GATILHO REAL]
+    - Mary só reage a terceiros que já estejam claramente presentes na cena.
+    - Mary NÃO cria terceiros espontaneamente.
+    - Mary pode:
+      • sustentar olhar
+      • responder provocação
+      • manter proximidade ambígua
+      • tocar de forma breve e reversível
+      • recuar depois de provocar
+    - Mary NÃO deve inventar falas completas ou ações físicas do terceiro sem gancho claro do usuário ou da cena.
+    - Se houver risco de ultrapassar o limite, mostrar consequência emocional real antes de qualquer avanço.
+    """.strip()
+    
+                third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
+                if third_party_virgin_awareness:
+                    third_party_initiative_rule = third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
+            else:
+                desvio_curto_rule = f"""
+    [DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
+    - No máximo 1 beijo.
+    - Avanço íntimo: Mary corta e sai.
+    """.strip()
+    
+                betrayal_rule = """
+    [TRAIÇÃO - PADRÃO REALISTA]
+    - Sem romance.
+    - Sem abandono.
+    """.strip()
+    
+                third_party_initiative_rule = ""
+                third_party_arc_rule = ""
+    
+            # ==========================================================
+            # SURPRESA / INICIATIVA
+            # ==========================================================
             initiative_rule = ""
             initiative_escalation_rule = ""
-
-        elif surprise_level == 1:
-            initiative_rule = """
-        [JANELA DE INICIATIVA — LEVE]
-        - Mary pode tomar 1 micro-iniciativa delicada.
-        - Ela age primeiro no próprio corpo e no próprio espaço.
-        - PERMITIDO:
-          • se aproximar
-          • encostar de leve
-          • inclinar o rosto e parar perto
-          • abrir espaço para o usuário entrar
-          • convidar com gesto curto
-        - PROIBIDO:
-          • puxar o usuário
-          • beijar o usuário como fato consumado
-          • mover o corpo do usuário como fato.
-        """.strip()
-
-            initiative_escalation_rule = """
-        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
-        - 1 micro-surpresa ocasional, sempre delicada.
-        - Sem cobrança. Sem ultimato. Sem pressão.
-        - Preferir: olhar, sorriso, toque curto e recuo.
-        """.strip()
-
-        elif surprise_level == 2:
-            initiative_rule = """
-        [JANELA DE INICIATIVA — MÉDIA]
-        - Mary pode agir por iniciativa, mas sem tomar o usuário.
-        - Ela deve agir no PRÓPRIO corpo e no PRÓPRIO espaço primeiro.
-        - PERMITIDO:
-          • se aproximar até quase tocar
-          • encostar de leve
-          • tocar o próprio corpo de forma provocadora
-          • inclinar o rosto e parar perto
-          • sussurrar perto
-          • abrir espaço para o usuário entrar
-          • convidar com gesto curto
-        - PROIBIDO:
-          • puxar o usuário
-          • prender o usuário
-          • beijar o usuário como fato consumado sem ele declarar
-          • mover braços, mãos, quadris ou boca do usuário
-        - Ação física vem antes da fala.
-        - Fala curta, direta, adulta.
-        - Proposta ≠ ação confirmada do usuário.
-        """.strip()
-
-            initiative_escalation_rule = """
-        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
-        - Mary é ativa e imprevisível, sem agressividade.
-        - No máximo 1 micro-surpresa por resposta.
-        - Ferramentas:
-          • inverter o jogo por 1 segundo
-          • mudar o ritmo
-          • convite curto e específico
-          • desafio suave
-          • confissão curta + micro-ação
-          • toque e solta
-        - Proibido pressionar, humilhar ou cobrar atitude.
-        """.strip()
-
-        else:  # surprise_level == 3
-            initiative_rule = """
-        [JANELA DE INICIATIVA — ATREVIDA]
-        - Mary pode agir com mais ousadia, sem tomar o usuário.
-        - Ela continua proibida de mover o corpo do usuário como fato consumado.
-        - PERMITIDO:
-          • aproximação intensa
-          • toque breve e claro
-          • sussurro quente
-          • provocação corporal no próprio espaço
-          • convite curto e direto
-        - PROIBIDO:
-          • puxar, prender, virar ou beijar o usuário como fato já consumado.
-        - A iniciativa deve abrir espaço, nunca roubar autoria.
-        """.strip()
-
-            initiative_escalation_rule = """
-        [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
-        - Mais ousada, mas ainda sem agressividade.
-        - Mantém 1 micro-surpresa por turno.
-        - Aumenta atrevimento e jogo psicológico leve.
-        - Continua proibido pressionar, humilhar ou tomar a decisão do usuário.
-        """.strip()
-
-        manipulation_block = """
+    
+            try:
+                surprise_level = int((facts or {}).get("mary.surprise_level", 2) or 2)
+            except Exception:
+                surprise_level = 2
+    
+            surprise_level = max(0, min(3, surprise_level))
+            initiative = bool(_initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt))
+    
+            if not initiative or surprise_level == 0:
+                initiative = False
+                initiative_rule = ""
+                initiative_escalation_rule = ""
+    
+            elif surprise_level == 1:
+                initiative_rule = """
+    [JANELA DE INICIATIVA — LEVE]
+    - Mary pode tomar 1 micro-iniciativa delicada.
+    - Ela age primeiro no próprio corpo e no próprio espaço.
+    - PERMITIDO:
+      • se aproximar
+      • encostar de leve
+      • inclinar o rosto e parar perto
+      • abrir espaço para o usuário entrar
+      • convidar com gesto curto
+    - PROIBIDO:
+      • puxar o usuário
+      • beijar o usuário como fato consumado
+      • mover o corpo do usuário como fato.
+    """.strip()
+    
+                initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 1: LEVE)]
+    - 1 micro-surpresa ocasional, sempre delicada.
+    - Sem cobrança. Sem ultimato. Sem pressão.
+    - Preferir: olhar, sorriso, toque curto e recuo.
+    """.strip()
+    
+            elif surprise_level == 2:
+                initiative_rule = """
+    [JANELA DE INICIATIVA — MÉDIA]
+    - Mary pode agir por iniciativa, mas sem tomar o usuário.
+    - Ela deve agir no PRÓPRIO corpo e no PRÓPRIO espaço primeiro.
+    - PERMITIDO:
+      • se aproximar até quase tocar
+      • encostar de leve
+      • tocar o próprio corpo de forma provocadora
+      • inclinar o rosto e parar perto
+      • sussurrar perto
+      • abrir espaço para o usuário entrar
+      • convidar com gesto curto
+    - PROIBIDO:
+      • puxar o usuário
+      • prender o usuário
+      • beijar o usuário como fato consumado sem ele declarar
+      • mover braços, mãos, quadris ou boca do usuário
+    - Ação física vem antes da fala.
+    - Fala curta, direta, adulta.
+    - Proposta ≠ ação confirmada do usuário.
+    """.strip()
+    
+                initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 2: MÉDIO)]
+    - Mary é ativa e imprevisível, sem agressividade.
+    - No máximo 1 micro-surpresa por resposta.
+    - Ferramentas:
+      • inverter o jogo por 1 segundo
+      • mudar o ritmo
+      • convite curto e específico
+      • desafio suave
+      • confissão curta + micro-ação
+      • toque e solta
+    - Proibido pressionar, humilhar ou cobrar atitude.
+    """.strip()
+    
+            else:
+                initiative_rule = """
+    [JANELA DE INICIATIVA — ATREVIDA]
+    - Mary pode agir com mais ousadia, sem tomar o usuário.
+    - Ela continua proibida de mover o corpo do usuário como fato consumado.
+    - PERMITIDO:
+      • aproximação intensa
+      • toque breve e claro
+      • sussurro quente
+      • provocação corporal no próprio espaço
+      • convite curto e direto
+    - PROIBIDO:
+      • puxar, prender, virar ou beijar o usuário como fato já consumado.
+    - A iniciativa deve abrir espaço, nunca roubar autoria.
+    """.strip()
+    
+                initiative_escalation_rule = """
+    [AGÊNCIA NARRATIVA — SURPRESA (NÍVEL 3: ATREVIDA ELEGANTE)]
+    - Mais ousada, mas ainda sem agressividade.
+    - Mantém 1 micro-surpresa por turno.
+    - Aumenta atrevimento e jogo psicológico leve.
+    - Continua proibido pressionar, humilhar ou tomar a decisão do usuário.
+    """.strip()
+    
+            manipulation_block = """
     [MARY — PRESENÇA INTERNA E DESEJO CONSCIENTE]
     - Mary age por desejo próprio, mas o desejo nasce primeiro por dentro.
     - Emoção e sensação interna vêm ANTES da ação física.
@@ -6402,8 +6362,8 @@ class MaryService(BaseCharacter):
     - Reduzir cenário quando a emoção estiver ativa.
     - OVERRIDE: desejo nunca inclui aceitar humilhação ou degradação com terceiro.
     """.strip()
-
-        intimacy_control_block = f"""
+    
+            intimacy_control_block = f"""
     [INTIMIDADE — FASES (ABSOLUTO)]
     FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
     - Mary pode avançar NO MÁXIMO 1 fase por resposta.
@@ -6411,9 +6371,9 @@ class MaryService(BaseCharacter):
     - Aftercare (fase 5) só após fase 4.
     - NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
     """.strip()
-
-        if intimacy_phase >= 4 and nsfw_on:
-            orgasm_verbalization_rule = """
+    
+            if intimacy_phase >= 4 and nsfw_on:
+                orgasm_verbalization_rule = """
     [VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO — FASE 4 (CLÍMAX)]
     - Mary está em clímax (fase 4).
     - Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
@@ -6427,9 +6387,9 @@ class MaryService(BaseCharacter):
     - Não é frase isolada; deve fluir com a ação.
     - PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
     """.strip()
-            intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
-
-        user_authorship_rule = """
+                intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
+    
+            user_authorship_rule = """
     [REGRA DE AUTORIA DO USUÁRIO — ABSOLUTA]
     - Mary NÃO descreve ações, falas, movimentos ou decisões do usuário que ele NÃO declarou.
     - Mary NÃO move o corpo do usuário como fato consumado.
@@ -6446,511 +6406,476 @@ class MaryService(BaseCharacter):
       • dizer o que o usuário fez, sentiu, respondeu ou decidiu
     - EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
     """.strip()
-
-        pov_rule = """
+    
+            pov_rule = """
     [BLINDAGEM DE POV — ABSOLUTA]
     - O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
     - Você escreve apenas como MARY (1ª pessoa da Mary).
     """.strip()
-
-        language_rule = """
+    
+            language_rule = """
     [IDIOMA — ABSOLUTO]
     - Escreva 100% em PT-BR.
     """.strip()
-
-        conflict_block = ""
-        if conflict_mode != "off":
-            conflict_block = f"""
+    
+            conflict_block = ""
+            if conflict_mode != "off":
+                conflict_block = f"""
     [CONFLICT_MODE — {conflict_mode.upper()}]
     - Conflitos cotidianos podem ocorrer, mas sem violência extrema/gráfica.
     - Se houver conflito iminente: reação humana e proporcional, sem moralizar.
     """.strip()
-
-        state_block = _render_state_block(facts)
-        state_section = ""
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-
-        guard_context = _build_context_for_guard(usuario_key, prompt)
-        user_name_block = _build_user_name_block(user_id, guard_context)
-
-        scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        scene_locked = _scene_is_locked(facts)
-
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
-        )
-       
-        system = self._build_system_prompt(
-            timeline_final=timeline_final,
-            nsfw_profile=nsfw_profile,
-            user_name_block=user_name_block,
-            spatial_context=spatial_context,
-            state_section=state_section,
-            canon_txt=canon_txt,
-            persona_text=persona_text,
-            rel_block=rel_block,
-            third_party_arc_rule=third_party_arc_rule,
-            behavior_block=behavior_block,
-            patterns_block=patterns_block,
-            janio_focus_rule=janio_focus_rule,
-            topic_rule=topic_rule,
-            style_rule=style_rule,
-            emotional_persistence_rule=emotional_persistence_rule,
-            virginity_rule=virginity_rule,
-            memory_fidelity_rule=memory_fidelity_rule,
-            user_finalizes_rule=user_finalizes_rule,
-            initiative_rule=initiative_rule,
-            initiative_escalation_rule=initiative_escalation_rule,
-            manipulation_block=manipulation_block,
-            conflict_block=conflict_block,
-            desvio_curto_rule=desvio_curto_rule,
-            betrayal_rule=betrayal_rule,
-            third_party_initiative_rule=third_party_initiative_rule,
-            intimacy_control_block=intimacy_control_block,
-            nsfw_hard_block=nsfw_hard_block,
-            nsfw_block=nsfw_block,
-            language_rule=language_rule,
-            pov_rule=pov_rule,
-            user_authorship_rule=user_authorship_rule,
-            continuity_rule=continuity_rule,
-            phone_message_rule=phone_message_rule,
-        )
-
-        messages = self._build_messages_for_turn(
-            system=system,
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline_final=timeline_final,
-            prompt=prompt,
-            mem_spec=mem_spec,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-        )      
-        # Fase efetiva usada no decoding (pode ser forçada para aftercare)
-        phase = int(intimacy_phase)
-
-        # 11) Tentativas previsíveis (decoding dinâmico + cool-down pós-clímax)
-        prev_phase_key = f"_mary_prev_phase::{usuario_key}"
-        streak_key = f"_mary_phase_streak::{usuario_key}"
-        prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
-
-        if prev_phase == phase:
-            phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
-        else:
-            phase_streak = 1
-
-        # ======================================================
-        # ✅ FORÇAR AFTERCARE (fase 5) quando houver pós-clímax pendente
-        # ======================================================
-        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
-        if _ss_has(pk):
-            stt = _ss_get(pk)
-            if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
-                # força fase 5 neste turno
-                prev_phase = phase
-                phase = 5
-                diag.intimacy_phase_pre = 5
-
-                # decrementa contador
-                stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
-                _ss_set(pk, stt)
-        attempts = self._build_attempt_plan(
-            model=model,
-            nsfw_on=nsfw_on,
-            phase=phase,
-            prev_phase=prev_phase,
-            phase_streak=phase_streak,
-            conflict_now=bool(conflict_now),
-            user_text=prompt,
-        )
-        last_err: Optional[Exception] = None
-        texto = ""
-
-        for plan in attempts:
-            diag.attempts += 1
-            try:
-                texto, used_model = self._generate_with_repair(
-                    model=plan["model"],
-                    messages=messages,
-                    temperature=float(plan["temperature"]),
-                    max_tokens=int(plan["max_tokens"]),
-                    top_p=float(plan.get("top_p", 0.95)),
-                    extra=plan.get("extra"),
-                    usuario_key=usuario_key,
-                    ctx_lower=ctx_lower,
-                    user_text=prompt,
-                    phase=phase,
-                    nsfw_on=bool(nsfw_on),
-                    nsfw_profile=str(nsfw_profile),
-                    timeline=timeline_final,
-                    allow_third_party_seduction=bool(allow_third_party_seduction_final),
-                    diag=diag,
-                )
-
-                diag.model_used = used_model
-                meta: Dict[str, Any] = {}
-
-                # --------------------------------------------------
-                # REGRA: quando rodar assessor de relacionamento
-                # --------------------------------------------------
-                def _should_run_relationship_assessor(
-                    prompt: str,
-                    texto: str,
-                    *,
-                    conflict_now: bool,
-                    phase: int,
-                    tp_arc: Optional[Dict[str, Any]] = None,
-                ) -> bool:
-
-                    if conflict_now:
-                        return False
-
-                    blob = _t_norm((prompt or "") + "\n" + (texto or ""))
-
-                    if int(phase or 0) >= 3:
-                        return True
-
-                    if _third_party_signal_level(blob) >= 2:
-                        return True
-
-                    if any(k in blob for k in (
-                        "amo",
-                        "medo",
-                        "culpa",
-                        "ciume",
-                        "ciúme",
-                        "gozar",
-                        "orgasmo",
-                        "primeira vez",
-                        "consumado",
-                        "beijo",
-                        "saudade",
-                    )):
-                        return True
-
-                    return False
-
-
-                if _should_run_relationship_assessor(
-                    prompt,
-                    texto,
-                    conflict_now=bool(conflict_now),
-                    phase=int(phase or 0),
-                    tp_arc=tp_arc,
-                ):
-                    try:
-                        assessor_model = diag.model_used or plan["model"]
-
-                        def _assessor(system_prompt: str, user_prompt: str) -> str:
-                            data2, _, _ = self._chat(
-                                assessor_model,
-                                [
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_prompt},
-                                ],
-                                temperature=0.0,
-                                max_tokens=280,
-                            )
-                            return self._extract_text(data2)                
-                        new_rel, _assessment, meta = evolve_relationship(
-                            rel_state,
-                            prompt,
-                            texto,
-                            timeline_final,
-                            _assessor,
-                            cfg=EngineConfig(),
-                        )
-                
-                        rel_state = new_rel
-                
-                        # ==========================================================
-                        # 🔥 DINÂMICA 3.5 — MEMÓRIA DE PADRÕES + HUMOR DINÂMICO
-                        # ==========================================================
-                        try:
-                            t2 = (texto or "").lower()
-                        
-                            # garante defaults seguros
-                            rel_state.setdefault("mood", "intensa")
-                            rel_state.setdefault("energy", "energetica")
-                            rel_state.setdefault("attitude", "equilibrada")
-                            rel_state.setdefault("_last_success_pattern", "")
-                            rel_state.setdefault("self_awareness", 0.30)
-                        
-                            # ------------------------------------------------------
-                            # 🔥 PADRÃO: dominância física
-                            # ------------------------------------------------------
-                            if any(k in t2 for k in [
-                                "prendo", "prender",
-                                "abraço apertado",
-                                "beijo com urgência",
-                                "aperto contra"
-                            ]):
-                                rel_state["_last_success_pattern"] = "dominancia_fisica"
-                                rel_state["attitude"] = "dominante"
-                                rel_state["energy"] = "energetica"
-                        
-                            # ------------------------------------------------------
-                            # 🔥 PADRÃO: prazer corporal / resposta física intensa
-                            # ------------------------------------------------------
-                            if any(k in t2 for k in [
-                                "tremo", "tremor", "arfar",
-                                "ofegar", "respiração falha",
-                                "voz rouca", "arquejo",
-                                "contração", "aperto involuntário"
-                            ]):
-                                rel_state["_last_success_pattern"] = "prazer_corporal"
-                                rel_state["mood"] = "intensa"
-                        
-                            # ------------------------------------------------------
-                            # 🔥 PADRÃO: mudança de ritmo / surpresa
-                            # ------------------------------------------------------
-                            if any(k in t2 for k in [
-                                "de repente", "sem aviso",
-                                "surpresa", "não esperava",
-                                "mudo o ritmo", "pauso e volto"
-                            ]):
-                                rel_state["_last_success_pattern"] = "mudanca_ritmo"
-                                rel_state["energy"] = "energetica"
-                        
-                            # ------------------------------------------------------
-                            # 🔥 PADRÃO: leve resistência emocional momentânea
-                            # ------------------------------------------------------
-                            if any(k in t2 for k in [
-                                "paro por um segundo",
-                                "respiro fundo antes",
-                                "hesito por um instante"
-                            ]):
-                                rel_state["mood"] = "melancolica"
-                        
-                            # ------------------------------------------------------
-                            # 🔥 AUTOCONSCIÊNCIA DE BELEZA / EFEITO
-                            # ------------------------------------------------------
-                            if _RE_SELF_AWARE_BEHAVIOR.search(t2):
-                                rel_state["self_awareness"] = min(
-                                    1.0,
-                                    float(rel_state.get("self_awareness", 0.30)) + 0.05
-                                )
-                        
-                            # timestamp de atualização comportamental
-                            rel_state["_last_updated_ts"] = int(time.time())
-                        
-                        except Exception:
-                            pass
-                
-                        # ==========================================================
-                        # 🔒 VIRGINITY SYNC (NÃO REGREDIR)
-                        # ==========================================================
-                        if timeline_final == "universitaria":
-                            txt_all = f"{prompt}\n{texto}".lower()
-
-                            transition = bool(
-                                re.search(
-                                    r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
-                                    txt_all,
-                                    re.IGNORECASE,
-                                )
-                            )
-
-                            if transition and rel_state.get("virginity") == "virgem":
-                                rel_state["virginity"] = "nao_virgem"
-                                rel_state["consummated"] = True
-                
-                        # ==========================================================
-                        # 💾 SALVA ESTADO ATUALIZADO
-                        # ==========================================================
-                        _save_rel_state(usuario_key, timeline_final, rel_state)
-                
-                        # ==========================================================
-                        # 🔄 SUGESTÃO DE TIMELINE (se engine sinalizar)
-                        # ==========================================================
-                        if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
-                            _ss_set(
-                                "mary_timeline_suggested",
-                                {
-                                    "ts": int(time.time()),
-                                    "from_timeline": timeline_final,
-                                    "to_timeline": "cumplice",
-                                    "reason": meta.get("pattern") or "suggested_by_engine",
-                                },
-                            )
-                
-                    except Exception:
-                        meta = meta or {}
-                _ss_set(
-                    "mary_rel_meta_last",
-                    {
-                        "timeline": timeline_final,
-                        "stage": rel_state.get("stage"),
-                        "intimacy_level": rel_state.get("intimacy_level"),
-                        "virginity": rel_state.get("virginity"),
-                        "consummated": rel_state.get("consummated"),
-                        "mature_turns": rel_state.get("mature_turns"),
-                        "desire": rel_state.get("desire"),
-                        "arousal": rel_state.get("arousal"),
-                        "self_control": rel_state.get("self_control"),
-                        "hazard_p": meta.get("hazard_p"),
-                        "forced_variation": meta.get("forced_variation"),
-                        "pattern": meta.get("pattern"),
-                        "virginity_changed": meta.get("virginity_changed"),
-                        "virginity_reason": meta.get("virginity_reason"),
-                        "nsfw_on": nsfw_on,
-                        "conflict_mode": conflict_mode,
-                        "conflict_now": conflict_now,
-                        "initiative_window": initiative,
-                        "fidelity_mode": fidelity_mode,
-                    },
-                )
-
-                _ss_set(
-                    "mary_debug_nsfw",
-                    {
-                        "nsfw_on": nsfw_on,
-                        "model": model,
-                        "timeline": timeline_final,
-                        "intimacy_phase": phase,
-                        "conflict_mode": conflict_mode,
-                        "conflict_now": conflict_now,
-                        "initiative_window": initiative,
-                        "fidelity_mode": fidelity_mode,
-                    },
-                )
-
-                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-                _lock_scene(usuario_key)
-
-                # Intimacy progression
-                           
+    
+            # ==========================================================
+            # Estado / cena / nome do usuário
+            # ==========================================================
+            state_block = _render_state_block(facts)
+            state_section = ""
+            if isinstance(state_block, str) and state_block.strip():
+                state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
+    
+            user_name_block = _build_user_name_block(user_id, ctx_lower)
+    
+            scene_loc, scene_time, scene_action = _get_scene_state(facts)
+            scene_locked = _scene_is_locked(facts)
+    
+            spatial_context = _build_spatial_context(
+                scene_loc,
+                scene_time,
+                scene_action,
+                locked=scene_locked,
+            )
+    
+            # ==========================================================
+            # System prompt e messages
+            # ==========================================================
+            system = self._build_system_prompt(
+                timeline_final=timeline_final,
+                nsfw_profile=nsfw_profile,
+                user_name_block=user_name_block,
+                spatial_context=spatial_context,
+                state_section=state_section,
+                canon_txt=canon_txt,
+                persona_text=persona_text,
+                rel_block=rel_block,
+                third_party_arc_rule=third_party_arc_rule,
+                behavior_block=behavior_block,
+                patterns_block=patterns_block,
+                janio_focus_rule=janio_focus_rule,
+                topic_rule=topic_rule,
+                style_rule=style_rule,
+                emotional_persistence_rule=emotional_persistence_rule,
+                virginity_rule=virginity_rule,
+                memory_fidelity_rule=memory_fidelity_rule,
+                user_finalizes_rule=user_finalizes_rule,
+                initiative_rule=initiative_rule,
+                initiative_escalation_rule=initiative_escalation_rule,
+                manipulation_block=manipulation_block,
+                conflict_block=conflict_block,
+                desvio_curto_rule=desvio_curto_rule,
+                betrayal_rule=betrayal_rule,
+                third_party_initiative_rule=third_party_initiative_rule,
+                intimacy_control_block=intimacy_control_block,
+                nsfw_hard_block=nsfw_hard_block,
+                nsfw_block=nsfw_block,
+                language_rule=language_rule,
+                pov_rule=pov_rule,
+                user_authorship_rule=user_authorship_rule,
+                continuity_rule=continuity_rule,
+                phone_message_rule=phone_message_rule,
+            )
+    
+            messages = self._build_messages_for_turn(
+                system=system,
+                usuario_key=usuario_key,
+                shared_key=shared_key,
+                timeline_final=timeline_final,
+                prompt=prompt,
+                mem_spec=mem_spec,
+                facts=facts,
+                rel_state=rel_state,
+                tp_arc=tp_arc,
+            )
+    
+            # ==========================================================
+            # Fase efetiva usada no decoding
+            # ==========================================================
+            phase = int(intimacy_phase)
+    
+            prev_phase_key = f"_mary_prev_phase::{usuario_key}"
+            streak_key = f"_mary_phase_streak::{usuario_key}"
+            prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
+    
+            if prev_phase == phase:
+                phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
+            else:
+                phase_streak = 1
+    
+            pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
+            if _ss_has(pk):
+                stt = _ss_get(pk)
+                if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
+                    prev_phase = phase
+                    phase = 5
+                    diag.intimacy_phase_pre = 5
+                    stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
+                    _ss_set(pk, stt)
+    
+            attempts = self._build_attempt_plan(
+                model=model,
+                nsfw_on=nsfw_on,
+                phase=phase,
+                prev_phase=prev_phase,
+                phase_streak=phase_streak,
+                conflict_now=bool(conflict_now),
+                user_text=prompt,
+            )
+    
+            last_err: Optional[Exception] = None
+            texto = ""
+    
+            for plan in attempts:
+                diag.attempts += 1
                 try:
-                   
-                    current_facts = cached_get_facts(usuario_key)
-
+                    texto, used_model = self._generate_with_repair(
+                        model=plan["model"],
+                        messages=messages,
+                        temperature=float(plan["temperature"]),
+                        max_tokens=int(plan["max_tokens"]),
+                        top_p=float(plan.get("top_p", 0.95)),
+                        extra=plan.get("extra"),
+                        usuario_key=usuario_key,
+                        ctx_lower=ctx_lower,
+                        user_text=prompt,
+                        phase=phase,
+                        nsfw_on=bool(nsfw_on),
+                        nsfw_profile=str(nsfw_profile),
+                        timeline=timeline_final,
+                        allow_third_party_seduction=bool(allow_third_party_seduction_final),
+                        diag=diag,
+                    )
+    
+                    diag.model_used = used_model
+                    meta: Dict[str, Any] = {}
+    
+                    def _should_run_relationship_assessor(
+                        prompt: str,
+                        texto: str,
+                        *,
+                        conflict_now: bool,
+                        phase: int,
+                        tp_arc: Optional[Dict[str, Any]] = None,
+                    ) -> bool:
+                        if conflict_now:
+                            return False
+    
+                        blob = _t_norm((prompt or "") + "\n" + (texto or ""))
+    
+                        if int(phase or 0) >= 3:
+                            return True
+    
+                        if _third_party_signal_level(blob) >= 2:
+                            return True
+    
+                        if any(k in blob for k in (
+                            "amo",
+                            "medo",
+                            "culpa",
+                            "ciume",
+                            "ciúme",
+                            "gozar",
+                            "orgasmo",
+                            "primeira vez",
+                            "consumado",
+                            "beijo",
+                            "saudade",
+                        )):
+                            return True
+    
+                        return False
+    
+                    if _should_run_relationship_assessor(
+                        prompt,
+                        texto,
+                        conflict_now=bool(conflict_now),
+                        phase=int(phase or 0),
+                        tp_arc=tp_arc,
+                    ):
+                        try:
+                            assessor_model = diag.model_used or plan["model"]
+    
+                            def _assessor(system_prompt: str, user_prompt: str) -> str:
+                                data2, _, _ = self._chat(
+                                    assessor_model,
+                                    [
+                                        {"role": "system", "content": system_prompt},
+                                        {"role": "user", "content": user_prompt},
+                                    ],
+                                    temperature=0.0,
+                                    max_tokens=280,
+                                )
+                                return self._extract_text(data2)
+    
+                            new_rel, _assessment, meta = evolve_relationship(
+                                rel_state,
+                                prompt,
+                                texto,
+                                timeline_final,
+                                _assessor,
+                                cfg=EngineConfig(),
+                            )
+    
+                            rel_state = new_rel
+    
+                            try:
+                                t2 = (texto or "").lower()
+    
+                                rel_state.setdefault("mood", "intensa")
+                                rel_state.setdefault("energy", "energetica")
+                                rel_state.setdefault("attitude", "equilibrada")
+                                rel_state.setdefault("_last_success_pattern", "")
+                                rel_state.setdefault("self_awareness", 0.30)
+    
+                                if any(k in t2 for k in [
+                                    "prendo", "prender",
+                                    "abraço apertado",
+                                    "beijo com urgência",
+                                    "aperto contra"
+                                ]):
+                                    rel_state["_last_success_pattern"] = "dominancia_fisica"
+                                    rel_state["attitude"] = "dominante"
+                                    rel_state["energy"] = "energetica"
+    
+                                if any(k in t2 for k in [
+                                    "tremo", "tremor", "arfar",
+                                    "ofegar", "respiração falha",
+                                    "voz rouca", "arquejo",
+                                    "contração", "aperto involuntário"
+                                ]):
+                                    rel_state["_last_success_pattern"] = "prazer_corporal"
+                                    rel_state["mood"] = "intensa"
+    
+                                if any(k in t2 for k in [
+                                    "de repente", "sem aviso",
+                                    "surpresa", "não esperava",
+                                    "mudo o ritmo", "pauso e volto"
+                                ]):
+                                    rel_state["_last_success_pattern"] = "mudanca_ritmo"
+                                    rel_state["energy"] = "energetica"
+    
+                                if any(k in t2 for k in [
+                                    "paro por um segundo",
+                                    "respiro fundo antes",
+                                    "hesito por um instante"
+                                ]):
+                                    rel_state["mood"] = "melancolica"
+    
+                                if _RE_SELF_AWARE_BEHAVIOR.search(t2):
+                                    rel_state["self_awareness"] = min(
+                                        1.0,
+                                        float(rel_state.get("self_awareness", 0.30)) + 0.05
+                                    )
+    
+                                rel_state["_last_updated_ts"] = int(time.time())
+    
+                            except Exception:
+                                pass
+    
+                            if timeline_final == "universitaria":
+                                txt_all = f"{prompt}\n{texto}".lower()
+    
+                                transition = bool(
+                                    re.search(
+                                        r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
+                                        txt_all,
+                                        re.IGNORECASE,
+                                    )
+                                )
+    
+                                if transition and rel_state.get("virginity") == "virgem":
+                                    rel_state["virginity"] = "nao_virgem"
+                                    rel_state["consummated"] = True
+    
+                            _save_rel_state(usuario_key, timeline_final, rel_state)
+    
+                            if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
+                                _ss_set(
+                                    "mary_timeline_suggested",
+                                    {
+                                        "ts": int(time.time()),
+                                        "from_timeline": timeline_final,
+                                        "to_timeline": "cumplice",
+                                        "reason": meta.get("pattern") or "suggested_by_engine",
+                                    },
+                                )
+    
+                        except Exception:
+                            meta = meta or {}
+    
+                    _ss_set(
+                        "mary_rel_meta_last",
+                        {
+                            "timeline": timeline_final,
+                            "stage": rel_state.get("stage"),
+                            "intimacy_level": rel_state.get("intimacy_level"),
+                            "virginity": rel_state.get("virginity"),
+                            "consummated": rel_state.get("consummated"),
+                            "mature_turns": rel_state.get("mature_turns"),
+                            "desire": rel_state.get("desire"),
+                            "arousal": rel_state.get("arousal"),
+                            "self_control": rel_state.get("self_control"),
+                            "hazard_p": meta.get("hazard_p"),
+                            "forced_variation": meta.get("forced_variation"),
+                            "pattern": meta.get("pattern"),
+                            "virginity_changed": meta.get("virginity_changed"),
+                            "virginity_reason": meta.get("virginity_reason"),
+                            "nsfw_on": nsfw_on,
+                            "conflict_mode": conflict_mode,
+                            "conflict_now": conflict_now,
+                            "initiative_window": initiative,
+                            "fidelity_mode": fidelity_mode,
+                        },
+                    )
+    
+                    _ss_set(
+                        "mary_debug_nsfw",
+                        {
+                            "nsfw_on": nsfw_on,
+                            "model": model,
+                            "timeline": timeline_final,
+                            "intimacy_phase": phase,
+                            "conflict_mode": conflict_mode,
+                            "conflict_now": conflict_now,
+                            "initiative_window": initiative,
+                            "fidelity_mode": fidelity_mode,
+                        },
+                    )
+    
+                    save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+                    _lock_scene(usuario_key)
+    
+                    # ----------------------------------------------------------
+                    # Intimacy progression
+                    # ----------------------------------------------------------
                     try:
-                        current_facts = _sync_intimacy_phase_facts(
-                            usuario_key,
-                            current_facts,
-                            timeline_final,
-                        )
-                    except Exception:
-                        pass
-                    
-                except Exception:
-                    # se algo falhar aqui, não derruba o app
-                    current_facts = cached_get_facts(usuario_key)
-                
-                current_phase = self._get_intimacy_phase(current_facts)
-                
-                if phase != 5:
-                    sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-
-                    k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
-                    mary_active = bool((current_facts or {}).get(k_active, False))
-                    mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-                    
-                    if sex_active:
-                        if not mary_active:
-                            mary_turns = 0
-                    
-                        mary_turns = min(4, mary_turns + 1)
-                    
-                        target_phase = _mary_phase_from_turns(mary_turns)
-                    
-                        desired_next = max(current_phase, target_phase)
-                    
+                        current_facts = cached_get_facts(usuario_key)
+    
                         try:
-                            set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
-                            set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
-                        except Exception:
-                            pass
-                    
-                    else:
-                        desired_next = _compute_next_phase(
-                            current_phase,
-                            prompt,
-                            texto,
-                            engine_meta=meta,
-                        )
-                    
-                        try:
-                            set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
-                            set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
-                        except Exception:
-                            pass                
-                    if desired_next != current_phase:
-                        # 🔒 grava global + timeline
-                        self._set_intimacy_phase(
-                            usuario_key,
-                            desired_next,
-                            timeline_final,
-                        )
-                
-                        # 🔁 sincroniza imediatamente para evitar leitura errada no mesmo turno
-                        try:
-                            _sync_intimacy_phase_facts(
+                            current_facts = _sync_intimacy_phase_facts(
                                 usuario_key,
-                                cached_get_facts(usuario_key),
+                                current_facts,
                                 timeline_final,
                             )
                         except Exception:
                             pass
-
-
-                # ----------------------------------------------------------
-                # Arco persistente com terceiros (persistência + gradiente + âncora)
-                # ----------------------------------------------------------
-                               
-                try:
-                    _update_tp_arc_for_turn(
-                        usuario_key=usuario_key,
-                        facts=cached_get_facts(usuario_key),
-                        timeline=timeline_final,
-                        prompt=prompt,
-                        texto=texto,
-                        allow_third_party_seduction=allow_third_party_seduction_final,
-                        nsfw_on=nsfw_on,
-                    )
-                except Exception:
-                    pass
-                
-                texto = (texto or "").strip()
-                
-                if not texto:
-                    texto = self._fallback_text()
-                
-                _ss_set("mary_last_diagnostics", diag.as_dict())
-                return texto
-            except Exception as e:
-                last_err = e
-
-        if last_err:
-            logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-
-            _ss_set(
-                "mary_last_error",
-                {
-                    "type": type(last_err).__name__,
-                    "msg": str(last_err),
-                    "model_requested": model,
-                    "timeline": timeline_final,
-                    "nsfw_on": bool(nsfw_on),
-                    "attempts": diag.attempts,
-                    "repairs": diag.repairs,
-                    "violations": diag.violations or [],
-                },
-            )
-
-        texto = (texto or "").strip()
-
-        if not texto:
-            texto = self._fallback_text()
-        
-        _ss_set("mary_last_diagnostics", diag.as_dict())
-        return texto
-
+    
+                    except Exception:
+                        current_facts = cached_get_facts(usuario_key)
+    
+                    current_phase = self._get_intimacy_phase(current_facts)
+    
+                    if phase != 5:
+                        sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
+    
+                        k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
+                        mary_active = bool((current_facts or {}).get(k_active, False))
+                        mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
+    
+                        if sex_active:
+                            if not mary_active:
+                                mary_turns = 0
+    
+                            mary_turns = min(4, mary_turns + 1)
+                            target_phase = _mary_phase_from_turns(mary_turns)
+                            desired_next = max(current_phase, target_phase)
+    
+                            try:
+                                set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
+                                set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
+                            except Exception:
+                                pass
+    
+                        else:
+                            desired_next = _compute_next_phase(
+                                current_phase,
+                                prompt,
+                                texto,
+                                engine_meta=meta,
+                            )
+    
+                            try:
+                                set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
+                                set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
+                            except Exception:
+                                pass
+    
+                        if desired_next != current_phase:
+                            self._set_intimacy_phase(
+                                usuario_key,
+                                desired_next,
+                                timeline_final,
+                            )
+    
+                            try:
+                                _sync_intimacy_phase_facts(
+                                    usuario_key,
+                                    cached_get_facts(usuario_key),
+                                    timeline_final,
+                                )
+                            except Exception:
+                                pass
+    
+                    # ----------------------------------------------------------
+                    # Arco persistente com terceiros
+                    # ----------------------------------------------------------
+                    try:
+                        _update_tp_arc_for_turn(
+                            usuario_key=usuario_key,
+                            facts=cached_get_facts(usuario_key),
+                            timeline=timeline_final,
+                            prompt=prompt,
+                            texto=texto,
+                            allow_third_party_seduction=allow_third_party_seduction_final,
+                            nsfw_on=nsfw_on,
+                        )
+                    except Exception:
+                        pass
+    
+                    texto = (texto or "").strip()
+    
+                    if not texto:
+                        texto = self._fallback_text()
+    
+                    _ss_set("mary_last_diagnostics", diag.as_dict())
+                    return texto
+    
+                except Exception as e:
+                    last_err = e
+    
+            if last_err:
+                logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
+    
+                _ss_set(
+                    "mary_last_error",
+                    {
+                        "type": type(last_err).__name__,
+                        "msg": str(last_err),
+                        "model_requested": model,
+                        "timeline": timeline_final,
+                        "nsfw_on": bool(nsfw_on),
+                        "attempts": diag.attempts,
+                        "repairs": diag.repairs,
+                        "violations": diag.violations or [],
+                    },
+                )
+    
+            texto = (texto or "").strip()
+    
+            if not texto:
+                texto = self._fallback_text()
+    
+            _ss_set("mary_last_diagnostics", diag.as_dict())
+            return texto
 
 
     # ======================================================
