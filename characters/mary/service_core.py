@@ -1134,7 +1134,14 @@ def _fallback_local_long_memory_search(
         if kind in ("canon",):
             continue
 
+        history = cached_get_history(usuario_key, limit=40)
+
+        # impede latent memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
+        # impede latent memory de reacender estados emocionais superados
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
 
         score = _score_long_memory_local(d, prompt)
@@ -1746,6 +1753,88 @@ def _memory_conflicts_with_truth(
     if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")):
         if arc_blob:
             return True
+
+    return False
+
+def _recent_emotion_signature(history: List[Dict[str, Any]], *, last_turns: int = 6) -> str:
+    """
+    Consolida os últimos turnos em um blob textual leve para detectar
+    o clima emocional recente da conversa.
+    """
+    if not history:
+        return ""
+
+    parts: List[str] = []
+    for d in history[-max(1, int(last_turns)):]:
+        if not isinstance(d, dict):
+            continue
+
+        u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
+        a = str(d.get("resposta_mary") or d.get("response") or "").strip()
+
+        if u:
+            parts.append(u)
+        if a:
+            parts.append(a)
+
+    return _t_norm(" \n ".join(parts))
+
+
+def _memory_conflicts_with_recent_emotion(
+    mem_text: str,
+    *,
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    """
+    Retorna True quando a memória reativada tenta puxar Mary para um estado
+    emocional incompatível com o que foi estabilizado nos últimos turnos.
+
+    Objetivo:
+    - impedir regressão emocional sem gatilho atual;
+    - evitar que memória antiga reacenda traição/culpa/ameaça quando
+      a conversa recente já desarmou isso.
+    """
+    txt = _t_norm(mem_text or "")
+    if not txt:
+        return False
+
+    h = history or []
+    recent = _recent_emotion_signature(h, last_turns=6)
+    if not recent:
+        return False
+
+    calming_terms = {
+        "alivio", "alívio", "aliviada", "mais calma", "calma", "tranquila",
+        "segura", "seguro", "acolhida", "acolhido", "conforto", "mais leve",
+        "relaxada", "relaxado", "em paz", "confiante", "protegida", "protegido"
+    }
+
+    bond_terms = {
+        "com voce", "com você", "com janio", "me sinto bem", "eu confio",
+        "te amo", "te quero aqui", "fiquei melhor", "me acalmou",
+        "me sinto segura", "me senti segura", "alivio ao te ver", "alívio ao te ver"
+    }
+
+    suspicion_terms = {
+        "traicao", "traição", "culpa", "ameaca", "ameaça", "risco",
+        "desconfiada", "desconfiado", "ciume", "ciúme", "terceiro",
+        "medo de perder", "infidelidade", "segredo perigoso"
+    }
+
+    shame_terms = {
+        "vergonha", "culpada", "culpado", "repulsa", "nojo", "arrependida",
+        "arrependido", "me afasto", "me fecho", "recuo dele", "recuo dela"
+    }
+
+    recent_has_calming = any(t in recent for t in calming_terms)
+    recent_has_bond = any(t in recent for t in bond_terms)
+
+    mem_has_suspicion = any(t in txt for t in suspicion_terms)
+    mem_has_shame = any(t in txt for t in shame_terms)
+
+    # se os últimos turnos estabilizaram Mary, não reabrir ameaça/culpa antiga
+    if (recent_has_calming or recent_has_bond) and (mem_has_suspicion or mem_has_shame):
+        return True
 
     return False
     
@@ -2670,38 +2759,39 @@ def _inject_memory_block(
     kind: str,
     title: str,
     text: str,
-    tags: List[str],
-    source: str,
+    tags: Optional[List[str]] = None,
+    source: str = "memory",
 ) -> None:
-    """Insere uma memória como system (pequena e sem meta-vazamento)."""
-    blob = text.strip()
-    if not blob:
+    """
+    Injeta memória como CONTEXTO AUXILIAR, sem disputar topo de hierarquia
+    com o system base nem com o histórico recente.
+    """
+    txt = str(text or "").strip()
+    if not txt:
         return
-    # corte de tamanho (guardrail)
-    blob = blob[:600].rstrip()
-    ttags = ", ".join([t.strip() for t in tags if t.strip()][:10])
-    hdr_parts = []
-    if title:
-        hdr_parts.append(f"Título: {title}")
-    if kind:
-        hdr_parts.append(f"Tipo: {kind}")
-    if ttags:
-        hdr_parts.append(f"Tags: {ttags}")
-    header = (" | ".join(hdr_parts)).strip()
 
-    content = (
-        f"[MEMÓRIA REATIVADA — {source.upper()}]\n"
-        + (header + "\n" if header else "")
-        + blob
-        + "\n\nRegras: use esta memória como CONTEXTO. Não cite tags/headers ao usuário."
+    k = str(kind or "memory").strip().lower()
+    ttl = str(title or "").strip()
+    tg = [str(x).strip() for x in (tags or []) if str(x).strip()]
+
+    header = f"[MEMÓRIA AUXILIAR — {source.upper()}]"
+    if k:
+        header += f"\nTipo: {k}"
+    if ttl:
+        header += f"\nTítulo: {ttl}"
+    if tg:
+        header += f"\nTags: {', '.join(tg[:8])}"
+
+    block = (
+        f"{header}\n"
+        "Use apenas como apoio de coerência.\n"
+        "Não sobrescreva o estado emocional estabelecido nas últimas interações.\n"
+        "Não cite literalmente esta memória.\n\n"
+        f"{txt}"
     ).strip()
 
-    # Insere após o primeiro system (persona), para manter hierarquia
-    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-        messages.insert(1, {"role": "system", "content": content})
-    else:
-        messages.insert(0, {"role": "system", "content": content})
-
+    # ✅ append, não insert(1)
+    messages.append({"role": "system", "content": block})
 def _inject_manual_memory_if_any(
     *,
     usuario_key: str,
@@ -2750,7 +2840,14 @@ def _inject_manual_memory_if_any(
             continue
 
         # impede manual memory de competir com facts/canon do turno
+        history = cached_get_history(usuario_key, limit=40)
+
+        # impede manual memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
+        # impede regressão emocional contra o histórico recente
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
 
         tags = _parse_tags_from_memory(txt)
@@ -2856,7 +2953,14 @@ def _inject_latent_memory_if_any(
             continue
 
         # impede latent memory de competir com facts/canon do turno
+        history = cached_get_history(usuario_key, limit=40)
+
+        # impede latent memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
+        # impede latent memory de reacender estados emocionais superados
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
 
         tags = _parse_tags_from_memory(txt)
@@ -5576,11 +5680,10 @@ class MaryService(BaseCharacter):
         dedupe_hashes: set = set()
     
         # ==========================================================
-        # CONTEXTO ATUAL DA CENA
+        # 1) CONTEXTO ESTRUTURAL — verdade do universo
         # ==========================================================
         _inject_now_context(messages, usuario_key, timeline_final)
     
-        # INTRO apenas uma vez
         _inject_intro_as_context_once(
             usuario_key,
             timeline_final,
@@ -5588,15 +5691,11 @@ class MaryService(BaseCharacter):
             messages,
         )
     
-        # ==========================================================
-        # MEMÓRIAS ESTRUTURAIS
-        # ==========================================================
-    
         _inject_canon_memories_always(
             shared_key,
             timeline_final,
             messages,
-            max_items=12,  # antes 24 (reduz tokens)
+            max_items=12,
             dedupe_bucket=dedupe_hashes,
         )
     
@@ -5604,19 +5703,98 @@ class MaryService(BaseCharacter):
             shared_key,
             timeline_final,
             messages,
-            max_items=4,  # antes 6
+            max_items=4,
             dedupe_bucket=dedupe_hashes,
         )
     
         # ==========================================================
-        # HISTÓRICO RECENTE
+        # 2) MEMÓRIAS AUXILIARES — apoio, nunca norte emocional
         # ==========================================================
+        if _should_inject_summary(usuario_key, every_n=8):
+            _inject_consolidated_summary(
+                shared_key,
+                timeline_final,
+                messages,
+                dedupe_bucket=dedupe_hashes,
+            )
     
+        if _should_inject_long_memory(prompt):
+            _inject_long_memory_textsearch(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                limit=4,
+                dedupe_bucket=dedupe_hashes,
+                facts=facts,
+            )
+    
+            _inject_relevant_memories(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                k=3,
+                dedupe_bucket=dedupe_hashes,
+            )
+    
+        if _should_inject_soft_context(
+            prompt,
+            facts=facts,
+            rel_state=rel_state,
+            tp_arc=tp_arc,
+        ):
+            _inject_shared_soft_context(
+                shared_key,
+                timeline_final,
+                messages,
+                max_items=3,
+                dedupe_bucket=dedupe_hashes,
+            )
+    
+        _inject_manual_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            spec=mem_spec,
+            facts=facts,
+        )
+    
+        tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
+    
+        _inject_latent_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            tp_arc=tp_arc_state,
+            facts=facts,
+        )
+    
+        # ==========================================================
+        # 3) HISTÓRICO RECENTE — norte emocional de Mary
+        # ==========================================================
         history = cached_get_history(usuario_key, limit=80)
     
-        for d in history[-10:]:  # antes 10
-            u = (d.get("mensagem_usuario") or "").strip()
-            a = (d.get("resposta_mary") or "").strip()
+        messages.append({
+            "role": "system",
+            "content": (
+                "[HIERARQUIA DE CONTINUIDADE]\n"
+                "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade do universo.\n"
+                "- AS ÚLTIMAS INTERAÇÕES governam o estado emocional atual de Mary.\n"
+                "- Memórias reativadas, resumo e arco de terceiros servem apenas como apoio.\n"
+                "- Mary não deve regredir para culpa, suspeita, ciúme ou tensão antiga sem gatilho claro no turno atual.\n"
+                "- Não deixar memória antiga substituir o que acabou de acontecer entre Mary e o usuário."
+            )
+        })
+    
+        for d in history[-12:]:
+            if not isinstance(d, dict):
+                continue
+    
+            u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
+            a = str(d.get("resposta_mary") or d.get("response") or "").strip()
     
             if u:
                 messages.append({
@@ -5631,100 +5809,15 @@ class MaryService(BaseCharacter):
                 })
     
         # ==========================================================
-        # RESUMO PERIÓDICO
+        # 4) PROMPT ATUAL
         # ==========================================================
-    
-        if _should_inject_summary(usuario_key, every_n=8):  # antes 6
-            _inject_consolidated_summary(
-                shared_key,
-                timeline_final,
-                messages,
-                dedupe_bucket=dedupe_hashes,
-            )
-    
-        # ==========================================================
-        # LONG MEMORY SOB DEMANDA
-        # ==========================================================
-    
-        if _should_inject_long_memory(prompt):
-    
-            _inject_long_memory_textsearch(
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                limit=4,  # antes 6
-                dedupe_bucket=dedupe_hashes,
-                facts=facts,
-            )
-    
-            _inject_relevant_memories(
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                k=3,  # antes 4
-                dedupe_bucket=dedupe_hashes,
-            )
-    
-        # ==========================================================
-        # CONTEXTO SOCIAL (REL / ARC)
-        # ==========================================================
-    
-        if _should_inject_soft_context(
-            prompt,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-        ):
-    
-            _inject_shared_soft_context(
-                shared_key,
-                timeline_final,
-                messages,
-                max_items=3,  # antes 4
-                dedupe_bucket=dedupe_hashes,
-            )
-    
-        # ==========================================================
-        # MEMÓRIA MANUAL
-        # ==========================================================
-    
-        _inject_manual_memory_if_any(
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline=timeline_final,
-            messages=messages,
-            spec=mem_spec,
-            facts=facts,
-        )
-    
-        # ==========================================================
-        # MEMÓRIA LATENTE
-        # ==========================================================
-    
-        tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
-    
-        _inject_latent_memory_if_any(
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline=timeline_final,
-            messages=messages,
-            tp_arc=tp_arc_state,
-            facts=facts,
-        )
-    
-        # ==========================================================
-        # PROMPT DO USUÁRIO
-        # ==========================================================
-    
         messages.append({
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
         })
     
         return messages
-
+    
     def _resolve_turn_policy(
         self,
         *,
