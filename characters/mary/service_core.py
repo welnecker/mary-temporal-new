@@ -5081,6 +5081,35 @@ def _tp_arc_key(timeline: str) -> str:
     tl = (timeline or "").strip().lower() or "cumplice"
     return f"third_party::{tl}"
 
+def _refresh_tp_arc_from_sidebar(
+    *,
+    usuario_key: str,
+    timeline: str,
+    nsfw_on: bool,
+    allow_third_party_seduction: bool,
+) -> Dict[str, Any]:
+    """
+    Recalcula imediatamente o arco de terceiros a partir dos toggles do sidebar,
+    sem depender de um novo turno de chat.
+    """
+    try:
+        facts_now = cached_get_facts(usuario_key) or {}
+    except Exception:
+        facts_now = {}
+
+    if not isinstance(facts_now, dict):
+        facts_now = {}
+
+    return _update_tp_arc_for_turn(
+        usuario_key=usuario_key,
+        timeline=timeline,
+        user_text="",
+        mary_text="",
+        nsfw_on=bool(nsfw_on),
+        allow_third_party_seduction=bool(allow_third_party_seduction),
+        facts=facts_now,
+    )
+
 
 def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     """Carrega o arco de terceiros persistido em facts['arc']."""
@@ -5155,12 +5184,24 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
         if not isinstance(arc_root, dict):
             arc_root = {}
 
-        if "anchor" not in arc and isinstance(arc_root.get(arc_key), dict):
-            prev = arc_root.get(arc_key) or {}
-            if isinstance(prev, dict) and "anchor" in prev:
-                arc["anchor"] = prev.get("anchor", 0.85)
+        prev = arc_root.get(arc_key)
+        if not isinstance(prev, dict):
+            prev = {}
 
-        arc_root[arc_key] = arc
+        merged = dict(prev)
+        merged.update(arc or {})
+
+        # sane defaults
+        merged["phase"] = int(merged.get("phase") or 0)
+        merged["mode"] = str(merged.get("mode") or "return")
+        merged["tension"] = _clamp01(merged.get("tension", 0.0))
+        merged["guilt"] = _clamp01(merged.get("guilt", 0.0))
+        merged["anchor"] = _clamp01(merged.get("anchor", 0.85))
+        merged["anchor_backup"] = _clamp01(merged.get("anchor_backup", 0.85))
+        merged["last"] = str(merged.get("last") or "")
+        merged["last_anchor_mode"] = str(merged.get("last_anchor_mode") or "init")
+
+        arc_root[arc_key] = merged
         set_fact_safe(usuario_key, "arc", arc_root, {"fonte": "tp_arc"})
     except Exception:
         pass
@@ -5240,24 +5281,24 @@ def _update_tp_arc_for_turn(
 
     backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
-
-    # 1) anchor fixo
+    
+    # Anchor reage diretamente ao estado atual dos toggles
     if not nsfw_on:
-        anchor = backup
+        arc["anchor"] = round(backup, 2)
         arc["last"] = "nsfw_off"
         arc["last_anchor_mode"] = "nsfw_off_restore_backup"
+    
     elif third_party_on:
-        anchor = 0.20
+        arc["anchor"] = 0.20
         arc["last"] = "third_party_on"
         arc["last_anchor_mode"] = "third_party_on_fixed"
+    
     else:
-        anchor = 0.50
+        arc["anchor"] = 0.50
         arc["last"] = "nsfw_on"
         arc["last_anchor_mode"] = "nsfw_on_fixed"
-
-    arc["anchor"] = round(_clamp01(anchor), 2)
-    freedom = _clamp01(1.0 - arc["anchor"])
-
+    
+    freedom = _clamp01(1.0 - float(arc["anchor"]))
     # 2) limites coerentes com 3 níveis reais
     if arc["anchor"] >= 0.80:   # 0.85
         max_phase_allowed = 2
