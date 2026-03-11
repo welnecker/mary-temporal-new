@@ -2087,34 +2087,49 @@ def _render_app_shell() -> None:
 
                     st.success(f"✅ RESET TOTAL concluído. history={n_hist} | eventos={n_evt} | mems_shared={n_mems}")
                     st.rerun()
+                    
 def _clear_sidebar_state_fields(usuario_key: str) -> None:
-    # limpa estado visual
-    for k in (
-        "state.local",
-        "state.roupa",
-        "state.cabelo",
-        "state.horarios",
-        "state.horario",
-        "state.assunto",
-        "state.desculpa",
-        "state.pendencias",
-    ):
-        set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
+    try:
+        facts_now = cached_get_facts(usuario_key) or {}
+        if not isinstance(facts_now, dict):
+            facts_now = {}
 
-    # limpa cena real
-    for k in (
-        "cena.local",
-        "cena.tempo",
-        "cena.acao",
-        "local_cena_atual",
-    ):
-        set_fact(usuario_key, k, "", {"fonte": "sidebar_state_clear"})
+        state_now = facts_now.get("state")
+        if not isinstance(state_now, dict):
+            state_now = {}
 
-    # destrava a cena
-    set_fact(usuario_key, "cena.locked", False, {"fonte": "sidebar_state_clear"})
+        cena_now = facts_now.get("cena")
+        if not isinstance(cena_now, dict):
+            cena_now = {}
+
+        # limpa bloco state de forma consistente
+        state_now["local"] = ""
+        state_now["roupa"] = ""
+        state_now["cabelo"] = ""
+        state_now["horarios"] = ""
+        state_now["horario"] = ""
+        state_now["assunto"] = ""
+        state_now["desculpa"] = ""
+        state_now["pendencias"] = ""
+
+        # limpa bloco cena de forma consistente
+        cena_now["local"] = ""
+        cena_now["tempo"] = ""
+        cena_now["acao"] = ""
+        cena_now["locked"] = False
+
+        set_fact(usuario_key, "state", state_now, {"fonte": "sidebar_state_clear"})
+        set_fact(usuario_key, "cena", cena_now, {"fonte": "sidebar_state_clear"})
+        set_fact(usuario_key, "local_cena_atual", "", {"fonte": "sidebar_state_clear"})
+
+        _invalidate_backend_cache()
+
+    except Exception:
+        pass
 
     st.session_state["_clear_state_form"] = True
     st.rerun()
+    
 def _render_sidebar() -> None:
     with st.sidebar:
         st.header("Mary – Controles")
@@ -2138,8 +2153,6 @@ def _render_sidebar() -> None:
                 st.session_state["mary_allow_third_party_seduction"] = False
                 st.session_state["persona_label"] = None
                 _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
                 st.rerun()
 
         try:
@@ -2272,17 +2285,15 @@ def _render_sidebar() -> None:
 
         uk = _usuario_key_atual()
         tl = _timeline()
-        
+
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
-        third_before = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-        
+
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
-        
+
         if "mary_allow_third_party_seduction" not in st.session_state:
             st.session_state["mary_allow_third_party_seduction"] = False
-        
-        # Se NSFW desligar, terceiros obrigatoriamente desliga também
+
         if not nsfw_after:
             st.session_state["mary_allow_third_party_seduction"] = False
             try:
@@ -2291,16 +2302,15 @@ def _render_sidebar() -> None:
                 set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
             except Exception:
                 pass
-        
+
         third_after = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-        
-        # Mudou NSFW? persiste + recalcula arc imediatamente
+
         if nsfw_after != nsfw_before:
             try:
                 _persist_nsfw_for_current_timeline_if_needed_inline()
             except Exception:
                 pass
-        
+
             try:
                 _refresh_tp_arc_from_sidebar(
                     usuario_key=uk,
@@ -2310,27 +2320,25 @@ def _render_sidebar() -> None:
                 )
             except Exception:
                 pass
-        
+
             try:
                 _invalidate_backend_cache()
-                _clear_mary_caches_all_related()
-                _kill_all_mary_services()
             except Exception:
                 pass
-        
+
             st.rerun()
-            
+
         if nsfw_after:
             third_before_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-        
+
             st.checkbox(
                 "Permitir Mary ceder a terceiros (segredo)",
                 key="mary_allow_third_party_seduction",
                 help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
             )
-        
+
             third_after_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-        
+
             if third_after_ui != third_before_ui:
                 try:
                     _refresh_tp_arc_from_sidebar(
@@ -2341,16 +2349,14 @@ def _render_sidebar() -> None:
                     )
                 except Exception:
                     pass
-        
+
                 try:
                     _invalidate_backend_cache()
-                    _clear_mary_caches_all_related()
-                    _kill_all_mary_services()
                 except Exception:
                     pass
-        
+
                 st.rerun()
-        
+
             st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
 
             st.markdown("---")
@@ -2358,7 +2364,7 @@ def _render_sidebar() -> None:
 
             try:
                 _uk = _usuario_key_atual()
-                _facts_now = get_facts(_uk) or {}
+                _facts_now = cached_get_facts(_uk) or {}
                 if not isinstance(_facts_now, dict):
                     _facts_now = {}
             except Exception:
@@ -2366,21 +2372,25 @@ def _render_sidebar() -> None:
                 _facts_now = {}
 
             def _f(k: str) -> str:
-                v = _facts_now.get(k, "")
-                return "" if v is None else str(v).strip()
+                try:
+                    cur = _facts_now
+                    for part in str(k).split("."):
+                        if not isinstance(cur, dict):
+                            return ""
+                        cur = cur.get(part)
+                        if cur is None:
+                            return ""
+                    return str(cur).strip()
+                except Exception:
+                    return ""
 
             _horarios_default = _f("state.horarios") or _f("state.horario")
 
-            if "sb_state_local" not in st.session_state:
-                st.session_state["sb_state_local"] = _f("state.local")
-            if "sb_state_roupa" not in st.session_state:
-                st.session_state["sb_state_roupa"] = _f("state.roupa")
-            if "sb_state_cabelo" not in st.session_state:
-                st.session_state["sb_state_cabelo"] = _f("state.cabelo")
-            if "sb_state_horarios" not in st.session_state:
-                st.session_state["sb_state_horarios"] = _horarios_default
-            if "sb_state_assunto" not in st.session_state:
-                st.session_state["sb_state_assunto"] = _f("state.assunto")
+            st.session_state.setdefault("sb_state_local", _f("state.local"))
+            st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
+            st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
+            st.session_state.setdefault("sb_state_horarios", _horarios_default)
+            st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
 
             with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
                 if st.session_state.get("_clear_state_form", False):
@@ -2405,7 +2415,7 @@ def _render_sidebar() -> None:
                 )
 
                 c1, c2 = st.columns(2)
-                
+
                 with c1:
                     if st.button("💾 Aplicar Estado", key="btn_apply_state"):
                         novo_local = st.session_state.get("sb_state_local", "").strip()
@@ -2413,29 +2423,44 @@ def _render_sidebar() -> None:
                         novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
                         novo_horario = st.session_state.get("sb_state_horarios", "").strip()
                         novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
-                
+
                         try:
-                            # estado visual / sidebar
-                            set_fact(_uk, "state.local", novo_local, {"fonte": "sidebar_state"})
-                            set_fact(_uk, "state.roupa", nova_roupa, {"fonte": "sidebar_state"})
-                            set_fact(_uk, "state.cabelo", novo_cabelo, {"fonte": "sidebar_state"})
-                            set_fact(_uk, "state.horarios", novo_horario, {"fonte": "sidebar_state"})
-                            set_fact(_uk, "state.assunto", novo_assunto, {"fonte": "sidebar_state"})
-                
-                            # sync da cena real
+                            facts_apply = cached_get_facts(_uk) or {}
+                            if not isinstance(facts_apply, dict):
+                                facts_apply = {}
+
+                            state_now = facts_apply.get("state")
+                            if not isinstance(state_now, dict):
+                                state_now = {}
+
+                            cena_now = facts_apply.get("cena")
+                            if not isinstance(cena_now, dict):
+                                cena_now = {}
+
+                            state_now["local"] = novo_local
+                            state_now["roupa"] = nova_roupa
+                            state_now["cabelo"] = novo_cabelo
+                            state_now["horarios"] = novo_horario
+                            state_now["assunto"] = novo_assunto
+
+                            set_fact(_uk, "state", state_now, {"fonte": "sidebar_state"})
+
                             if novo_local:
-                                set_fact(_uk, "cena.local", novo_local, {"fonte": "sidebar_state_sync"})
+                                cena_now["local"] = novo_local
+                                cena_now["tempo"] = "agora"
+                                cena_now["acao"] = "em andamento"
+                                cena_now["locked"] = True
+
+                                set_fact(_uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
                                 set_fact(_uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
-                                set_fact(_uk, "cena.tempo", "agora", {"fonte": "sidebar_state_sync"})
-                                set_fact(_uk, "cena.acao", "em andamento", {"fonte": "sidebar_state_sync"})
-                                set_fact(_uk, "cena.locked", True, {"fonte": "sidebar_state_sync"})
-                
+
+                            _invalidate_backend_cache()
                             st.success("✅ Estado atual atualizado.")
                             st.rerun()
-                
+
                         except Exception as e:
                             st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-                
+
                 with c2:
                     st.button(
                         "🧹 Limpar Estado",
@@ -2443,12 +2468,13 @@ def _render_sidebar() -> None:
                         on_click=_clear_sidebar_state_fields,
                         args=(_uk,),
                     )
+
         st.markdown("---")
         st.subheader("🎲 Dinâmica de Surpresa")
 
         try:
             _uk_surprise = _usuario_key_atual()
-            _facts_surprise = get_facts(_uk_surprise) or {}
+            _facts_surprise = cached_get_facts(_uk_surprise) or {}
             if not isinstance(_facts_surprise, dict):
                 _facts_surprise = {}
         except Exception:
@@ -2484,8 +2510,6 @@ def _render_sidebar() -> None:
                         {"fonte": "sidebar_surprise"},
                     )
                     _invalidate_backend_cache()
-                    _clear_mary_caches_all_related()
-                    _kill_all_mary_services()
                     st.success("✅ surprise_level aplicado.")
                     st.rerun()
                 except Exception as e:
@@ -2499,8 +2523,6 @@ def _render_sidebar() -> None:
                     pass
 
                 _invalidate_backend_cache()
-                _clear_mary_caches_all_related()
-                _kill_all_mary_services()
                 st.success("✅ surprise_level removido.")
                 st.rerun()
 
@@ -2546,7 +2568,7 @@ def _render_sidebar() -> None:
         uid_now = str(st.session_state.get("user_id", "Janio Donisete"))
 
         try:
-            facts_now = get_facts(uk_now) or {}
+            facts_now = cached_get_facts(uk_now) or {}
             if not isinstance(facts_now, dict):
                 facts_now = {}
         except Exception:
@@ -2585,10 +2607,9 @@ def _render_sidebar() -> None:
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
                 _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
+
             except Exception as e:
                 st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
 
@@ -2609,13 +2630,11 @@ def _render_sidebar() -> None:
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
-                
+
                 _invalidate_backend_cache()
-                _clear_mary_caches_all_related(also_clear_other_timeline=True)
-                _kill_all_mary_services()
-                
                 st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
                 st.rerun()
+
             except Exception as e:
                 st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")
 
@@ -2628,10 +2647,13 @@ def _render_sidebar() -> None:
             f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
         )
 
+        if "mary_debug_rel_panel" not in st.session_state:
+            st.session_state["mary_debug_rel_panel"] = False
+
         st.session_state["mary_debug_rel_panel"] = st.checkbox(
             "Mostrar painel Relationship",
             value=bool(st.session_state.get("mary_debug_rel_panel", False)),
-            key="mary_debug_rel_panel__ui",
+            key="mary_debug_rel_panel",
         )
 
         st.markdown("---")
@@ -2664,7 +2686,7 @@ def _render_sidebar() -> None:
             uk = _usuario_key_atual()
             st.write("usuario_key:", uk)
             try:
-                st.json(get_facts(uk) or {})
+                st.json(cached_get_facts(uk) or {})
             except Exception as e:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
 
@@ -2675,7 +2697,7 @@ def _render_sidebar() -> None:
             st.session_state["mary_rel_meta_last"] = None
             st.session_state["mary_last_used_model"] = None
             st.session_state["mary_last_used_provider"] = None
-        
+
             try:
                 st.cache_data.clear()
             except Exception:
@@ -2684,9 +2706,8 @@ def _render_sidebar() -> None:
                 st.cache_resource.clear()
             except Exception:
                 pass
-        
+
             _invalidate_backend_cache()
-            _clear_mary_caches_all_related()
             st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
             st.rerun()
 
@@ -2780,7 +2801,7 @@ def _render_sidebar() -> None:
                     st.success("✅ Memória salva em (shared).")
                     st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
                     _clear_service_caches_for_keys([shared_key])
-                    _clear_mary_caches_all_related()
+                    _invalidate_backend_cache()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Falha ao salvar memória: {type(e).__name__}: {e}")
@@ -2794,7 +2815,7 @@ def _render_sidebar() -> None:
             st.success("✅ Última memória apagada." if ok else "Nada para apagar.")
             st.session_state["__mem_list"] = list_memories(shared_key, limit=200) or []
             _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
+            _invalidate_backend_cache()
             st.rerun()
 
         if st.button("💣 Apagar TODAS as memórias", key="btn_delete_all_mems"):
@@ -2802,7 +2823,7 @@ def _render_sidebar() -> None:
             st.success(f"✅ Apaguei {n} memórias.")
             st.session_state["__mem_list"] = []
             _clear_service_caches_for_keys([shared_key])
-            _clear_mary_caches_all_related()
+            _invalidate_backend_cache()
             st.rerun()
 
         mems_view = st.session_state.get("__mem_list")
@@ -2932,131 +2953,3 @@ def _render_sidebar() -> None:
         if st.session_state.get("__lm_list") is not None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
-
-
-def main() -> None:
-    _render_app_shell()
-    _render_sidebar()
-
-    # ===== BOOT =====
-    _boot_visual_if_empty()
-
-    # ===== DEBUG VISUAL (opcional) =====
-    if st.session_state.get("mary_debug_rel_panel", False):
-        _render_relationship_debug_panel()
-
-    # ===== RENDER =====
-    hist = st.session_state.get("chat_history", [])
-    visual_limit = int(st.session_state.get("visual_limit", DEFAULT_VISUAL_LIMIT))
-    visible = hist[-visual_limit:] if len(hist) > visual_limit else hist
-
-    for role, content in visible:
-        with st.chat_message(role):
-            if role == "assistant":
-                st.markdown(_format_paragraphs(content))
-            else:
-                st.markdown(content)
-
-    shown_msgs = len(visible)
-    total_msgs = len(hist)
-    shown_interactions = sum(1 for r, _ in visible if r == "user")
-    total_interactions = sum(1 for r, _ in hist if r == "user")
-    st.caption(
-        f"📌 Mostrando {shown_interactions} interações ({shown_msgs} mensagens) — "
-        f"Total no capítulo: {total_interactions} interações ({total_msgs} mensagens)."
-    )
-
-    # ===== INPUT =====
-    prompt = st.chat_input("Fala algo pra Mary... (Shift+Enter quebra linha)")
-    if prompt:
-        if not st.session_state.get("mary_timeline_locked", False):
-            st.session_state["mary_timeline_locked"] = True
-
-        now = time.time()
-        last_ts = float(st.session_state.get("last_submit_ts", 0.0))
-        last_txt = str(st.session_state.get("last_submit_text", ""))
-
-        if prompt.strip() == last_txt.strip() and (now - last_ts) < 1.2:
-            st.warning("⚠️ Mensagem repetida muito rápido. Ignorando para evitar duplicação.")
-            st.stop()
-
-        st.session_state["last_submit_ts"] = now
-        st.session_state["last_submit_text"] = prompt
-
-        st.session_state["chat_history"].append(("user", prompt))
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        svc = _get_service()
-        tl_active = _timeline()
-        nsfw_active = bool(st.session_state.get("mary_nsfw_on", False))
-        third_active = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-
-        try:
-            set_fact(
-                _usuario_key_atual(),
-                "mary.allow_third_party_seduction",
-                third_active,
-                {"fonte": "ui_toggle"},
-            )
-        except Exception:
-            pass
-
-        try:
-            resposta = _call_service_reply_safe(
-                svc=svc,
-                user=st.session_state.get("user_id", "Janio Donisete"),
-                model=st.session_state.get("model") or DEFAULT_MODEL,
-                prompt=prompt,
-                timeline=tl_active,
-                nsfw=nsfw_active,
-                allow_third_party_seduction=third_active,
-            )
-        except Exception as e:
-            st.session_state["mary_last_error"] = {
-                "type": type(e).__name__,
-                "msg": str(e),
-                "timeline": tl_active,
-                "nsfw": nsfw_active,
-                "ui_model": st.session_state.get("model") or DEFAULT_MODEL,
-                "used_provider": st.session_state.get("mary_last_used_provider"),
-                "used_model": st.session_state.get("mary_last_used_model"),
-                "trace": traceback.format_exc()[:4000],
-            }
-            st.error(f"💥 Erro real ao chamar o modelo: {type(e).__name__}: {e}")
-            st.code(st.session_state["mary_last_error"]["trace"])
-            st.stop()
-
-        if not (resposta or "").strip():
-            st.error("⚠️ Resposta vazia. Diagnóstico abaixo (NÃO é 'mistério', é pipeline).")
-
-            with st.expander("🧪 Diagnóstico do retorno vazio", expanded=True):
-                st.write("Timeline:", tl_active)
-                st.write("NSFW:", nsfw_active)
-                st.write("Modelo (UI):", st.session_state.get("model"))
-                st.write(
-                    "Usado (capturado):",
-                    f"{st.session_state.get('mary_last_used_provider') or '—'} / "
-                    f"{st.session_state.get('mary_last_used_model') or '—'}",
-                )
-
-                st.write("Preview extracted (antes do strip):")
-                st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
-
-                st.write("Preview clean (depois do strip):")
-                st.code(st.session_state.get("mary_last_clean_text_preview") or "")
-
-                st.write("RAW summary:")
-                st.json(st.session_state.get("mary_last_raw_resp") or {})
-
-            st.stop()
-
-        with st.chat_message("assistant"):
-            st.markdown(_format_paragraphs(resposta))
-
-        st.session_state["chat_history"].append(("assistant", resposta))
-        _invalidate_backend_cache()
-        st.rerun()
-
-if __name__ == "__main__":
-    main()
