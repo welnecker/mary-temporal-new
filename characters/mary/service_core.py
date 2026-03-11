@@ -1093,6 +1093,7 @@ def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     return score
 
 def _fallback_local_long_memory_search(
+    usuario_key: str,
     long_key: str,
     prompt: str,
     *,
@@ -1107,6 +1108,10 @@ def _fallback_local_long_memory_search(
     - kind
     - text
     - tags
+
+    IMPORTANTE:
+    - recebe usuario_key para poder verificar conflito com emoção recente;
+    - respeita facts/canon e também o histórico recente.
     """
     rows = list_long_memory(long_key, limit=300) or []
     if not rows:
@@ -1114,6 +1119,9 @@ def _fallback_local_long_memory_search(
 
     tl = _normalize_timeline(timeline)
     scored: List[Tuple[float, Dict[str, Any]]] = []
+
+    # carrega uma vez só, fora do loop
+    history = cached_get_history(usuario_key, limit=40)
 
     def _is_all_marker(x: str) -> bool:
         s = (x or "").strip().lower()
@@ -1131,16 +1139,14 @@ def _fallback_local_long_memory_search(
             continue
 
         kind = str(meta.get("kind") or "").strip().lower()
-        if kind in ("canon",):
+        if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        history = cached_get_history(usuario_key, limit=40)
-
-        # impede latent memory de competir com facts/canon do turno
+        # impede memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
 
-        # impede latent memory de reacender estados emocionais superados
+        # impede memory de reacender estados emocionais já estabilizados
         if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
 
@@ -1665,7 +1671,6 @@ def _memory_conflicts_with_truth(
     Retorna True quando uma memória entra em conflito com facts vivos.
     Evita competição entre memória e verdade da cena.
     """
-
     f = facts if isinstance(facts, dict) else {}
     t = _t_norm(mem_text or "")
 
@@ -1839,6 +1844,7 @@ def _memory_conflicts_with_recent_emotion(
     return False
     
 def _inject_long_memory_textsearch(
+    usuario_key: str,
     shared_key: str,
     timeline: str,
     prompt: str,
@@ -1853,6 +1859,7 @@ def _inject_long_memory_textsearch(
     - Não injeta pins/guide/fixed/canon aqui.
     - Respeita timeline_at_save / [all].
     - Reduz custo: menos resultados, menos texto, menos repetição.
+    - Agora também respeita o histórico emocional recente.
     """
 
     # chave da long memory
@@ -1873,19 +1880,23 @@ def _inject_long_memory_textsearch(
     # fallback genérico local se o Mongo não trouxe nada
     if not rows:
         rows = _fallback_local_long_memory_search(
+            usuario_key,
             long_key,
             prompt,
             limit=max(6, int(limit or 4)),
             timeline=timeline,
             facts=facts,
         )
-    
+
     if not rows:
         return
 
     picked_scored: List[Tuple[float, Dict[str, Any]]] = []
     tl = _normalize_timeline(timeline)
     seen_local: Set[str] = set()
+
+    # carrega uma vez só
+    history = cached_get_history(usuario_key, limit=40)
 
     def _is_all_marker(x: str) -> bool:
         s = (x or "").strip().lower()
@@ -1909,7 +1920,11 @@ def _inject_long_memory_textsearch(
         # evita trazer long memory que disputa com facts/canon atuais
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
-        
+
+        # evita reacender emoção antiga contra o histórico recente
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
+            continue
+
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
         # timeline
@@ -1919,7 +1934,7 @@ def _inject_long_memory_textsearch(
 
         # não trazer kinds fixos/canon aqui
         kind = str(meta.get("kind") or "").strip().lower()
-        if kind in ("canon",):
+        if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
         # compat com tags embutidas no texto
@@ -1954,10 +1969,10 @@ def _inject_long_memory_textsearch(
 
     if not picked_scored:
         return
-    
+
     picked_scored.sort(key=lambda x: x[0], reverse=True)
     picked = [d for _, d in picked_scored[: int(limit or 4)]]
-    
+
     bullets: List[str] = []
     for d in picked:
         txt = str(d.get("text") or "").strip()
@@ -1970,6 +1985,8 @@ def _inject_long_memory_textsearch(
 
     block = (
         "[MEMÓRIAS RELEVANTES]\n"
+        "Use apenas como apoio de coerência.\n"
+        "Não sobrescreva o estado emocional estabelecido nas últimas interações.\n"
         + "\n".join(bullets)
     )
 
@@ -5720,6 +5737,7 @@ class MaryService(BaseCharacter):
     
         if _should_inject_long_memory(prompt):
             _inject_long_memory_textsearch(
+                usuario_key,
                 shared_key,
                 timeline_final,
                 prompt,
