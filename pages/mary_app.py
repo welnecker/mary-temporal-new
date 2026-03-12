@@ -58,13 +58,19 @@ def append_long_memory_safe(
     meta: dict | None = None,
     user_id: str = "",
 ) -> None:
+    txt = str(text or "").strip()
+    if not txt:
+        return
+
+    meta_final = dict(meta or {})
+    if user_id:
+        meta_final["user_id"] = user_id
+
     append_long_memory(
         usuario,
-        text,
-        meta=meta or {},
-        user_id=user_id,
+        txt,
+        meta=meta_final,
     )
-
 
 def _refresh_tp_arc_from_sidebar(
     *,
@@ -2659,6 +2665,7 @@ def _render_sidebar() -> None:
                         timeline=tl_now,
                         user_id=uid_now,
                     )
+        
                     try:
                         res = _sync_virginity_global_timeline(
                             usuario_key=uk_now,
@@ -2667,17 +2674,34 @@ def _render_sidebar() -> None:
                         st.session_state["mary_virginity_sync_last"] = res
                     except Exception:
                         pass
-
+        
+                    try:
+                        txt = "Mary não é mais virgem. A relação com Janio já foi consumada."
+                        meta = {
+                            "title": "virgindade consumada",
+                            "kind": "canon",
+                            "timeline_at_save": tl_now,
+                            "tags": ["virgindade", "consumado", "canon", "janio", "mary"],
+                            "source": "ui_canon_button",
+                        }
+        
+                        append_long_memory_safe(
+                            sk_now,
+                            txt,
+                            meta=meta,
+                        )
+                    except Exception as e:
+                        st.warning(f"Canon salvo, mas falhou ao gravar na Long Memory: {type(e).__name__}: {e}")
+        
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
                 _invalidate_backend_cache()
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
-
+        
             except Exception as e:
-                st.error(f"Falha ao gravar CANON: {type(e).__name__}: {e}")
-
+                st.error(f"Erro ao atualizar canon: {type(e).__name__}: {e}")
         st.markdown("---")
         st.subheader("🔁 Reset rápido")
 
