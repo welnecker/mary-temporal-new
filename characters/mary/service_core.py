@@ -416,7 +416,7 @@ def clear_shared_memory_cache(user_id: str) -> None:
     # shared agora depende de timeline; usa a timeline atual do session_state
     tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
     tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
-    clear_mem_cache_for_shared(_shared_key(user_id, tl))
+    clear_mem_cache_for_shared(_long_key(user_id))
     
 def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
     # limpa facts/history do usuário+timeline
@@ -1029,6 +1029,18 @@ def _detect_scene_violation(user_text: str) -> bool:
 
     return any(re.search(p, txt) for p in patterns)
 
+def _looks_like_memory_fact_query(query: str) -> bool:
+    q = _t_norm(query or "")
+    if not q:
+        return False
+
+    factual_markers = (
+        "qual", "quem e", "quem é", "nome", "mae", "mãe", "pai",
+        "onde", "quando", "primeiro", "primeira vez", "primeiro beijo",
+        "formacao", "formação", "curso", "faculdade", "profissao", "profissão"
+    )
+    return any(x in q for x in factual_markers)
+
 def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     """
     Ranking local simples em cima de title + kind + text + tags.
@@ -1059,15 +1071,15 @@ def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     elif isinstance(mtags, str):
         tags = [_t_norm(t.strip()) for t in mtags.split(",") if t.strip()]
 
-    # título pesa mais
+    # título pesa bem
     for term in q_terms_norm:
         if term and term in title_n:
-            score += 3.0
+            score += 4.0
 
-    # tags pesam bastante
+    # tags pesam muito
     for term in q_terms_norm:
         if term and term in tags:
-            score += 2.5
+            score += 4.5
 
     # texto pesa normal
     for term in q_terms_norm:
@@ -1077,6 +1089,17 @@ def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     # bonus por casar query inteira
     if q and q in hay:
         score += 2.0
+
+    # bônus para factual
+    if _looks_like_memory_fact_query(query):
+        if title_n:
+            score += 0.4
+        if tags:
+            score += 0.6
+
+    # pin não deveria entrar aqui normalmente, mas se entrar por algum motivo:
+    if str(kind or "").strip().lower() == "pin":
+        score += 1.0
 
     # leve bônus por recência
     ts = _memory_timestamp(mem)
@@ -1441,8 +1464,7 @@ def _inject_intro_as_context_once(
 # ==========================================================
 def _lm_query_from_prompt(user_prompt: str) -> str:
     """
-    Gera consulta curta para Mongo $text, preservando termos relevantes
-    do domínio narrativo sem depender de lista espalhada no corpo da função.
+    Gera consulta curta para Mongo $text, com expansão factual leve.
     """
     s = (user_prompt or "").strip().lower()
     if not s:
@@ -1454,7 +1476,10 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     if not s:
         return ""
 
-    toks = re.findall(r"[\w\u00C0-\u017F']+", s, flags=re.UNICODE)
+    expanded = _expand_memory_query(s)
+    base = expanded or s
+
+    toks = re.findall(r"[\w\u00C0-\u017F']+", base, flags=re.UNICODE)
 
     stop = _domain_terms("stopwords")
     keep = [t for t in toks if len(t) >= 3 and t not in stop]
@@ -1462,10 +1487,52 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     priority_terms_cfg = _domain_terms("priority")
     priority_terms = [t for t in keep if t in priority_terms_cfg]
 
-    q_terms = list(dict.fromkeys(priority_terms + keep[:12]))
+    q_terms = list(dict.fromkeys(priority_terms + keep[:20]))
     q = " ".join(q_terms).strip()
     q = re.sub(r"\s{2,}", " ", q).strip()
     return q or s
+
+def _expand_memory_query(user_prompt: str) -> str:
+    """
+    Expande a query com aliases narrativos/factuais.
+    Pequeno upgrade de recall para perguntas sobre passado,
+    família, primeira vez, primeiro beijo, formação etc.
+    """
+    p = _t_norm(user_prompt or "")
+    if not p:
+        return ""
+
+    extras: List[str] = []
+
+    # família
+    if any(x in p for x in ("mae", "mãe")):
+        extras += ["mae", "mãe", "familia", "joselina"]
+    if "pai" in p:
+        extras += ["pai", "familia"]
+
+    # relação / história
+    if any(x in p for x in ("conhecemos", "conheceu", "nos conhecemos", "onde nos conhecemos")):
+        extras += ["conheceram", "conhecer", "se conheceram", "onde se conheceram"]
+
+    if any(x in p for x in ("primeiro beijo", "nosso beijo", "beijamos primeiro")):
+        extras += ["primeiro_beijo", "primeiro beijo", "beijo"]
+
+    if any(x in p for x in ("primeira vez", "transamos", "sexo", "transa", "ja transou", "já transou")):
+        extras += ["primeira_vez", "primeira vez", "sexo", "transa", "consumado", "consumada"]
+
+    # biografia
+    if any(x in p for x in ("formacao", "formação", "formada", "curso", "faculdade", "graduacao", "graduação")):
+        extras += ["formacao", "formação", "curso", "faculdade", "graduacao", "graduação", "ufes", "psicologia"]
+
+    if any(x in p for x in ("profissao", "profissão", "trabalho", "trabalha", "carreira")):
+        extras += ["profissao", "profissão", "trabalho", "carreira"]
+
+    if any(x in p for x in ("onde mora", "mora onde", "moram", "moradia", "casa")):
+        extras += ["mora", "moradia", "casa", "camburi"]
+
+    toks = re.findall(r"[\w\u00C0-\u017F']+", p, flags=re.UNICODE)
+    all_terms = list(dict.fromkeys(toks + extras))
+    return " ".join(t for t in all_terms if t).strip()
 
 def _inject_long_memory_pins_always(
     shared_key: str,
@@ -1713,54 +1780,7 @@ def _memory_conflicts_with_truth(
 
     return False
     
-    # -----------------------------
-    # Estado de cena / facts vivos
-    # -----------------------------
-    scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
-    scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
-    scene_acao = _t_norm(str(f.get("cena.acao") or ""))
-
-    state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
-
-    world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
-    rel_blob = _t_norm(str(f.get("rel") or ""))
-    arc_blob = _t_norm(str(f.get("arc") or ""))
-
-    # -----------------------------
-    # Temas governados por facts
-    # -----------------------------
-
-    # virgindade / primeira vez
-    if any(k in t for k in ("virgem", "virgindade", "primeira vez")):
-        if world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys()):
-            return True
-
-    # consumação / relação
-    if any(k in t for k in ("consummated", "consumado", "consumada", "relacao", "relação")):
-        if rel_blob:
-            return True
-
-    # fase íntima
-    if any(k in t for k in ("fase", "climax", "clímax", "aftercare", "intimidade")):
-        if f:
-            return True
-
-    # -----------------------------
-    # conflito direto com cena
-    # -----------------------------
-    for val in (scene_local, state_local, scene_tempo, scene_acao):
-        if val and val in t:
-            return True
-
-    # -----------------------------
-    # arco narrativo
-    # -----------------------------
-    if any(k in t for k in ("anchor", "tension", "guilt", "third party", "terceiro")):
-        if arc_blob:
-            return True
-
-    return False
-
+    
 def _recent_emotion_signature(history: List[Dict[str, Any]], *, last_turns: int = 6) -> str:
     """
     Consolida os últimos turnos em um blob textual leve para detectar
@@ -1855,38 +1875,74 @@ def _inject_long_memory_textsearch(
     facts: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    Recupera memórias relevantes via Mongo $text.
-    - Não injeta pins/guide/fixed/canon aqui.
-    - Respeita timeline_at_save / [all].
-    - Reduz custo: menos resultados, menos texto, menos repetição.
-    - Agora também respeita o histórico emocional recente.
-    """
+    Recupera memórias relevantes para o prompt usando:
+    1) busca principal (Mongo/text search)
+    2) fallback local com score por title + tags + text
 
-    # chave da long memory
+    Regras:
+    - NÃO injeta canon/pin/guide/fixed aqui
+    - respeita timeline_at_save / [all]
+    - evita competir com facts/canon/emoção recente
+    - usa tags do meta de forma prática via score local
+    """
     user_id = shared_key.split("::")[0]
     long_key = _long_key(user_id)
 
-    # só busca quando houver motivo real
-    if not _should_inject_long_memory(prompt):
-        return
-
     q = _lm_query_from_prompt(prompt)
     q = (q or "").strip()[:180]
+
+    if not q:
+        q = (prompt or "").strip()[:180]
+
     if not q:
         return
 
-    rows = search_long_memory_text(long_key, q, limit=max(6, int(limit or 4))) or []
+    mongo_rows: List[Dict[str, Any]] = []
+    try:
+        mongo_rows = search_long_memory_text(
+            long_key,
+            q,
+            limit=max(8, int(limit or 4)),
+        ) or []
+    except Exception:
+        mongo_rows = []
 
-    # fallback genérico local se o Mongo não trouxe nada
-    if not rows:
-        rows = _fallback_local_long_memory_search(
+    local_rows: List[Dict[str, Any]] = []
+    try:
+        local_rows = _fallback_local_long_memory_search(
             usuario_key,
             long_key,
             prompt,
-            limit=max(6, int(limit or 4)),
+            limit=max(8, int(limit or 4)),
             timeline=timeline,
             facts=facts,
         )
+    except Exception:
+        local_rows = []
+
+    rows: List[Dict[str, Any]] = []
+    seen_ids: Set[str] = set()
+    seen_txt: Set[str] = set()
+
+    for d in (mongo_rows + local_rows):
+        if not isinstance(d, dict):
+            continue
+
+        mid = str(d.get("id") or d.get("_id") or "").strip()
+        txt = str(d.get("text") or "").strip()
+        txt_key = _t_norm(re.sub(r"\[[^\]]+\]", "", txt).strip())[:180] if txt else ""
+
+        if mid and mid in seen_ids:
+            continue
+        if txt_key and txt_key in seen_txt:
+            continue
+
+        if mid:
+            seen_ids.add(mid)
+        if txt_key:
+            seen_txt.add(txt_key)
+
+        rows.append(d)
 
     if not rows:
         return
@@ -1894,8 +1950,6 @@ def _inject_long_memory_textsearch(
     picked_scored: List[Tuple[float, Dict[str, Any]]] = []
     tl = _normalize_timeline(timeline)
     seen_local: Set[str] = set()
-
-    # carrega uma vez só
     history = cached_get_history(usuario_key, limit=40)
 
     def _is_all_marker(x: str) -> bool:
@@ -1914,58 +1968,61 @@ def _inject_long_memory_textsearch(
 
     for d in rows:
         txt = str(d.get("text") or "").strip()
-        if not txt or len(txt) < 40:
-            continue
-
-        # evita trazer long memory que disputa com facts/canon atuais
-        if _memory_conflicts_with_truth(txt, facts=facts):
-            continue
-
-        # evita reacender emoção antiga contra o histórico recente
-        if _memory_conflicts_with_recent_emotion(txt, history=history):
+        if not txt:
             continue
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
-        # timeline
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
         if not _timeline_matches(tms, tl):
             continue
 
-        # não trazer kinds fixos/canon aqui
         kind = str(meta.get("kind") or "").strip().lower()
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        # compat com tags embutidas no texto
         if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed|canon)\s*\]", txt, flags=re.IGNORECASE):
             continue
 
-        # limpa tags embutidas para dedupe
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
+            continue
+
         txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
-        txt_key = _t_norm(txt_dedupe)[:140]
+        txt_key = _t_norm(txt_dedupe)[:180]
 
         if not txt_key:
             continue
 
-        # dedupe local
         if txt_key in seen_local:
             continue
         seen_local.add(txt_key)
 
-        # dedupe global
         if dedupe_bucket is not None:
             h = hashlib.sha1(txt_key.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
             dedupe_bucket.add(h)
 
-        # encurta o texto para não inflar prompt
-        d = dict(d)
-        d["text"] = txt_dedupe[:260].rstrip()
+        d2 = dict(d)
+        d2["text"] = txt_dedupe[:320].rstrip()
 
-        score = _score_long_memory_local(d, prompt)
-        picked_scored.append((score, d))
+        score = _score_long_memory_local(d2, prompt)
+
+        if d in mongo_rows:
+            score += 0.75
+
+        meta2 = d2.get("meta") if isinstance(d2.get("meta"), dict) else {}
+        mtags = meta2.get("tags")
+        if isinstance(mtags, list) and mtags:
+            score += 0.35
+
+        if score <= 0:
+            continue
+
+        picked_scored.append((score, d2))
 
     if not picked_scored:
         return
@@ -1985,8 +2042,9 @@ def _inject_long_memory_textsearch(
 
     block = (
         "[MEMÓRIAS RELEVANTES]\n"
-        "Use apenas como apoio de coerência.\n"
+        "Use apenas como apoio factual e de coerência.\n"
         "Não sobrescreva o estado emocional estabelecido nas últimas interações.\n"
+        "Não invente fatos quando houver memória explícita abaixo.\n"
         + "\n".join(bullets)
     )
 
