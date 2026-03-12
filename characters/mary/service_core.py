@@ -1885,15 +1885,12 @@ def _inject_long_memory_textsearch(
     - evita competir com facts/canon/emoção recente
     - usa tags do meta de forma prática via score local
     """
-
-    # chave da long memory
     user_id = shared_key.split("::")[0]
     long_key = _long_key(user_id)
 
     q = _lm_query_from_prompt(prompt)
     q = (q or "").strip()[:180]
 
-    # se a query ficar vazia, ainda tenta algo simples pelo prompt cru
     if not q:
         q = (prompt or "").strip()[:180]
 
@@ -1923,7 +1920,6 @@ def _inject_long_memory_textsearch(
     except Exception:
         local_rows = []
 
-    # une resultados sem duplicar por id/_id/text
     rows: List[Dict[str, Any]] = []
     seen_ids: Set[str] = set()
     seen_txt: Set[str] = set()
@@ -1954,7 +1950,6 @@ def _inject_long_memory_textsearch(
     picked_scored: List[Tuple[float, Dict[str, Any]]] = []
     tl = _normalize_timeline(timeline)
     seen_local: Set[str] = set()
-
     history = cached_get_history(usuario_key, limit=40)
 
     def _is_all_marker(x: str) -> bool:
@@ -1978,25 +1973,20 @@ def _inject_long_memory_textsearch(
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
-        # timeline
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
         if not _timeline_matches(tms, tl):
             continue
 
-        # kinds fixos não entram aqui
         kind = str(meta.get("kind") or "").strip().lower()
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        # compat com tags embutidas no próprio texto
         if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed|canon)\s*\]", txt, flags=re.IGNORECASE):
             continue
 
-        # evita competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
 
-        # evita reacender emoção antiga sem gatilho real
         if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
 
@@ -2021,11 +2011,9 @@ def _inject_long_memory_textsearch(
 
         score = _score_long_memory_local(d2, prompt)
 
-        # bônus leve para resultados vindos do mongo
         if d in mongo_rows:
             score += 0.75
 
-        # bônus extra se houver tags
         meta2 = d2.get("meta") if isinstance(d2.get("meta"), dict) else {}
         mtags = meta2.get("tags")
         if isinstance(mtags, list) and mtags:
