@@ -10,6 +10,11 @@ from typing import Any
 import streamlit as st
 import httpx
 
+st.set_page_config(
+    page_title="Roleplay",
+    page_icon="💍💍",
+    layout="centered",
+)
 from core.repositories import (
     list_memories,
     delete_last_memory,
@@ -196,45 +201,6 @@ def _cleanup_broken_facts_schema_on_boot() -> None:
 _hard_reset_on_boot_if_needed()
 _cleanup_broken_facts_schema_on_boot()
 
-# ==========================================================
-# IMPORTS DO PROJETO (SEMPRE DEPOIS DO FUTURE)
-# ==========================================================
-from core.repositories import (
-    list_memories,
-    delete_last_memory,
-    delete_all_memories,
-    get_history_docs,
-    get_history_docs_multi,
-    get_facts,
-    set_fact,
-    append_memory,  # ✅ necessário para o botão "virgem"
-    delete_fact,
-    delete_last_interaction,
-    delete_user_history,
-    # ✅ LONG MEMORY (Mongo text search)
-    append_long_memory,
-    list_long_memory,
-    search_long_memory_text,
-    ensure_long_memory_indexes,
-    delete_last_long_memory,
-    delete_all_long_memory,
-)
-
-import characters.mary.persona as mary_persona
-from characters.mary.service import get_service_class
-import core.repositories as crep
-import core.service_router as service_router
-from core.database import db_status, ping_db, get_backend
-
-
-# ==========================================================
-# CONFIG
-# ==========================================================
-st.set_page_config(
-    page_title="Roleplay",
-    page_icon="💍💍",
-    layout="centered",
-)
 
 SENHA_CORRETA = "311071"
 DEFAULT_VISUAL_LIMIT = 80
