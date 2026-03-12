@@ -3017,11 +3017,85 @@ def _render_sidebar() -> None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
 
+def _render_chat_and_input() -> None:
+    # garante histórico visual inicial
+    _boot_visual_if_empty()
+
+    chat_history = st.session_state.get("chat_history", []) or []
+
+    # renderiza histórico
+    for role, content in chat_history:
+        with st.chat_message(role):
+            st.markdown(_format_paragraphs(content or ""))
+
+    # entrada do usuário
+    user_prompt = st.chat_input("Digite sua mensagem para Mary...")
+
+    if not user_prompt:
+        return
+
+    user_prompt = str(user_prompt).strip()
+    if not user_prompt:
+        return
+
+    # trava timeline após primeira fala do usuário
+    st.session_state["mary_timeline_locked"] = True
+
+    # evita duplicação muito rápida
+    now = time.time()
+    last_ts = float(st.session_state.get("last_submit_ts", 0.0) or 0.0)
+    last_text = str(st.session_state.get("last_submit_text", "") or "")
+
+    if user_prompt == last_text and (now - last_ts) < 1.5:
+        return
+
+    st.session_state["last_submit_ts"] = now
+    st.session_state["last_submit_text"] = user_prompt
+
+    # mostra imediatamente a mensagem do usuário
+    st.session_state.setdefault("chat_history", [])
+    st.session_state["chat_history"].append(("user", user_prompt))
+
+    try:
+        svc = _get_service()
+
+        resposta = _call_service_reply_safe(
+            svc=svc,
+            user=str(st.session_state.get("user_id", "Janio Donisete")),
+            model=str(st.session_state.get("model") or DEFAULT_MODEL),
+            prompt=user_prompt,
+            timeline=_timeline(),
+            nsfw=bool(st.session_state.get("mary_nsfw_on", False)),
+            allow_third_party_seduction=bool(
+                st.session_state.get("mary_allow_third_party_seduction", False)
+            ),
+        )
+
+        resposta = (resposta or "").strip()
+
+        if not resposta:
+            resposta = "Eu te encaro em silêncio por um instante, como se estivesse organizando o que senti antes de responder."
+
+        st.session_state["chat_history"].append(("assistant", resposta))
+
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        st.session_state["mary_last_error"] = {
+            "type": type(e).__name__,
+            "msg": str(e),
+        }
+        st.session_state["chat_history"].append(
+            ("assistant", f"⚠️ Erro ao gerar resposta: {err}")
+        )
+
+    st.rerun()
+
 
 def main() -> None:
     _render_app_shell()
     _render_sidebar()
-    _boot_visual_if_empty()
+    _render_chat_and_input()
+
 
 if __name__ == "__main__":
     main()
