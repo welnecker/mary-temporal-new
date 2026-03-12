@@ -1,16 +1,6 @@
 
 from __future__ import annotations
-from core.repositories import force_reset_virginity_universitaria
-from characters.mary.service_core import (
-    append_long_memory_safe,
-    cached_get_facts,
-    _refresh_tp_arc_from_sidebar,
-)
-# mary_app_harmonized_core_v6.py
 
-# ==========================================================
-# IMPORTS PADRÃO
-# ==========================================================
 import time
 import re
 import traceback
@@ -20,6 +10,106 @@ from typing import Any
 import streamlit as st
 import httpx
 
+from core.repositories import (
+    list_memories,
+    delete_last_memory,
+    delete_all_memories,
+    get_history_docs,
+    get_history_docs_multi,
+    get_facts,
+    set_fact,
+    append_memory,
+    delete_fact,
+    delete_last_interaction,
+    delete_user_history,
+    append_long_memory,
+    list_long_memory,
+    search_long_memory_text,
+    ensure_long_memory_indexes,
+    delete_last_long_memory,
+    delete_all_long_memory,
+)
+
+# ==========================================================
+# WRAPPERS LOCAIS SEGUROS
+# ==========================================================
+def cached_get_facts(usuario_key: str) -> dict:
+    try:
+        data = get_facts(usuario_key) or {}
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def append_long_memory_safe(
+    usuario: str,
+    text: str,
+    *,
+    meta: dict | None = None,
+    user_id: str = "",
+) -> None:
+    append_long_memory(
+        usuario,
+        text,
+        meta=meta or {},
+        user_id=user_id,
+    )
+
+
+def _refresh_tp_arc_from_sidebar(
+    *,
+    usuario_key: str,
+    timeline: str,
+    nsfw_on: bool,
+    allow_third_party_seduction: bool,
+) -> dict:
+    try:
+        from characters.mary import service_core as _sc
+
+        fn = getattr(_sc, "_update_tp_arc_for_turn", None)
+        if callable(fn):
+            out = fn(
+                usuario_key=usuario_key,
+                timeline=timeline,
+                user_text="",
+                mary_text="",
+                nsfw_on=bool(nsfw_on),
+                allow_third_party_seduction=bool(allow_third_party_seduction),
+                facts=cached_get_facts(usuario_key),
+            )
+            return out if isinstance(out, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def force_reset_virginity_universitaria(usuario_key: str) -> None:
+    try:
+        delete_fact(usuario_key, "virginity")
+    except Exception:
+        pass
+
+    try:
+        facts = get_facts(usuario_key) or {}
+        if not isinstance(facts, dict):
+            facts = {}
+
+        rel_key = "rel.state::universitaria"
+        rel = facts.get(rel_key) if isinstance(facts.get(rel_key), dict) else {}
+        if not isinstance(rel, dict):
+            rel = {}
+
+        rel["virginity"] = "virgem"
+        rel["consummated"] = False
+        rel["allows_penetration"] = False
+        rel.setdefault("allows_extended_touch", False)
+        rel.setdefault("allows_mutual_relief", False)
+
+        set_fact(usuario_key, rel_key, rel, {"fonte": "force_reset_local"})
+        set_fact(usuario_key, "intimacy.phase::universitaria", 0, {"fonte": "force_reset_local"})
+        set_fact(usuario_key, "intimacy.phase", 0, {"fonte": "force_reset_local"})
+    except Exception:
+        pass
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
