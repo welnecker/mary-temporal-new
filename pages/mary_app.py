@@ -1,9 +1,11 @@
 
 from __future__ import annotations
 from core.repositories import force_reset_virginity_universitaria
-from characters.mary.service_core import append_long_memory_safe
-from characters.mary.service_core import append_long_memory_safe, cached_get_facts
-from characters.mary.service_core import append_long_memory_safe, cached_get_facts, _refresh_tp_arc_from_sidebar
+from characters.mary.service_core import (
+    append_long_memory_safe,
+    cached_get_facts,
+    _refresh_tp_arc_from_sidebar,
+)
 # mary_app_harmonized_core_v6.py
 
 # ==========================================================
@@ -2651,7 +2653,7 @@ def _render_sidebar() -> None:
 
         if "mary_debug_rel_panel" not in st.session_state:
             st.session_state["mary_debug_rel_panel"] = False
-        
+
         st.checkbox(
             "Mostrar painel Relationship",
             key="mary_debug_rel_panel",
@@ -2728,7 +2730,6 @@ def _render_sidebar() -> None:
                 help="Ex: Janio Donisete::mary::cumplice::shared",
             ).strip()
             apply_shared = st.form_submit_button("✅ Aplicar key")
-
         if apply_shared:
             st.session_state["shared_key_override"] = shared_in or shared_default
             st.session_state["__mem_list"] = None
