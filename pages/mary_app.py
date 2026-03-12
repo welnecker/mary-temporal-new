@@ -34,6 +34,11 @@ from core.repositories import (
     delete_last_long_memory,
     delete_all_long_memory,
 )
+import characters.mary.persona as mary_persona
+from characters.mary.service import get_service_class
+import core.repositories as crep
+import core.service_router as service_router
+from core.database import db_status, ping_db, get_backend
 
 # ==========================================================
 # WRAPPERS LOCAIS SEGUROS
@@ -3011,3 +3016,14 @@ def _render_sidebar() -> None:
         if st.session_state.get("__lm_list") is not None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
+
+
+def main() -> None:
+    _render_app_shell()
+    _render_sidebar()
+    _boot_visual_if_empty()
+
+if __name__ == "__main__":
+    main()
+else:
+    main()
