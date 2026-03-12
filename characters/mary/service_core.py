@@ -462,10 +462,9 @@ def append_long_memory_safe(
 ) -> None:
     """
     Wrapper segura para gravar na Long Memory (Mongo).
-    Agora padroniza metadados para facilitar recuperação futura.
+    Padroniza metadados e respeita a key recebida.
     """
     uid = _normalize_user_id(user_id) if user_id else _current_user_id_fallback()
-    lk = _long_key(uid)
 
     txt = str(text or "").strip()
     if not txt:
@@ -474,13 +473,13 @@ def append_long_memory_safe(
     meta_in = dict(meta or {})
 
     title = str(meta_in.get("title") or "").strip()
-    kind = str(meta_in.get("kind") or "memory").strip().lower()
+    kind = str(meta_in.get("kind") or "memory").strip().lower() or "memory"
 
     timeline_raw = str(
         meta_in.get("timeline_at_save")
         or meta_in.get("timeline")
         or (_ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice")
-    ).strip()
+    ).strip() or "cumplice"
 
     tags_user = _normalize_memory_tags(meta_in.get("tags"))
     tags_auto = _infer_memory_tags(txt, title=title)
@@ -488,30 +487,46 @@ def append_long_memory_safe(
 
     meta_final = dict(meta_in)
     meta_final["title"] = title
-    meta_final["kind"] = kind or "memory"
-    meta_final["timeline_at_save"] = timeline_raw or "cumplice"
+    meta_final["kind"] = kind
+    meta_final["timeline_at_save"] = timeline_raw
     meta_final["user_id"] = uid
     meta_final["tags"] = tags_final
 
     if "source" not in meta_final:
         meta_final["source"] = "ui_long_memory"
 
-    append_long_memory(lk, txt, meta=meta_final)
-    
+    # respeita a key recebida; se vier vazia, usa fallback global
+    target_key = str(shared_key or "").strip() or _long_key(uid)
+
+    append_long_memory(target_key, txt, meta=meta_final)
+
+
 def save_interaction_safe(usuario_key: str, prompt: str, texto: str, model_used: str) -> None:
-    save_interaction(usuario_key, prompt, texto, model_used)
-    clear_user_cache(usuario_key)
+    try:
+        save_interaction(usuario_key, prompt, texto, model_used)
+    finally:
+        try:
+            clear_user_cache(usuario_key)
+        except Exception:
+            pass
 
 
 # ==========================================================
 # NSFW ENABLE (usa implementação unificada do core)
 # ==========================================================
-def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, timeline: Optional[str] = None) -> bool:
+def nsfw_enabled(
+    usuario_key: str,
+    *,
+    nsfw_override: Optional[bool] = None,
+    timeline: Optional[str] = None,
+) -> bool:
     """
     Fonte única (ordem de prioridade):
-    1) override explícito (parâmetro)
-    2) session_state (sidebar) -> aceita chaves legadas e novas com _SS_PREFIX
-    3) facts persistido -> mary.nsfw (ou mary.nsfw::<timeline>)
+    1) override explícito
+    2) session_state (sidebar)
+    3) facts persistido -> mary.nsfw::<timeline>
+    4) facts persistido -> mary.nsfw
+    5) default por timeline (universitaria=False, demais=True)
     """
     tl = (timeline or "").strip().lower()
 
@@ -519,22 +534,54 @@ def nsfw_enabled(usuario_key: str, *, nsfw_override: Optional[bool] = None, time
     if nsfw_override is not None:
         return bool(nsfw_override)
 
-    # 2) sidebar (estado vivo) — compatível com chaves antigas e novas
+    # 2) sidebar / session_state
     try:
         ss = st.session_state  # type: ignore[attr-defined]
-        # chaves possíveis
         for k in (
-            "mary_nsfw_on",                 # legado
-            "nsfw_on",                      # simples
-            f"{_SS_PREFIX}nsfw_on",         # novo (prefixado)
-            f"{_SS_PREFIX}nsfw",            # alternativo
-            "mary::nsfw_on",                # compat extra (hardcode)
+            "mary_nsfw_on",
+            "nsfw_on",
+            f"{_SS_PREFIX}nsfw_on",
+            f"{_SS_PREFIX}nsfw",
+            "mary::nsfw_on",
         ):
             if k in ss:
                 return bool(ss.get(k, False))
     except Exception:
         pass
 
+    # 3) / 4) facts persistidos
+    try:
+        facts = cached_get_facts(usuario_key) or {}
+        if not isinstance(facts, dict):
+            facts = {}
+
+        mary_obj = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+        if not isinstance(mary_obj, dict):
+            mary_obj = {}
+
+        if tl:
+            key_tl = f"nsfw::{tl}"
+            if key_tl in mary_obj:
+                return bool(mary_obj.get(key_tl))
+
+        if "nsfw" in mary_obj:
+            return bool(mary_obj.get("nsfw"))
+
+        # compat com facts dotted legados
+        if tl:
+            v_tl = facts.get(f"mary.nsfw::{tl}")
+            if v_tl is not None:
+                return bool(v_tl)
+
+        v_global = facts.get("mary.nsfw")
+        if v_global is not None:
+            return bool(v_global)
+
+    except Exception:
+        pass
+
+    # 5) default por timeline
+    return False if tl == "universitaria" else True
     # 3) facts persistido
     facts = get_facts(usuario_key) or {}
     if not isinstance(facts, dict):
