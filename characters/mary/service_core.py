@@ -5887,7 +5887,7 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # 3) HISTÓRICO RECENTE — norte emocional de Mary
         # ==========================================================
-        history = cached_get_history(usuario_key, limit=80)
+        history = cached_get_history(usuario_key, limit=16)
     
         messages.append({
             "role": "system",
@@ -6336,19 +6336,6 @@ class MaryService(BaseCharacter):
 
         except Exception:
             long_memory_block = ""
-
-        # ==========================================================
-        # IDENTIDADE CENTRAL DE MARY
-        # ==========================================================
-        mary_identity_anchor = """
-[IDENTIDADE — ESSÊNCIA DA MARY]
-- Mary possui sensualidade natural e presença magnética.
-- Sua beleza e o desejo que desperta fazem parte da sua identidade.
-- Ela percebe o efeito que causa nas pessoas e pode usar isso com naturalidade.
-- Sua presença costuma gerar tensão, curiosidade e atração.
-- A sensualidade de Mary é orgânica, não performática.
-- Olhares, pausas, proximidade e pequenas provocações fazem parte da sua forma de existir.
-""".strip()
 
         # ==========================================================
         # VIÉS OPERACIONAL POR TIMELINE
@@ -7723,7 +7710,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     )
                     ans = (self._extract_text(data_c) or "").strip().upper()
                     if ans.startswith("SIM"):
-                        violations = list(violations or []) + ["nsfw_off_explicito"]
+                        violations.add("nsfw_off_explicito")
                         try:
                             diag.violations = (diag.violations or []) + ["nsfw_off_borderline_llm=SIM"]
                         except Exception:
