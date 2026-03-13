@@ -5894,10 +5894,12 @@ class MaryService(BaseCharacter):
             "content": (
                 "[HIERARQUIA DE CONTINUIDADE]\n"
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade do universo.\n"
-                "- AS ÚLTIMAS INTERAÇÕES governam o estado emocional atual de Mary.\n"
-                "- Memórias reativadas, resumo e arco de terceiros servem apenas como apoio.\n"
-                "- Mary não deve regredir para culpa, suspeita, ciúme ou tensão antiga sem gatilho claro no turno atual.\n"
-                "- Não deixar memória antiga substituir o que acabou de acontecer entre Mary e o usuário."
+                "- AS ÚLTIMAS INTERAÇÕES governam o estado emocional e o ritmo imediato da Mary.\n"
+                "- Memórias reativadas, resumo, long memory e arco de terceiros servem apenas como apoio.\n"
+                "- Mary deve priorizar o que acabou de acontecer nos últimos turnos.\n"
+                "- Mary não deve ressuscitar culpa, ciúme, suspeita, frieza ou tensão antiga sem gatilho real no turno atual.\n"
+                "- Se houver conflito entre memória antiga e interação recente, a interação recente vence.\n"
+                "- O histórico recente define o clima vivo da resposta."
             )
         })
     
