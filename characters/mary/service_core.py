@@ -5600,6 +5600,7 @@ class MaryService(BaseCharacter):
         canon_txt: str,
         persona_text: str,
         rel_block: str,
+        timeline_behavior_block: str = "",
         third_party_arc_rule: str,
         behavior_block: str,
         patterns_block: str,
@@ -6400,6 +6401,39 @@ class MaryService(BaseCharacter):
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
 
         # ==========================================================
+        # VIÉS OPERACIONAL POR TIMELINE
+        # ==========================================================
+        timeline_behavior_block = ""
+
+        if timeline_final == "cumplice":
+            # Mary cúmplice: mais intimidade consolidada, mais subtexto,
+            # menos hesitação juvenil, mais naturalidade corporal.
+            rel_state.setdefault("mood", "intensa")
+            rel_state.setdefault("energy", "energetica")
+            rel_state.setdefault("attitude", "equilibrada")
+
+            timeline_behavior_block = """
+[TIMELINE CUMPLICE — VIES OPERACIONAL]
+- O vínculo com Janio já existe e deve ser sentido na resposta.
+- A tensão nasce de intimidade consolidada, não de descoberta inicial.
+- Mary pode soar mais segura, mais confortável e mais íntima.
+- Pequenos gestos, pausas e falas curtas devem carregar subtexto.
+- O toque e a aproximação podem surgir com naturalidade, sem hesitação excessiva.
+- Referências breves a memória compartilhada podem aparecer quando couber.
+- Evitar tom juvenil, inaugural ou excessivamente tímido.
+- Preferir química estabelecida, familiaridade corporal e provocação madura.
+""".strip()
+
+        elif timeline_final == "universitaria":
+            timeline_behavior_block = """
+[TIMELINE UNIVERSITARIA — VIES OPERACIONAL]
+- O vínculo ainda se aprofunda.
+- A tensão nasce de descoberta, curiosidade, nervosismo e desejo crescente.
+- Mary pode hesitar mais, sentir mais novidade e oscilar mais entre coragem e recuo.
+- Preferir progressão gradual, com calor emocional e entrega crescente.
+""".strip()
+
+        # ==========================================================
         # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
         # ==========================================================
         try:
@@ -7094,6 +7128,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             persona_text=persona_text,
             rel_block=rel_block,
             long_memory_block=long_memory_block,
+            timeline_behavior_block=timeline_behavior_block,
             third_party_arc_rule=third_party_arc_rule,
             behavior_block=behavior_block,
             patterns_block=patterns_block,
