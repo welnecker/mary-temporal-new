@@ -5626,7 +5626,8 @@ class MaryService(BaseCharacter):
         continuity_rule: str,
         phone_message_rule: str,
         dialogue_density_rule: str,
-        facts_integrity_rule: str,        
+        facts_integrity_rule: str, 
+        long_memory_block: str = "",
     ) -> str:
         # ==========================================================
         # OVERRIDE DE ESTILO — MARY MAIS FALANTE E MENOS DESCRITIVA
@@ -5769,6 +5770,7 @@ class MaryService(BaseCharacter):
     
     [CANON]
     {canon_txt}
+    {long_memory_block}
     
     [PERSONA]
     {persona_text}
@@ -6263,6 +6265,42 @@ class MaryService(BaseCharacter):
 
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
+        # ==========================================================
+        # LONG MEMORY (Mongo)
+        # ==========================================================
+        long_memory_lines = []
+        
+        try:
+            # PINS entram sempre
+            pinned = list_long_memory(shared_key, limit=20) or []
+        
+            for m in pinned:
+                meta = m.get("meta") or {}
+                kind = str(meta.get("kind") or "").lower()
+        
+                if kind == "pin":
+                    txt = str(m.get("text") or "").strip()
+                    if txt:
+                        long_memory_lines.append(txt)
+        
+            # busca semântica baseada no prompt
+            found = search_long_memory_text(shared_key, prompt, limit=5) or []
+        
+            for m in found:
+                txt = str(m.get("text") or "").strip()
+                if txt and txt not in long_memory_lines:
+                    long_memory_lines.append(txt)
+        
+        except Exception:
+            pass
+        
+        
+        long_memory_block = ""
+        if long_memory_lines:
+            long_memory_block = (
+                "\n[MEMÓRIAS PERSISTENTES]\n"
+                + "\n".join(f"- {x}" for x in long_memory_lines)
+            )
 
         canon_rel_default = (
             canon.get("relationship_state")
@@ -6966,6 +7004,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
+            long_memory_block=long_memory_block,
             third_party_arc_rule=third_party_arc_rule,
             behavior_block=behavior_block,
             patterns_block=patterns_block,
