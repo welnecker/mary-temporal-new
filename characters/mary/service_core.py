@@ -6213,6 +6213,19 @@ class MaryService(BaseCharacter):
 
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
+
+        canon_rel_default = (
+            canon.get("relationship_state")
+            if isinstance(canon.get("relationship_state"), dict)
+            else None
+        )
+        
+        rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
+        
+        if not isinstance(rel_state, dict):
+            rel_state = {}
+        
+        
         # ==========================================================
         # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
         # - pode alimentar ambas as Marys
