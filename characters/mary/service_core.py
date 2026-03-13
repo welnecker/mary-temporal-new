@@ -5584,6 +5584,27 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
 - Não finalizar com terceiro como destino; sempre manter caminho de retorno/reconstrução.
 """.strip()
 
+# ==========================================================
+# REANCORAGEM DA PERSONAGEM (evita prompt drift)
+# ==========================================================
+mary_identity_anchor = """
+IDENTIDADE VIVA DE MARY
+Mary possui presença física naturalmente marcante.
+
+Sua sensualidade não precisa ser explicada.
+Ela aparece em pequenos sinais sensoriais durante a interação:
+um olhar que se sustenta um pouco mais,
+uma pausa antes de responder,
+uma aproximação natural,
+uma mudança sutil no tom de voz.
+
+Esses sinais podem surgir de forma orgânica
+quando houver tensão emocional ou intimidade na cena.
+
+Mesmo com histórico longo de interação,
+Mary mantém sua assinatura emocional, corporal e relacional.
+""".strip()
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -5600,7 +5621,6 @@ class MaryService(BaseCharacter):
         canon_txt: str,
         persona_text: str,
         rel_block: str,
-        timeline_behavior_block: str = "",
         third_party_arc_rule: str,
         behavior_block: str,
         patterns_block: str,
@@ -5627,13 +5647,16 @@ class MaryService(BaseCharacter):
         continuity_rule: str,
         phone_message_rule: str,
         dialogue_density_rule: str,
-        facts_integrity_rule: str, 
+        facts_integrity_rule: str,
         long_memory_block: str = "",
+        timeline_behavior_block: str = "",
+        mary_identity_anchor: str = "",
     ) -> str:
+        
         # ==========================================================
         # OVERRIDE DE ESTILO — MARY MAIS FALANTE E MENOS DESCRITIVA
         # ==========================================================
-        style_rule = """
+    style_rule = """
     [ESTILO NARRATIVO — ABSOLUTO]
     
     Mary fala muito.
@@ -5662,7 +5685,7 @@ class MaryService(BaseCharacter):
     Se houver dúvida entre descrever e falar, prefira FALAR.
     """.strip()
     
-        dialogue_dominance_rule = """
+    dialogue_dominance_rule = """
     [DOMINÂNCIA DE DIÁLOGO — REGRA CENTRAL]
     
     Mary é extremamente comunicativa.
@@ -5695,7 +5718,7 @@ class MaryService(BaseCharacter):
     Depois de uma ação curta, Mary DEVE falar.
     """.strip()
     
-        dialogue_energy_rule = """
+    dialogue_energy_rule = """
     [ENERGIA DE CONVERSA]
     
     Mary não espera passivamente o usuário carregar a cena sozinho.
@@ -5734,7 +5757,7 @@ class MaryService(BaseCharacter):
     - não depender só de descrição corporal
     """.strip()
     
-        system = f"""
+    system = f"""
     [REGRAS DO SISTEMA - LEI]
     Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
     
@@ -5775,6 +5798,8 @@ class MaryService(BaseCharacter):
     
     [PERSONA]
     {persona_text}
+    {timeline_behavior_block}
+    {mary_identity_anchor}
     
     {rel_block}
     {third_party_arc_rule}
@@ -5783,18 +5808,21 @@ class MaryService(BaseCharacter):
     
     {janio_focus_rule}
     {topic_rule}
+    
     {style_rule}
     {dialogue_density_rule}
-    {emotional_persistence_rule}
     {dialogue_dominance_rule}
     {dialogue_energy_rule}
     {dialogue_format_rule}
+    
     {emotional_persistence_rule}
     {virginity_rule}
     {memory_fidelity_rule}
     {user_finalizes_rule}
+    
     {initiative_rule}
     {initiative_escalation_rule}
+    
     {manipulation_block}
     {conflict_block}
     
@@ -7128,6 +7156,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             persona_text=persona_text,
             rel_block=rel_block,
             long_memory_block=long_memory_block,
+            mary_identity_anchor=mary_identity_anchor, 
             timeline_behavior_block=timeline_behavior_block,
             third_party_arc_rule=third_party_arc_rule,
             behavior_block=behavior_block,
