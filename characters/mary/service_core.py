@@ -6266,41 +6266,130 @@ class MaryService(BaseCharacter):
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
         # ==========================================================
-        # LONG MEMORY (Mongo)
+        # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
+        # - pode alimentar ambas as Marys
+        # - nunca vence facts ativos
+        # - nunca vence canon da timeline atual
+        # - entra apenas se compatível com a Mary atual
         # ==========================================================
-        long_memory_lines = []
-        
-        try:
-            # PINS entram sempre
-            pinned = list_long_memory(shared_key, limit=20) or []
-        
-            for m in pinned:
-                meta = m.get("meta") or {}
-                kind = str(meta.get("kind") or "").lower()
-        
-                if kind == "pin":
-                    txt = str(m.get("text") or "").strip()
-                    if txt:
-                        long_memory_lines.append(txt)
-        
-            # busca semântica baseada no prompt
-            found = search_long_memory_text(shared_key, prompt, limit=5) or []
-        
-            for m in found:
-                txt = str(m.get("text") or "").strip()
-                if txt and txt not in long_memory_lines:
-                    long_memory_lines.append(txt)
-        
-        except Exception:
-            pass
-        
-        
         long_memory_block = ""
-        if long_memory_lines:
-            long_memory_block = (
-                "\n[MEMÓRIAS PERSISTENTES]\n"
-                + "\n".join(f"- {x}" for x in long_memory_lines)
-            )
+        try:
+            long_memory_lines: List[str] = []
+            seen_lm: set[str] = set()
+
+            # usa a key compartilhada do app; fallback defensivo para a key global
+            lm_keys = []
+            try:
+                if shared_key:
+                    lm_keys.append(str(shared_key).strip())
+            except Exception:
+                pass
+
+            try:
+                global_shared_key = f"{user_id}::mary::shared"
+                if global_shared_key not in lm_keys:
+                    lm_keys.append(global_shared_key)
+            except Exception:
+                pass
+
+            canon_blob = _t_norm(canon_txt or "")
+            facts_now = facts if isinstance(facts, dict) else {}
+
+            def _lm_conflicts_with_truth(mem_text: str) -> bool:
+                t = _t_norm(mem_text or "")
+                if not t:
+                    return False
+
+                # facts vivos do turno atual
+                scene_local = _t_norm(str(facts_now.get("cena.local") or facts_now.get("local_cena_atual") or ""))
+                state_local = _t_norm(str(facts_now.get("state.local") or ""))
+                scene_time = _t_norm(str(facts_now.get("cena.tempo") or ""))
+                state_topic = _t_norm(str(facts_now.get("state.assunto") or ""))
+
+                # nunca deixar long memory disputar o presente
+                for v in (scene_local, state_local, scene_time, state_topic):
+                    if v and v in t:
+                        return True
+
+                # se canon da timeline atual já governa claramente o tema,
+                # long memory não precisa repetir nem disputar
+                thematic_groups = (
+                    ("mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "família", "familia"),
+                    ("profissão", "profissao", "trabalha", "clínica", "clinica", "consultório", "consultorio", "instagram"),
+                    ("idade", "altura", "peso", "olhos", "cabelos", "pele"),
+                )
+
+                for group in thematic_groups:
+                    if any(k in t for k in group) and any(k in canon_blob for k in group):
+                        return True
+
+                return False
+
+            # 1) pins compartilhados
+            for lm_key in lm_keys:
+                try:
+                    pinned = list_long_memory(lm_key, limit=20) or []
+                except Exception:
+                    pinned = []
+
+                for m in pinned:
+                    if not isinstance(m, dict):
+                        continue
+
+                    meta = m.get("meta") or {}
+                    kind = str(meta.get("kind") or "").strip().lower()
+                    txt = str(m.get("text") or "").strip()
+
+                    if kind != "pin" or not txt:
+                        continue
+
+                    norm = txt.lower()
+                    if norm in seen_lm:
+                        continue
+
+                    if _lm_conflicts_with_truth(txt):
+                        continue
+
+                    seen_lm.add(norm)
+                    long_memory_lines.append(txt)
+
+            # 2) memórias relevantes para o prompt atual
+            for lm_key in lm_keys:
+                try:
+                    found = search_long_memory_text(lm_key, prompt, limit=5) or []
+                except Exception:
+                    found = []
+
+                for m in found:
+                    if not isinstance(m, dict):
+                        continue
+
+                    txt = str(m.get("text") or "").strip()
+                    if not txt:
+                        continue
+
+                    norm = txt.lower()
+                    if norm in seen_lm:
+                        continue
+
+                    if _lm_conflicts_with_truth(txt):
+                        continue
+
+                    seen_lm.add(norm)
+                    long_memory_lines.append(txt)
+
+            if long_memory_lines:
+                long_memory_block = (
+                    "[LONG MEMORY COMPARTILHADA]\n"
+                    "- Estas memórias são persistentes e podem alimentar a Mary atual quando forem compatíveis.\n"
+                    "- Facts ativos e canon da timeline atual têm prioridade total.\n"
+                    "- Use apenas o que combinar com a Mary atual, sem contradizer o presente.\n"
+                    + "\n"
+                    + "\n".join(f"- {x}" for x in long_memory_lines)
+                ).strip()
+
+        except Exception:
+            long_memory_block = ""
 
         canon_rel_default = (
             canon.get("relationship_state")
