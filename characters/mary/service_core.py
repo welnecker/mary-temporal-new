@@ -7956,35 +7956,38 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 pass
     
         return p
-   def _chat(
-    self,
-    model: str,
-    messages: List[Dict[str, Any]],
-    temperature: float,
-    max_tokens: int,
-    *,
-    top_p: float = 0.95,
-    extra: Optional[Dict[str, Any]] = None,
-):
-    payload: Dict[str, Any] = {
-        "messages": messages,
-        "temperature": float(temperature),
-        "top_p": float(top_p),
-        "max_tokens": int(max_tokens),
-    }
+        
+    def _chat(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        *,
+        top_p: float = 0.95,
+        extra: Optional[Dict[str, Any]] = None,
+    ):
+        payload: Dict[str, Any] = {
+            "messages": messages,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_tokens": int(max_tokens),
+        }
 
-    if isinstance(extra, dict) and extra:
-        payload["extra"] = dict(extra)
+        if isinstance(extra, dict) and extra:
+            payload["extra"] = dict(extra)
 
-    try:
-        return service_router.route_chat_strict(model, payload)
-    except Exception:
-        if payload.get("extra"):
-            retry_payload = {
-                "messages": messages,
-                "temperature": float(temperature),
-                "top_p": float(top_p),
-                "max_tokens": int(max_tokens),
-            }
-            return service_router.route_chat_strict(model, retry_payload)
-        raise
+        try:
+            return service_router.route_chat_strict(model, payload)
+
+        except Exception:
+            if payload.get("extra"):
+                retry_payload = {
+                    "messages": messages,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                }
+                return service_router.route_chat_strict(model, retry_payload)
+
+            raise
