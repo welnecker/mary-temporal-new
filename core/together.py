@@ -10,7 +10,7 @@ import httpx
 # ============================================================
 DEFAULT_MODELS = [
     "together/zai-org/GLM-5",
-    "together/Qwen/Qwen3.5-397B-A17B",
+    "together/moonshotai/Kimi-K2.5",
     "together/Qwen/QwQ-32B",
     "together/zai-org/GLM-4.7",
 ]
@@ -82,62 +82,6 @@ def _sanitize_messages(messages: Any) -> List[Dict[str, str]]:
     return safe
 
 
-def _compress_for_qwen_397b(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    """
-    Regra específica para Qwen/Qwen3.5-397B-A17B:
-    - mantém até 2 system iniciais
-    - mantém só as últimas 8 mensagens do diálogo
-    """
-    if not messages:
-        return messages
-
-    system_msgs: List[Dict[str, str]] = []
-    tail_msgs: List[Dict[str, str]] = []
-
-    for m in messages:
-        if m.get("role") == "system" and len(system_msgs) < 2:
-            system_msgs.append(m)
-        else:
-            tail_msgs.append(m)
-
-    tail_msgs = tail_msgs[-8:]
-
-    return system_msgs + tail_msgs
-
-
-def _debug_log_payload(model_to_send: str, body: Dict[str, Any]) -> None:
-    try:
-        print("\n========== TOGETHER DEBUG ==========")
-        print("model_to_send:", model_to_send)
-        print("endpoint:", TOGETHER_BASE_URL)
-        print("body_keys:", list(body.keys()))
-        print("max_tokens:", body.get("max_tokens"))
-        print("temperature:", body.get("temperature"))
-        print("top_p:", body.get("top_p"))
-
-        messages = body.get("messages", [])
-        print("messages_count:", len(messages) if isinstance(messages, list) else "N/A")
-
-        if isinstance(messages, list):
-            for i, m in enumerate(messages[:10]):
-                if not isinstance(m, dict):
-                    print(f"[msg {i}] INVALID TYPE: {type(m).__name__}")
-                    continue
-
-                role = m.get("role")
-                content = m.get("content")
-                print(
-                    f"[msg {i}] role={role!r} "
-                    f"content_type={type(content).__name__} "
-                    f"content_len={len(str(content or ''))}"
-                )
-                print(f"[msg {i}] preview={str(content or '')[:220]!r}")
-
-        print("====================================\n")
-    except Exception as e:
-        print("TOGETHER DEBUG ERROR:", e)
-
-
 def chat(
     model: str,
     messages: List[Dict[str, str]],
@@ -155,17 +99,10 @@ def chat(
     model_to_send = _strip_together_prefix(model)
     safe_messages = _sanitize_messages(messages)
 
-    # Regra pontual só para este modelo
-    if model_to_send == "Qwen/Qwen3.5-397B-A17B":
-        safe_messages = _compress_for_qwen_397b(safe_messages)
-        safe_max_tokens = min(int(max_tokens), 600)
-    else:
-        safe_max_tokens = min(int(max_tokens), 800)
-
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
-        "max_tokens": safe_max_tokens,
+        "max_tokens": min(int(max_tokens), 800),
         "temperature": float(temperature),
         "top_p": float(top_p),
     }
@@ -173,8 +110,6 @@ def chat(
     timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
 
     try:
-        _debug_log_payload(model_to_send, body)
-
         with httpx.Client(timeout=timeout) as client:
             r = client.post(
                 TOGETHER_BASE_URL,
@@ -187,11 +122,6 @@ def chat(
                     err = r.json()
                 except Exception:
                     err = {"text": r.text}
-
-                print("\n========== TOGETHER ERROR BODY ==========")
-                print("status_code:", r.status_code)
-                print("error_json:", err)
-                print("=========================================\n")
 
                 raise RuntimeError(f"Together HTTP {r.status_code}: {err}")
 
