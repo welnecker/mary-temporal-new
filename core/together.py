@@ -8,7 +8,7 @@ import httpx
 # ✅ Lista pra UI (pode manter com prefixo "together/" porque o router pode usar isso na escolha)
 DEFAULT_MODELS = [
     "together/zai-org/GLM-5", 
-    "together/Qwen/Qwen2.5-72B-Instruct",
+    "together/Qwen/Qwen3.5-397B-A17B",
     "together/Qwen/QwQ-32B",
     "together/zai-org/GLM-4.7",
 ]
