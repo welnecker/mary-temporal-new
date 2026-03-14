@@ -82,6 +82,29 @@ def _sanitize_messages(messages: Any) -> List[Dict[str, str]]:
     return safe
 
 
+def _compress_for_qwen_397b(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """
+    Regra específica para Qwen/Qwen3.5-397B-A17B:
+    - mantém até 2 system iniciais
+    - mantém só as últimas 8 mensagens do diálogo
+    """
+    if not messages:
+        return messages
+
+    system_msgs: List[Dict[str, str]] = []
+    tail_msgs: List[Dict[str, str]] = []
+
+    for m in messages:
+        if m.get("role") == "system" and len(system_msgs) < 2:
+            system_msgs.append(m)
+        else:
+            tail_msgs.append(m)
+
+    tail_msgs = tail_msgs[-8:]
+
+    return system_msgs + tail_msgs
+
+
 def _debug_log_payload(model_to_send: str, body: Dict[str, Any]) -> None:
     try:
         print("\n========== TOGETHER DEBUG ==========")
@@ -96,7 +119,7 @@ def _debug_log_payload(model_to_send: str, body: Dict[str, Any]) -> None:
         print("messages_count:", len(messages) if isinstance(messages, list) else "N/A")
 
         if isinstance(messages, list):
-            for i, m in enumerate(messages[:5]):
+            for i, m in enumerate(messages[:10]):
                 if not isinstance(m, dict):
                     print(f"[msg {i}] INVALID TYPE: {type(m).__name__}")
                     continue
@@ -132,13 +155,17 @@ def chat(
     model_to_send = _strip_together_prefix(model)
     safe_messages = _sanitize_messages(messages)
 
-    # Payload conservador para diagnóstico:
-    # - sem extra
-    # - max_tokens reduzido
+    # Regra pontual só para este modelo
+    if model_to_send == "Qwen/Qwen3.5-397B-A17B":
+        safe_messages = _compress_for_qwen_397b(safe_messages)
+        safe_max_tokens = min(int(max_tokens), 600)
+    else:
+        safe_max_tokens = min(int(max_tokens), 800)
+
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
-        "max_tokens": min(int(max_tokens), 800),
+        "max_tokens": safe_max_tokens,
         "temperature": float(temperature),
         "top_p": float(top_p),
     }
