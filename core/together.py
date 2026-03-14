@@ -45,10 +45,8 @@ def _normalize_used_model_for_ui(used: str) -> str:
     u = (used or "").strip()
     if not u:
         return ""
-
     if u.lower().startswith("together/"):
         return u
-
     return f"together/{u}"
 
 
@@ -74,10 +72,12 @@ def _sanitize_messages(messages: Any) -> List[Dict[str, str]]:
         elif not isinstance(content, str):
             content = str(content)
 
-        safe.append({
-            "role": role,
-            "content": content,
-        })
+        safe.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
 
     return safe
 
@@ -99,16 +99,33 @@ def chat(
     model_to_send = _strip_together_prefix(model)
     safe_messages = _sanitize_messages(messages)
 
-    body: Dict[str, Any] = {
-        "model": model_to_send,
-        "messages": safe_messages,
-        "max_tokens": int(max_tokens),
-        "temperature": float(temperature),
-        "top_p": float(top_p),
-    }
+    # ============================================================
+    # Regra pontual para Qwen3.5-397B-A17B
+    # - payload mais conservador
+    # - sem extras
+    # - max_tokens reduzido
+    # ============================================================
+    if model_to_send == "Qwen/Qwen3.5-397B-A17B":
+        safe_max_tokens = min(int(max_tokens), 1200)
 
-    if isinstance(extra, dict) and extra:
-        body.update(extra)
+        body: Dict[str, Any] = {
+            "model": model_to_send,
+            "messages": safe_messages,
+            "max_tokens": safe_max_tokens,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+        }
+    else:
+        body = {
+            "model": model_to_send,
+            "messages": safe_messages,
+            "max_tokens": int(max_tokens),
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+        }
+
+        if isinstance(extra, dict) and extra:
+            body.update(extra)
 
     timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
 
@@ -136,7 +153,6 @@ def chat(
                 )
 
             choices = data.get("choices")
-
             if not isinstance(choices, list) or not choices:
                 raise RuntimeError(f"Together sem choices: {data}")
 
