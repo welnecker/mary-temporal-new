@@ -7960,7 +7960,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
     def _chat(
         self,
         model: str,
-        messages: List[Dict[str, Any]],
+        messages: List[Dict[str, str]],
         temperature: float,
         max_tokens: int,
         *,
@@ -7973,21 +7973,17 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-
         if isinstance(extra, dict) and extra:
-            payload["extra"] = dict(extra)
-
-        try:
-            return service_router.route_chat_strict(model, payload)
-
-        except Exception:
-            if payload.get("extra"):
-                retry_payload = {
+            payload.update(extra)
+            try:
+                return service_router.route_chat_strict(model, payload)
+            except Exception:
+                # Provider rejeitou campos extras → re-tenta 1x sem extras
+                payload = {
                     "messages": messages,
                     "temperature": float(temperature),
                     "top_p": float(top_p),
                     "max_tokens": int(max_tokens),
                 }
-                return service_router.route_chat_strict(model, retry_payload)
-
-            raise
+        return service_router.route_chat_strict(model, payload)
+  
