@@ -45,10 +45,8 @@ def _normalize_used_model_for_ui(used: str) -> str:
     u = (used or "").strip()
     if not u:
         return ""
-
     if u.lower().startswith("together/"):
         return u
-
     return f"together/{u}"
 
 
@@ -74,12 +72,47 @@ def _sanitize_messages(messages: Any) -> List[Dict[str, str]]:
         elif not isinstance(content, str):
             content = str(content)
 
-        safe.append({
-            "role": role,
-            "content": content,
-        })
+        safe.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
 
     return safe
+
+
+def _debug_log_payload(model_to_send: str, body: Dict[str, Any]) -> None:
+    try:
+        print("\n========== TOGETHER DEBUG ==========")
+        print("model_to_send:", model_to_send)
+        print("endpoint:", TOGETHER_BASE_URL)
+        print("body_keys:", list(body.keys()))
+        print("max_tokens:", body.get("max_tokens"))
+        print("temperature:", body.get("temperature"))
+        print("top_p:", body.get("top_p"))
+
+        messages = body.get("messages", [])
+        print("messages_count:", len(messages) if isinstance(messages, list) else "N/A")
+
+        if isinstance(messages, list):
+            for i, m in enumerate(messages[:5]):
+                if not isinstance(m, dict):
+                    print(f"[msg {i}] INVALID TYPE: {type(m).__name__}")
+                    continue
+
+                role = m.get("role")
+                content = m.get("content")
+                print(
+                    f"[msg {i}] role={role!r} "
+                    f"content_type={type(content).__name__} "
+                    f"content_len={len(str(content or ''))}"
+                )
+                print(f"[msg {i}] preview={str(content or '')[:220]!r}")
+
+        print("====================================\n")
+    except Exception as e:
+        print("TOGETHER DEBUG ERROR:", e)
 
 
 def chat(
@@ -99,20 +132,22 @@ def chat(
     model_to_send = _strip_together_prefix(model)
     safe_messages = _sanitize_messages(messages)
 
+    # Payload conservador para diagnóstico:
+    # - sem extra
+    # - max_tokens reduzido
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
-        "max_tokens": int(max_tokens),
+        "max_tokens": min(int(max_tokens), 800),
         "temperature": float(temperature),
         "top_p": float(top_p),
     }
 
-    if isinstance(extra, dict) and extra:
-        body.update(extra)
-
     timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
 
     try:
+        _debug_log_payload(model_to_send, body)
+
         with httpx.Client(timeout=timeout) as client:
             r = client.post(
                 TOGETHER_BASE_URL,
@@ -126,6 +161,11 @@ def chat(
                 except Exception:
                     err = {"text": r.text}
 
+                print("\n========== TOGETHER ERROR BODY ==========")
+                print("status_code:", r.status_code)
+                print("error_json:", err)
+                print("=========================================\n")
+
                 raise RuntimeError(f"Together HTTP {r.status_code}: {err}")
 
             data = r.json()
@@ -136,7 +176,6 @@ def chat(
                 )
 
             choices = data.get("choices")
-
             if not isinstance(choices, list) or not choices:
                 raise RuntimeError(f"Together sem choices: {data}")
 
@@ -150,5 +189,3 @@ def chat(
 
     except httpx.HTTPError as e:
         raise RuntimeError(f"Together HTTPError: {e}") from e
-
-###core_together funcional
