@@ -120,7 +120,6 @@ def chat(
                 headers=_headers(),
             )
 
-            # erro explícito
             if r.status_code >= 400:
                 try:
                     err = r.json()
