@@ -102,9 +102,24 @@ def chat(
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
+    
+        # comprimento de resposta
         "max_tokens": int(max_tokens),
+    
+        # criatividade controlada
         "temperature": float(temperature),
+    
+        # diversidade
         "top_p": float(top_p),
+    
+        # evita repetição
+        "presence_penalty": 0.3,
+        "frequency_penalty": 0.2,
+    
+        # melhora continuidade narrativa
+        "repetition_penalty": 1.08,
+
+        "stop": ["</s>"],
     }
 
     timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
