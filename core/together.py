@@ -5,15 +5,19 @@ from typing import Any, Dict, List, Tuple
 
 import httpx
 
-# ✅ Lista pra UI (pode manter com prefixo "together/" porque o router pode usar isso na escolha)
+# ============================================================
+# Modelos exibidos na UI
+# ============================================================
 DEFAULT_MODELS = [
-    "together/zai-org/GLM-5", 
-    "together/Qwen/Qwen2.5-72B-Instruct",
+    "together/zai-org/GLM-5",
+    "together/Qwen/Qwen3.5-397B-A17B",
     "together/Qwen/QwQ-32B",
     "together/zai-org/GLM-4.7",
 ]
 
-# ✅ Endpoint padrão do Together é /v1/chat/completions
+# ============================================================
+# Endpoint padrão Together
+# ============================================================
 TOGETHER_BASE_URL = os.getenv(
     "TOGETHER_BASE_URL",
     "https://api.together.xyz/v1/chat/completions",
@@ -41,10 +45,10 @@ def _normalize_used_model_for_ui(used: str) -> str:
     u = (used or "").strip()
     if not u:
         return ""
-    # se já vier "together/..." mantém
+
     if u.lower().startswith("together/"):
         return u
-    # normaliza pra UI como "together/<model>"
+
     return f"together/{u}"
 
 
@@ -71,6 +75,7 @@ def chat(
         "temperature": float(temperature),
         "top_p": float(top_p),
     }
+
     if isinstance(extra, dict) and extra:
         body.update(extra)
 
@@ -78,32 +83,40 @@ def chat(
 
     try:
         with httpx.Client(timeout=timeout) as client:
-            r = client.post(TOGETHER_BASE_URL, json=body, headers=_headers())
+            r = client.post(
+                TOGETHER_BASE_URL,
+                json=body,
+                headers=_headers(),
+            )
 
-            # ✅ erro com payload bruto (pra você enxergar de verdade)
+            # erro explícito
             if r.status_code >= 400:
                 try:
                     err = r.json()
                 except Exception:
                     err = {"text": r.text}
+
                 raise RuntimeError(f"Together HTTP {r.status_code}: {err}")
 
             data = r.json()
-            if not isinstance(data, dict):
-                raise RuntimeError(f"Together retornou tipo inesperado: {type(data).__name__}")
 
-            # ✅ garante que existe choices (ping depende disso)
+            if not isinstance(data, dict):
+                raise RuntimeError(
+                    f"Together retornou tipo inesperado: {type(data).__name__}"
+                )
+
             choices = data.get("choices")
+
             if not isinstance(choices, list) or not choices:
                 raise RuntimeError(f"Together sem choices: {data}")
 
             used_raw = data.get("model") or model_to_send
             used_ui = _normalize_used_model_for_ui(str(used_raw))
 
-            # ✅ Provider com mesmo casing do resto do app
             return data, used_ui, "Together"
 
     except httpx.TimeoutException as e:
         raise RuntimeError("Together: timeout") from e
+
     except httpx.HTTPError as e:
         raise RuntimeError(f"Together HTTPError: {e}") from e
