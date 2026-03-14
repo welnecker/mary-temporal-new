@@ -52,6 +52,36 @@ def _normalize_used_model_for_ui(used: str) -> str:
     return f"together/{u}"
 
 
+def _sanitize_messages(messages: Any) -> List[Dict[str, str]]:
+    safe: List[Dict[str, str]] = []
+    allowed_roles = {"system", "user", "assistant"}
+
+    if not isinstance(messages, list):
+        return safe
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+
+        role = str(msg.get("role") or "").strip().lower()
+        content = msg.get("content")
+
+        if role not in allowed_roles:
+            continue
+
+        if content is None:
+            content = ""
+        elif not isinstance(content, str):
+            content = str(content)
+
+        safe.append({
+            "role": role,
+            "content": content,
+        })
+
+    return safe
+
+
 def chat(
     model: str,
     messages: List[Dict[str, str]],
@@ -67,10 +97,11 @@ def chat(
     """
 
     model_to_send = _strip_together_prefix(model)
+    safe_messages = _sanitize_messages(messages)
 
     body: Dict[str, Any] = {
         "model": model_to_send,
-        "messages": messages,
+        "messages": safe_messages,
         "max_tokens": int(max_tokens),
         "temperature": float(temperature),
         "top_p": float(top_p),
