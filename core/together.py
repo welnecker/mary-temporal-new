@@ -104,7 +104,7 @@ def chat(
         "messages": safe_messages,
     
         # comprimento de resposta
-        "max_tokens": min(int(max_tokens), 2600)
+        "max_tokens": min(int(max_tokens), 2600),
     
         # criatividade controlada
         "temperature": float(temperature),
