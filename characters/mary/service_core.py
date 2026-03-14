@@ -7966,114 +7966,25 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
     top_p: float = 0.95,
     extra: Optional[Dict[str, Any]] = None,
 ):
-    base_payload: Dict[str, Any] = {
+    payload: Dict[str, Any] = {
         "messages": messages,
         "temperature": float(temperature),
         "top_p": float(top_p),
         "max_tokens": int(max_tokens),
     }
 
-    # Campos geralmente aceitos em routers/providers compatíveis com chat completions
-    allowed_extra_keys = {
-        "stop",
-        "stream",
-        "presence_penalty",
-        "frequency_penalty",
-        "response_format",
-        "tools",
-        "tool_choice",
-        "logprobs",
-        "top_logprobs",
-        "n",
-        "seed",
-        "safe_model",
-    }
-
-    safe_extra: Dict[str, Any] = {}
-    dropped_extra: Dict[str, Any] = {}
-
     if isinstance(extra, dict) and extra:
-        for k, v in extra.items():
-            if k in allowed_extra_keys and v is not None:
-                safe_extra[k] = v
-            else:
-                dropped_extra[k] = v
+        payload["extra"] = dict(extra)
 
-    payload_with_extra = dict(base_payload)
-    payload_with_extra.update(safe_extra)
-
-    # diagnóstico útil para UI / debug
     try:
-        _ss_set(
-            "mary_last_chat_payload_preview",
-            {
-                "model": model,
-                "base_keys": list(base_payload.keys()),
-                "safe_extra_keys": list(safe_extra.keys()),
-                "dropped_extra_keys": list(dropped_extra.keys()),
-                "messages_preview": [
-                    {
-                        "role": m.get("role"),
-                        "content_type": type(m.get("content")).__name__,
-                        "content_preview": (
-                            m.get("content")[:300]
-                            if isinstance(m.get("content"), str)
-                            else str(m.get("content"))[:300]
-                        ),
-                    }
-                    for m in (messages or [])[:3]
-                    if isinstance(m, dict)
-                ],
-            },
-        )
+        return service_router.route_chat_strict(model, payload)
     except Exception:
-        pass
-
-    first_error = None
-
-    # 1ª tentativa: com extras saneados
-    if safe_extra:
-        try:
-            return service_router.route_chat_strict(model, payload_with_extra)
-        except Exception as e:
-            first_error = e
-            try:
-                _ss_set(
-                    "mary_last_chat_retry_reason",
-                    {
-                        "stage": "with_safe_extra_failed",
-                        "model": model,
-                        "safe_extra_keys": list(safe_extra.keys()),
-                        "dropped_extra_keys": list(dropped_extra.keys()),
-                        "error_type": type(e).__name__,
-                        "error_msg": str(e),
-                    },
-                )
-            except Exception:
-                pass
-
-    # 2ª tentativa: payload puro, sem extras
-    try:
-        return service_router.route_chat_strict(model, base_payload)
-    except Exception as e2:
-        try:
-            _ss_set(
-                "mary_last_chat_retry_reason",
-                {
-                    "stage": "base_payload_failed",
-                    "model": model,
-                    "safe_extra_keys": list(safe_extra.keys()),
-                    "dropped_extra_keys": list(dropped_extra.keys()),
-                    "first_error_type": type(first_error).__name__ if first_error else "",
-                    "first_error_msg": str(first_error) if first_error else "",
-                    "second_error_type": type(e2).__name__,
-                    "second_error_msg": str(e2),
-                },
-            )
-        except Exception:
-            pass
-
-        # Se já houve erro com extras, devolve o erro mais informativo
-        if first_error is not None:
-            raise first_error
+        if payload.get("extra"):
+            retry_payload = {
+                "messages": messages,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "max_tokens": int(max_tokens),
+            }
+            return service_router.route_chat_strict(model, retry_payload)
         raise
