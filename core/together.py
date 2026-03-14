@@ -102,7 +102,7 @@ def chat(
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
-        "max_tokens": min(int(max_tokens), 800),
+        "max_tokens": int(max_tokens),
         "temperature": float(temperature),
         "top_p": float(top_p),
     }
