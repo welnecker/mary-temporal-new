@@ -7844,67 +7844,67 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
     # helpers
     # -------------------------
     @staticmethod
-def _extract_text(resp: Any) -> str:
-    try:
-        if resp is None:
-            return ""
-
-        if isinstance(resp, str):
-            return resp.strip()
-
-        if isinstance(resp, dict):
-            choices = resp.get("choices")
-            if isinstance(choices, list) and choices:
-                c0 = choices[0] or {}
-                msg = c0.get("message") or {}
-
-                if isinstance(msg, dict):
-                    content = msg.get("content")
-                    reasoning = msg.get("reasoning")
-
-                    # 1) content normal
-                    if isinstance(content, str) and content.strip():
-                        return content.strip()
-
-                    # 2) content em lista
-                    if isinstance(content, list):
-                        parts = []
-                        for it in content:
-                            if isinstance(it, str) and it.strip():
-                                parts.append(it.strip())
-                                continue
-                            if isinstance(it, dict):
-                                t = it.get("text") or it.get("content")
-                                if isinstance(t, str) and t.strip():
-                                    parts.append(t.strip())
-                        if parts:
-                            return "\n".join(parts).strip()
-
-                    # 3) fallback para reasoning
-                    if isinstance(reasoning, str) and reasoning.strip():
-                        return reasoning.strip()
-
-                txt = c0.get("text")
-                if isinstance(txt, str) and txt.strip():
-                    return txt.strip()
-
-            for k in ("output_text", "text", "content", "result"):
-                v = resp.get(k)
-                if isinstance(v, str) and v.strip():
-                    return v.strip()
-
-            msgs = resp.get("messages")
-            if isinstance(msgs, list) and msgs:
-                last = msgs[-1] or {}
-                if isinstance(last, dict):
-                    v = last.get("content")
+    def _extract_text(resp: Any) -> str:
+        try:
+            if resp is None:
+                return ""
+    
+            if isinstance(resp, str):
+                return resp.strip()
+    
+            if isinstance(resp, dict):
+                choices = resp.get("choices")
+                if isinstance(choices, list) and choices:
+                    c0 = choices[0] or {}
+                    msg = c0.get("message") or {}
+    
+                    if isinstance(msg, dict):
+                        content = msg.get("content")
+                        reasoning = msg.get("reasoning")
+    
+                        # 1) content normal
+                        if isinstance(content, str) and content.strip():
+                            return content.strip()
+    
+                        # 2) content em lista
+                        if isinstance(content, list):
+                            parts = []
+                            for it in content:
+                                if isinstance(it, str) and it.strip():
+                                    parts.append(it.strip())
+                                    continue
+                                if isinstance(it, dict):
+                                    t = it.get("text") or it.get("content")
+                                    if isinstance(t, str) and t.strip():
+                                        parts.append(t.strip())
+                            if parts:
+                                return "\n".join(parts).strip()
+    
+                        # 3) fallback para reasoning
+                        if isinstance(reasoning, str) and reasoning.strip():
+                            return reasoning.strip()
+    
+                    txt = c0.get("text")
+                    if isinstance(txt, str) and txt.strip():
+                        return txt.strip()
+    
+                for k in ("output_text", "text", "content", "result"):
+                    v = resp.get(k)
                     if isinstance(v, str) and v.strip():
                         return v.strip()
-
-        return ""
-
-    except Exception:
-        return ""
+    
+                msgs = resp.get("messages")
+                if isinstance(msgs, list) and msgs:
+                    last = msgs[-1] or {}
+                    if isinstance(last, dict):
+                        v = last.get("content")
+                        if isinstance(v, str) and v.strip():
+                            return v.strip()
+    
+            return ""
+    
+        except Exception:
+            return ""
     # ==============================
     # Intimacy Phase (compat)
     # ==============================
