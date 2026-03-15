@@ -1364,13 +1364,27 @@ def _memory_timeline_ok(meta: Dict[str, Any], timeline: str) -> bool:
     return tms == tl
 
 def _has_canon_memories(shared_key: str, timeline: str) -> bool:
-    mems = cached_list_memories(shared_key, limit=240)
-    for m in mems:
-        meta = m.get("meta") or {}
-        if str(meta.get("kind") or "").strip().lower() != "canon":
-            continue
-        if _memory_timeline_ok(meta, timeline):
-            return True
+    PAGE = 120
+    HARD_CAP = 480
+
+    scanned = 0
+    offset = 0
+
+    while scanned < HARD_CAP:
+        batch = cached_list_memories_page(shared_key, offset=offset, limit=PAGE)
+        if not batch:
+            return False
+
+        for m in batch:
+            meta = m.get("meta") or {}
+            if str(meta.get("kind") or "").strip().lower() != "canon":
+                continue
+            if _memory_timeline_ok(meta, timeline):
+                return True
+
+        scanned += len(batch)
+        offset += PAGE
+
     return False
 
 def _inject_canon_memories_always(
