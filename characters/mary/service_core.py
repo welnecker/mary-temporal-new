@@ -1536,11 +1536,7 @@ def _inject_intro_as_context_once(
                     delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
                     deleted_any = True
 
-                # remove o intro sincronizado que ficou persistido em facts
-                if get_fact(usuario_key, f"mary.intro.{tl}", default=None) is not None:
-                    delete_fact(usuario_key, f"mary.intro.{tl}")
-                    deleted_any = True
-
+                
             # remove legado que às vezes “trava” a timeline
             if get_fact(usuario_key, "mary.timeline.fixed", default=None) is not None:
                 delete_fact(usuario_key, "mary.timeline.fixed")
@@ -1609,7 +1605,7 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     priority_terms_cfg = _domain_terms("priority")
     priority_terms = [t for t in keep if t in priority_terms_cfg]
 
-    q_terms = list(dict.fromkeys(priority_terms + keep[:20]))
+    q_terms = list(dict.fromkeys(priority_terms + keep[:15]))
     q = " ".join(q_terms).strip()
     q = re.sub(r"\s{2,}", " ", q).strip()
     return q or s
@@ -1670,7 +1666,7 @@ def _inject_long_memory_pins_always(
     """
     try:
         long_key = _long_key(shared_key)
-        rows = list_long_memory(long_key, limit=400) or []
+        rows = list_long_memory(long_key, limit=200) or []
     except Exception:
         rows = []
 
@@ -1889,7 +1885,7 @@ def _memory_conflicts_with_truth(
             return True
 
     if _contains_any_term(t, phase_terms):
-        if f:
+        if f.get("fase_intima") or f.get("rel"):
             return True
 
     for val in (scene_local, state_local, scene_tempo, scene_acao):
@@ -2024,7 +2020,7 @@ def _inject_long_memory_textsearch(
         mongo_rows = search_long_memory_text(
             long_key,
             q,
-            limit=max(8, int(limit or 4)),
+            limit=max(12, int(limit or 4)),
         ) or []
     except Exception:
         mongo_rows = []
@@ -2035,7 +2031,7 @@ def _inject_long_memory_textsearch(
             usuario_key,
             long_key,
             prompt,
-            limit=max(8, int(limit or 4)),
+            limit=max(12, int(limit or 4)),
             timeline=timeline,
             facts=facts,
         )
