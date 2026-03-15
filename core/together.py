@@ -11,7 +11,7 @@ import httpx
 DEFAULT_MODELS = [
     "together/zai-org/GLM-5",
     "together/moonshotai/Kimi-K2.5",
-    "together/Qwen/QwQ-32B",
+    "together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
     "together/zai-org/GLM-4.7",
 ]
 
