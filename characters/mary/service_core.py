@@ -66,52 +66,91 @@ DEFAULT_STOPWORDS_PT = {
     "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
     "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
     "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
-    "aqui","ali","lá","ta","tb","também","tambem","sabe","amor","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
+    "aqui","ali","lá","ta","tb","também","tambem","sabe","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
 }
 
+# Termos que ajudam a priorizar o universo da personagem e elementos
+# recorrentes da vida dela, sem puxar terceiros à toa.
 DOMAIN_PRIORITY_TERMS = {
-    "mary","janio","enzo","arthur","bianca","silvia","ricardo",
+    # Núcleo identitário
+    "mary","janio",
+
+    # Vida pessoal / formação / rotina
     "formada","formado","formação","formacao","faculdade","curso","graduação","graduacao",
     "profissão","profissao","trabalho","carreira",
     "psicologia","medicina","engenharia","administração","administracao",
     "ufes","instagram","pacientes","clínica","clinica",
-    "academia","quiosque","casamento","beijo","transa","primeira vez"
+
+    # Cotidiano / ambientação humana
+    "casa","apartamento","cozinha","banheiro","quarto","sala","sofá","sofa",
+    "cama","roupão","roupao","toalha","espelho",
+    "café","cafe","jantar","almoço","almoco","rotina","descanso","descansar","dormir",
+
+    # Cenários recorrentes
+    "academia","orla","quiosque",
+
+    # Vínculos e marcos narrativos
+    "casamento","beijo","primeira vez"
 }
 
+# Emoções e estados internos de Mary.
+# Aqui ficam sentimentos e tensões subjetivas — não eventos físicos explícitos.
 DOMAIN_EMOTIONAL_TERMS = {
     "segredo","promessa","culpa","ciume","ciúme","medo","abandono",
-    "saudade","amor","desejo","tesão","tesao","gozar","orgasmo",
-    "primeira vez","virgem","traição","traicao","pendência","pendencia",
-    "janio","arthur","enzo","academia","quiosque","casamento","beijo"
+    "saudade","amor","desejo","carência","carencia","vontade",
+    "insegurança","inseguranca","vergonha","ternura","afeto",
+    "ansiedade","ciúmes","tensão","tensao","pendência","pendencia"
 }
 
+# Eventos/marcos narrativos de alto impacto.
+# Separados das emoções para evitar que o sistema trate tudo como “estado emocional”.
+DOMAIN_EVENT_TERMS = {
+    "beijo","transa","sexo","gozar","orgasmo",
+    "primeira vez","virgem","virgindade",
+    "traição","traicao","casamento"
+}
+
+# Termos usados para detectar sobreposição temática entre memória, contexto e turno atual.
+# Mantidos mais enxutos e focados em núcleos realmente repetíveis.
 DOMAIN_OVERLAP_TERMS = {
-    "segredo","promessa","culpa","medo","ciume","ciúme","janio",
-    "enzo","arthur","academia","quiosque","primeira vez","virgem",
-    "traição","traicao","casamento","beijo"
+    "segredo","promessa","culpa","medo","ciume","ciúme",
+    "janio","academia","quiosque","orla",
+    "primeira vez","virgem","traição","traicao","casamento","beijo"
 }
 
+# Temas que devem ser governados por facts vivos, e não “decididos” livremente pelo modelo.
 FACT_GOVERNED_TERMS = {
     "virgindade": {"virgem","virgindade","primeira vez"},
-    "consumacao": {"consummated","consumado","consumada","relacao","relação"},
-    "fase_intima": {"fase","climax","clímax","aftercare","intimidade"},
-    "arco": {"anchor","tension","guilt","third party","terceiro"},
+    "consumacao": {"consummated","consumado","consumada","relacao","relação","sexo","transa"},
+    "fase_intima": {"fase","climax","clímax","aftercare","intimidade","orgasmo","gozar"},
+    "arco": {"anchor","tension","guilt","third party","terceiro","ciume","ciúme"},
 }
 
 def _ss_get_set(key: str, default: set[str]) -> set[str]:
     try:
         val = _ss_get(key, None)
+
         if isinstance(val, (list, set, tuple)):
             return {str(x).strip().lower() for x in val if str(x).strip()}
+
+        # aceita string tipo "a,b,c"
+        if isinstance(val, str):
+            parts = re.split(r"[,\n;]", val)
+            parsed = {p.strip().lower() for p in parts if p.strip()}
+            if parsed:
+                return parsed
+
     except Exception:
         pass
-    return {str(x).strip().lower() for x in default if str(x).strip()}
 
+    return {str(x).strip().lower() for x in default if str(x).strip()}
+    
 def _domain_terms(name: str) -> set[str]:
     mapping = {
         "stopwords": DEFAULT_STOPWORDS_PT,
         "priority": DOMAIN_PRIORITY_TERMS,
         "emotional": DOMAIN_EMOTIONAL_TERMS,
+        "event": DOMAIN_EVENT_TERMS,
         "overlap": DOMAIN_OVERLAP_TERMS,
     }
     return _ss_get_set(f"{_SS_PREFIX}terms::{name}", mapping.get(name, set()))
@@ -124,16 +163,35 @@ def _contains_any_term(text: str, terms: set[str]) -> bool:
     txt = _t_norm(text or "")
     if not txt or not terms:
         return False
-    return any(term in txt for term in terms if term)
 
+    for term in terms:
+        if not term:
+            continue
+        if re.search(rf"\b{re.escape(term)}\b", txt):
+            return True
+
+    return False
+    
 def _count_matching_terms(text: str, terms: set[str]) -> int:
     txt = _t_norm(text or "")
     if not txt or not terms:
         return 0
-    return sum(1 for term in terms if term and term in txt)
 
+    count = 0
 
+    for term in terms:
+        if not term:
+            continue
 
+        if re.search(rf"\b{re.escape(term)}\b", txt):
+            count += 1
+
+    return count
+
+        if re.search(rf"\b{re.escape(term)}\b", txt):
+            count += 1
+
+    return count
 
 # ==========================================================
 # HIDDEN-THOUGHT STRIPPER (initiative CoT scaffolding)
@@ -413,9 +471,13 @@ def clear_mem_cache_for_shared(shared_key: str) -> None:
         if isinstance(k, str) and k.startswith(prefix):
             _ss_del(k)
 def clear_shared_memory_cache(user_id: str) -> None:
-    # shared agora depende de timeline; usa a timeline atual do session_state
     tl_raw = _ss_get(f"{_SS_PREFIX}timeline") or _ss_get("mary_timeline") or "cumplice"
     tl = _normalize_timeline(tl_raw if isinstance(tl_raw, str) else "cumplice")
+
+    # limpa memória shared por timeline
+    clear_mem_cache_for_shared(_shared_key(user_id, tl))
+
+    # limpa também long memory global legado
     clear_mem_cache_for_shared(_long_key(user_id))
     
 def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
@@ -582,8 +644,7 @@ def nsfw_enabled(
 
     # 5) default por timeline
     return False if tl == "universitaria" else True
-    # 3) facts persistido
-    facts = get_facts(usuario_key) or {}
+       
     if not isinstance(facts, dict):
         return False
 
@@ -603,7 +664,7 @@ def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on:
     """
     Se NSFW OFF, terceiros NÃO pode ficar True persistido.
     """
-    facts = get_facts(usuario_key) or {}
+    facts = cached_get_facts(usuario_key) or {}
     if not isinstance(facts, dict):
         return
 
@@ -643,7 +704,7 @@ def third_party_enabled(usuario_key: str, *, third_party_override: Optional[bool
         pass
 
     # 3) facts
-    facts = get_facts(usuario_key) or {}
+    facts = cached_get_facts(usuario_key) or {}
     if not isinstance(facts, dict):
         return False
     mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
@@ -4959,7 +5020,7 @@ def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion: st
     tl = (timeline or "").strip().lower()
     emo = (emotion or "").strip().lower() or "neutro"
     try:
-        facts = get_facts(usuario_key) or {}
+        facts = cached_get_facts(usuario_key) or {}
     except Exception:
         facts = {}
     if not isinstance(facts, dict):
