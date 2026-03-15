@@ -2166,18 +2166,27 @@ def _inject_long_memory_textsearch(
         + "\n".join(bullets)
     )
 
-    messages.append({
-        "role": "system",
-        "content": block,
-    })
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base + "\n\n" + block).strip()
+    else:
+        messages.append({
+            "role": "system",
+            "content": block,
+        })
+   
 # ==========================================================
 # BM25 (fallback leve)
 # ==========================================================
 _WORD_RE = re.compile(r"[\w\u00C0-\u017F']+", re.UNICODE)
 
 def _tok(text: str) -> List[str]:
-    return [t.lower() for t in _WORD_RE.findall(text or "") if t.strip()]
-
+    stop = _domain_terms("stopwords")
+    return [
+        t.lower()
+        for t in _WORD_RE.findall(text or "")
+        if t.strip() and t.lower() not in stop
+    ]
 def _bm25_topk(docs: List[str], query: str, k: int = 8) -> List[int]:
     q = _tok(query)
     if not docs or not q:
@@ -2300,7 +2309,9 @@ def _memory_narrative_weight(mem: Dict[str, Any], chunk: str, user_prompt: str) 
     score += 0.05 * _count_matching_terms(ch, emotional_terms)
 
     for term in overlap_terms:
-        if term in up and term in ch:
+        if not term:
+            continue
+        if re.search(rf"\b{re.escape(term)}\b", up) and re.search(rf"\b{re.escape(term)}\b", ch):
             score += 0.08
 
     ts = _memory_timestamp(mem)
@@ -2335,6 +2346,8 @@ def _inject_relevant_memories(
     k: int = 4,
     *,
     dedupe_bucket: Optional[set] = None,
+    facts: Optional[Dict[str, Any]] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     """
     ✅ BM25 em chunks (em vez do texto inteiro) para:
@@ -2350,6 +2363,7 @@ def _inject_relevant_memories(
     chunk_map: List[Tuple[Dict[str, Any], str, str]] = []  # (mem, chunk, hash_full_dedupe)
 
     tl = _normalize_timeline(timeline)
+    hist = history if isinstance(history, list) else []
 
     for m in mems:
         meta = m.get("meta") or {}
@@ -2362,6 +2376,12 @@ def _inject_relevant_memories(
 
         text_full = str(m.get("text") or "").strip()
         if not text_full:
+            continue
+
+        if _memory_conflicts_with_truth(text_full, facts=facts):
+            continue
+        
+        if _memory_conflicts_with_recent_emotion(text_full, history=hist):
             continue
 
         text_dedupe = re.sub(r"\[[^\]]+\]", "", text_full).strip()
@@ -2548,7 +2568,7 @@ def _inject_shared_soft_context(
     for m in mems:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
-        if kind == "canon":
+        if kind in {"canon", "pin", "guide", "fixed"}:
             continue
         if not _memory_timeline_ok(meta, timeline):
             continue
@@ -2557,8 +2577,18 @@ def _inject_shared_soft_context(
         if not txt:
             continue
 
+        facts = cached_get_facts(_current_user_key())
+        history = cached_get_history(_current_user_key(), limit=40)
+        
+        if _memory_conflicts_with_truth(txt, facts=facts):
+            continue
+        
+        if _memory_conflicts_with_recent_emotion(txt, history=history):
+            continue
+
         if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
+            txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
+            h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
             dedupe_bucket.add(h)  # ✅ add aqui (dentro do loop), não fora
@@ -2600,7 +2630,7 @@ def _inject_shared_soft_context(
 # RELATIONSHIP STATE
 # ==========================================================
 def _rel_fact_key(timeline: str) -> str:
-    tl = (timeline or "").strip() or "cumplice"
+    tl = _normalize_timeline(timeline)
     return f"rel.state::{tl}"
 
 # ==========================================================
@@ -2836,25 +2866,24 @@ def _infer_memory_tags(text: str, title: str = "") -> List[str]:
     """
     blob = _t_norm(f"{title} {text}")
 
-    candidates = [
-        "mary", "janio",
-        "formação", "formado", "formada", "faculdade", "curso", "graduação",
-        "profissão", "trabalho", "carreira",
-        "psicologia", "medicina", "engenharia", "administração",
-        "ufes", "instagram", "pacientes", "clínica", "clinica",
-        "ciúme", "ciume", "segredo", "filho", "bebê", "bebe",
-        "academia", "silvia", "enzo", "arthur",
-    ]
+    candidates = list(dict.fromkeys(
+        list(_domain_terms("priority")) +
+        list(_domain_terms("emotional")) +
+        list(_domain_terms("event"))
+    ))
 
     found: List[str] = []
     seen = set()
 
     for c in candidates:
-        if c in blob:
-            key = _t_norm(c)
+        cc = str(c or "").strip()
+        if not cc:
+            continue
+        if re.search(rf"\b{re.escape(_t_norm(cc))}\b", blob):
+            key = _t_norm(cc)
             if key not in seen:
                 seen.add(key)
-                found.append(c)
+                found.append(cc)
 
     return found[:10]
     
@@ -2865,11 +2894,12 @@ def _expr_match(mem: Dict[str, Any], parsed_expr: List[List[str]]) -> bool:
     hay = _memory_haystack(mem)
     if not hay:
         return False
+
     for or_group in parsed_expr:
         ok = False
         for opt in or_group:
             tok = _norm_token(opt)
-            if tok and tok in hay:
+            if tok and re.search(rf"\b{re.escape(tok)}\b", hay):
                 ok = True
                 break
         if not ok:
@@ -2955,10 +2985,6 @@ def _inject_memory_block(
     tags: Optional[List[str]] = None,
     source: str = "memory",
 ) -> None:
-    """
-    Injeta memória como CONTEXTO AUXILIAR, sem disputar topo de hierarquia
-    com o system base nem com o histórico recente.
-    """
     txt = str(text or "").strip()
     if not txt:
         return
@@ -2983,8 +3009,11 @@ def _inject_memory_block(
         f"{txt}"
     ).strip()
 
-    # ✅ append, não insert(1)
-    messages.append({"role": "system", "content": block})
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        base = str(messages[0].get("content") or "").rstrip()
+        messages[0]["content"] = (base + "\n\n" + block).strip()
+    else:
+        messages.append({"role": "system", "content": block})
 def _inject_manual_memory_if_any(
     *,
     usuario_key: str,
@@ -2996,6 +3025,7 @@ def _inject_manual_memory_if_any(
 ) -> None:
     if not spec:
         return
+
     expr = str(spec.get("expr") or "").strip()
     if not expr:
         return
@@ -3005,6 +3035,7 @@ def _inject_manual_memory_if_any(
         return
 
     mems = cached_list_memories(shared_key, limit=600) or []
+
     # respeita timeline quando meta carrega isso
     filtered: List[Dict[str, Any]] = []
     for m in mems:
@@ -3012,17 +3043,24 @@ def _inject_manual_memory_if_any(
         if _memory_timeline_ok(meta, timeline):
             filtered.append(m)
 
-    chosen = _select_memories(filtered, parsed, mode=spec.get("mode"), n=spec.get("n"))
+    chosen = _select_memories(
+        filtered,
+        parsed,
+        mode=spec.get("mode"),
+        n=spec.get("n"),
+    )
     if not chosen:
         return
 
     # injeta (no máximo 1 por turno por padrão; @lastN injeta N mas limitamos a 2)
     max_inject = 1
-    mode = (spec.get("mode") or "")
-    if mode and mode.startswith("last"):
+    mode = str(spec.get("mode") or "").strip().lower()
+    if mode.startswith("last"):
         max_inject = max(1, min(2, int(spec.get("n") or 1)))
 
     injected = 0
+    history = cached_get_history(usuario_key, limit=40)
+
     for mem in chosen[:max_inject]:
         mid = _memory_id(mem)
         if not _cooldown_allows(usuario_key, mid, latent=False):
@@ -3033,9 +3071,6 @@ def _inject_manual_memory_if_any(
             continue
 
         # impede manual memory de competir com facts/canon do turno
-        history = cached_get_history(usuario_key, limit=40)
-
-        # impede manual memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
 
@@ -3044,9 +3079,17 @@ def _inject_manual_memory_if_any(
             continue
 
         tags = _parse_tags_from_memory(txt)
-        _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="manual")
+        _inject_memory_block(
+            messages,
+            kind=kind,
+            title=title,
+            text=txt,
+            tags=tags,
+            source="manual",
+        )
         _mark_cooldown(usuario_key, mid, latent=False)
         injected += 1
+
         if injected >= max_inject:
             break
 def _eval_latent_condition(cond: str, *, tp_arc: Dict[str, Any]) -> bool:
@@ -3114,27 +3157,34 @@ def _inject_latent_memory_if_any(
         return
 
     candidates: List[Tuple[float, Dict[str, Any], str]] = []
+
     for mem in mems:
         meta = mem.get("meta") if isinstance(mem.get("meta"), dict) else {}
         if not _memory_timeline_ok(meta, timeline):
             continue
+
         title, kind, txt = _memory_text_fields(mem)
         if not txt:
             continue
+
         conds = _extract_latent_conditions(txt)
         if not conds:
             continue
+
         ok = any(_eval_latent_condition(c, tp_arc=tp_arc) for c in conds)
         if not ok:
             continue
+
         ts = _memory_timestamp(mem) or 0.0
         candidates.append((ts, mem, conds[0]))
 
     if not candidates:
         return
 
+    history = cached_get_history(usuario_key, limit=40)
+
     # prioriza a mais recente
-    candidates.sort(key=lambda x: (x[0], len(x[1].get("text",""))), reverse=True)
+    candidates.sort(key=lambda x: (x[0], len(x[1].get("text", ""))), reverse=True)
 
     for _, mem, _ in candidates[:6]:
         mid = _memory_id(mem)
@@ -3146,9 +3196,6 @@ def _inject_latent_memory_if_any(
             continue
 
         # impede latent memory de competir com facts/canon do turno
-        history = cached_get_history(usuario_key, limit=40)
-
-        # impede latent memory de competir com facts/canon do turno
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
 
@@ -3157,10 +3204,16 @@ def _inject_latent_memory_if_any(
             continue
 
         tags = _parse_tags_from_memory(txt)
-        _inject_memory_block(messages, kind=kind, title=title, text=txt, tags=tags, source="latent")
+        _inject_memory_block(
+            messages,
+            kind=kind,
+            title=title,
+            text=txt,
+            tags=tags,
+            source="latent",
+        )
         _mark_cooldown(usuario_key, mid, latent=True)
         break
-
 
 
 def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
@@ -3174,8 +3227,9 @@ def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
             v = str(mary.get("virginity") or "").strip().lower()
         else:
             v = str((facts or {}).get("virginity") or "").strip().lower()
-            v = v.replace(" ", "_")
-            v = v.replace("não", "nao")
+
+        v = v.replace(" ", "_")
+        v = v.replace("não", "nao")
 
         if v in ("virgem", "nao_virgem"):
             return v
