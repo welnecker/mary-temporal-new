@@ -7673,9 +7673,26 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 except Exception:
                     pass
 
-                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-                _lock_scene(usuario_key)
-
+                try:
+                    save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+                except Exception as e:
+                    try:
+                        _ss_set(
+                            "mary_save_interaction_error",
+                            {
+                                "type": type(e).__name__,
+                                "msg": str(e),
+                                "usuario_key": usuario_key,
+                                "timeline": timeline_final,
+                            },
+                        )
+                    except Exception:
+                        pass
+                
+                try:
+                    _lock_scene(usuario_key)
+                except Exception:
+                    pass
                 # ----------------------------------------------------------
                 # Intimacy progression
                 # ----------------------------------------------------------
@@ -7732,11 +7749,27 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             pass
 
                     if desired_next != current_phase:
-                        self._set_intimacy_phase(
-                            usuario_key,
-                            desired_next,
-                            timeline_final,
-                        )
+                        try:
+                            self._set_intimacy_phase(
+                                usuario_key,
+                                desired_next,
+                                timeline_final,
+                            )
+                        except Exception as e:
+                            try:
+                                _ss_set(
+                                    "mary_intimacy_progression_error",
+                                    {
+                                        "type": type(e).__name__,
+                                        "msg": str(e),
+                                        "usuario_key": usuario_key,
+                                        "timeline": timeline_final,
+                                        "current_phase": current_phase,
+                                        "desired_next": desired_next,
+                                    },
+                                )
+                            except Exception:
+                                pass
 
                         try:
                             _sync_intimacy_phase_facts(
@@ -7773,7 +7806,24 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
             except Exception as e:
                 last_err = e
-
+            
+                # se já temos texto válido do modelo, não jogar fora
+                if str(texto or "").strip():
+                    try:
+                        _ss_set(
+                            "mary_post_generation_error",
+                            {
+                                "type": type(e).__name__,
+                                "msg": str(e),
+                                "timeline": timeline_final,
+                                "model": diag.model_used or plan["model"],
+                            },
+                        )
+                    except Exception:
+                        pass
+            
+                    _ss_set("mary_last_diagnostics", diag.as_dict())
+                    return str(texto).strip()
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
@@ -8024,7 +8074,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         }
 
         violations = set(violations or [])
-        viol_graves = violations & {"vazio", "meta_fala", "contradicao_cena"}
+        viol_graves = {"vazio", "meta_fala", "contradicao_cena"} & violations
         
         if not viol_graves:
             try:
