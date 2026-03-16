@@ -14,7 +14,7 @@ DEFAULT_MODELS = [
     "openrouter/hunter-alpha",
     "nousresearch/hermes-3-llama-3.1-405b",
     "google/gemini-3-flash-preview",
-    "openai/gpt-oss-20b:nitro",
+    "moonshotai/kimi-k2.5",
 ]
 
 OPENROUTER_BASE_URL = os.getenv(
