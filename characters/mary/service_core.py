@@ -2565,49 +2565,50 @@ def _inject_shared_soft_context(
         return
 
     soft: List[Dict[str, Any]] = []
+
+    facts = cached_get_facts(_current_user_key())
+    history = cached_get_history(_current_user_key(), limit=40)
+    
     for m in mems:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
+    
         if kind in {"canon", "pin", "guide", "fixed"}:
             continue
+    
         if not _memory_timeline_ok(meta, timeline):
             continue
-
+    
         txt = str(m.get("text") or "").strip()
         if not txt:
             continue
-
-        facts = cached_get_facts(_current_user_key())
-        history = cached_get_history(_current_user_key(), limit=40)
-        
-        for m in mems:
-        
+    
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
-        
+    
         if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
-
+    
         if dedupe_bucket is not None:
             txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
             h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
-            dedupe_bucket.add(h)  # ✅ add aqui (dentro do loop), não fora
-
+            dedupe_bucket.add(h)
+    
         soft.append(m)
-
+    
     if not soft:
         return
-
+    
     selected = soft[-max_items:] if len(soft) > max_items else soft
-
+    
     lines = [
         "[MEMÓRIAS COMPARTILHADAS]",
         "Use só como coerência de fundo.",
         "",
     ]
-
+    
     for i, m in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
@@ -2615,7 +2616,7 @@ def _inject_shared_soft_context(
         if d:
             header += f" (data: {d})"
         lines.append(header)
-
+    
         txt = str(m.get("text") or "").strip()
         lines.append(txt)
         lines.append("")
