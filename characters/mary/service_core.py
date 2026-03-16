@@ -2565,50 +2565,47 @@ def _inject_shared_soft_context(
         return
 
     soft: List[Dict[str, Any]] = []
-
-    facts = cached_get_facts(_current_user_key())
-    history = cached_get_history(_current_user_key(), limit=40)
-    
     for m in mems:
         meta = m.get("meta") or {}
         kind = str(meta.get("kind") or "").strip().lower()
-    
         if kind in {"canon", "pin", "guide", "fixed"}:
             continue
-    
         if not _memory_timeline_ok(meta, timeline):
             continue
-    
+
         txt = str(m.get("text") or "").strip()
         if not txt:
             continue
-    
+
+        facts = cached_get_facts(_current_user_key())
+        history = cached_get_history(_current_user_key(), limit=40)
+        
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
-    
+        
         if _memory_conflicts_with_recent_emotion(txt, history=history):
             continue
-    
+
         if dedupe_bucket is not None:
             txt_dedupe = re.sub(r"\[[^\]]+\]", "", txt).strip()
             h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
-            dedupe_bucket.add(h)
-    
+            dedupe_bucket.add(h)  # ✅ add aqui (dentro do loop), não fora
+
         soft.append(m)
-    
+
     if not soft:
         return
-    
+
     selected = soft[-max_items:] if len(soft) > max_items else soft
-    
+
     lines = [
         "[MEMÓRIAS COMPARTILHADAS]",
         "Use só como coerência de fundo.",
         "",
     ]
-    
+
     for i, m in enumerate(selected, 1):
         meta = m.get("meta") or {}
         d = meta.get("date") or meta.get("ts") or ""
@@ -2616,7 +2613,7 @@ def _inject_shared_soft_context(
         if d:
             header += f" (data: {d})"
         lines.append(header)
-    
+
         txt = str(m.get("text") or "").strip()
         lines.append(txt)
         lines.append("")
@@ -2628,8 +2625,6 @@ def _inject_shared_soft_context(
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
         messages.append({"role": "system", "content": block})
-
-
 
 # ==========================================================
 # RELATIONSHIP STATE
@@ -5062,79 +5057,6 @@ def _desire_restraint_balance(
 
     return impulse - restraint
 
-def _infer_attention_focus(
-    *,
-    prompt: str,
-    facts: Dict[str, Any],
-    rel_state: Dict[str, Any],
-    tp_arc: Dict[str, Any],
-    emotion_now: str,
-) -> str:
-    p = _t_norm(prompt or "")
-
-    if _third_party_signal_level(prompt or "") >= 2:
-        return "terceiro"
-
-    if any(k in p for k in ("onde", "local", "aqui", "quarto", "cama", "cozinha", "banheiro")):
-        return "cena"
-
-    if any(k in p for k in ("o que voce sente", "o que você sente", "como ficou", "medo", "culpa", "ciume", "ciúme")):
-        return "emocao"
-
-    try:
-        rel_facts = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
-        pend = str(rel_facts.get("pendencia", "") or "").strip()
-        if pend:
-            return "pendencia"
-    except Exception:
-        pass
-
-    if emotion_now in {"culpa", "ansiedade", "triste", "raiva"}:
-        return "emocao"
-
-    if any(k in p for k in ("lembra", "passado", "memoria", "memória", "quem e", "quem é", "quando")):
-        return "memoria"
-
-    return "janio"
-
-def _render_attention_focus_rule(focus: str) -> str:
-    focus = (focus or "janio").strip().lower()
-
-    mapping = {
-        "janio": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é a troca imediata entre Mary e Janio.\n"
-            "- Priorize presença, voz, subtexto e reação ao que ele acabou de fazer ou dizer.\n"
-        ),
-        "emocao": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é o estado emocional vivo da Mary.\n"
-            "- Priorize emoção presente, transição interna e impacto do turno atual.\n"
-        ),
-        "cena": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é a cena presente.\n"
-            "- Priorize local, proximidade, ritmo corporal e continuidade espacial.\n"
-        ),
-        "terceiro": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é a tensão provocada por terceiro já presente.\n"
-            "- Priorize risco, ambivalência e consequência emocional, sem apagar Janio.\n"
-        ),
-        "pendencia": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é a pendência emocional em aberto.\n"
-            "- Priorize o assunto vivo no fundo da cena, sem transformar tudo em exposição.\n"
-        ),
-        "memoria": (
-            "[FOCO ATENCIONAL DO TURNO]\n"
-            "- O centro da resposta é a lembrança factual relevante ao turno.\n"
-            "- Use memória para coerência, mas responda ainda como cena viva.\n"
-        ),
-    }
-
-    return mapping.get(focus, mapping["janio"]).strip()
-
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str, emotion_now: str = "neutro") -> bool:
     if conflict_now:
         return False
@@ -5948,7 +5870,6 @@ class MaryService(BaseCharacter):
         long_memory_block: str = "",
         timeline_behavior_block: str = "",
         mary_identity_anchor: str = "",
-        attention_focus_rule: str,
     ) -> str:
     
         conversation_style_rule = """
@@ -6018,7 +5939,6 @@ class MaryService(BaseCharacter):
     
     {janio_focus_rule}
     {topic_rule}
-    {attention_focus_rule}
     
     {conversation_style_rule}
     
@@ -6592,8 +6512,6 @@ class MaryService(BaseCharacter):
                     meta = m.get("meta") or {}
                     kind = str(meta.get("kind") or "").strip().lower()
                     txt = str(m.get("text") or "").strip()
-                    if len(txt) > 600:
-                        txt = txt[:600] + "..."
 
                     if kind != "pin" or not txt:
                         continue
@@ -6620,8 +6538,6 @@ class MaryService(BaseCharacter):
                         continue
 
                     txt = str(m.get("text") or "").strip()
-                    if len(txt) > 600:
-                        txt = txt[:600] + "..."
                     if not txt:
                         continue
 
@@ -6738,7 +6654,7 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=allow_third_party_seduction,
             diag=diag,
         )
-        
+
         facts = policy["facts"]
         nsfw_on = bool(policy["nsfw_on"])
         allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
@@ -6749,19 +6665,8 @@ class MaryService(BaseCharacter):
         intimacy_phase = int(policy["intimacy_phase"])
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
-        
-        attention_focus = _infer_attention_focus(
-            prompt=prompt,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-            emotion_now=emotion_now,
-        )
-        
-        attention_focus_rule = _render_attention_focus_rule(attention_focus)
-        
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
-        
+
         # ✅ contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
 
@@ -7390,7 +7295,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
             facts_integrity_rule=facts_integrity_rule,
-            attention_focus_rule=attention_focus_rule,
         )
 
         messages = self._build_messages_for_turn(
@@ -7814,122 +7718,94 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         user_text: str,
     ) -> List[Dict[str, Any]]:
         """
-        Plano dinâmico de geração para maximizar imersão com mais estabilidade:
-        - reduz truncamento
-        - controla melhor retries
-        - tenta preservar intensidade sem espalhar demais a resposta
+        Plano dinâmico de geração para maximizar imersão:
+        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
+        - Conflito: temperature desce (resposta mais firme/limpa)
+        - Explicações/fatos: mais contido
+        Campos opcionais em cada plano:
+        - top_p
+        - extra (best-effort: alguns providers ignoram/rejeitam)
         """
         ut = str(user_text or "").lower()
-        looks_factual = bool(
-            re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut)
-        )
-    
+        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
+
+        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
         cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
-    
-        # ----------------------------------------------------------
-        # Base tokens — mais conservador para reduzir truncamento
-        # ----------------------------------------------------------
+
+        # Base tokens (fôlego)
+        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
+        base_tokens = 3000 if nsfw_on else 2000
+
+        # mais fôlego só quando realmente precisa
+        if nsfw_on and phase >= 3:
+            base_tokens = 3400
+
+        # explicações: menor
         if looks_factual and not nsfw_on:
-            base_tokens = 1400
-        elif conflict_now:
-            base_tokens = 1800 if nsfw_on else 1500
-        elif phase >= 4 and nsfw_on:
-            base_tokens = 2600
-        elif phase == 3 and nsfw_on:
-            base_tokens = 2400
-        elif phase == 5:
-            base_tokens = 1700 if nsfw_on else 1400
-        else:
-            base_tokens = 1900 if nsfw_on else 1500
-    
-        base_tokens = max(900, min(base_tokens, 2600))
-    
-        # ----------------------------------------------------------
-        # Decoding base
-        # ----------------------------------------------------------
+            base_tokens = 1700
+
+        # aftercare: resposta costuma ser menor/mais controlada
+        if phase == 5:
+            base_tokens = 2200 if nsfw_on else 1800
+
+        # ✅ CAP defensivo
+        base_tokens = min(base_tokens, 3400)
+
+        # Decoding por cena
         if conflict_now:
-            base_temp = 0.60 if nsfw_on else 0.56
+            base_temp = 0.62 if nsfw_on else 0.58
             base_top_p = 0.90
-    
         elif looks_factual:
-            base_temp = 0.52
-            base_top_p = 0.90
-    
+            base_temp = 0.55
+            base_top_p = 0.92
         else:
+            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
             if phase == 5:
                 if cooldown:
-                    base_temp = 0.56 if nsfw_on else 0.53
-                    base_top_p = 0.91
+                    base_temp = 0.58 if nsfw_on else 0.55
+                    base_top_p = 0.93 if nsfw_on else 0.94
                 else:
-                    base_temp = 0.62 if nsfw_on else 0.58
-                    base_top_p = 0.92
-    
+                    base_temp = 0.64 if nsfw_on else 0.60
+                    base_top_p = 0.94 if nsfw_on else 0.95
             elif phase >= 4:
-                base_temp = 0.92
-                base_top_p = 0.90
-    
-            elif phase == 3:
-                base_temp = 0.82
+                base_temp = 1.0
                 base_top_p = 0.92
-    
+            elif phase == 3:
+                base_temp = 0.84
+                base_top_p = 0.93
             elif phase == 2:
-                base_temp = 0.78
-                base_top_p = 0.94
-    
-            else:
-                base_temp = 0.72
+                base_temp = 0.80
                 base_top_p = 0.95
-    
-        # ----------------------------------------------------------
-        # Penalidades
-        # ----------------------------------------------------------
+            else:
+                base_temp = 0.74
+                base_top_p = 0.96
+
+                # Penalidades: variam por tipo de cena
         if looks_factual or conflict_now:
             extra = {
-                "presence_penalty": 0.22,
-                "frequency_penalty": 0.08,
-                "repetition_penalty": 1.04,
+                "presence_penalty": 0.25,
+                "frequency_penalty": 0.10,
+                "repetition_penalty": 1.05,
             }
         elif nsfw_on and phase >= 4:
+            # clímax: permite repetição e foco no corpo/ritmo
             extra = {
-                "presence_penalty": 0.12,
-                "frequency_penalty": 0.04,
-                "repetition_penalty": 1.02,
+                "presence_penalty": 0.15,
+                "frequency_penalty": 0.05,
+                "repetition_penalty": 1.03,
             }
         else:
             extra = {
-                "presence_penalty": 0.28,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.04,
+                "presence_penalty": 0.30,
+                "frequency_penalty": 0.12,
+                "repetition_penalty": 1.05,
             }
-    
-        # ----------------------------------------------------------
-        # Attempts — cada um com estratégia mais clara
-        # ----------------------------------------------------------
-        attempt1 = {
-            "model": model,
-            "temperature": base_temp,
-            "top_p": base_top_p,
-            "max_tokens": base_tokens,
-            "extra": extra,
-        }
-    
-        attempt2 = {
-            "model": model,
-            "temperature": max(0.45, base_temp - 0.10),
-            "top_p": min(0.96, base_top_p + 0.02),
-            "max_tokens": max(900, int(base_tokens * 0.88)),
-            "extra": extra,
-        }
-    
-        attempt3 = {
-            "model": model,
-            "temperature": max(0.40, base_temp - 0.18),
-            "top_p": min(0.97, base_top_p + 0.03),
-            "max_tokens": max(850, int(base_tokens * 0.76)),
-            "extra": extra,
-        }
-    
-        return [attempt1, attempt2, attempt3]
+
+        return [
+            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
+            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
+        ]
 
 
     # ======================================================
@@ -7989,9 +7865,14 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
         try:
-            texto = _seal_broken_ending(texto)
+            if finish_reason in ("length", "max_tokens", "token_limit", "content_filter"):
+                texto = _seal_broken_ending(texto)
+            else:
+                # mesmo sem finish_reason confiável, sela se houver sinais típicos
+                texto = _seal_broken_ending(texto)
         except Exception:
             pass
+
         # ✅ Se veio vazio, marca violação e devolve vazio para o fluxo decidir
         if not texto:
             try:
@@ -8024,9 +7905,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         }
 
         violations = set(violations or [])
-        viol_graves = violations & {"vazio", "meta_fala", "contradicao_cena"}
-        
-        if not viol_graves:
+
+        # sem violação grave → aceita resposta imediatamente
+        if not (violations & viol_graves):
             try:
                 if violations:
                     diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
@@ -8042,7 +7923,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         try:
             if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in (violations or [])):
                 if _needs_llm_classification(texto, user_text=user_text, phase=int(phase or 0)):
-                    classifier_model = model
+                    classifier_model = (diag.model_used or used_model or model) if 'used_model' in locals() else (diag.model_used or model)
                     sys_c = "Você é um classificador. Responda APENAS: SIM ou NAO."
                     usr_c = (
                         "O texto abaixo descreve ato sexual explícito (ex.: penetração, sexo oral, "
@@ -8126,12 +8007,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # preserva um contexto mínimo de memória já injetada
         # pega até 6 mensagens anteriores ao prompt atual, sem explodir tokens
         try:
-            memory_context = []
-            for m in messages[1:-1]:
-                if m.get("role") in {"assistant", "user"}:
-                    memory_context.append(m)
-            
-            memory_context = memory_context[-4:]
+            memory_context = messages[1:-1] if len(messages) > 2 else []
             if memory_context:
                 repair_messages.extend(memory_context[-6:])
         except Exception:
@@ -8207,9 +8083,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
     @staticmethod
     def _fallback_text() -> str:
         return (
-            "Eu fico em silêncio por um segundo, respirando devagar antes de falar.\n\n"
-            "Janio… às vezes eu preciso de um instante para organizar o que estou sentindo.\n\n"
-            "Mas eu estou aqui com você. Então me diz outra vez — o que você quer saber agora?"
+            "Eu solto um meio sorriso e digo o nome sem fingir distância: Janio. Eu não estou confusa sobre ele — eu estou com medo do quanto eu gostei.\n\n"
+            "Eu encosto de leve na sua mão enquanto falo, como se isso me desse coragem. Foi intenso, foi rápido, e ainda assim eu quero ver onde isso vai dar.\n\n"
+            "Eu respiro fundo e completo, sem recuar: se ele vier falar comigo hoje, eu não vou fugir."
         )
 
     # -------------------------
@@ -8233,17 +8109,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     if isinstance(msg, dict):
                         content = msg.get("content")
                         reasoning = msg.get("reasoning")
-                    
-                        # ✅ NOVO: suporte a tool_calls (alguns providers retornam resposta aqui)
-                        tool_calls = msg.get("tool_calls")
-                        if isinstance(tool_calls, list) and tool_calls:
-                            try:
-                                return str(
-                                    tool_calls[0].get("function", {}).get("arguments", "")
-                                ).strip()
-                            except Exception:
-                                pass
-                    
+    
                         # 1) content normal
                         if isinstance(content, str) and content.strip():
                             return content.strip()
@@ -8376,19 +8242,17 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-        
         if isinstance(extra, dict) and extra:
             payload.update(extra)
-        
-        try:
-            return service_router.route_chat_strict(model, payload)
-        except Exception:
-            # retry sem extras
-            payload = {
-                "messages": messages,
-                "temperature": float(temperature),
-                "top_p": float(top_p),
-                "max_tokens": int(max_tokens),
-            }
-            return service_router.route_chat_strict(model, payload)
+            try:
+                return service_router.route_chat_strict(model, payload)
+            except Exception:
+                # Provider rejeitou campos extras → re-tenta 1x sem extras
+                payload = {
+                    "messages": messages,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                }
+        return service_router.route_chat_strict(model, payload)
   
