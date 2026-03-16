@@ -12,8 +12,9 @@ DEFAULT_MODELS = [
     "xiaomi/mimo-v2-flash",
     "deepseek/deepseek-chat-v3-0324",
     "anthropic/claude-3.5-haiku",
-    "openrouter/hunter-alpha",           # google/gemini-3-flash-preview  qwen/qwen3-max
+    "openrouter/hunter-alpha",           # qwen/qwen3-max
     "nousresearch/hermes-3-llama-3.1-405b",
+    "google/gemini-3-flash-preview", 
 ]
 
 OPENROUTER_BASE_URL = os.getenv(
