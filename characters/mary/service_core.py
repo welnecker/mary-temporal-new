@@ -1491,6 +1491,113 @@ def _inject_canon_memories_always(
     else:
         messages.append({"role": "system", "content": block})
 
+def _inject_active_state_memories_always(
+    shared_key: str,
+    timeline: str,
+    messages: List[Dict[str, str]],
+    max_items: int = 12,
+    *,
+    dedupe_bucket: Optional[set] = None,
+) -> None:
+    """
+    Injeta memórias shared com kind='estado_ativo'.
+
+    Essas memórias representam identidade contínua, rotina,
+    profissão, moradia e contexto estável da vida de Mary/Janio.
+
+    Não têm o mesmo peso de CANON duro, mas devem estar sempre
+    disponíveis no prompt como contexto persistente.
+    """
+
+    active_state: List[Dict[str, Any]] = []
+
+    PAGE = 120
+    HARD_CAP = 480
+
+    scanned = 0
+    offset = 0
+    want = int(max_items or 12)
+
+    while scanned < HARD_CAP and len(active_state) < want:
+        batch = cached_list_memories_page(shared_key, offset=offset, limit=PAGE)
+        if not batch:
+            break
+
+        for m in batch:
+            meta = m.get("meta") or {}
+            kind = str(meta.get("kind") or "").strip().lower()
+
+            if kind != "estado_ativo":
+                continue
+
+            if not _memory_timeline_ok(meta, timeline):
+                continue
+
+            txt = str(m.get("text") or "").strip()
+            if not txt:
+                continue
+
+            # remove linha de TAGS se existir
+            txt = re.sub(r"(?im)^\s*\[TAGS:\s*[^\]]+\]\s*", "", txt).strip()
+            if not txt:
+                continue
+
+            m2 = dict(m)
+            m2["text"] = txt
+            active_state.append(m2)
+
+            if len(active_state) >= want:
+                break
+
+        scanned += len(batch)
+        offset += PAGE
+
+    if not active_state:
+        return
+
+    selected = active_state[-want:] if len(active_state) > want else active_state
+
+    try:
+        _ss_set(f"{_SS_PREFIX}debug_active_state_injected_count", len(selected))
+    except Exception:
+        pass
+
+    lines: List[str] = []
+    lines.append("[ESTADO ATIVO COMPARTILHADO]")
+    lines.append("Use como identidade contínua, rotina e contexto estável da vida de Mary e Janio.")
+    lines.append("Não citar literalmente; incorporar de forma natural.")
+    lines.append("")
+
+    for i, m in enumerate(selected, 1):
+        meta = m.get("meta") or {}
+        title = meta.get("title") or meta.get("key") or ""
+        d = meta.get("date") or meta.get("ts") or ""
+
+        header = f"- ESTADO {i}"
+        if d:
+            header += f" (data: {d})"
+        if title:
+            header += f" — {title}"
+        lines.append(header)
+
+        txt = str(m.get("text") or "").strip()
+        if txt:
+            lines.append(txt)
+        lines.append("")
+
+        if dedupe_bucket is not None and txt:
+            dedupe_bucket.add(hashlib.sha1(txt.encode("utf-8")).hexdigest())
+
+    block = "\n".join(lines).strip()
+
+    # injeta no PRIMEIRO system, junto do contexto principal
+    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
+        messages[0]["content"] = (
+            str(messages[0].get("content") or "").rstrip() + "\n\n" + block
+        ).strip()
+    else:
+        messages.append({"role": "system", "content": block})
+
 def _choose_intro_text(usuario_key: str, timeline: str) -> str:
     """
     Prioridade correta:
@@ -5931,7 +6038,15 @@ class MaryService(BaseCharacter):
             max_items=12,
             dedupe_bucket=dedupe_hashes,
         )
-    
+
+        _inject_active_state_memories_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=8,
+            dedupe_bucket=dedupe_hashes,
+        )
+
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
