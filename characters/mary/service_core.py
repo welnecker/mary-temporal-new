@@ -188,11 +188,6 @@ def _count_matching_terms(text: str, terms: set[str]) -> int:
 
     return count
 
-    if re.search(rf"\b{re.escape(term)}\b", txt):
-            count += 1
-
-    return count
-
 # ==========================================================
 # HIDDEN-THOUGHT STRIPPER (initiative CoT scaffolding)
 # ==========================================================
