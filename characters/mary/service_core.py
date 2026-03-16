@@ -4311,10 +4311,10 @@ def _seal_broken_ending(text: str) -> str:
     m = _RE_UNFINISHED_PAREN_FRAGMENT.search(t)
     if m and t.count("(") > t.count(")"):
         frag = t[m.start():]
-        # evita cortar se o fragmento já parece frase completa
-        if not re.search(r"[\.!\?]\s*$", frag):
+    
+        # só corta fragmentos muito curtos (provável truncamento)
+        if len(frag) < 20 and not re.search(r"[\.!\?]\s*$", frag):
             t = t[: m.start()].rstrip()
-
     # 3) se ainda está desbalanceado, fecha com reticências neutras
     opens = t.count("(")
     closes = t.count(")")
@@ -4334,7 +4334,7 @@ def _seal_broken_ending(text: str) -> str:
 # ==========================================================
 def _resolve_conflict_mode(timeline: str) -> str:
     tl = _normalize_timeline(timeline)
-    if tl in ("cumplice", "esposa_cumplice", "casados", "livre"):
+    if "cumplice" in tl or tl in ("casados", "livre", "mary_livre"):
         return "soft"
     if tl in ("universitaria",):
         return "off"
@@ -4369,7 +4369,6 @@ _RE_SCENE_FINALIZATION = re.compile(
     r"finalmente\s+(goz|explod|cheg)\w*|"  # "finalmente" indica conclusão
     r"cheguei\s+ao\s+cl[ií]max|"
     r"foi\s+o\s+melhor\s+orgasmo|"
-    r"desab(o|ei|amos)\s+(exaust|satisfeit)"  # Desabei exausto/satisfeito
     r")\b",
     re.IGNORECASE,
 )
@@ -4398,7 +4397,7 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     - mensagens coladas
     - offscreen inventado
     """
-    hist = cached_get_history(usuario_key, limit=200) or []
+    hist = cached_get_history(usuario_key, limit=40) or []
     last_users: List[str] = []
     for d in hist[-12:]:
         if not isinstance(d, dict):
@@ -4496,7 +4495,7 @@ def _third_party_signal_level(text: str) -> int:
     if not text:
         return 0
 
-    t = str(text).lower()
+    t = str(text)
 
     # avalia do nível mais alto para o mais baixo
     for level in (3, 2, 1):
@@ -4614,7 +4613,7 @@ def _build_orgasm_force_prompt(base_prompt: str, phase: int) -> str:
     Constrói um prompt de força para garantir verbalização de orgasmo.
     """
     force_block = f"""
-[🔥 FORÇA DE ORGASMO — FASE {phase}]
+<ORGASM_VERBALIZATION_RULE>
 Mary está em clímax (fase {phase}). Ela DEVE verbalizar explicitamente seu prazer.
 Escolha UMA destas formas e integre naturalmente:
 - "Vou gozar" / "Estou gozando" / "Gozei"
@@ -4688,7 +4687,7 @@ def _violations(
     ctx = (ctx_lower or "").lower()
 
     if ctx:
-        m_local = re.search(r"local:\s*(.+)", ctx)
+        m_local = re.search(r"local:\s*([^\n]+)", ctx)
         local_ctx = m_local.group(1).strip().lower() if m_local else ""
 
         if local_ctx:
@@ -4762,7 +4761,9 @@ def _style_score(texto: str) -> float:
             score -= 0.10
 
     # sinal mínimo de ação + fala (bom para continuidade)
-    has_dialogue = bool(re.search(r"\".{2,}\"", t))
+    has_dialogue = bool(
+        re.search(r"[\"“']{1}.+?[\"”']", t)
+    )
     has_action = bool(re.search(r"\b(entra|sai|aproximo|encosto|olho|viro|respiro|paro|puxo)\b", t, re.IGNORECASE))
     if has_dialogue and has_action:
         score += 0.05
@@ -4797,8 +4798,13 @@ def _update_confidence(usuario_key: str, *, hard_ok: bool, style: float) -> floa
 
 
 def _trim_scene_finalization(texto: str) -> str:
-    return texto.strip() if texto else ""
-
+    if not texto:
+        return ""
+    m = _RE_SCENE_FINALIZATION.search(texto)
+    if not m:
+        return texto
+    return texto[:m.start()].rstrip()
+    
 def _render_pendencia_block(facts: Dict[str, Any]) -> str:
     try:
         facts = facts or {}
@@ -4962,9 +4968,9 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
         return ""
 
     lines = [
-        f"1) Local: {local or '—'}",
-        f"2) Roupa: {roupa or '—'}",
-        f"3) Cabelo: {cabelo or '—'}",
+        f" Local: {local or '—'}",
+        f" Roupa: {roupa or '—'}",
+        f" Cabelo: {cabelo or '—'}",
     ]
 
     if horarios:
@@ -5001,9 +5007,8 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
     if conflict_now:
         return False
 
-    ut = (user_text or "")
+    ut = str(user_text or "")
 
-    # ✅ NOVO: fase 0 também pode ter iniciativa quando o usuário dá convite claro
     if re.search(
         r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a)\b|"
         r"\b(vamos\s+pro\s+bar|vem\s+pro\s+bar|me\s+paga\s+um\s+drink|vamos\s+tomar\s+um\s+drink)\b",
@@ -5011,10 +5016,7 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
         re.IGNORECASE,
     ):
         return True
-        # sem convite, mantém fechado
-        return False
 
-    # (resto do seu código continua)
     cue = bool(
         re.search(
             r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b",
@@ -5034,11 +5036,8 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
         if cue and desire >= (self_control * 0.25):
             return True
 
-        if re.search(r"\bjanio\b", ut, re.IGNORECASE):
-            return True
-
     except Exception:
-        return bool(re.search(r"\bjanio\b", ut, re.IGNORECASE))
+        pass
 
     return False
 # ==========================================================
@@ -5052,7 +5051,7 @@ def _infer_emotion_bucket(texto: str) -> str:
     # ordem importa: sinais fortes primeiro
     if any(k in t for k in ["chorei", "chorando", "lágrima", "lagrima", "soluço", "soluco", "triste", "vazia"]):
         return "triste"
-    if any(k in t for k in ["raiva", "irritad", "puta", "furiosa", "briguei", "brigar", "odiei"]):
+    if any(k in t for k in ["raiva", "irritad", "furiosa", "briguei", "brigar", "odiei"]):
         return "raiva"
     if any(k in t for k in ["culpa", "envergonh", "me sinto mal", "arrepend"]):
         return "culpa"
@@ -5127,8 +5126,12 @@ def _should_inject_long_memory(prompt: str) -> bool:
         "segredo", "ciume", "ciúme", "filho", "bebê", "bebe",
     )
 
-    return any(t in p for t in triggers)
-
+    for t in triggers:
+        tt = _t_norm(t)
+        if re.search(rf"\b{re.escape(tt)}\b", p):
+            return True
+    return False
+    
 def _should_inject_soft_context(
     prompt: str,
     *,
@@ -5818,6 +5821,8 @@ class MaryService(BaseCharacter):
     
     [CANON]
     {canon_txt}
+    
+    [LONG MEMORY]
     {long_memory_block}
     
     [PERSONA]
@@ -5832,6 +5837,7 @@ class MaryService(BaseCharacter):
     
     {janio_focus_rule}
     {topic_rule}
+    
     {conversation_style_rule}
     
     {emotional_persistence_rule}
@@ -5839,8 +5845,10 @@ class MaryService(BaseCharacter):
     {memory_fidelity_rule}
     {user_finalizes_rule}
     
+    [DINAMICA DE INICIATIVA E INTIMIDADE]
     {initiative_rule}
     {initiative_escalation_rule}
+    {intimacy_control_block}
     
     {manipulation_block}
     {conflict_block}
@@ -5855,7 +5863,6 @@ class MaryService(BaseCharacter):
     - Priorize fala sobre descrição longa.
     - Mary deve soar viva, presente e coerente.
     
-    {intimacy_control_block}
     {nsfw_hard_block}
     {nsfw_block}
     """.strip()
@@ -7608,7 +7615,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         - top_p
         - extra (best-effort: alguns providers ignoram/rejeitam)
         """
-        ut = (user_text or "").lower()
+        ut = str(user_text or "").lower()
         looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
 
         # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
