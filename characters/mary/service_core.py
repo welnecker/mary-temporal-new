@@ -56,6 +56,20 @@ from core.repositories import (
 )
 from core.nsfw import nsfw_enabled as nsfw_enabled_unified
 from .persona import get_persona
+from .hook_engine import (
+    collect_narrative_opportunities,
+    select_active_hook,
+    ensure_hook_state,
+    build_autonomy_block,
+    advance_hook_state_after_response,
+)
+from .relationship_dynamic import (
+    load_dynamic_relationship_state,
+    render_dynamic_relationship_block,
+    analyze_relationship_shift,
+    apply_relationship_shift,
+    save_dynamic_relationship_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -5732,6 +5746,7 @@ class MaryService(BaseCharacter):
         canon_txt: str,
         persona_text: str,
         rel_block: str,
+        dynamic_rel_block: str,
         third_party_arc_rule: str,
         behavior_block: str,
         patterns_block: str,
@@ -5821,6 +5836,7 @@ class MaryService(BaseCharacter):
     {mary_identity_anchor}
     
     {rel_block}
+    {dynamic_rel_block}
     {third_party_arc_rule}
     {behavior_block}
     {patterns_block}
@@ -5876,11 +5892,17 @@ class MaryService(BaseCharacter):
         facts: Dict[str, Any],
         rel_state: Dict[str, Any],
         tp_arc: Dict[str, Any],
+        autonomy_block: str = "",
     ) -> List[Dict[str, str]]:
     
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system}
         ]
+        if autonomy_block:
+            messages.append({
+                "role": "system",
+                "content": autonomy_block,
+            })
     
         dedupe_hashes: set = set()
     
@@ -6318,7 +6340,13 @@ class MaryService(BaseCharacter):
         
         if not isinstance(rel_state, dict):
             rel_state = {}
-        
+
+        # ==========================================================
+        # ESTADO RELACIONAL DINÂMICO
+        # ==========================================================
+        dynamic_rel_state = load_dynamic_relationship_state(facts, timeline_final)
+        if not isinstance(dynamic_rel_state, dict):
+            dynamic_rel_state = {}
         
         # ==========================================================
         # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
@@ -6548,6 +6576,57 @@ class MaryService(BaseCharacter):
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
+        # ==========================================================
+        # BLOCO RELACIONAL DINÂMICO
+        # ==========================================================
+        dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state) 
+        # ==========================================================
+        # AUTONOMIA NARRATIVA DA MARY
+        # ==========================================================
+        try:
+            _bump_turn_counter(usuario_key)
+
+            opportunities = collect_narrative_opportunities(
+                facts=facts,
+                rel=rel_state,
+                prompt=prompt,
+                timeline=timeline_final,
+            )
+
+            active_hook = select_active_hook(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                opportunities=opportunities,
+            )
+
+            hook_state = ensure_hook_state(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                active_hook=active_hook,
+            )
+
+            autonomy_block = build_autonomy_block(
+                active_hook=active_hook,
+                hook_state=hook_state,
+                emotion_now=emotion_now,
+                initiative_open=initiative,
+            )
+
+            _ss_set(
+                "mary_hook_debug",
+                {
+                    "timeline": timeline_final,
+                    "active_hook": active_hook.get("id") if isinstance(active_hook, dict) else "",
+                    "hook_label": active_hook.get("label") if isinstance(active_hook, dict) else "",
+                    "hook_stage": hook_state.get("hook_stage") if isinstance(hook_state, dict) else "",
+                    "opportunities": opportunities[:5] if isinstance(opportunities, list) else [],
+                },
+            )
+
+        except Exception:
+            active_hook = {}
+            hook_state = {}
+            autonomy_block = ""
 
         # ✅ contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
@@ -7154,6 +7233,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
+            dynamic_rel_block=dynamic_rel_block,
             long_memory_block=long_memory_block,
             mary_identity_anchor=mary_identity_anchor,
             timeline_behavior_block=timeline_behavior_block,
@@ -7194,6 +7274,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             facts=facts,
             rel_state=rel_state,
             tp_arc=tp_arc,
+            autonomy_block=autonomy_block,
         )
         try:
             import json
@@ -7549,6 +7630,51 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 if not texto:
                     texto = self._fallback_text()
 
+                # ----------------------------------------------------------
+                # HOOK ENGINE — progresso do sub-enredo
+                # ----------------------------------------------------------
+                try:
+                    advance_hook_state_after_response(
+                        usuario_key=usuario_key,
+                        timeline=timeline_final,
+                        active_hook=active_hook if isinstance(active_hook, dict) else {},
+                        response_text=texto,
+                    )
+                except Exception:
+                    pass
+
+                # ----------------------------------------------------------
+                # RELATIONSHIP DYNAMIC — evolução relacional viva
+                # ----------------------------------------------------------
+                try:
+                    rel_delta = analyze_relationship_shift(
+                        prompt,
+                        texto,
+                        tp_arc=tp_arc,
+                    )
+
+                    dynamic_rel_state = apply_relationship_shift(
+                        dynamic_rel_state,
+                        rel_delta,
+                    )
+
+                    save_dynamic_relationship_state(
+                        usuario_key,
+                        timeline_final,
+                        dynamic_rel_state,
+                    )
+
+                    _ss_set(
+                        "mary_dynamic_rel_debug",
+                        {
+                            "timeline": timeline_final,
+                            "state": dynamic_rel_state,
+                            "delta": rel_delta,
+                        },
+                    )
+                except Exception:
+                    pass
+
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
 
@@ -7579,7 +7705,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
         _ss_set("mary_last_diagnostics", diag.as_dict())
         return texto
-
 
     # ======================================================
     # Planos previsíveis
