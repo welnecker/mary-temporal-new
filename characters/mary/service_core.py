@@ -6738,7 +6738,7 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=allow_third_party_seduction,
             diag=diag,
         )
-
+        
         facts = policy["facts"]
         nsfw_on = bool(policy["nsfw_on"])
         allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
@@ -6749,16 +6749,19 @@ class MaryService(BaseCharacter):
         intimacy_phase = int(policy["intimacy_phase"])
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
+        
         attention_focus = _infer_attention_focus(
-        prompt=prompt,
-        facts=facts,
-        rel_state=rel_state,
-        tp_arc=tp_arc,
-        emotion_now=emotion_now,
-    )
-    attention_focus_rule = _render_attention_focus_rule(attention_focus)
+            prompt=prompt,
+            facts=facts,
+            rel_state=rel_state,
+            tp_arc=tp_arc,
+            emotion_now=emotion_now,
+        )
+        
+        attention_focus_rule = _render_attention_focus_rule(attention_focus)
+        
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
-
+        
         # ✅ contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
 
