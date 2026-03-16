@@ -4942,8 +4942,14 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
 # ✅ Estado Atual (4 fixas + 2 opcionais)
 # ==========================================================
 def _fact_str(facts: Dict[str, Any], dotted_key: str) -> str:
+    """
+    Lê chaves aninhadas no formato dotted path.
+    Ex.:
+    _fact_str(facts, "state.local") -> facts["state"]["local"]
+    """
     try:
         cur: Any = facts or {}
+
         for part in (dotted_key or "").split("."):
             if not isinstance(cur, dict) or part not in cur:
                 return ""
