@@ -8035,6 +8035,19 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # --- extrai texto do payload ---
         texto = self._extract_text(data) if data is not None else ""
         texto = _normalize_model_response(texto or "")
+        try:
+            if texto.strip() == self._fallback_text().strip():
+                _ss_set(
+                    "mary_fallback_source_detected",
+                    {
+                        "source": "chat_returned_fallback_text",
+                        "model": used_model,
+                        "raw_type": type(data).__name__,
+                        "raw_preview": str(data)[:1200],
+                    },
+                )
+        except Exception:
+            pass
 
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
@@ -8426,19 +8439,62 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-        
+    
         if isinstance(extra, dict) and extra:
             payload.update(extra)
-        
+    
         try:
-            return service_router.route_chat_strict(model, payload)
-        except Exception:
-            # retry sem extras
+            resp = service_router.route_chat_strict(model, payload)
+    
+            try:
+                _ss_set(
+                    "mary_debug_chat_return",
+                    {
+                        "model": model,
+                        "resp_type": type(resp).__name__,
+                        "resp_preview": str(resp)[:1200],
+                        "used_extra": bool(extra),
+                    },
+                )
+            except Exception:
+                pass
+    
+            return resp
+    
+        except Exception as e:
+            try:
+                _ss_set(
+                    "mary_debug_chat_error_first",
+                    {
+                        "model": model,
+                        "type": type(e).__name__,
+                        "msg": str(e),
+                        "used_extra": bool(extra),
+                    },
+                )
+            except Exception:
+                pass
+    
             payload = {
                 "messages": messages,
                 "temperature": float(temperature),
                 "top_p": float(top_p),
                 "max_tokens": int(max_tokens),
             }
-            return service_router.route_chat_strict(model, payload)
-  
+    
+            resp = service_router.route_chat_strict(model, payload)
+    
+            try:
+                _ss_set(
+                    "mary_debug_chat_return_retry",
+                    {
+                        "model": model,
+                        "resp_type": type(resp).__name__,
+                        "resp_preview": str(resp)[:1200],
+                        "used_extra": False,
+                    },
+                )
+            except Exception:
+                pass
+    
+            return resp
