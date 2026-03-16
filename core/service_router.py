@@ -131,18 +131,17 @@ def _strip_prefix(s: str, prefix: str) -> str:
 
 
 def _model_for_provider(model: str, provider: str) -> str:
-    """
-    Ajusta o ID do modelo para o provider específico.
-    - Together: aceita "together/xxx" na UI, mas envia "xxx"
-    - HuggingFace: se você usar "hf/" ou "huggingface/" na UI, remove.
-    """
     m = (model or "").strip()
+
     if provider == "Together":
         return _strip_prefix(m, "together/")
+
     if provider == "HuggingFace":
         m = _strip_prefix(m, "hf/")
         m = _strip_prefix(m, "huggingface/")
         return m
+
+    # OpenRouter: preserva o model id original
     return m
 
 
@@ -215,28 +214,43 @@ def _provider_for(model_id: str) -> str:
     m = (model_id or "").strip()
     low = m.lower()
 
-    # ✅ 0) HF explícito por lista (mais forte)
+    # ✅ 0) HF explícito por lista
     if m in (HF_MODELS or []):
         return "HuggingFace"
 
     # ✅ 1) Together explícito
-    # NÃO inclua "zai-org/" aqui. Só prefixos que você realmente quer prender no Together.
-    if low.startswith(("together/", "deepseek-ai/", "moonshotai/", "google/")):
+    # Apenas prefixes realmente suportados/roteados por você no Together.
+    if low.startswith(("together/", "deepseek-ai/", "moonshotai/")):
         return "Together"
 
     # ✅ 2) OpenRouter explícito
+    # google/* entra aqui, não no Together.
     if low.endswith(":free"):
         return "OpenRouter"
-    if low.startswith(("x-ai/", "tngtech/", "deepseek/", "anthropic/", "qwen/", "nousresearch/", "xiaomi/")):
+
+    if low.startswith((
+        "x-ai/",
+        "tngtech/",
+        "deepseek/",
+        "anthropic/",
+        "qwen/",
+        "nousresearch/",
+        "xiaomi/",
+        "google/",
+        "openrouter/",
+        "minimax/",
+        "arcee-ai/",
+    )):
         return "OpenRouter"
 
-    # ✅ 3) Heurística leve pra HF (quando HF está configurado)
+    # ✅ 3) Heurística leve pra HF
     if (HF_MODELS or []) and _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN"):
         for mid in HF_MODELS:
             pref = (mid.split("/", 1)[0] + "/") if "/" in mid else ""
             if pref and low.startswith(pref.lower()):
                 return "HuggingFace"
 
+    # ✅ 4) fallback final
     return "OpenRouter"
 
 
@@ -358,9 +372,7 @@ def call_model(*args: Any, **kwargs: Any):
 def route_chat_strict(model: str, payload: Dict[str, Any]):
     norm_model = _normalize_model_id(model)
     provider = _provider_for(norm_model)
-
-    # ✅ define call_model aqui também (BUGFIX do NameError)
-    call_model = _model_for_provider(norm_model, provider)
+    model_to_send = _model_for_provider(norm_model, provider)
 
     msgs = payload.get("messages", [])
     kwargs = {
@@ -376,17 +388,17 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
     if provider == "HuggingFace":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
-        resp = hf_chat(call_model, msgs, **kwargs)
+        resp = hf_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     if provider == "Together":
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
-        resp = together_chat(call_model, msgs, **kwargs)  # ✅ usa call_model (sem prefixo)
+        resp = together_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     try:
-        resp = openrouter_chat(call_model, msgs, **kwargs)  # ✅ usa call_model por consistência
+        resp = openrouter_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
     except RuntimeError as e:
         if _should_fallback_openrouter(e):
