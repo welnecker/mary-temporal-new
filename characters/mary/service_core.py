@@ -7810,94 +7810,122 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         user_text: str,
     ) -> List[Dict[str, Any]]:
         """
-        Plano dinâmico de geração para maximizar imersão:
-        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
-        - Conflito: temperature desce (resposta mais firme/limpa)
-        - Explicações/fatos: mais contido
-        Campos opcionais em cada plano:
-        - top_p
-        - extra (best-effort: alguns providers ignoram/rejeitam)
+        Plano dinâmico de geração para maximizar imersão com mais estabilidade:
+        - reduz truncamento
+        - controla melhor retries
+        - tenta preservar intensidade sem espalhar demais a resposta
         """
         ut = str(user_text or "").lower()
-        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
-
-        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
+        looks_factual = bool(
+            re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut)
+        )
+    
         cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
-
-        # Base tokens (fôlego)
-        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
-        base_tokens = 3000 if nsfw_on else 2000
-
-        # mais fôlego só quando realmente precisa
-        if nsfw_on and phase >= 3:
-            base_tokens = 3400
-
-        # explicações: menor
+    
+        # ----------------------------------------------------------
+        # Base tokens — mais conservador para reduzir truncamento
+        # ----------------------------------------------------------
         if looks_factual and not nsfw_on:
-            base_tokens = 1700
-
-        # aftercare: resposta costuma ser menor/mais controlada
-        if phase == 5:
-            base_tokens = 2200 if nsfw_on else 1800
-
-        # ✅ CAP defensivo
-        base_tokens = min(base_tokens, 3400)
-
-        # Decoding por cena
-        if conflict_now:
-            base_temp = 0.62 if nsfw_on else 0.58
-            base_top_p = 0.90
-        elif looks_factual:
-            base_temp = 0.55
-            base_top_p = 0.92
+            base_tokens = 1400
+        elif conflict_now:
+            base_tokens = 1800 if nsfw_on else 1500
+        elif phase >= 4 and nsfw_on:
+            base_tokens = 2600
+        elif phase == 3 and nsfw_on:
+            base_tokens = 2400
+        elif phase == 5:
+            base_tokens = 1700 if nsfw_on else 1400
         else:
-            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
+            base_tokens = 1900 if nsfw_on else 1500
+    
+        base_tokens = max(900, min(base_tokens, 2600))
+    
+        # ----------------------------------------------------------
+        # Decoding base
+        # ----------------------------------------------------------
+        if conflict_now:
+            base_temp = 0.60 if nsfw_on else 0.56
+            base_top_p = 0.90
+    
+        elif looks_factual:
+            base_temp = 0.52
+            base_top_p = 0.90
+    
+        else:
             if phase == 5:
                 if cooldown:
-                    base_temp = 0.58 if nsfw_on else 0.55
-                    base_top_p = 0.93 if nsfw_on else 0.94
+                    base_temp = 0.56 if nsfw_on else 0.53
+                    base_top_p = 0.91
                 else:
-                    base_temp = 0.64 if nsfw_on else 0.60
-                    base_top_p = 0.94 if nsfw_on else 0.95
+                    base_temp = 0.62 if nsfw_on else 0.58
+                    base_top_p = 0.92
+    
             elif phase >= 4:
-                base_temp = 1.0
-                base_top_p = 0.92
+                base_temp = 0.92
+                base_top_p = 0.90
+    
             elif phase == 3:
-                base_temp = 0.84
-                base_top_p = 0.93
+                base_temp = 0.82
+                base_top_p = 0.92
+    
             elif phase == 2:
-                base_temp = 0.80
-                base_top_p = 0.95
+                base_temp = 0.78
+                base_top_p = 0.94
+    
             else:
-                base_temp = 0.74
-                base_top_p = 0.96
-
-                # Penalidades: variam por tipo de cena
+                base_temp = 0.72
+                base_top_p = 0.95
+    
+        # ----------------------------------------------------------
+        # Penalidades
+        # ----------------------------------------------------------
         if looks_factual or conflict_now:
             extra = {
-                "presence_penalty": 0.25,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.05,
+                "presence_penalty": 0.22,
+                "frequency_penalty": 0.08,
+                "repetition_penalty": 1.04,
             }
         elif nsfw_on and phase >= 4:
-            # clímax: permite repetição e foco no corpo/ritmo
             extra = {
-                "presence_penalty": 0.15,
-                "frequency_penalty": 0.05,
-                "repetition_penalty": 1.03,
+                "presence_penalty": 0.12,
+                "frequency_penalty": 0.04,
+                "repetition_penalty": 1.02,
             }
         else:
             extra = {
-                "presence_penalty": 0.30,
-                "frequency_penalty": 0.12,
-                "repetition_penalty": 1.05,
+                "presence_penalty": 0.28,
+                "frequency_penalty": 0.10,
+                "repetition_penalty": 1.04,
             }
-
-        return [
-            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
-        ]
+    
+        # ----------------------------------------------------------
+        # Attempts — cada um com estratégia mais clara
+        # ----------------------------------------------------------
+        attempt1 = {
+            "model": model,
+            "temperature": base_temp,
+            "top_p": base_top_p,
+            "max_tokens": base_tokens,
+            "extra": extra,
+        }
+    
+        attempt2 = {
+            "model": model,
+            "temperature": max(0.45, base_temp - 0.10),
+            "top_p": min(0.96, base_top_p + 0.02),
+            "max_tokens": max(900, int(base_tokens * 0.88)),
+            "extra": extra,
+        }
+    
+        attempt3 = {
+            "model": model,
+            "temperature": max(0.40, base_temp - 0.18),
+            "top_p": min(0.97, base_top_p + 0.03),
+            "max_tokens": max(850, int(base_tokens * 0.76)),
+            "extra": extra,
+        }
+    
+        return [attempt1, attempt2, attempt3]
 
 
     # ======================================================
