@@ -590,7 +590,7 @@ def nsfw_enabled(
     4) facts persistido -> mary.nsfw
     5) default por timeline (universitaria=False, demais=True)
     """
-    tl = _normalize_timeline(timeline)
+    tl = (timeline or "").strip().lower()
 
     # 1) override vence tudo
     if nsfw_override is not None:
@@ -812,7 +812,7 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
     - Nunca “decide” progressão aqui; só alinha chaves e canoniza aliases.
     """
     try:
-        tl = _normalize_timeline(timeline)
+        tl = (timeline or "").strip().lower()
         if not tl:
             return facts
         if not isinstance(facts, dict):
@@ -3228,9 +3228,8 @@ def _get_global_virginity_from_facts(facts: Dict[str, Any]) -> str:
         else:
             v = str((facts or {}).get("virginity") or "").strip().lower()
 
-        v = v.replace("não", "nao")
-        v = v.replace("-", "_")
         v = v.replace(" ", "_")
+        v = v.replace("não", "nao")
 
         if v in ("virgem", "nao_virgem"):
             return v
@@ -3248,7 +3247,7 @@ def _derive_rel_first_time_with_janio(
     Isso é o que você quer usar no prompt da universitaria,
     sem confundir com a virginidade GLOBAL.
     """
-    tl = _normalize_timeline(timeline)
+    tl = (timeline or "").strip().lower()
     consummated = bool(rel.get("consummated"))
 
     if tl == "universitaria":
@@ -3261,7 +3260,6 @@ def _load_rel_state(
     timeline: str,
     canon_default: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    timeline = _normalize_timeline(timeline)
     base = default_relationship_state(timeline)
 
     # 1) Canon default entra primeiro
@@ -3386,10 +3384,7 @@ def _sync_rel_state_with_facts_canon(
         meta = m.get("meta") or {}
         if not isinstance(meta, dict):
             continue
-        if (
-            str(meta.get("kind") or "").strip().lower() == "canon"
-            and str(meta.get("key") or "").strip().lower() == "virginity"
-        ):
+        if meta.get("kind") == "canon" and meta.get("key") == "virginity":
             v = meta.get("value")
             ts = m.get("ts") or (m.get("meta") or {}).get("ts")
             if canon_ts is None:
@@ -5072,7 +5067,7 @@ def _infer_emotion_bucket(texto: str) -> str:
 
 
 def _load_emotion_state_from_facts(facts: dict, timeline: str) -> str:
-    tl = _normalize_timeline(timeline)
+    tl = (timeline or "").strip().lower()
     f = facts if isinstance(facts, dict) else {}
     mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
     if not isinstance(mary, dict):
@@ -5086,7 +5081,7 @@ def _load_emotion_state_from_facts(facts: dict, timeline: str) -> str:
 
 
 def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion: str) -> None:
-    tl = _normalize_timeline(timeline)
+    tl = (timeline or "").strip().lower()
     emo = (emotion or "").strip().lower() or "neutro"
     try:
         facts = cached_get_facts(usuario_key) or {}
@@ -5313,7 +5308,7 @@ def _clamp01(x: float) -> float:
 
 
 def _tp_arc_key(timeline: str) -> str:
-    tl = _normalize_timeline(timeline) or "cumplice"
+    tl = (timeline or "").strip().lower() or "cumplice"
     return f"third_party::{tl}"
 
 def _refresh_tp_arc_from_sidebar(
@@ -5609,7 +5604,7 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     tension = _clamp01(arc.get("tension", 0.0))
     guilt = _clamp01(arc.get("guilt", 0.0))
     anchor = _clamp01(arc.get("anchor", 0.85))
-    tl = _normalize_timeline(timeline) or "cumplice"
+    tl = (timeline or "").strip().lower() or "cumplice"
 
     if tension >= 0.80:
         vol = "altíssima"
