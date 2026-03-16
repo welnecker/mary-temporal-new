@@ -2580,6 +2580,8 @@ def _inject_shared_soft_context(
         facts = cached_get_facts(_current_user_key())
         history = cached_get_history(_current_user_key(), limit=40)
         
+        for m in mems:
+        
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
         
@@ -2625,6 +2627,8 @@ def _inject_shared_soft_context(
         messages[0]["content"] = (base + "\n\n" + block).strip()
     else:
         messages.append({"role": "system", "content": block})
+
+
 
 # ==========================================================
 # RELATIONSHIP STATE
@@ -5057,6 +5061,79 @@ def _desire_restraint_balance(
 
     return impulse - restraint
 
+def _infer_attention_focus(
+    *,
+    prompt: str,
+    facts: Dict[str, Any],
+    rel_state: Dict[str, Any],
+    tp_arc: Dict[str, Any],
+    emotion_now: str,
+) -> str:
+    p = _t_norm(prompt or "")
+
+    if _third_party_signal_level(prompt or "") >= 2:
+        return "terceiro"
+
+    if any(k in p for k in ("onde", "local", "aqui", "quarto", "cama", "cozinha", "banheiro")):
+        return "cena"
+
+    if any(k in p for k in ("o que voce sente", "o que você sente", "como ficou", "medo", "culpa", "ciume", "ciúme")):
+        return "emocao"
+
+    try:
+        rel_facts = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
+        pend = str(rel_facts.get("pendencia", "") or "").strip()
+        if pend:
+            return "pendencia"
+    except Exception:
+        pass
+
+    if emotion_now in {"culpa", "ansiedade", "triste", "raiva"}:
+        return "emocao"
+
+    if any(k in p for k in ("lembra", "passado", "memoria", "memória", "quem e", "quem é", "quando")):
+        return "memoria"
+
+    return "janio"
+
+def _render_attention_focus_rule(focus: str) -> str:
+    focus = (focus or "janio").strip().lower()
+
+    mapping = {
+        "janio": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é a troca imediata entre Mary e Janio.\n"
+            "- Priorize presença, voz, subtexto e reação ao que ele acabou de fazer ou dizer.\n"
+        ),
+        "emocao": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é o estado emocional vivo da Mary.\n"
+            "- Priorize emoção presente, transição interna e impacto do turno atual.\n"
+        ),
+        "cena": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é a cena presente.\n"
+            "- Priorize local, proximidade, ritmo corporal e continuidade espacial.\n"
+        ),
+        "terceiro": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é a tensão provocada por terceiro já presente.\n"
+            "- Priorize risco, ambivalência e consequência emocional, sem apagar Janio.\n"
+        ),
+        "pendencia": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é a pendência emocional em aberto.\n"
+            "- Priorize o assunto vivo no fundo da cena, sem transformar tudo em exposição.\n"
+        ),
+        "memoria": (
+            "[FOCO ATENCIONAL DO TURNO]\n"
+            "- O centro da resposta é a lembrança factual relevante ao turno.\n"
+            "- Use memória para coerência, mas responda ainda como cena viva.\n"
+        ),
+    }
+
+    return mapping.get(focus, mapping["janio"]).strip()
+
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str, emotion_now: str = "neutro") -> bool:
     if conflict_now:
         return False
@@ -5870,6 +5947,7 @@ class MaryService(BaseCharacter):
         long_memory_block: str = "",
         timeline_behavior_block: str = "",
         mary_identity_anchor: str = "",
+        attention_focus_rule: str,
     ) -> str:
     
         conversation_style_rule = """
@@ -5939,6 +6017,7 @@ class MaryService(BaseCharacter):
     
     {janio_focus_rule}
     {topic_rule}
+    {attention_focus_rule}
     
     {conversation_style_rule}
     
@@ -6512,6 +6591,8 @@ class MaryService(BaseCharacter):
                     meta = m.get("meta") or {}
                     kind = str(meta.get("kind") or "").strip().lower()
                     txt = str(m.get("text") or "").strip()
+                    if len(txt) > 600:
+                        txt = txt[:600] + "..."
 
                     if kind != "pin" or not txt:
                         continue
@@ -6538,6 +6619,8 @@ class MaryService(BaseCharacter):
                         continue
 
                     txt = str(m.get("text") or "").strip()
+                    if len(txt) > 600:
+                        txt = txt[:600] + "..."
                     if not txt:
                         continue
 
@@ -6665,6 +6748,14 @@ class MaryService(BaseCharacter):
         intimacy_phase = int(policy["intimacy_phase"])
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
+        attention_focus = _infer_attention_focus(
+        prompt=prompt,
+        facts=facts,
+        rel_state=rel_state,
+        tp_arc=tp_arc,
+        emotion_now=emotion_now,
+    )
+    attention_focus_rule = _render_attention_focus_rule(attention_focus)
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
         # ✅ contexto usado no guard e no repair
@@ -7295,6 +7386,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
             facts_integrity_rule=facts_integrity_rule,
+            attention_focus_rule=attention_focus_rule,
         )
 
         messages = self._build_messages_for_turn(
