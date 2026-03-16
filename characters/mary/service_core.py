@@ -7957,14 +7957,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
         try:
-            if finish_reason in ("length", "max_tokens", "token_limit", "content_filter"):
-                texto = _seal_broken_ending(texto)
-            else:
-                # mesmo sem finish_reason confiável, sela se houver sinais típicos
-                texto = _seal_broken_ending(texto)
+            texto = _seal_broken_ending(texto)
         except Exception:
             pass
-
         # ✅ Se veio vazio, marca violação e devolve vazio para o fluxo decidir
         if not texto:
             try:
@@ -7997,9 +7992,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         }
 
         violations = set(violations or [])
-
-        # sem violação grave → aceita resposta imediatamente
-        if not (violations & viol_graves):
+        viol_graves = violations & {"vazio", "meta_fala", "contradicao_cena"}
+        
+        if not viol_graves:
             try:
                 if violations:
                     diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
@@ -8015,7 +8010,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         try:
             if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in (violations or [])):
                 if _needs_llm_classification(texto, user_text=user_text, phase=int(phase or 0)):
-                    classifier_model = (diag.model_used or used_model or model) if 'used_model' in locals() else (diag.model_used or model)
+                    classifier_model = model
                     sys_c = "Você é um classificador. Responda APENAS: SIM ou NAO."
                     usr_c = (
                         "O texto abaixo descreve ato sexual explícito (ex.: penetração, sexo oral, "
@@ -8099,7 +8094,12 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # preserva um contexto mínimo de memória já injetada
         # pega até 6 mensagens anteriores ao prompt atual, sem explodir tokens
         try:
-            memory_context = messages[1:-1] if len(messages) > 2 else []
+            memory_context = []
+            for m in messages[1:-1]:
+                if m.get("role") in {"assistant", "user"}:
+                    memory_context.append(m)
+            
+            memory_context = memory_context[-4:]
             if memory_context:
                 repair_messages.extend(memory_context[-6:])
         except Exception:
@@ -8175,9 +8175,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
     @staticmethod
     def _fallback_text() -> str:
         return (
-            "Eu solto um meio sorriso e digo o nome sem fingir distância: Janio. Eu não estou confusa sobre ele — eu estou com medo do quanto eu gostei.\n\n"
-            "Eu encosto de leve na sua mão enquanto falo, como se isso me desse coragem. Foi intenso, foi rápido, e ainda assim eu quero ver onde isso vai dar.\n\n"
-            "Eu respiro fundo e completo, sem recuar: se ele vier falar comigo hoje, eu não vou fugir."
+            "Eu fico em silêncio por um segundo, respirando devagar antes de falar.\n\n"
+            "Janio… às vezes eu preciso de um instante para organizar o que estou sentindo.\n\n"
+            "Mas eu estou aqui com você. Então me diz outra vez — o que você quer saber agora?"
         )
 
     # -------------------------
@@ -8201,7 +8201,17 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     if isinstance(msg, dict):
                         content = msg.get("content")
                         reasoning = msg.get("reasoning")
-    
+                    
+                        # ✅ NOVO: suporte a tool_calls (alguns providers retornam resposta aqui)
+                        tool_calls = msg.get("tool_calls")
+                        if isinstance(tool_calls, list) and tool_calls:
+                            try:
+                                return str(
+                                    tool_calls[0].get("function", {}).get("arguments", "")
+                                ).strip()
+                            except Exception:
+                                pass
+                    
                         # 1) content normal
                         if isinstance(content, str) and content.strip():
                             return content.strip()
@@ -8334,17 +8344,19 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
+        
         if isinstance(extra, dict) and extra:
             payload.update(extra)
-            try:
-                return service_router.route_chat_strict(model, payload)
-            except Exception:
-                # Provider rejeitou campos extras → re-tenta 1x sem extras
-                payload = {
-                    "messages": messages,
-                    "temperature": float(temperature),
-                    "top_p": float(top_p),
-                    "max_tokens": int(max_tokens),
-                }
-        return service_router.route_chat_strict(model, payload)
+        
+        try:
+            return service_router.route_chat_strict(model, payload)
+        except Exception:
+            # retry sem extras
+            payload = {
+                "messages": messages,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "max_tokens": int(max_tokens),
+            }
+            return service_router.route_chat_strict(model, payload)
   
