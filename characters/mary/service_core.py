@@ -7484,16 +7484,15 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 ) -> bool:
                     if conflict_now:
                         return False
-                
+
                     blob = _t_norm((prompt or "") + "\n" + (texto or ""))
-                
-                    # só roda em momentos realmente estruturais
+
                     if int(phase or 0) >= 4:
                         return True
-                
+
                     if _third_party_signal_level(blob) >= 3:
                         return True
-                
+
                     if any(k in blob for k in (
                         "primeira vez",
                         "consumado",
@@ -7504,8 +7503,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         "estou gozando",
                     )):
                         return True
-                
+
                     return False
+
                 if _should_run_relationship_assessor(
                     prompt,
                     texto,
@@ -7555,12 +7555,14 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                                 rel_state["_last_success_pattern"] = "dominancia_fisica"
                                 rel_state["attitude"] = "dominante"
                                 rel_state["energy"] = "energetica"
+
                             if re.search(
                                 r"\b(tremo|tremor|arfo|ofego|arquejo|contra[cç][aã]o|pulsa|lateja|arrepio)\b",
                                 t2,
                             ):
                                 rel_state["_last_success_pattern"] = "prazer_corporal"
                                 rel_state["mood"] = "intensa"
+
                             if any(k in t2 for k in [
                                 "de repente", "sem aviso",
                                 "surpresa", "não esperava",
@@ -7674,7 +7676,12 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     pass
 
                 try:
-                    save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+                    save_interaction_safe(
+                        usuario_key,
+                        prompt,
+                        texto,
+                        diag.model_used or plan["model"],
+                    )
                 except Exception as e:
                     try:
                         _ss_set(
@@ -7688,11 +7695,12 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         )
                     except Exception:
                         pass
-                
+
                 try:
                     _lock_scene(usuario_key)
                 except Exception:
                     pass
+
                 # ----------------------------------------------------------
                 # Intimacy progression
                 # ----------------------------------------------------------
@@ -7806,8 +7814,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
             except Exception as e:
                 last_err = e
-            
-                # se já temos texto válido do modelo, não jogar fora
+
                 if str(texto or "").strip():
                     try:
                         _ss_set(
@@ -7821,9 +7828,10 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         )
                     except Exception:
                         pass
-            
+
                     _ss_set("mary_last_diagnostics", diag.as_dict())
                     return str(texto).strip()
+
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
 
