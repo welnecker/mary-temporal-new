@@ -1971,11 +1971,35 @@ def _render_app_shell() -> None:
     _auto_unlock_if_sem_interacao()
     backend, detail = db_status()
 
+    provider_labels = {
+        "openrouter": "OpenRouter",
+        "together": "Together",
+        "hf": "HuggingFace",
+    }
+
+    selected_model = str(st.session_state.get("model") or "").strip()
+    selected_provider = str(st.session_state.get("provider") or "").strip()
+
+    if not selected_provider and selected_model:
+        try:
+            if hasattr(service_router, "_provider_for"):
+                selected_provider = str(service_router._provider_for(selected_model) or "").strip()
+        except Exception:
+            selected_provider = ""
+
+    selected_provider_label = provider_labels.get(selected_provider, selected_provider or "—")
+
     used_model = st.session_state.get("mary_last_used_model")
     used_provider = st.session_state.get("mary_last_used_provider")
+
+    used_provider_label = provider_labels.get(
+        str(used_provider or "").strip(),
+        str(used_provider or "").strip() or "—",
+    )
+
     used_str = ""
     if used_model or used_provider:
-        used_str = f" • Usado: <b>{(used_provider or '—')}</b> / <b>{(used_model or '—')}</b>"
+        used_str = f" • Usado: <b>{used_provider_label}</b> / <b>{(used_model or '—')}</b>"
 
     st.caption("🧩 mary_app.py v3.14 (debug persona + fallback persona UI + telemetria modelo/provedor)")
     st.caption(f"🗄️ Backend atual: **{backend}** ({detail})")
@@ -2067,7 +2091,8 @@ def _render_app_shell() -> None:
           <div class="rp-title">Mary 💍💍</div>
           <div class="rp-sub">
             Timeline: <b>{_timeline()}</b> •
-            Modelo(UI): <b>{st.session_state.get('model','')}</b>
+            Provider(UI): <b>{selected_provider_label}</b> •
+            Modelo(UI): <b>{selected_model or '—'}</b>
             {used_str}
           </div>
         </div>
@@ -2240,28 +2265,83 @@ def _render_sidebar() -> None:
         # ==========================================================
         st.subheader("🧠 Modelo")
 
+        provider_labels = {
+            "openrouter": "OpenRouter",
+            "together": "Together",
+            "hf": "HuggingFace",
+        }
+
         try:
-            all_models = service_router.list_models() or []
+            providers_info = (
+                service_router.available_providers()
+                if hasattr(service_router, "available_providers")
+                else []
+            )
+
+            available_provider_ids = [
+                p[0] for p in providers_info
+                if isinstance(p, (list, tuple)) and len(p) >= 2 and bool(p[1])
+            ]
+
+            if not available_provider_ids:
+                available_provider_ids = ["openrouter", "together", "hf"]
+
             st.session_state["models_debug"] = {
                 "ok": True,
-                "len": len(all_models),
-                "head": all_models[:10],
-                "providers": (
-                    service_router.available_providers()
-                    if hasattr(service_router, "available_providers")
-                    else "—"
-                ),
+                "providers_info": providers_info,
+                "available_provider_ids": available_provider_ids,
                 "err": None,
             }
+
         except Exception as e:
-            all_models = []
+            available_provider_ids = ["openrouter", "together", "hf"]
             st.session_state["models_debug"] = {
                 "ok": False,
-                "len": 0,
-                "head": [],
-                "providers": "—",
+                "providers_info": [],
+                "available_provider_ids": available_provider_ids,
                 "err": f"{type(e).__name__}: {e}",
             }
+
+        # provider atual detectado a partir do modelo salvo
+        try:
+            current_model = str(st.session_state.get("model") or "").strip()
+            current_provider = (
+                service_router._provider_for(current_model)
+                if hasattr(service_router, "_provider_for") and current_model
+                else "openrouter"
+            )
+        except Exception:
+            current_provider = "openrouter"
+
+        if current_provider not in available_provider_ids:
+            current_provider = available_provider_ids[0]
+
+        # guarda provider selecionado
+        if "provider" not in st.session_state or st.session_state.get("provider") not in available_provider_ids:
+            st.session_state["provider"] = current_provider
+
+        provider_options_labels = [
+            provider_labels.get(pid, pid) for pid in available_provider_ids
+        ]
+        provider_index = available_provider_ids.index(st.session_state["provider"])
+
+        selected_provider_label = st.selectbox(
+            "🔌 Provider",
+            provider_options_labels,
+            index=provider_index,
+            key="provider_label_ui",
+        )
+
+        selected_provider = next(
+            (pid for pid, label in provider_labels.items() if label == selected_provider_label),
+            "openrouter",
+        )
+        st.session_state["provider"] = selected_provider
+
+        try:
+            all_models = service_router.list_models(selected_provider) or []
+        except Exception:
+            all_models = []
 
         if not all_models:
             all_models = [FALLBACK_MODEL]
@@ -2271,6 +2351,7 @@ def _render_sidebar() -> None:
 
         current = st.session_state.get("model")
         idx = all_models.index(current) if current in all_models else 0
+
         st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
 
         try:
@@ -2280,16 +2361,9 @@ def _render_sidebar() -> None:
                     str(st.session_state.get("model") or "").strip()
                 )
 
-            if not prov_detected:
-                msel = str(st.session_state.get("model") or "").strip().lower()
-                if msel.startswith("together/"):
-                    prov_detected = "Together"
-                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
-                    prov_detected = "HuggingFace"
-                else:
-                    prov_detected = "OpenRouter"
-
-            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
+            st.caption(
+                f"🔌 Provider detectado: **{provider_labels.get(prov_detected or '', prov_detected or '—')}**"
+            )
         except Exception:
             st.caption("🔌 Provider detectado: **—**")
 
