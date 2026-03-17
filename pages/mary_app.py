@@ -94,8 +94,8 @@ def _refresh_tp_arc_from_sidebar(
                 facts=cached_get_facts(usuario_key),
             )
             return out if isinstance(out, dict) else {}
-    except Exception:
-        pass
+    except Exception as e:
+        st.session_state["_tp_arc_sidebar_error"] = f"{type(e).__name__}: {e}"
     return {}
 
 
@@ -178,35 +178,25 @@ def _hard_reset_on_boot_if_needed() -> None:
         
 
 def _cleanup_broken_facts_schema_on_boot() -> None:
-    """
-    MIGRAÇÃO DEFINITIVA (BOOT-SAFE):
-    - remove mary.intro.fixed (string antiga)
-    - remove mary.intro.fixed.<timeline> (schema híbrido)
-    - remove virgindade global conflitante (apenas universitaria)
-    """
     try:
-        # ✅ não depende de _timeline() / _usuario_key_atual()
         tl = str(st.session_state.get("mary_timeline") or "cumplice").strip()
-        user = str(st.session_state.get("user_id") or "Janio Donisete").strip()
+        user = str(st.session_state.get("user_id") or "").strip()
+        if not user:
+            return
+
         usuario_key = f"{user}::mary::{tl}"
 
-        # ✅ import local pra não depender da ordem dos imports do arquivo
         from core.repositories import delete_fact
 
-        # --- limpar intro FIXO (2 schemas) ---
         delete_fact(usuario_key, "mary.intro.fixed")
         if tl:
             delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
 
-        # --- limpar conflito de virgindade (universitaria) ---
-        # você tem facts.virginity="nao_virgem" mas rel.state::universitaria diz "virgem"
         if tl == "universitaria":
             delete_fact(usuario_key, "virginity")
 
     except Exception:
-        # não deixa o boot quebrar
         pass
-
 
 # ⚠️ EXECUTA IMEDIATAMENTE NO BOOT
 _hard_reset_on_boot_if_needed()
@@ -366,11 +356,6 @@ def _apply_dark_ui() -> None:
 
 
 def _apply_dark_ui_once() -> None:
-    """
-    Aplica o CSS uma única vez por sessão para evitar repetição em reruns.
-    """
-    if st.session_state.get("_dark_ui_applied", False):
-        return
     _apply_dark_ui()
     st.session_state["_dark_ui_applied"] = True
 
@@ -2552,8 +2537,20 @@ def _render_sidebar() -> None:
             _uk_surprise = _usuario_key_atual()
             _facts_surprise = {}
 
-        current_surprise = int(_facts_surprise.get("mary.surprise_level", 0) or 0)
+def _get_nested_fact(data: dict, path: str, default=None):
+    cur = data
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(part)
+        if cur is None:
+            return default
+    return cur
 
+        try:
+            current_surprise = int(_get_nested_fact(_facts_surprise, "mary.surprise_level", 0) or 0)
+        except Exception:
+            current_surprise = 0
         st.slider(
             "Nível de surpresa ativa da Mary",
             min_value=0,
@@ -2763,8 +2760,8 @@ def _render_sidebar() -> None:
         st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
             st.session_state["chat_history"] = []
+            st.session_state["mary_intro_done"] = False
             st.rerun()
-
         st.markdown("---")
         st.subheader("🎭 Persona")
         st.caption("repositories.py ativo:")
