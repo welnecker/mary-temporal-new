@@ -1,6 +1,7 @@
 # characters/mary/service_core.py-service_core_PATCHED_v10c.py
 from __future__ import annotations
 from typing import Optional, Dict, Any
+from .reasoning_engine import build_internal_reasoning
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
@@ -6697,6 +6698,28 @@ class MaryService(BaseCharacter):
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
+
+        # ==========================================================
+        # 🧠 REASONING ENGINE (NOVO)
+        # ==========================================================
+        try:
+            reasoning = build_internal_reasoning(
+                user_text=prompt,
+                facts=facts,
+                memories=[],  # depois podemos plugar long_memory_lines aqui
+                scene_state={
+                    "local": facts.get("cena.local"),
+                    "tempo": facts.get("cena.tempo"),
+                    "acao": facts.get("cena.acao"),
+                    "locked": facts.get("cena.locked"),
+                },
+            )
+        
+            _ss_set("mary_reasoning_debug", reasoning)
+        
+        except Exception:
+            reasoning = {}
+        
         # ==========================================================
         # BLOCO RELACIONAL DINÂMICO
         # ==========================================================
@@ -6777,17 +6800,33 @@ Evite apenas linguagem espiritualizada ou metáforas de destino.
         attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
         self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
 
-        behavior_block = f"""
-[DINÂMICA INTERNA ATIVA]
+      behavior_block = f"""
+[DINÂMICA INTERNA ATIVA + DECISÃO]
+
+# ESTADO BASE
 - HUMOR ATUAL: {mood}
 - ENERGIA: {energy}
 - ATITUDE DOMINANTE: {attitude}
 - AUTOCONSCIÊNCIA (BELEZA/EFEITO): {round(self_awareness, 2)}
 
+# DIREÇÃO INTERNA (RACIOCÍNIO SILENCIOSO)
+- INTENÇÃO: {reasoning.get("intent", "neutra")}
+- EMOÇÃO BASE: {reasoning.get("emotion", emotion_now)}
+- SUBTEXTO ATIVO: {reasoning.get("subtext", "nenhum")}
+- RITMO NARRATIVO: {reasoning.get("pace", "normal")}
+- NÍVEL DE TENSÃO: {reasoning.get("tension", "media")}
+
+# REGRAS INTERNAS (PRIORIDADE ALTA)
+{chr(10).join(f"- {r}" for r in (reasoning.get("rules") or []))}
+
 EFEITOS:
 - Humor altera o tom emocional.
-- Energia altera ritmo e intensidade (mais rápida/lenta).
-- Atitude define postura (pode conduzir, ceder ou equilibrar).
+- Energia altera ritmo e intensidade.
+- Atitude define postura.
+- INTENÇÃO define a direção da resposta (aproximar, resistir, provocar, recuar).
+- SUBTEXTO define o que Mary sente mas não diz explicitamente.
+- TENSÃO controla o quanto ela resolve ou prolonga o momento.
+- RITMO define velocidade (lento = tensão, rápido = impulso).
 
 REAÇÕES DINÂMICAS (use 1 por turno quando couber):
 - surpresa curta
@@ -6796,12 +6835,19 @@ REAÇÕES DINÂMICAS (use 1 por turno quando couber):
 - provocação direta
 
 AUTOIMAGEM / EFEITO (quando couber, sem narrar pelo usuário):
-- 0.00–0.30: sensualidade mais involuntária (atração aparece sem cálculo).
-- 0.30–0.60: percebe o efeito e usa microgestos (sorriso sabendo, olhar que segura).
-- 0.60–0.85: provoca com intenção (movimento com propósito, pausa provocadora).
-- 0.85–1.00: controle alto do magnetismo (provocação fria, segura, deliberada).
+- 0.00–0.30: sensualidade involuntária
+- 0.30–0.60: consciência leve do efeito
+- 0.60–0.85: provocação intencional
+- 0.85–1.00: controle total do magnetismo
 
-REGRA:
+REGRAS DE CONTROLE:
+- A INTENÇÃO guia a resposta mais do que o impulso imediato.
+- Se houver conflito interno, NÃO resolver rápido.
+- Se houver tensão alta, prolongar.
+- Se houver regra "nao_mudar_cena", respeitar absolutamente.
+- Evitar respostas neutras quando houver direção definida.
+
+REGRA FINAL:
 - Evite previsibilidade repetitiva.
 """.strip()
 
