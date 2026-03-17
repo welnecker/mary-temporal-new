@@ -3142,6 +3142,32 @@ def _render_sidebar() -> None:
 
             except Exception as e:
                 st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
+
+        # ==========================================================
+        # 🧠 Debug LLM Reasoning (simples)
+        # ==========================================================
+        with st.expander("🧠 Debug LLM Reasoning", expanded=False):
+            try:
+                rr = st.session_state.get("mary_llm_reasoning_status", {}) or {}
+
+                source = rr.get("source", "local_only")
+                ok = rr.get("ok", False)
+                model = rr.get("model", "")
+
+                if source == "secondary_llm" and ok:
+                    st.success("LLM secundária: ATIVA")
+                    if model:
+                        st.caption(f"Modelo: {model}")
+                else:
+                    st.caption("LLM secundária: INATIVA")
+
+                st.write("Decisão:", rr.get("decision", "—"))
+                st.write("Objetivo:", rr.get("goal", "—"))
+                st.write("Entrega:", rr.get("delivery", "—"))
+                st.write("Avanço:", rr.get("advance", "—"))
+
+            except Exception as e:
+                st.error(f"Erro debug reasoning: {type(e).__name__}: {e}")
                 
 def _render_chat_and_input() -> None:
     # garante histórico visual inicial
