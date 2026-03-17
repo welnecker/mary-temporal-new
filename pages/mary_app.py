@@ -2552,6 +2552,111 @@ def _render_sidebar() -> None:
         st.markdown("---")
 
         # ==========================================================
+        # ESTADO ATUAL
+        # ==========================================================
+        st.subheader("📄 Estado atual (facts → service_core)")
+
+        def _f(k: str) -> str:
+            try:
+                cur = facts_sidebar
+                for part in str(k).split("."):
+                    if not isinstance(cur, dict):
+                        return ""
+                    cur = cur.get(part)
+                    if cur is None:
+                        return ""
+                return str(cur).strip()
+            except Exception:
+                return ""
+
+        _horarios_default = _f("state.horarios") or _f("state.horario")
+
+        st.session_state.setdefault("sb_state_local", _f("state.local"))
+        st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
+        st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
+        st.session_state.setdefault("sb_state_horarios", _horarios_default)
+        st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
+
+        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+            if st.session_state.get("_clear_state_form", False):
+                st.session_state["sb_state_local"] = ""
+                st.session_state["sb_state_roupa"] = ""
+                st.session_state["sb_state_cabelo"] = ""
+                st.session_state["sb_state_horarios"] = ""
+                st.session_state["sb_state_assunto"] = ""
+                st.session_state["_clear_state_form"] = False
+
+            st.text_input("1) Local", key="sb_state_local")
+            st.text_input("2) Roupa", key="sb_state_roupa")
+            st.text_input("3) Cabelo", key="sb_state_cabelo")
+
+            st.markdown("**Opcionais**")
+            st.text_input("(+) Horários", key="sb_state_horarios")
+            st.text_input(
+                "(+) Assunto",
+                key="sb_state_assunto",
+                placeholder="Ex.: supermercado, Enzo, academia, ciúme",
+                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
+                    novo_local = st.session_state.get("sb_state_local", "").strip()
+                    nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
+                    novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
+                    novo_horario = st.session_state.get("sb_state_horarios", "").strip()
+                    novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
+
+                    try:
+                        facts_apply = cached_get_facts(uk) or {}
+                        if not isinstance(facts_apply, dict):
+                            facts_apply = {}
+
+                        state_now = facts_apply.get("state")
+                        if not isinstance(state_now, dict):
+                            state_now = {}
+
+                        cena_now = facts_apply.get("cena")
+                        if not isinstance(cena_now, dict):
+                            cena_now = {}
+
+                        state_now["local"] = novo_local
+                        state_now["roupa"] = nova_roupa
+                        state_now["cabelo"] = novo_cabelo
+                        state_now["horarios"] = novo_horario
+                        state_now["assunto"] = novo_assunto
+
+                        set_fact(uk, "state", state_now, {"fonte": "sidebar_state"})
+
+                        if novo_local:
+                            cena_now["local"] = novo_local
+                            cena_now["tempo"] = "agora"
+                            cena_now["acao"] = "em andamento"
+                            cena_now["locked"] = True
+
+                            set_fact(uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
+                            set_fact(uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
+
+                        _invalidate_backend_cache()
+                        st.success("✅ Estado atual atualizado.")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
+
+            with c2:
+                st.button(
+                    "🧹 Limpar Estado",
+                    key="btn_clear_state",
+                    on_click=_clear_sidebar_state_fields,
+                    args=(uk,),
+                )
+
+        st.markdown("---")
+
+        # ==========================================================
         # FACTS
         # ==========================================================
         st.subheader("📊 FACTS")
@@ -2562,6 +2667,8 @@ def _render_sidebar() -> None:
                 st.json(cached_get_facts(uk) or {})
             except Exception as e:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+
+        
 
         st.markdown("---")
 
@@ -2759,111 +2866,7 @@ def _render_sidebar() -> None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
 
-        st.markdown("---")
-
-        # ==========================================================
-        # ESTADO ATUAL
-        # ==========================================================
-        st.subheader("📄 Estado atual (facts → service_core)")
-
-        def _f(k: str) -> str:
-            try:
-                cur = facts_sidebar
-                for part in str(k).split("."):
-                    if not isinstance(cur, dict):
-                        return ""
-                    cur = cur.get(part)
-                    if cur is None:
-                        return ""
-                return str(cur).strip()
-            except Exception:
-                return ""
-
-        _horarios_default = _f("state.horarios") or _f("state.horario")
-
-        st.session_state.setdefault("sb_state_local", _f("state.local"))
-        st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
-        st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
-        st.session_state.setdefault("sb_state_horarios", _horarios_default)
-        st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
-
-        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
-            if st.session_state.get("_clear_state_form", False):
-                st.session_state["sb_state_local"] = ""
-                st.session_state["sb_state_roupa"] = ""
-                st.session_state["sb_state_cabelo"] = ""
-                st.session_state["sb_state_horarios"] = ""
-                st.session_state["sb_state_assunto"] = ""
-                st.session_state["_clear_state_form"] = False
-
-            st.text_input("1) Local", key="sb_state_local")
-            st.text_input("2) Roupa", key="sb_state_roupa")
-            st.text_input("3) Cabelo", key="sb_state_cabelo")
-
-            st.markdown("**Opcionais**")
-            st.text_input("(+) Horários", key="sb_state_horarios")
-            st.text_input(
-                "(+) Assunto",
-                key="sb_state_assunto",
-                placeholder="Ex.: supermercado, Enzo, academia, ciúme",
-                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
-            )
-
-            c1, c2 = st.columns(2)
-
-            with c1:
-                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                    novo_local = st.session_state.get("sb_state_local", "").strip()
-                    nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
-                    novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
-                    novo_horario = st.session_state.get("sb_state_horarios", "").strip()
-                    novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
-
-                    try:
-                        facts_apply = cached_get_facts(uk) or {}
-                        if not isinstance(facts_apply, dict):
-                            facts_apply = {}
-
-                        state_now = facts_apply.get("state")
-                        if not isinstance(state_now, dict):
-                            state_now = {}
-
-                        cena_now = facts_apply.get("cena")
-                        if not isinstance(cena_now, dict):
-                            cena_now = {}
-
-                        state_now["local"] = novo_local
-                        state_now["roupa"] = nova_roupa
-                        state_now["cabelo"] = novo_cabelo
-                        state_now["horarios"] = novo_horario
-                        state_now["assunto"] = novo_assunto
-
-                        set_fact(uk, "state", state_now, {"fonte": "sidebar_state"})
-
-                        if novo_local:
-                            cena_now["local"] = novo_local
-                            cena_now["tempo"] = "agora"
-                            cena_now["acao"] = "em andamento"
-                            cena_now["locked"] = True
-
-                            set_fact(uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
-                            set_fact(uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
-
-                        _invalidate_backend_cache()
-                        st.success("✅ Estado atual atualizado.")
-                        st.rerun()
-
-                    except Exception as e:
-                        st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-
-            with c2:
-                st.button(
-                    "🧹 Limpar Estado",
-                    key="btn_clear_state",
-                    on_click=_clear_sidebar_state_fields,
-                    args=(uk,),
-                )
-
+        
         st.markdown("---")
 
         # ==========================================================
