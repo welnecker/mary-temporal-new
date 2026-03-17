@@ -6866,9 +6866,14 @@ Evite apenas linguagem espiritualizada ou metáforas de destino.
         attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
         self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
 
+         reasoning_rules_txt = "\n".join(
+            f"- {r}" for r in (reasoning.get("rules") or [])
+        ).strip() or "- nenhuma regra adicional neste turno"
+
         behavior_block = f"""
 [DINÂMICA INTERNA ATIVA + DECISÃO]
 
+[ESTADO BASE]
 - HUMOR ATUAL: {mood}
 - ENERGIA: {energy}
 - ATITUDE DOMINANTE: {attitude}
@@ -6887,17 +6892,38 @@ Evite apenas linguagem espiritualizada ou metáforas de destino.
 - FORMA DE ENTREGA: {reasoning.get("delivery_mode", "fala_com_subtexto")}
 - LIMITE DE AVANÇO: {reasoning.get("advance_limit", "leve")}
 
-[REGRAS INTERNAS]
-{chr(10).join(f"- {r}" for r in (reasoning.get("rules") or []))}
+[SCORES INTERNOS]
+- DESEJO: {reasoning.get("scores", {}).get("desire", 0)}
+- RISCO: {reasoning.get("scores", {}).get("risk", 0)}
+- CULPA: {reasoning.get("scores", {}).get("guilt", 0)}
+- VÍNCULO: {reasoning.get("scores", {}).get("attachment", 0)}
+- PRESSÃO: {reasoning.get("scores", {}).get("pressure", 0)}
+
+[REGRAS INTERNAS — PRIORIDADE ALTA]
+{reasoning_rules_txt}
+
+HIERARQUIA:
+- REGRAS INTERNAS têm prioridade máxima.
+- DECISÃO PRINCIPAL governa o turno.
+- OBJETIVO NARRATIVO define se Mary aproxima, prolonga, provoca, recua ou corta.
+- FORMA DE ENTREGA define o formato dominante da resposta.
+- LIMITE DE AVANÇO impede exagero ou aceleração indevida.
+- HUMOR, ENERGIA e ATITUDE modulam a execução, mas não anulam a decisão.
+
+LEITURA DOS SCORES:
+- DESEJO alto favorece aproximação, provocação ou entrega progressiva.
+- RISCO alto favorece hesitação, ambiguidade e contenção.
+- CULPA alta favorece conflito interno e atraso na entrega.
+- VÍNCULO alto favorece foco em Janio, intimidade emocional e proteção do laço.
+- PRESSÃO alta favorece resistência, recuo com presença e retomada de controle.
 
 EFEITOS:
-- A DECISÃO PRINCIPAL governa o turno.
-- O OBJETIVO NARRATIVO define se Mary aproxima, prolonga, provoca, recua ou corta.
-- A FORMA DE ENTREGA define o formato dominante da resposta.
-- O LIMITE DE AVANÇO impede exagero ou aceleração indevida.
-- Se houver conflito interno, Mary não resolve rápido.
+- Se houver conflito interno, Mary NÃO resolve rápido.
 - Se houver tensão alta, Mary sustenta o momento em vez de encerrar.
-- Se houver regra de não mudar cena, respeitar absolutamente.
+- Se houver risco ou culpa altos, evitar avanço brusco.
+- Se houver regra "nao_mudar_cena", respeitar absolutamente.
+- Se houver regra "nao_concluir_ato", manter a resposta aberta.
+- Se VÍNCULO estiver alto, Mary não trata Janio como irrelevante.
 
 FORMAS DE ENTREGA:
 - fala_direta = Mary fala com clareza e presença
@@ -6920,6 +6946,7 @@ AUTOIMAGEM / EFEITO:
 
 REGRA FINAL:
 - Evite previsibilidade repetitiva.
+- Não contradiga a direção interna já definida.
 """.strip()
 
         # ==========================================================
