@@ -1,21 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-
-DEFAULT_MODELS = [
-    "x-ai/grok-4.1-fast",
-    "tngtech/deepseek-r1t2-chimera",
-    "xiaomi/mimo-v2-flash",
-    "deepseek/deepseek-chat-v3-0324",
-    "anthropic/claude-3.5-haiku",
-    "openrouter/hunter-alpha",
-    "nousresearch/hermes-3-llama-3.1-405b",
-    "google/gemini-3-flash-preview",
-    "moonshotai/kimi-k2.5",
-]
 
 OPENROUTER_BASE_URL = os.getenv(
     "OPENROUTER_BASE_URL",
@@ -26,15 +14,15 @@ DEFAULT_TIMEOUT = float(os.getenv("LLM_HTTP_TIMEOUT", "180"))
 
 
 def _headers() -> Dict[str, str]:
-    token = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN") or ""
+    token = (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_TOKEN") or "").strip()
     if not token:
         raise RuntimeError(
             "OPENROUTER_API_KEY/OPENROUTER_TOKEN ausente. "
             "Defina nas secrets/env para usar OpenRouter."
         )
 
-    referer = os.getenv("APP_PUBLIC_URL", "") or "https://streamlit.app"
-    x_title = os.getenv("APP_NAME", "") or "PERSONAGENS2025"
+    referer = (os.getenv("APP_PUBLIC_URL", "") or "https://streamlit.app").strip()
+    x_title = (os.getenv("APP_NAME", "") or "PERSONAGENS2025").strip()
 
     return {
         "Authorization": f"Bearer {token}",
@@ -103,6 +91,7 @@ def _merge_body_defaults(model: str, body: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in defaults.items():
             if k not in body:
                 body[k] = v
+
     return body
 
 
@@ -113,10 +102,14 @@ def chat(
     max_tokens: int = 1024,
     temperature: float = 0.7,
     top_p: float = 0.95,
-    extra: Dict[str, Any] | None = None,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], str, str]:
-    if not model or not str(model).strip():
+    model = (model or "").strip()
+    if not model:
         raise RuntimeError("OpenRouter: model vazio")
+
+    if not isinstance(messages, list) or not messages:
+        raise RuntimeError("OpenRouter: messages inválido/vazio")
 
     body: Dict[str, Any] = {
         "model": model,
@@ -126,14 +119,18 @@ def chat(
         "top_p": float(top_p),
     }
 
-    if extra:
+    if isinstance(extra, dict) and extra:
         body.update(extra)
 
     body = _merge_body_defaults(model, body)
 
     try:
         with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
-            r = client.post(OPENROUTER_BASE_URL, headers=_headers(), json=body)
+            r = client.post(
+                OPENROUTER_BASE_URL,
+                headers=_headers(),
+                json=body,
+            )
 
             if r.status_code >= 400:
                 msg = _extract_error_payload(r)
@@ -142,7 +139,7 @@ def chat(
             data = r.json()
             data = _normalize_reasoning_into_content(data)
 
-            used = data.get("model") or model
+            used = str(data.get("model") or model).strip() or model
 
             try:
                 c0 = (data.get("choices") or [])[0] or {}
