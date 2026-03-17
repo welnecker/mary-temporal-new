@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Tuple
 
+from .models import list_models as registry_list_models
+
 # core/service_router.py
 _IMPORT_ERRORS: Dict[str, str] = {}
 
@@ -10,31 +12,28 @@ _IMPORT_ERRORS: Dict[str, str] = {}
 # Imports SAFE (não deixar a UI cair por exceção)
 # ============================================================
 
-# OpenRouter (obrigatório no teu app)
+# OpenRouter
 try:
-    from .openrouter import chat as openrouter_chat, DEFAULT_MODELS as OR_MODELS
+    from .openrouter import chat as openrouter_chat
 except Exception as e:
-    OR_MODELS = []
     _IMPORT_ERRORS["openrouter"] = f"{type(e).__name__}: {e}"
 
     def openrouter_chat(*args: Any, **kwargs: Any):
         raise RuntimeError(f"OpenRouter indisponível: {type(e).__name__}: {e}")
 
 
-# Together (opcional)
+# Together
 try:
-    from .together import chat as together_chat, DEFAULT_MODELS as TG_MODELS
+    from .together import chat as together_chat
 except Exception as e:
-    TG_MODELS = []
     together_chat = None  # type: ignore
     _IMPORT_ERRORS["together"] = f"{type(e).__name__}: {e}"
 
 
-# HuggingFace Router (opcional)
+# Hugging Face
 try:
-    from .hf import chat as hf_chat, DEFAULT_MODELS as HF_MODELS
+    from .hf import chat as hf_chat
 except Exception as e:
-    HF_MODELS = []
     hf_chat = None  # type: ignore
     _IMPORT_ERRORS["hf"] = f"{type(e).__name__}: {e}"
 
@@ -61,7 +60,6 @@ PINNED_OPENROUTER_MODELS: List[str] = [
 # ============================================================
 
 def _normalize_reasoning_into_content(resp: Any) -> Any:
-    # tuple: (data, used_model, provider)
     if isinstance(resp, tuple) and len(resp) >= 1:
         data = _normalize_reasoning_into_content(resp[0])
         if len(resp) == 3:
@@ -106,7 +104,6 @@ def import_errors() -> Dict[str, str]:
 
 
 def _raise_if_provider_error(resp: Any, provider: str) -> None:
-    # tuple: (data, used_model, provider)
     data = resp[0] if isinstance(resp, tuple) and resp else resp
 
     if not isinstance(data, dict):
@@ -117,7 +114,6 @@ def _raise_if_provider_error(resp: Any, provider: str) -> None:
     if "errors" in data and data["errors"]:
         raise RuntimeError(f"{provider} errors: {data['errors']}")
 
-    # alguns providers jogam msg em "message"
     if data.get("message") and isinstance(data.get("message"), str) and ("error" in data.get("message", "").lower()):
         raise RuntimeError(f"{provider} message: {data['message']}")
 
@@ -133,16 +129,30 @@ def _strip_prefix(s: str, prefix: str) -> str:
 def _model_for_provider(model: str, provider: str) -> str:
     m = (model or "").strip()
 
-    if provider == "Together":
+    if provider == "together":
         return _strip_prefix(m, "together/")
 
-    if provider == "HuggingFace":
+    if provider == "hf":
         m = _strip_prefix(m, "hf/")
         m = _strip_prefix(m, "huggingface/")
         return m
 
-    # OpenRouter: preserva o model id original
     return m
+
+
+def _dedupe_keep_order(items: List[str]) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for x in items:
+        s = str(x or "").strip()
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+    return out
 
 
 # -------------------------
@@ -154,9 +164,9 @@ def available_providers() -> List[Tuple[str, bool, str]]:
     have_hf = _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN")
 
     return [
-        ("OpenRouter", have_or, "OK" if have_or else "sem chave"),
-        ("Together", have_tg, "OK" if have_tg else "sem chave"),
-        ("HuggingFace", have_hf, "OK" if have_hf else "sem chave"),
+        ("openrouter", have_or, "OK" if have_or else "sem chave"),
+        ("together", have_tg, "OK" if have_tg else "sem chave"),
+        ("hf", have_hf, "OK" if have_hf else "sem chave"),
     ]
 
 
@@ -167,45 +177,28 @@ def list_models(provider: str | None = None) -> List[str]:
 
     Além disso, garante que modelos OpenRouter "pinned" apareçam sempre no menu.
     """
-    prov = (provider or "").strip()
+    prov = (provider or "").strip().lower()
 
-    def _dedupe_keep_order(items: List[str]) -> List[str]:
-        out: List[str] = []
-        seen: set[str] = set()
-        for x in items:
-            s = str(x or "").strip()
-            if not s:
-                continue
-            k = s.lower()
-            if k in seen:
-                continue
-            seen.add(k)
-            out.append(s)
-        return out
-
-    if prov == "OpenRouter":
-        base = list(OR_MODELS or [])
+    if prov == "openrouter":
+        base = list(registry_list_models("openrouter") or [])
         base.extend(PINNED_OPENROUTER_MODELS)
         return _dedupe_keep_order(base)
 
-    if prov == "Together":
-        return _dedupe_keep_order(list(TG_MODELS or []))
+    if prov == "together":
+        return _dedupe_keep_order(list(registry_list_models("together") or []))
 
-    if prov == "HuggingFace":
-        return _dedupe_keep_order(list(HF_MODELS or []))
+    if prov in ("hf", "huggingface"):
+        return _dedupe_keep_order(list(registry_list_models("hf") or []))
 
-    # todos
     out: List[str] = []
-    for lst in (OR_MODELS or [], TG_MODELS or [], HF_MODELS or []):
-        for m in lst:
-            if m and m not in out:
-                out.append(m)
+    for p in ("openrouter", "together", "hf"):
+        out.extend(registry_list_models(p) or [])
 
-    # garante os pinned no resultado geral também
     out.extend(PINNED_OPENROUTER_MODELS)
 
     out = _dedupe_keep_order(out)
     return out or [SAFE_FALLBACK_MODEL]
+
 
 # -----------------------------------------
 # Identificação do provedor
@@ -214,19 +207,23 @@ def _provider_for(model_id: str) -> str:
     m = (model_id or "").strip()
     low = m.lower()
 
-    # ✅ 0) HF explícito por lista
-    if m in (HF_MODELS or []):
-        return "HuggingFace"
+    hf_models = set(registry_list_models("hf") or [])
+    tg_models = set(registry_list_models("together") or [])
 
-    # ✅ 1) Together explícito
-    # Apenas prefixes realmente suportados/roteados por você no Together.
-    if low.startswith(("together/", "deepseek-ai/", "moonshotai/")):
-        return "Together"
+    if m in hf_models:
+        return "hf"
 
-    # ✅ 2) OpenRouter explícito
-    # google/* entra aqui, não no Together.
+    if m in tg_models:
+        return "together"
+
+    if low.startswith(("hf/", "huggingface/")):
+        return "hf"
+
+    if low.startswith("together/"):
+        return "together"
+
     if low.endswith(":free"):
-        return "OpenRouter"
+        return "openrouter"
 
     if low.startswith((
         "x-ai/",
@@ -241,17 +238,15 @@ def _provider_for(model_id: str) -> str:
         "minimax/",
         "arcee-ai/",
     )):
-        return "OpenRouter"
+        return "openrouter"
 
-    # ✅ 3) Heurística leve pra HF
-    if (HF_MODELS or []) and _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN"):
-        for mid in HF_MODELS:
+    if _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN"):
+        for mid in hf_models:
             pref = (mid.split("/", 1)[0] + "/") if "/" in mid else ""
             if pref and low.startswith(pref.lower()):
-                return "HuggingFace"
+                return "hf"
 
-    # ✅ 4) fallback final
-    return "OpenRouter"
+    return "openrouter"
 
 
 def _normalize_model_id(raw: str) -> str:
@@ -260,7 +255,7 @@ def _normalize_model_id(raw: str) -> str:
     low = raw.lower().strip()
     if low in MODEL_ALIASES:
         return MODEL_ALIASES[low]
-    return raw
+    return raw.strip()
 
 
 def _should_fallback_openrouter(err: Exception) -> bool:
@@ -283,10 +278,10 @@ def _should_fallback_openrouter(err: Exception) -> bool:
 # -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     norm_model = _normalize_model_id(model)
-    provider = _provider_for(norm_model)              # "OpenRouter" | "Together" | "HuggingFace"
+    provider = _provider_for(norm_model)
     model_to_send = _model_for_provider(norm_model, provider)
 
-    if provider == "HuggingFace":
+    if provider == "hf":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
         resp = hf_chat(model_to_send, messages, **kwargs)
@@ -294,12 +289,11 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
         _raise_if_provider_error(resp, "HuggingFace")
         if isinstance(resp, tuple):
             return resp
-        return (resp, norm_model, "huggingface")
+        return (resp, norm_model, "hf")
 
-    if provider == "Together":
+    if provider == "together":
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
-        # together_chat já sabe remover "together/" se vier, mas ok enviar model_to_send
         resp = together_chat(model_to_send, messages, **kwargs)
         resp = _normalize_reasoning_into_content(resp)
         _raise_if_provider_error(resp, "Together")
@@ -307,7 +301,6 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
             return resp
         return (resp, norm_model, "together")
 
-    # OpenRouter
     try:
         resp = openrouter_chat(norm_model, messages, **kwargs)
         resp = _normalize_reasoning_into_content(resp)
@@ -331,25 +324,15 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
 # ✅ COMPATIBILIDADE (LEGADO): call_model
 # ==========================================================
 def call_model(*args: Any, **kwargs: Any):
-    """
-    Compat wrapper para código antigo que chamava `call_model(...)`.
-
-    Aceita assinaturas comuns:
-      - call_model(model, messages, **params)
-      - call_model(provider, model, messages, user)
-      - call_model(provider=..., model=..., messages=..., user=...)
-    e redireciona para `chat(model=..., messages=...)`.
-    """
     provider = kwargs.get("provider")
     model = kwargs.get("model")
     messages = kwargs.get("messages")
 
-    # pos args
     if (model is None or messages is None) and len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], list):
         model = model or args[0]
         messages = messages or args[1]
     elif (model is None or messages is None) and len(args) >= 3 and isinstance(args[1], str) and isinstance(args[2], list):
-        provider = provider or args[0]  # não usado (roteamento é automático)
+        provider = provider or args[0]
         model = model or args[1]
         messages = messages or args[2]
 
@@ -385,13 +368,13 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
     if extra:
         kwargs["extra"] = extra
 
-    if provider == "HuggingFace":
+    if provider == "hf":
         if hf_chat is None:
             raise RuntimeError("HuggingFace provider indisponível (hf.py falhou ao importar).")
         resp = hf_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
-    if provider == "Together":
+    if provider == "together":
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
         resp = together_chat(model_to_send, msgs, **kwargs)
