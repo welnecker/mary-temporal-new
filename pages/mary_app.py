@@ -2427,7 +2427,7 @@ def _render_sidebar() -> None:
                 st.success("✅ surprise_level removido.")
                 st.rerun()
 
-         st.markdown("---")
+        st.markdown("---")
 
         # ==========================================================
         # ESTADO ATUAL
@@ -2545,8 +2545,6 @@ def _render_sidebar() -> None:
                 st.json(cached_get_facts(uk) or {})
             except Exception as e:
                 st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
-
-        
 
         st.markdown("---")
 
@@ -2670,7 +2668,6 @@ def _render_sidebar() -> None:
         if mems_view is not None:
             st.json(mems_view)
 
-          
         st.markdown("---")
 
         # ==========================================================
@@ -2867,7 +2864,6 @@ def _render_sidebar() -> None:
             st.caption("Últimas memórias (DB):")
             st.json(st.session_state.get("__lm_list") or [])
 
-        
         st.markdown("---")
 
         # ==========================================================
@@ -3072,7 +3068,7 @@ def _render_sidebar() -> None:
 
             except Exception as e:
                 st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
-
+                
 def _render_chat_and_input() -> None:
     # garante histórico visual inicial
     _boot_visual_if_empty()
