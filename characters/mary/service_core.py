@@ -8049,18 +8049,16 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
         try:
-            if finish_reason in ("length", "max_tokens", "token_limit", "content_filter"):
-                texto = _seal_broken_ending(texto)
-            else:
-                # mesmo sem finish_reason confiável, sela se houver sinais típicos
-                texto = _seal_broken_ending(texto)
+            texto = _seal_broken_ending(texto)
         except Exception:
             pass
 
         # ✅ Se veio vazio, marca violação e devolve vazio para o fluxo decidir
         if not texto:
             try:
-                diag.violations = list(dict.fromkeys((diag.violations or []) + ["vazio"]))
+                diag.violations = list(
+                    dict.fromkeys((diag.violations or []) + ["vazio"])
+                )
             except Exception:
                 pass
             return "", used_model
@@ -8088,13 +8086,16 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "contradicao_cena",
         }
 
-        violations = set(violations or [])
+        violations_list = list(violations or [])
+        violations_set = set(violations_list)
 
         # sem violação grave → aceita resposta imediatamente
-        if not (violations & viol_graves):
+        if not (violations_set & viol_graves):
             try:
-                if violations:
-                    diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
+                if violations_list:
+                    diag.violations = list(
+                        dict.fromkeys((diag.violations or []) + violations_list)
+                    )
             except Exception:
                 pass
 
@@ -8107,7 +8108,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         try:
             if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in (violations or [])):
                 if _needs_llm_classification(texto, user_text=user_text, phase=int(phase or 0)):
-                    classifier_model = (diag.model_used or used_model or model) if 'used_model' in locals() else (diag.model_used or model)
+                    classifier_model = used_model
                     sys_c = "Você é um classificador. Responda APENAS: SIM ou NAO."
                     usr_c = (
                         "O texto abaixo descreve ato sexual explícito (ex.: penetração, sexo oral, "
@@ -8176,6 +8177,22 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             f"{repair_instr}"
         )
 
+        # ----------------------------------------------------------
+        # 🔥 Injeta direção do reasoning para o repair manter
+        # ----------------------------------------------------------
+        try:
+            decision_hint = _ss_get("mary_reasoning_debug", {}) or {}
+
+            repair_system += f"""
+
+[DIREÇÃO DA MARY — MANTER]
+- Decisão: {decision_hint.get("decision")}
+- Objetivo: {decision_hint.get("narrative_goal")}
+- Limite: {decision_hint.get("advance_limit")}
+"""
+        except Exception:
+            pass
+
         repair_messages: List[Dict[str, str]] = []
 
         # mantém o system original intacto
@@ -8189,9 +8206,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         repair_messages.append({"role": "system", "content": repair_system})
 
         # preserva um contexto mínimo de memória já injetada
-        # pega até 6 mensagens anteriores ao prompt atual, sem explodir tokens
+        # pega até 6 mensagens relevantes (user/assistant), evitando system duplicado
         try:
-            memory_context = messages[1:-1] if len(messages) > 2 else []
+            memory_context = [
+                m for m in (messages[1:-1] if len(messages) > 2 else [])
+                if isinstance(m, dict) and m.get("role") in ("user", "assistant")
+            ]
+
             if memory_context:
                 repair_messages.extend(memory_context[-6:])
         except Exception:
@@ -8200,13 +8221,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # contexto imediato
         repair_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
         repair_messages.append({"role": "assistant", "content": texto})
-        
+
         data2, used_model2, _provider_meta2 = self._chat(
             used_model,
             repair_messages,
             temperature=float(temperature),
             max_tokens=int(max_tokens),
-            top_p=min(0.98, float(top_p) + 0.02),
+            top_p=min(0.97, float(top_p)),
             extra=extra,
         )
         used_model2 = used_model2 or used_model
@@ -8227,7 +8248,6 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             )
         except Exception:
             pass
-
         texto2 = self._extract_text(data2) if data2 is not None else ""
         texto2 = (texto2 or "").strip()
 
@@ -8239,6 +8259,8 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
         # se repair falhar, devolve o original (melhor que vazio)
         if not texto2:
+            texto = _trim_scene_finalization(texto)
+            texto = _seal_broken_ending(texto)
             texto = _trim_scene_finalization(texto)
             return texto, used_model
 
@@ -8261,6 +8283,8 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             return texto2, used_model2
 
         # se o repair ainda violar, devolve o original aparado
+        texto = _trim_scene_finalization(texto)
+        texto = _seal_broken_ending(texto)
         texto = _trim_scene_finalization(texto)
         return texto, used_model
         
