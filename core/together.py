@@ -1,19 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-
-# ============================================================
-# Modelos exibidos na UI
-# ============================================================
-DEFAULT_MODELS = [
-    "together/zai-org/GLM-5",
-    "together/moonshotai/Kimi-K2.5",
-    "together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-    "together/zai-org/GLM-4.7",
-]
 
 # ============================================================
 # Endpoint padrão Together
@@ -22,6 +12,8 @@ TOGETHER_BASE_URL = os.getenv(
     "TOGETHER_BASE_URL",
     "https://api.together.xyz/v1/chat/completions",
 )
+
+DEFAULT_TIMEOUT = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
 
 
 def _headers() -> Dict[str, str]:
@@ -89,43 +81,39 @@ def chat(
     max_tokens: int = 1024,
     temperature: float = 0.7,
     top_p: float = 0.95,
-    extra: Dict[str, Any] | None = None,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], str, str]:
     """
     Wrapper para Together chat/completions.
-    Retorna (json, used_model, "Together").
+    Retorna (json, used_model, "together").
     """
+    model = (model or "").strip()
+    if not model:
+        raise RuntimeError("Together: model vazio")
+
+    safe_messages = _sanitize_messages(messages)
+    if not safe_messages:
+        raise RuntimeError("Together: messages inválido/vazio")
 
     model_to_send = _strip_together_prefix(model)
-    safe_messages = _sanitize_messages(messages)
 
     body: Dict[str, Any] = {
         "model": model_to_send,
         "messages": safe_messages,
-    
-        # comprimento de resposta
         "max_tokens": min(int(max_tokens), 2600),
-    
-        # criatividade controlada
         "temperature": float(temperature),
-    
-        # diversidade
         "top_p": float(top_p),
-    
-        # evita repetição
         "presence_penalty": 0.3,
         "frequency_penalty": 0.2,
-    
-        # melhora continuidade narrativa
         "repetition_penalty": 1.08,
-
         "stop": ["</s>"],
     }
 
-    timeout = float(os.getenv("LLM_HTTP_TIMEOUT", "60"))
+    if isinstance(extra, dict) and extra:
+        body.update(extra)
 
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=DEFAULT_TIMEOUT) as client:
             r = client.post(
                 TOGETHER_BASE_URL,
                 json=body,
@@ -136,7 +124,7 @@ def chat(
                 try:
                     err = r.json()
                 except Exception:
-                    err = {"text": r.text}
+                    err = {"text": r.text[:2000]}
 
                 raise RuntimeError(f"Together HTTP {r.status_code}: {err}")
 
@@ -154,10 +142,9 @@ def chat(
             used_raw = data.get("model") or model_to_send
             used_ui = _normalize_used_model_for_ui(str(used_raw))
 
-            return data, used_ui, "Together"
+            return data, used_ui, "together"
 
     except httpx.TimeoutException as e:
         raise RuntimeError("Together: timeout") from e
-
     except httpx.HTTPError as e:
         raise RuntimeError(f"Together HTTPError: {e}") from e
