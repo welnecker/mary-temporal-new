@@ -802,6 +802,16 @@ def _build_prompt_with_persona_fallback(*, prompt: str, timeline: str) -> str:
         "⟦MARY⟧"
     )
 
+def _get_nested_fact(data: dict, path: str, default=None):
+    cur = data
+    for part in path.split("."):
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(part)
+        if cur is None:
+            return default
+    return cur
+
 
 # ==========================================================
 # HELPERS
@@ -2190,6 +2200,9 @@ def _render_sidebar() -> None:
     with st.sidebar:
         st.header("Mary – Controles")
 
+        # ==========================================================
+        # CONTEXTO ATUAL
+        # ==========================================================
         st.text_input(
             "👤 Usuário",
             value=st.session_state.get("user_id", "Janio Donisete"),
@@ -2207,143 +2220,20 @@ def _render_sidebar() -> None:
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
                 st.session_state["mary_allow_third_party_seduction"] = False
-                st.session_state["persona_label"] = None
                 _invalidate_backend_cache()
                 st.rerun()
 
-        try:
-            all_models = service_router.list_models() or []
-            st.session_state["models_debug"] = {
-                "ok": True,
-                "len": len(all_models),
-                "head": all_models[:10],
-                "providers": (
-                    service_router.available_providers()
-                    if hasattr(service_router, "available_providers")
-                    else "—"
-                ),
-                "err": None,
-            }
-        except Exception as e:
-            all_models = []
-            st.session_state["models_debug"] = {
-                "ok": False,
-                "len": 0,
-                "head": [],
-                "providers": "—",
-                "err": f"{type(e).__name__}: {e}",
-            }
-
-        if not all_models:
-            all_models = [FALLBACK_MODEL]
-
-        if st.session_state.get("model") not in all_models:
-            st.session_state["model"] = _choose_default_model(all_models)
-
-        current = st.session_state.get("model")
-        idx = all_models.index(current) if current in all_models else 0
-        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
-
-        with st.expander("🧪 Debug imports (service_router)", expanded=True):
-            try:
-                st.json(service_router.import_errors())
-            except Exception as e:
-                st.write(f"falhou: {type(e).__name__}: {e}")
-
-        try:
-            prov_detected = None
-            if hasattr(service_router, "_provider_for"):
-                prov_detected = service_router._provider_for(
-                    str(st.session_state.get("model") or "").strip()
-                )
-
-            if not prov_detected:
-                msel = str(st.session_state.get("model") or "").strip().lower()
-                if msel.startswith("together/"):
-                    prov_detected = "Together"
-                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
-                    prov_detected = "HuggingFace"
-                else:
-                    prov_detected = "OpenRouter"
-
-            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
-        except Exception:
-            st.caption("🔌 Provider detectado: **—**")
-
-        st.markdown("---")
-        st.subheader("🛰️ Ping/Pong — confirmar modelo REAL")
-
-        if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
-            res = _router_ping_once(
-                user=str(st.session_state.get("user_id", "Janio Donisete")),
-                model=str(st.session_state.get("model") or DEFAULT_MODEL),
-            )
-            st.session_state["mary_ping_result"] = res
-
-        ping = st.session_state.get("mary_ping_result")
-        if isinstance(ping, dict):
-            if ping.get("ok"):
-                st.success("✅ Ping executado (router confirmou provider/model).")
-
-                if not ping.get("pong_ok"):
-                    st.warning(
-                        "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
-                        "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
-                    )
-
-                st.write("Modelo (UI):", ping.get("ui_model") or "—")
-
-                used_p = ping.get("used_provider")
-                used_m = ping.get("used_model")
-
-                if not used_p:
-                    try:
-                        if hasattr(service_router, "_provider_for"):
-                            used_p = service_router._provider_for(
-                                str(ping.get("ui_model") or "").strip()
-                            )
-                    except Exception:
-                        used_p = None
-
-                st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
-                st.caption("PONG (trecho retornado):")
-                st.code(ping.get("text") or "")
-
-                if not used_m:
-                    st.warning(
-                        "⚠️ O router NÃO retornou o modelo usado no payload. "
-                        "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
-                    )
-            else:
-                st.error("❌ Falha no ping.")
-                err = ping.get("error")
-                st.code(err if isinstance(err, str) and err.strip() else str(ping))
-
-        st.markdown("---")
-        st.subheader("🧨 Último erro (service)")
-
-        if st.button("📌 Mostrar diagnóstico completo", key="btn_show_last_error"):
-            st.markdown("**Modelo/Provider capturados (última call):**")
-            st.write(
-                "Usado:",
-                f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
-            )
-            st.markdown("**Preview extracted (antes do strip):**")
-            st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
-            st.markdown("**Preview clean (depois do strip):**")
-            st.code(st.session_state.get("mary_last_clean_text_preview") or "")
-            st.markdown("**RAW summary:**")
-            st.json(st.session_state.get("mary_last_raw_resp") or {})
-            st.markdown("**Último erro registrado:**")
-            st.json(st.session_state.get("mary_last_error") or {})
-
         st.markdown("---")
 
+        # ==========================================================
+        # CONTROLES NARRATIVOS
+        # ==========================================================
         uk = _usuario_key_atual()
         tl = _timeline()
 
-        nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
+        st.subheader("🎛️ Controles narrativos")
 
+        nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
         nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
 
@@ -2415,116 +2305,9 @@ def _render_sidebar() -> None:
 
             st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
 
-            st.markdown("---")
-            st.subheader("🧾 Estado Atual (facts → service_core)")
-
-            try:
-                _uk = _usuario_key_atual()
-                _facts_now = cached_get_facts(_uk) or {}
-                if not isinstance(_facts_now, dict):
-                    _facts_now = {}
-            except Exception:
-                _uk = _usuario_key_atual()
-                _facts_now = {}
-
-            def _f(k: str) -> str:
-                try:
-                    cur = _facts_now
-                    for part in str(k).split("."):
-                        if not isinstance(cur, dict):
-                            return ""
-                        cur = cur.get(part)
-                        if cur is None:
-                            return ""
-                    return str(cur).strip()
-                except Exception:
-                    return ""
-
-            _horarios_default = _f("state.horarios") or _f("state.horario")
-
-            st.session_state.setdefault("sb_state_local", _f("state.local"))
-            st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
-            st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
-            st.session_state.setdefault("sb_state_horarios", _horarios_default)
-            st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
-
-            with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
-                if st.session_state.get("_clear_state_form", False):
-                    st.session_state["sb_state_local"] = ""
-                    st.session_state["sb_state_roupa"] = ""
-                    st.session_state["sb_state_cabelo"] = ""
-                    st.session_state["sb_state_horarios"] = ""
-                    st.session_state["sb_state_assunto"] = ""
-                    st.session_state["_clear_state_form"] = False
-
-                st.text_input("1) Local", key="sb_state_local")
-                st.text_input("2) Roupa", key="sb_state_roupa")
-                st.text_input("3) Cabelo", key="sb_state_cabelo")
-
-                st.markdown("**Opcionais**")
-                st.text_input("(+) Horários", key="sb_state_horarios")
-                st.text_input(
-                    "(+) Assunto",
-                    key="sb_state_assunto",
-                    placeholder="Ex.: supermercado, Enzo, academia, ciúme",
-                    help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
-                )
-
-                c1, c2 = st.columns(2)
-
-                with c1:
-                    if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                        novo_local = st.session_state.get("sb_state_local", "").strip()
-                        nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
-                        novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
-                        novo_horario = st.session_state.get("sb_state_horarios", "").strip()
-                        novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
-
-                        try:
-                            facts_apply = cached_get_facts(_uk) or {}
-                            if not isinstance(facts_apply, dict):
-                                facts_apply = {}
-
-                            state_now = facts_apply.get("state")
-                            if not isinstance(state_now, dict):
-                                state_now = {}
-
-                            cena_now = facts_apply.get("cena")
-                            if not isinstance(cena_now, dict):
-                                cena_now = {}
-
-                            state_now["local"] = novo_local
-                            state_now["roupa"] = nova_roupa
-                            state_now["cabelo"] = novo_cabelo
-                            state_now["horarios"] = novo_horario
-                            state_now["assunto"] = novo_assunto
-
-                            set_fact(_uk, "state", state_now, {"fonte": "sidebar_state"})
-
-                            if novo_local:
-                                cena_now["local"] = novo_local
-                                cena_now["tempo"] = "agora"
-                                cena_now["acao"] = "em andamento"
-                                cena_now["locked"] = True
-
-                                set_fact(_uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
-                                set_fact(_uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
-
-                            _invalidate_backend_cache()
-                            st.success("✅ Estado atual atualizado.")
-                            st.rerun()
-
-                        except Exception as e:
-                            st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-
-                with c2:
-                    st.button(
-                        "🧹 Limpar Estado",
-                        key="btn_clear_state",
-                        on_click=_clear_sidebar_state_fields,
-                        args=(_uk,),
-                    )
-
+        # ==========================================================
+        # DINÂMICA DE SURPRESA
+        # ==========================================================
         st.markdown("---")
         st.subheader("🎲 Dinâmica de Surpresa")
 
@@ -2537,20 +2320,11 @@ def _render_sidebar() -> None:
             _uk_surprise = _usuario_key_atual()
             _facts_surprise = {}
 
-def _get_nested_fact(data: dict, path: str, default=None):
-    cur = data
-    for part in path.split("."):
-        if not isinstance(cur, dict):
-            return default
-        cur = cur.get(part)
-        if cur is None:
-            return default
-    return cur
-
         try:
             current_surprise = int(_get_nested_fact(_facts_surprise, "mary.surprise_level", 0) or 0)
         except Exception:
             current_surprise = 0
+
         st.slider(
             "Nível de surpresa ativa da Mary",
             min_value=0,
@@ -2595,38 +2369,122 @@ def _get_nested_fact(data: dict, path: str, default=None):
                 st.rerun()
 
         st.markdown("---")
-        st.subheader("🧬 Persona — Debug / Injeção")
 
-        sys_txt, boot = _get_persona_bundle(_timeline())
-        boot_txt = _flatten_boot_messages(boot, _timeline())
+        # ==========================================================
+        # FACTS / ESTADO DA CENA
+        # ==========================================================
+        st.subheader("🧾 Estado atual (facts → service_core)")
 
-        st.caption("Arquivo persona ativo:")
         try:
-            st.code(getattr(mary_persona, "__file__", "—"))
+            _uk = _usuario_key_atual()
+            _facts_now = cached_get_facts(_uk) or {}
+            if not isinstance(_facts_now, dict):
+                _facts_now = {}
         except Exception:
-            st.code("(não consegui resolver path)")
+            _uk = _usuario_key_atual()
+            _facts_now = {}
 
-        st.write(
-            {
-                "system_len": len(sys_txt or ""),
-                "boot_len": len(boot_txt or ""),
-                "timeline": _timeline(),
-            }
-        )
+        def _f(k: str) -> str:
+            try:
+                cur = _facts_now
+                for part in str(k).split("."):
+                    if not isinstance(cur, dict):
+                        return ""
+                    cur = cur.get(part)
+                    if cur is None:
+                        return ""
+                return str(cur).strip()
+            except Exception:
+                return ""
 
-        if not sys_txt and not boot_txt:
-            st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
-        else:
-            with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
-                st.code((sys_txt or "")[:500])
-            with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
-                st.code((boot_txt or "")[:800])
+        _horarios_default = _f("state.horarios") or _f("state.horario")
 
-        tl = _timeline()
-        fb_key = f"mary_ui_persona_fallback::{tl}"
-        st.checkbox("Fallback: injetar persona via UI no prompt (se service não injeta)", key=fb_key)
-        st.caption("Dica: deixe ON até confirmar que o service injeta SYSTEM+BOOT.")
+        st.session_state.setdefault("sb_state_local", _f("state.local"))
+        st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
+        st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
+        st.session_state.setdefault("sb_state_horarios", _horarios_default)
+        st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
 
+        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+            if st.session_state.get("_clear_state_form", False):
+                st.session_state["sb_state_local"] = ""
+                st.session_state["sb_state_roupa"] = ""
+                st.session_state["sb_state_cabelo"] = ""
+                st.session_state["sb_state_horarios"] = ""
+                st.session_state["sb_state_assunto"] = ""
+                st.session_state["_clear_state_form"] = False
+
+            st.text_input("1) Local", key="sb_state_local")
+            st.text_input("2) Roupa", key="sb_state_roupa")
+            st.text_input("3) Cabelo", key="sb_state_cabelo")
+
+            st.markdown("**Opcionais**")
+            st.text_input("(+) Horários", key="sb_state_horarios")
+            st.text_input(
+                "(+) Assunto",
+                key="sb_state_assunto",
+                placeholder="Ex.: supermercado, Enzo, academia, ciúme",
+                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
+            )
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
+                    novo_local = st.session_state.get("sb_state_local", "").strip()
+                    nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
+                    novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
+                    novo_horario = st.session_state.get("sb_state_horarios", "").strip()
+                    novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
+
+                    try:
+                        facts_apply = cached_get_facts(_uk) or {}
+                        if not isinstance(facts_apply, dict):
+                            facts_apply = {}
+
+                        state_now = facts_apply.get("state")
+                        if not isinstance(state_now, dict):
+                            state_now = {}
+
+                        cena_now = facts_apply.get("cena")
+                        if not isinstance(cena_now, dict):
+                            cena_now = {}
+
+                        state_now["local"] = novo_local
+                        state_now["roupa"] = nova_roupa
+                        state_now["cabelo"] = novo_cabelo
+                        state_now["horarios"] = novo_horario
+                        state_now["assunto"] = novo_assunto
+
+                        set_fact(_uk, "state", state_now, {"fonte": "sidebar_state"})
+
+                        if novo_local:
+                            cena_now["local"] = novo_local
+                            cena_now["tempo"] = "agora"
+                            cena_now["acao"] = "em andamento"
+                            cena_now["locked"] = True
+
+                            set_fact(_uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
+                            set_fact(_uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
+
+                        _invalidate_backend_cache()
+                        st.success("✅ Estado atual atualizado.")
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
+
+            with c2:
+                st.button(
+                    "🧹 Limpar Estado",
+                    key="btn_clear_state",
+                    on_click=_clear_sidebar_state_fields,
+                    args=(_uk,),
+                )
+
+        # ==========================================================
+        # CANON / RESET / FACTS
+        # ==========================================================
         st.markdown("---")
         st.subheader("🧬 Canon — Estado íntimo")
 
@@ -2662,7 +2520,7 @@ def _get_nested_fact(data: dict, path: str, default=None):
                         timeline=tl_now,
                         user_id=uid_now,
                     )
-        
+
                     try:
                         res = _sync_virginity_global_timeline(
                             usuario_key=uk_now,
@@ -2671,7 +2529,7 @@ def _get_nested_fact(data: dict, path: str, default=None):
                         st.session_state["mary_virginity_sync_last"] = res
                     except Exception:
                         pass
-        
+
                     try:
                         txt = "Mary não é mais virgem. A relação com Janio já foi consumada."
                         meta = {
@@ -2681,7 +2539,7 @@ def _get_nested_fact(data: dict, path: str, default=None):
                             "tags": ["virgindade", "consumado", "canon", "janio", "mary"],
                             "source": "ui_canon_button",
                         }
-        
+
                         append_long_memory_safe(
                             sk_now,
                             txt,
@@ -2689,16 +2547,17 @@ def _get_nested_fact(data: dict, path: str, default=None):
                         )
                     except Exception as e:
                         st.warning(f"Canon salvo, mas falhou ao gravar na Long Memory: {type(e).__name__}: {e}")
-        
+
                 st.session_state["mary_intro_done"] = False
                 st.session_state["mary_last_used_model"] = None
                 st.session_state["mary_last_used_provider"] = None
                 _invalidate_backend_cache()
                 st.success("✅ CANON atualizado: Mary NÃO é mais virgem (consumado).")
                 st.rerun()
-        
+
             except Exception as e:
                 st.error(f"Erro ao atualizar canon: {type(e).__name__}: {e}")
+
         st.markdown("---")
         st.subheader("🔁 Reset rápido")
 
@@ -2726,23 +2585,19 @@ def _get_nested_fact(data: dict, path: str, default=None):
 
         st.caption("Obs.: Reset capítulo não apaga canon. Reset total com apagar memórias shared apaga.")
 
+        if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
+            uk_list = _usuario_key_atual()
+            st.write("usuario_key:", uk_list)
+            try:
+                st.json(cached_get_facts(uk_list) or {})
+            except Exception as e:
+                st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+
+        # ==========================================================
+        # CONVERSA / TELA
+        # ==========================================================
         st.markdown("---")
-        st.subheader("🔍 Debug")
-        st.caption(
-            f"NSFW={bool(st.session_state.get('mary_nsfw_on', False))} | "
-            f"ThirdParty={bool(st.session_state.get('mary_allow_third_party_seduction', False))}"
-        )
-
-        if "mary_debug_rel_panel" not in st.session_state:
-            st.session_state["mary_debug_rel_panel"] = False
-
-        st.checkbox(
-            "Mostrar painel Relationship",
-            key="mary_debug_rel_panel",
-        )
-
-        st.markdown("---")
-        st.subheader("Turnos")
+        st.subheader("💬 Conversa")
 
         if st.button("Apagar último turno (backend)", key="btn_delete_last_turn"):
             ok = _delete_last_turn_active()
@@ -2756,24 +2611,51 @@ def _get_nested_fact(data: dict, path: str, default=None):
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
 
-        st.markdown("---")
-        st.subheader("Limpar tela")
         if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
             st.session_state["chat_history"] = []
             st.session_state["mary_intro_done"] = False
             st.rerun()
-        st.markdown("---")
-        st.subheader("🎭 Persona")
-        st.caption("repositories.py ativo:")
-        st.code(inspect.getfile(crep.delete_last_interaction))
 
-        if st.button("🧾 Listar FACTS (usuario_key atual)", key="btn_list_facts_now"):
-            uk = _usuario_key_atual()
-            st.write("usuario_key:", uk)
-            try:
-                st.json(cached_get_facts(uk) or {})
-            except Exception as e:
-                st.error(f"Falha ao ler facts: {type(e).__name__}: {e}")
+        # ==========================================================
+        # PERSONA / INJEÇÃO / RELATIONSHIP
+        # ==========================================================
+        st.markdown("---")
+        st.subheader("🎭 Persona / Injeção")
+
+        sys_txt, boot = _get_persona_bundle(_timeline())
+        boot_txt = _flatten_boot_messages(boot, _timeline())
+
+        st.caption("Arquivo persona ativo:")
+        try:
+            st.code(getattr(mary_persona, "__file__", "—"))
+        except Exception:
+            st.code("(não consegui resolver path)")
+
+        st.write(
+            {
+                "system_len": len(sys_txt or ""),
+                "boot_len": len(boot_txt or ""),
+                "timeline": _timeline(),
+            }
+        )
+
+        if not sys_txt and not boot_txt:
+            st.error("⚠️ Persona parece VAZIA para essa timeline. O modelo vai inventar traços físicos.")
+        else:
+            with st.expander("👀 Preview SYSTEM (primeiros 500)", expanded=False):
+                st.code((sys_txt or "")[:500])
+            with st.expander("👀 Preview BOOT (primeiros 800)", expanded=False):
+                st.code((boot_txt or "")[:800])
+
+        tl_fb = _timeline()
+        fb_key = f"mary_ui_persona_fallback::{tl_fb}"
+        st.checkbox("Fallback: injetar persona via UI no prompt (se service não injeta)", key=fb_key)
+        st.caption("Dica: deixe ON até confirmar que o service injeta SYSTEM+BOOT.")
+
+        if "mary_debug_rel_panel" not in st.session_state:
+            st.session_state["mary_debug_rel_panel"] = False
+
+        st.checkbox("Mostrar painel Relationship", key="mary_debug_rel_panel")
 
         if st.button("♻️ Recarregar persona AGORA", key="btn_reload_persona"):
             _kill_all_mary_services()
@@ -2796,6 +2678,159 @@ def _get_nested_fact(data: dict, path: str, default=None):
             st.success("Services/caches reiniciados. Persona será reinjetada no próximo reply.")
             st.rerun()
 
+        with st.expander("🧩 Debug Persona Import", expanded=False):
+            try:
+                import importlib.util
+
+                st.write("📌 persona.py ativo:", getattr(mary_persona, "__file__", "—"))
+
+                st.write(
+                    "✅ import OK:",
+                    (mary_persona._LAST_PERSONA_IMPORT.get("ok") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+                )
+                st.write(
+                    "❌ import ERR:",
+                    (mary_persona._LAST_PERSONA_IMPORT.get("err") if hasattr(mary_persona, "_LAST_PERSONA_IMPORT") else "—"),
+                )
+
+                spec = importlib.util.find_spec("characters.mary.persona_universitaria")
+                st.write("🔎 find_spec(persona_universitaria):", "ENCONTRADO" if spec else "NÃO ENCONTRADO")
+
+                try:
+                    import characters.mary.persona_universitaria as pu
+                    st.success(f"✅ Import direto OK: {getattr(pu, '__file__', '—')}")
+                except Exception as e:
+                    st.error(f"❌ Import direto FALHOU: {type(e).__name__}: {e}")
+
+            except Exception as e:
+                st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
+
+        # ==========================================================
+        # MODELO / ROUTER / ERRO
+        # ==========================================================
+        st.markdown("---")
+        st.subheader("🧠 Modelo / Router")
+
+        try:
+            all_models = service_router.list_models() or []
+            st.session_state["models_debug"] = {
+                "ok": True,
+                "len": len(all_models),
+                "head": all_models[:10],
+                "providers": (
+                    service_router.available_providers()
+                    if hasattr(service_router, "available_providers")
+                    else "—"
+                ),
+                "err": None,
+            }
+        except Exception as e:
+            all_models = []
+            st.session_state["models_debug"] = {
+                "ok": False,
+                "len": 0,
+                "head": [],
+                "providers": "—",
+                "err": f"{type(e).__name__}: {e}",
+            }
+
+        if not all_models:
+            all_models = [FALLBACK_MODEL]
+
+        if st.session_state.get("model") not in all_models:
+            st.session_state["model"] = _choose_default_model(all_models)
+
+        current = st.session_state.get("model")
+        idx = all_models.index(current) if current in all_models else 0
+        st.selectbox("🧠 Modelo", all_models, index=idx, key="model")
+
+        try:
+            prov_detected = None
+            if hasattr(service_router, "_provider_for"):
+                prov_detected = service_router._provider_for(
+                    str(st.session_state.get("model") or "").strip()
+                )
+
+            if not prov_detected:
+                msel = str(st.session_state.get("model") or "").strip().lower()
+                if msel.startswith("together/"):
+                    prov_detected = "Together"
+                elif msel in [x.lower() for x in getattr(service_router, "HF_MODELS", [])]:
+                    prov_detected = "HuggingFace"
+                else:
+                    prov_detected = "OpenRouter"
+
+            st.caption(f"🔌 Provider detectado: **{prov_detected}**")
+        except Exception:
+            st.caption("🔌 Provider detectado: **—**")
+
+        if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
+            res = _router_ping_once(
+                user=str(st.session_state.get("user_id", "Janio Donisete")),
+                model=str(st.session_state.get("model") or DEFAULT_MODEL),
+            )
+            st.session_state["mary_ping_result"] = res
+
+        ping = st.session_state.get("mary_ping_result")
+        if isinstance(ping, dict):
+            if ping.get("ok"):
+                st.success("✅ Ping executado (router confirmou provider/model).")
+
+                if not ping.get("pong_ok"):
+                    st.warning(
+                        "⚠️ O modelo respondeu, mas NÃO obedeceu o teste estrito de 'PONG'. "
+                        "Isso não impede confirmar o roteamento (provider/model), apenas indica que o modelo ignora instruções curtas."
+                    )
+
+                st.write("Modelo (UI):", ping.get("ui_model") or "—")
+
+                used_p = ping.get("used_provider")
+                used_m = ping.get("used_model")
+
+                if not used_p:
+                    try:
+                        if hasattr(service_router, "_provider_for"):
+                            used_p = service_router._provider_for(
+                                str(ping.get("ui_model") or "").strip()
+                            )
+                    except Exception:
+                        used_p = None
+
+                st.write("Usado (router):", f"{used_p or '—'} / {used_m or '—'}")
+                st.caption("PONG (trecho retornado):")
+                st.code(ping.get("text") or "")
+
+                if not used_m:
+                    st.warning(
+                        "⚠️ O router NÃO retornou o modelo usado no payload. "
+                        "Se quiser 100% garantido, faça o service_router.chat sempre retornar (data, used_model, used_provider)."
+                    )
+            else:
+                st.error("❌ Falha no ping.")
+                err = ping.get("error")
+                st.code(err if isinstance(err, str) and err.strip() else str(ping))
+
+        with st.expander("🧪 Debug imports (service_router)", expanded=False):
+            try:
+                st.json(service_router.import_errors())
+            except Exception as e:
+                st.write(f"falhou: {type(e).__name__}: {e}")
+
+        with st.expander("🧨 Último erro (service)", expanded=False):
+            st.markdown("**Modelo/Provider capturados (última call):**")
+            st.write(
+                "Usado:",
+                f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
+            )
+            st.markdown("**Preview extracted (antes do strip):**")
+            st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
+            st.markdown("**Preview clean (depois do strip):**")
+            st.code(st.session_state.get("mary_last_clean_text_preview") or "")
+            st.markdown("**RAW summary:**")
+            st.json(st.session_state.get("mary_last_raw_resp") or {})
+            st.markdown("**Último erro registrado:**")
+            st.json(st.session_state.get("mary_last_error") or {})
+
         st.markdown("---")
         st.subheader("🧠 Memórias permanentes (shared)")
         st.session_state.setdefault("long_key_override", "")
@@ -2807,7 +2842,7 @@ def _get_nested_fact(data: dict, path: str, default=None):
 
         with st.form("shared_key_form", clear_on_submit=False):
             shared_in = st.text_input(
-                "Key compartilhada (editável):",
+                "Key compartilhada deste painel:",
                 value=st.session_state.get("shared_key_override") or shared_default,
                 help="Ex: Janio Donisete::mary::cumplice::shared",
             ).strip()
@@ -2819,7 +2854,7 @@ def _get_nested_fact(data: dict, path: str, default=None):
 
         shared_key = (st.session_state.get("shared_key_override") or shared_default).strip() or shared_default
 
-        st.caption("Key efetiva:")
+        st.caption("Key efetiva neste painel:")
         st.code(shared_key)
 
         st.markdown("**➕ Inserir memória (shared)**")
