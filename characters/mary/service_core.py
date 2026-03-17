@@ -6809,9 +6809,28 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
+        # ==========================================================
+        # 🧪 DEBUG + VERIFICAÇÃO SIMPLES (SIDEBAR)
+        # ==========================================================
+        try:
+            _ss_set(
+                "mary_llm_reasoning_status",
+                {
+                    "ok": bool(llm_reasoning),
+                    "source": "secondary_llm" if llm_reasoning else "local_only",
+                    "model": "x-ai/grok-4.1-fast" if llm_reasoning else "",
+                    "decision": reasoning.get("decision", ""),
+                    "goal": reasoning.get("narrative_goal", ""),
+                    "delivery": reasoning.get("delivery_mode", ""),
+                    "advance": reasoning.get("advance_limit", ""),
+                },
+            )
+        except Exception:
+            pass
+
+        # DEBUG bruto (mantém o que você já tinha)
         _ss_set("mary_reasoning_debug", reasoning)
         _ss_set("mary_reasoning_llm_debug", llm_reasoning)
-
         # ==========================================================
         # BLOCO RELACIONAL DINÂMICO
         # ==========================================================
