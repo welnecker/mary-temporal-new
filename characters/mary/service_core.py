@@ -7707,15 +7707,26 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     },
                 )
 
+                # ----------------------------------------------------------
+                # Garantir texto válido antes de qualquer persistência
+                # ----------------------------------------------------------
+                texto = (texto or "").strip()
+                
+                if not texto:
+                    texto = self._fallback_text()
+                
+                # ----------------------------------------------------------
+                # Agora sim salva interação correta
+                # ----------------------------------------------------------
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
                 _lock_scene(usuario_key)
-
+                
                 # ----------------------------------------------------------
                 # Intimacy progression
                 # ----------------------------------------------------------
                 try:
                     current_facts = cached_get_facts(usuario_key)
-
+                
                     try:
                         current_facts = _sync_intimacy_phase_facts(
                             usuario_key,
@@ -7724,10 +7735,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         )
                     except Exception:
                         pass
-
+                
                 except Exception:
                     current_facts = cached_get_facts(usuario_key)
-
                 current_phase = self._get_intimacy_phase(current_facts)
 
                 if phase != 5:
@@ -8227,12 +8237,12 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         except Exception:
             pass
 
-                # se repair falhar, devolve o original (melhor que vazio)
+        # se repair falhar, devolve o original (melhor que vazio)
         if not texto2:
             texto = _trim_scene_finalization(texto)
             return texto, used_model
-            
-                # validação final do repair
+
+        # validação final do repair
         violations2 = _violations(
             texto=texto2,
             ctx_lower=ctx_lower,
