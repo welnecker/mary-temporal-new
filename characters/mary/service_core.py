@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from .reasoning_engine import build_internal_reasoning
+from core.reasoning_llm import build_llm_reasoning, merge_reasoning
 """
 MaryService (v5.1e — Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
@@ -6766,13 +6767,13 @@ class MaryService(BaseCharacter):
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
         # ==========================================================
-        # 🧠 REASONING ENGINE (NOVO)
+        # 🧠 REASONING ENGINE
         # ==========================================================
         try:
             reasoning = build_internal_reasoning(
                 user_text=prompt,
                 facts=facts,
-                memories=[],  # depois podemos plugar long_memory_lines aqui
+                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
                 scene_state={
                     "local": facts.get("cena.local"),
                     "tempo": facts.get("cena.tempo"),
@@ -6780,16 +6781,42 @@ class MaryService(BaseCharacter):
                     "locked": facts.get("cena.locked"),
                 },
             )
-        
-            _ss_set("mary_reasoning_debug", reasoning)
-        
         except Exception:
             reasoning = {}
-        
+
+        # ==========================================================
+        # 🧠 LLM REASONING (refino semântico)
+        # ==========================================================
+        try:
+            llm_reasoning = build_llm_reasoning(
+                model="x-ai/grok-4.1-fast",
+                user_text=prompt,
+                facts=facts,
+                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                scene_state={
+                    "local": facts.get("cena.local"),
+                    "tempo": facts.get("cena.tempo"),
+                    "acao": facts.get("cena.acao"),
+                    "locked": facts.get("cena.locked"),
+                },
+                base_reasoning=reasoning,
+            )
+        except Exception:
+            llm_reasoning = {}
+
+        try:
+            reasoning = merge_reasoning(reasoning, llm_reasoning)
+        except Exception:
+            pass
+
+        _ss_set("mary_reasoning_debug", reasoning)
+        _ss_set("mary_reasoning_llm_debug", llm_reasoning)
+
         # ==========================================================
         # BLOCO RELACIONAL DINÂMICO
         # ==========================================================
-        dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state) 
+        dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
+
         # ==========================================================
         # AUTONOMIA NARRATIVA DA MARY
         # ==========================================================
@@ -6852,10 +6879,10 @@ class MaryService(BaseCharacter):
         if nsfw_on:
             nsfw_hard_block = """
 [NSFW_ON]
-Mary pode usar linguagem sexual direta e explícita quando a cena permitir.
-Descreva sensações físicas, reações corporais e ritmo da interação com intensidade natural.
+Mary pode usar linguagem direta quando a cena permitir.
+Descreva sensações e reações com intensidade natural.
 
-Evite apenas linguagem espiritualizada ou metáforas de destino.
+Evite linguagem excessivamente metafórica ou abstrata.
 """.strip()
 
         # ==========================================================
@@ -6866,7 +6893,7 @@ Evite apenas linguagem espiritualizada ou metáforas de destino.
         attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
         self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
 
-         reasoning_rules_txt = "\n".join(
+        reasoning_rules_txt = "\n".join(
             f"- {r}" for r in (reasoning.get("rules") or [])
         ).strip() or "- nenhuma regra adicional neste turno"
 
@@ -6939,7 +6966,7 @@ REAÇÕES DINÂMICAS (use 1 por turno quando couber):
 - provocação direta
 
 AUTOIMAGEM / EFEITO:
-- 0.00–0.30: sensualidade involuntária
+- 0.00–0.30: expressão espontânea
 - 0.30–0.60: consciência leve do efeito
 - 0.60–0.85: provocação intencional
 - 0.85–1.00: controle alto do magnetismo
@@ -6947,51 +6974,6 @@ AUTOIMAGEM / EFEITO:
 REGRA FINAL:
 - Evite previsibilidade repetitiva.
 - Não contradiga a direção interna já definida.
-""".strip()
-
-        # ==========================================================
-        # MEMÓRIA DE PADRÕES
-        # ==========================================================
-        last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
-        last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
-
-        pattern_hint = ""
-        if last_success:
-            if last_success == "dominancia_fisica":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: dominância física.\n"
-                    "  Preferir 1 ação direta: puxar para si, prender contra o corpo, abraço apertado, beijo com urgência.\n"
-                    "  Sem poesia; fala curta; corpo primeiro.\n"
-                )
-            elif last_success == "prazer_corporal":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
-                    "  Mostrar prazer no corpo: respiração falhando, tremor involuntário, arquejo/gemido, contrações, voz rouca.\n"
-                    "  Evitar metáforas; descreva efeito físico real.\n"
-                )
-            elif last_success == "mudanca_ritmo":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
-                    "  Use 1 variação: pausa curta + volta mais intensa, surpresa breve, mudança de cadência.\n"
-                    "  Sem travar; manter agência.\n"
-                )
-            else:
-                pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
-
-        if not pattern_hint and last_pattern:
-            pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
-
-        patterns_block = ""
-        if pattern_hint:
-            patterns_block = f"""
-[MEMÓRIA DE PADRÕES — DINÂMICA 3.5]
-Use isso como viés de estilo (não como obrigação):
-{pattern_hint.strip()}
-
-REGRA:
-- Não repita o mesmo padrão para sempre.
-- Se já usou o mesmo padrão nos últimos turnos, varie com 1 reação dinâmica:
-  surpresa curta / resistência momentânea / mudança de ritmo / provocação.
 """.strip()
 
         # ==========================================================
