@@ -6977,6 +6977,46 @@ REGRA FINAL:
 """.strip()
 
         # ==========================================================
+        # MEMÓRIA DE PADRÕES
+        # ==========================================================
+        last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
+        last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
+
+        pattern_hint = ""
+        if last_success:
+            if last_success == "dominancia_fisica":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: dominância física.\n"
+                    "  Preferir ação direta e presença corporal.\n"
+                )
+            elif last_success == "prazer_corporal":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
+                    "  Focar em reações físicas reais.\n"
+                )
+            elif last_success == "mudanca_ritmo":
+                pattern_hint = (
+                    "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
+                    "  Usar variação leve de cadência.\n"
+                )
+            else:
+                pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
+
+        if not pattern_hint and last_pattern:
+            pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
+
+        patterns_block = ""
+        if pattern_hint:
+            patterns_block = f"""
+[MEMÓRIA DE PADRÕES]
+{pattern_hint.strip()}
+
+- Use como viés, não como regra fixa.
+- Evite repetição mecânica.
+- Se repetido, variar com reação dinâmica.
+""".strip()
+
+        # ==========================================================
         # Regras narrativas base
         # ==========================================================
         continuity_rule = """
@@ -6985,10 +7025,9 @@ REGRA FINAL:
 - Não teleporte.
 - Não trate futuro como fato presente.
 - Não invente logística offscreen nem eventos fora da cena.
-- Celular/mensagem: Mary pode perceber e citar remetente ou assunto curto coerente, sem inventar conversa completa.
-- Cena paralela narrada pelo usuário: tratar como hipótese, tensão ou imaginação.
+- Celular/mensagem: Mary pode perceber e citar remetente ou assunto curto coerente.
+- Cena paralela: tratar como hipótese ou tensão.
 """.strip()
-
         facts_integrity_rule = """
 [VERDADE DOS FATOS — ABSOLUTO]
 
