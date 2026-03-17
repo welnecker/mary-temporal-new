@@ -4511,11 +4511,56 @@ def _conflict_imminent(user_text: str) -> bool:
 
 def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
     """
-    Contexto recente do usuário para detecção de:
+    Contexto recente para detecção de:
     - mensagens coladas
     - offscreen inventado
+    - contradição grave de cena
+
+    Inclui:
+    - local/tempo/ação atuais
+    - últimas mensagens do usuário
+    - prompt atual
     """
-    hist = cached_get_history(usuario_key, limit=200) or []
+    parts: List[str] = []
+
+    # ----------------------------------------------------------
+    # facts atuais da cena
+    # ----------------------------------------------------------
+    try:
+        facts = cached_get_facts(usuario_key) or {}
+    except Exception:
+        facts = {}
+
+    try:
+        local = (
+            facts.get("cena.local")
+            or facts.get("local_cena_atual")
+            or facts.get("state.local")
+            or ""
+        )
+        tempo = facts.get("cena.tempo") or ""
+        acao = facts.get("cena.acao") or ""
+        locked = facts.get("cena.locked")
+    except Exception:
+        local, tempo, acao, locked = "", "", "", None
+
+    if local:
+        parts.append(f"local: {str(local).strip()}")
+    if tempo:
+        parts.append(f"tempo: {str(tempo).strip()}")
+    if acao:
+        parts.append(f"acao: {str(acao).strip()}")
+    if locked is not None:
+        parts.append(f"locked: {bool(locked)}")
+
+    # ----------------------------------------------------------
+    # histórico recente do usuário
+    # ----------------------------------------------------------
+    try:
+        hist = cached_get_history(usuario_key, limit=200) or []
+    except Exception:
+        hist = []
+
     last_users: List[str] = []
     for d in hist[-12:]:
         if not isinstance(d, dict):
@@ -4524,8 +4569,18 @@ def _build_context_for_guard(usuario_key: str, prompt: str) -> str:
         if u:
             last_users.append(u)
 
-    ctx = "\n".join(last_users + [prompt])
-    return ctx
+    if last_users:
+        parts.append("[historico_usuario]")
+        parts.extend(last_users)
+
+    # ----------------------------------------------------------
+    # prompt atual
+    # ----------------------------------------------------------
+    if prompt:
+        parts.append("[prompt_atual]")
+        parts.append(str(prompt).strip())
+
+    return "\n".join(parts).strip()
 
 
 # ==========================================================
@@ -4805,7 +4860,7 @@ def _violations(
     ctx = (ctx_lower or "").lower()
 
     if ctx:
-        m_local = re.search(r"local:\s*(.+)", ctx)
+        m_local = re.search(r"(?m)^\s*local:\s*(.+?)\s*$", ctx)
         local_ctx = m_local.group(1).strip().lower() if m_local else ""
 
         if local_ctx:
@@ -4821,7 +4876,18 @@ def _violations(
 
             jumped = any(re.search(p, t_lower) for p in jump_patterns)
 
-            if jumped and local_ctx not in t_lower:
+            # sinais mínimos de permanência/continuidade no mesmo espaço
+            stay_patterns = (
+                r"\bcontinuo aqui\b",
+                r"\bpermaneço aqui\b",
+                r"\baqui mesmo\b",
+                r"\bno mesmo lugar\b",
+                r"\bsem sair daqui\b",
+            )
+
+            stayed = any(re.search(p, t_lower) for p in stay_patterns)
+
+            if jumped and not stayed:
                 out.append("contradicao_cena")
 
     return list(dict.fromkeys(out))
