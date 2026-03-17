@@ -6800,7 +6800,7 @@ Evite apenas linguagem espiritualizada ou metáforas de destino.
         attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
         self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
 
-      behavior_block = f"""
+        behavior_block = f"""
 [DINÂMICA INTERNA ATIVA + DECISÃO]
 
 - HUMOR ATUAL: {mood}
