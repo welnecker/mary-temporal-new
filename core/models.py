@@ -28,7 +28,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "together/zai-org/GLM-4.7",
     ],
     "hf": [
-        "zai-org/GLM-4.7:cerebras",
+        "miromind-ai/MiroThinker-1.7-mini",
     ],
 }
 
