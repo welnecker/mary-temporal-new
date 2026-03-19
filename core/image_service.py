@@ -118,7 +118,11 @@ def generate_image(
 
 
 def image_data_url_to_bytes(data_url: str) -> bytes:
-    if not isinstance(data_url, str) or not data_url.startswith("data:image"):
-        raise RuntimeError("Formato de imagem inválido no retorno.")
+    if not isinstance(data_url, str):
+        raise RuntimeError(f"Formato de imagem inválido no retorno: tipo={type(data_url).__name__}")
+
+    if not data_url.startswith("data:image"):
+        raise RuntimeError(f"Formato de imagem inválido no retorno: prefixo={data_url[:80]}")
+
     _, b64 = data_url.split(",", 1)
     return base64.b64decode(b64)
