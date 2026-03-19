@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from typing import Any, Dict, Optional
 
 import cloudinary
@@ -8,34 +9,20 @@ import cloudinary.uploader
 
 
 # ==========================================================
-# CONFIG FIXA (TEMPORÁRIA / TESTE LOCAL)
+# CONFIG FIXA VIA CLOUDINARY_URL
 # ==========================================================
-CLOUDINARY_CLOUD_NAME = "drupewp1y"
-CLOUDINARY_API_KEY = "133845212134728"
-CLOUDINARY_API_SECRET = "3biOYu17wxMikhrfTd0QJ65zvJI"
+CLOUDINARY_URL = "cloudinary://133845212134728:3biOYu17wxMikhrfTd0QJ65zvJI@drupewp1y"
 
 
-# ==========================================================
-# CONFIG CLOUDINARY
-# ==========================================================
 def _ensure_cloudinary_config() -> None:
-    cloud_name = str(CLOUDINARY_CLOUD_NAME or "").strip()
-    api_key = str(CLOUDINARY_API_KEY or "").strip()
-    api_secret = str(CLOUDINARY_API_SECRET or "").strip()
+    url = str(CLOUDINARY_URL or "").strip() or os.getenv("CLOUDINARY_URL", "").strip()
 
-    if not cloud_name:
-        raise RuntimeError("CLOUDINARY_CLOUD_NAME não encontrado.")
-    if not api_key:
-        raise RuntimeError("CLOUDINARY_API_KEY não encontrado.")
-    if not api_secret:
-        raise RuntimeError("CLOUDINARY_API_SECRET não encontrado.")
+    if not url:
+        raise RuntimeError("CLOUDINARY_URL não definida.")
 
-    cloudinary.config(
-        cloud_name=cloud_name,
-        api_key=api_key,
-        api_secret=api_secret,
-        secure=True,
-    )
+    os.environ["CLOUDINARY_URL"] = url
+
+    cloudinary.config(secure=True)
 
 
 # ==========================================================
@@ -48,10 +35,6 @@ def upload_image_bytes(
     public_id: Optional[str] = None,
     tags: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
-    """
-    Upload de imagem (bytes) para Cloudinary.
-    Retorna payload completo do Cloudinary.
-    """
     _ensure_cloudinary_config()
 
     if not img_bytes:
