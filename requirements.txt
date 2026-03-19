@@ -1,5 +1,5 @@
 pymongo[srv]>=4.6
-dnspython>=2.4   # (vem com [srv], mas deixar explícito evita surpresas)
+dnspython>=2.4
 requests>=2.31
 pydantic>=2
 streamlit>=1.35.0
@@ -7,6 +7,6 @@ httpx>=0.27.0
 python-dotenv>=1.0.1
 huggingface_hub>=0.23.0
 pillow>=10.2.0
-streamlit
 tiktoken>=0.6.0
 openai>=1.0.0
+cloudinary>=1.41.0
