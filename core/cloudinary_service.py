@@ -11,7 +11,7 @@ import cloudinary.uploader
 # ==========================================================
 # CONFIG FIXA VIA CLOUDINARY_URL
 # ==========================================================
-CLOUDINARY_URL = "cloudinary://133845212134728:3biOYu17wxMikhrfTd0QJ65zvJI@drupewp1y"
+CLOUDINARY_URL=cloudinary://<133845212134728>:<3biOYu17wxMikhrfTd0QJ65zvJI>@drupewp1y
 
 
 def _ensure_cloudinary_config() -> None:
