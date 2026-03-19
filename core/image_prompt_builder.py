@@ -9,10 +9,11 @@ from typing import Dict, Optional
 # ============================================================
 
 MARY_IDENTITY_BLOCK = """
-Mary, young adult woman, 24 years old, 1.68m height, 65kg,
-smooth white skin, voluptuous feminine body, flat stomach,
-wide hips, large and firm butt, thick thighs, medium breasts,
-long black hair, expressive green eyes, sensual and confident presence.
+Mary, fully adult woman, 24 years old, mature adult facial structure,
+smooth white skin, voluptuous fully developed feminine body,
+flat stomach, wide hips, large and firm butt, thick thighs,
+medium breasts, long black hair, expressive green eyes,
+sensual and confident adult presence, womanly proportions.
 """.strip()
 
 
@@ -36,7 +37,10 @@ NEGATIVE_BASE = """
 low quality, bad anatomy, deformed face, extra limbs, extra fingers,
 blurry, distorted body, poorly drawn hands, childish cartoon style,
 anime style, text artifacts, watermark, duplicated body parts,
-cropped face, broken eyes, malformed hands, bad proportions
+cropped face, broken eyes, malformed hands, bad proportions,
+teenage appearance, adolescent body, childlike proportions,
+young-looking face, immature facial features, underdeveloped body,
+underage appearance, juvenile look, baby face
 """.strip()
 
 
@@ -190,8 +194,9 @@ def _build_lighting_block(*, emotion_key: str) -> str:
 def _build_consistency_block() -> str:
     return (
         "Keep Mary's face visually consistent across generations, same green eyes, "
-        "same facial structure, same long black hair, same body proportions, "
-        "same adult American comic style, same visual identity, grounded realism."
+        "same mature adult facial structure, same long black hair, same fully adult body proportions, "
+        "same adult American comic style, same visual identity, grounded realism. "
+        "Mary must look clearly like a fully adult woman, never teenage, never adolescent, never underage."
     )
 
 
