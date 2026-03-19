@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Tuple
 
-from .models import list_models as registry_list_models
+from .models import (
+    list_models as registry_list_models,
+    normalize_model_id,
+    resolve_provider,
+)
 
-# core/service_router.py
 _IMPORT_ERRORS: Dict[str, str] = {}
 
 # ============================================================
@@ -36,23 +39,6 @@ try:
 except Exception as e:
     hf_chat = None  # type: ignore
     _IMPORT_ERRORS["hf"] = f"{type(e).__name__}: {e}"
-
-
-# ============================================================
-# Config
-# ============================================================
-
-SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
-MODEL_ALIASES: Dict[str, str] = {}
-
-# ============================================================
-# Modelos fixos (OpenRouter) — sempre no menu
-# ============================================================
-PINNED_OPENROUTER_MODELS: List[str] = [
-    "arcee-ai/trinity-large-preview:free",
-    "minimax/minimax-m2.5",
-    "tngtech/deepseek-r1t2-chimera",
-]
 
 
 # ============================================================
@@ -114,8 +100,9 @@ def _raise_if_provider_error(resp: Any, provider: str) -> None:
     if "errors" in data and data["errors"]:
         raise RuntimeError(f"{provider} errors: {data['errors']}")
 
-    if data.get("message") and isinstance(data.get("message"), str) and ("error" in data.get("message", "").lower()):
-        raise RuntimeError(f"{provider} message: {data['message']}")
+    msg = data.get("message")
+    if isinstance(msg, str) and "error" in msg.lower():
+        raise RuntimeError(f"{provider} message: {msg}")
 
 
 def _strip_prefix(s: str, prefix: str) -> str:
@@ -172,17 +159,14 @@ def available_providers() -> List[Tuple[str, bool, str]]:
 
 def list_models(provider: str | None = None) -> List[str]:
     """
-    Nunca estoura exceção. Se algum provider não estiver disponível,
-    simplesmente retorna lista vazia dele.
-
-    Além disso, garante que modelos OpenRouter "pinned" apareçam sempre no menu.
+    Lê apenas do core/models.py.
+    Não injeta pinned models.
+    Não cria fallback.
     """
     prov = (provider or "").strip().lower()
 
     if prov == "openrouter":
-        base = list(registry_list_models("openrouter") or [])
-        base.extend(PINNED_OPENROUTER_MODELS)
-        return _dedupe_keep_order(base)
+        return _dedupe_keep_order(list(registry_list_models("openrouter") or []))
 
     if prov == "together":
         return _dedupe_keep_order(list(registry_list_models("together") or []))
@@ -194,91 +178,15 @@ def list_models(provider: str | None = None) -> List[str]:
     for p in ("openrouter", "together", "hf"):
         out.extend(registry_list_models(p) or [])
 
-    out.extend(PINNED_OPENROUTER_MODELS)
-
-    out = _dedupe_keep_order(out)
-    return out or [SAFE_FALLBACK_MODEL]
-
-
-# -----------------------------------------
-# Identificação do provedor
-# -----------------------------------------
-def _provider_for(model_id: str) -> str:
-    m = (model_id or "").strip()
-    low = m.lower()
-
-    hf_models = set(registry_list_models("hf") or [])
-    tg_models = set(registry_list_models("together") or [])
-
-    if m in hf_models:
-        return "hf"
-
-    if m in tg_models:
-        return "together"
-
-    if low.startswith(("hf/", "huggingface/")):
-        return "hf"
-
-    if low.startswith("together/"):
-        return "together"
-
-    if low.endswith(":free"):
-        return "openrouter"
-
-    if low.startswith((
-        "x-ai/",
-        "tngtech/",
-        "deepseek/",
-        "anthropic/",
-        "qwen/",
-        "nousresearch/",
-        "xiaomi/",
-        "google/",
-        "openrouter/",
-        "minimax/",
-        "arcee-ai/",
-    )):
-        return "openrouter"
-
-    if _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN"):
-        for mid in hf_models:
-            pref = (mid.split("/", 1)[0] + "/") if "/" in mid else ""
-            if pref and low.startswith(pref.lower()):
-                return "hf"
-
-    return "openrouter"
-
-
-def _normalize_model_id(raw: str) -> str:
-    if not raw:
-        return SAFE_FALLBACK_MODEL
-    low = raw.lower().strip()
-    if low in MODEL_ALIASES:
-        return MODEL_ALIASES[low]
-    return raw.strip()
-
-
-def _should_fallback_openrouter(err: Exception) -> bool:
-    msg = str(err).lower()
-    triggers = [
-        "not a valid model id",
-        "model_not_found",
-        "model not found",
-        "model_not_supported",
-        "invalid_request_error",
-        "param': 'model",
-        'param": "model',
-        "unknown model",
-    ]
-    return any(t in msg for t in triggers)
+    return _dedupe_keep_order(out)
 
 
 # -----------------------------------------
 # CHAMADA GERAL
 # -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
-    norm_model = _normalize_model_id(model)
-    provider = _provider_for(norm_model)
+    norm_model = normalize_model_id(model)
+    provider = resolve_provider(norm_model)
     model_to_send = _model_for_provider(norm_model, provider)
 
     if provider == "hf":
@@ -301,27 +209,16 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
             return resp
         return (resp, norm_model, "together")
 
-    try:
-        resp = openrouter_chat(norm_model, messages, **kwargs)
-        resp = _normalize_reasoning_into_content(resp)
-        _raise_if_provider_error(resp, "OpenRouter")
-        if isinstance(resp, tuple):
-            return resp
-        return (resp, norm_model, "openrouter")
-
-    except RuntimeError as e:
-        if _should_fallback_openrouter(e):
-            resp = openrouter_chat(SAFE_FALLBACK_MODEL, messages, **kwargs)
-            resp = _normalize_reasoning_into_content(resp)
-            _raise_if_provider_error(resp, "OpenRouter")
-            if isinstance(resp, tuple):
-                return resp
-            return (resp, SAFE_FALLBACK_MODEL, "openrouter")
-        raise
+    resp = openrouter_chat(model_to_send, messages, **kwargs)
+    resp = _normalize_reasoning_into_content(resp)
+    _raise_if_provider_error(resp, "OpenRouter")
+    if isinstance(resp, tuple):
+        return resp
+    return (resp, norm_model, "openrouter")
 
 
 # ==========================================================
-# ✅ COMPATIBILIDADE (LEGADO): call_model
+# Compatibilidade (legado): call_model
 # ==========================================================
 def call_model(*args: Any, **kwargs: Any):
     provider = kwargs.get("provider")
@@ -337,9 +234,9 @@ def call_model(*args: Any, **kwargs: Any):
         messages = messages or args[2]
 
     if not isinstance(model, str) or not model.strip():
-        raise RuntimeError("call_model: model ausente/ inválido")
+        raise RuntimeError("call_model: model ausente/inválido")
     if not isinstance(messages, list):
-        raise RuntimeError("call_model: messages ausente/ inválido")
+        raise RuntimeError("call_model: messages ausente/inválido")
 
     passthrough: Dict[str, Any] = {}
     for k in ("max_tokens", "temperature", "top_p", "extra"):
@@ -353,8 +250,8 @@ def call_model(*args: Any, **kwargs: Any):
 # Strict routing (para debug)
 # -----------------------------------------
 def route_chat_strict(model: str, payload: Dict[str, Any]):
-    norm_model = _normalize_model_id(model)
-    provider = _provider_for(norm_model)
+    norm_model = normalize_model_id(model)
+    provider = resolve_provider(norm_model)
     model_to_send = _model_for_provider(norm_model, provider)
 
     msgs = payload.get("messages", [])
@@ -380,11 +277,5 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
         resp = together_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
-    try:
-        resp = openrouter_chat(model_to_send, msgs, **kwargs)
-        return _normalize_reasoning_into_content(resp)
-    except RuntimeError as e:
-        if _should_fallback_openrouter(e):
-            resp = openrouter_chat(SAFE_FALLBACK_MODEL, msgs, **kwargs)
-            return _normalize_reasoning_into_content(resp)
-        raise
+    resp = openrouter_chat(model_to_send, msgs, **kwargs)
+    return _normalize_reasoning_into_content(resp)
