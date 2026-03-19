@@ -6,6 +6,7 @@ import streamlit as st
 from core.repositories import get_facts
 from core.image_prompt_builder import build_prompt_from_scene_context
 from core.image_service import generate_image, image_data_url_to_bytes
+from core.cloudinary_service import upload_image_bytes
 
 
 st.set_page_config(
@@ -168,6 +169,12 @@ def _init_state() -> None:
         "visual_extra": "",
         "visual_extra_negative": "",
         "visual_emotion": "",
+        "visual_last_seed": "",
+        "visual_last_prompt": "",
+        "visual_last_negative_prompt": "",
+        "visual_last_reference_url": "",
+        "visual_last_cloudinary_url": "",
+        "visual_last_cloudinary_public_id": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
