@@ -1,44 +1,27 @@
 from __future__ import annotations
 
 import base64
-import os
 from typing import Any, Dict, Optional
 
 import cloudinary
 import cloudinary.uploader
-import streamlit as st
 
 
 # ==========================================================
-# LEITURA SEGURA DE SECRETS
+# CONFIG FIXA (TEMPORÁRIA / TESTE LOCAL)
 # ==========================================================
-def _get_secret(name: str) -> str:
-    val = ""
-
-    # 1) tenta via st.secrets (forma segura)
-    try:
-        if name in st.secrets:
-            val = st.secrets[name]
-    except Exception:
-        pass
-
-    # 2) fallback: variável de ambiente
-    if not val:
-        val = os.getenv(name, "")
-
-    return str(val or "").strip()
+CLOUDINARY_CLOUD_NAME = "drupewp1y"
+CLOUDINARY_API_KEY = "133845212134728"
+CLOUDINARY_API_SECRET = "3biOYu17wxMikhrfTd0QJ65zvJI"
 
 
 # ==========================================================
 # CONFIG CLOUDINARY
 # ==========================================================
 def _ensure_cloudinary_config() -> None:
-    cloud_name = _get_secret("CLOUDINARY_CLOUD_NAME")
-    api_key = _get_secret("CLOUDINARY_API_KEY")
-    api_secret = _get_secret("CLOUDINARY_API_SECRET")
-
-    # 🔍 DEBUG OPCIONAL (pode remover depois)
-    # st.write("Cloudinary debug:", bool(cloud_name), bool(api_key), bool(api_secret))
+    cloud_name = str(CLOUDINARY_CLOUD_NAME or "").strip()
+    api_key = str(CLOUDINARY_API_KEY or "").strip()
+    api_secret = str(CLOUDINARY_API_SECRET or "").strip()
 
     if not cloud_name:
         raise RuntimeError("CLOUDINARY_CLOUD_NAME não encontrado.")
@@ -90,7 +73,6 @@ def upload_image_bytes(
 
     result = cloudinary.uploader.upload(data_uri, **options)
 
-    # 🔥 valida retorno mínimo
     if not result or "secure_url" not in result:
         raise RuntimeError(f"Upload falhou. Resposta inesperada: {result}")
 
