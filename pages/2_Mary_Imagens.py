@@ -246,8 +246,19 @@ def main() -> None:
                         )
 
                         first = result["images"][0]
-                        img_bytes = image_data_url_to_bytes(first["image_url"])
-
+                        
+                        image_url = ""
+                        if isinstance(first, dict):
+                            image_url_obj = first.get("image_url")
+                            if isinstance(image_url_obj, dict):
+                                image_url = str(image_url_obj.get("url") or "").strip()
+                            elif isinstance(image_url_obj, str):
+                                image_url = image_url_obj.strip()
+                        
+                        if not image_url:
+                            raise RuntimeError(f"Campo image_url.url ausente no retorno: {first}")
+                        
+                        img_bytes = image_data_url_to_bytes(image_url)
                         st.session_state["visual_last_image_bytes"] = img_bytes
                         st.session_state["visual_last_image_text"] = result.get("text", "")
                         st.success("Imagem gerada com sucesso.")
