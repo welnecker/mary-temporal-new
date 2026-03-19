@@ -76,10 +76,6 @@ def generate_image(
             "aspect_ratio": aspect_ratio,
             "image_size": image_size,
         },
-        "provider": {
-            "allowFallbacks": False,
-            "requireParameters": True,
-        },
     }
 
     if seed is not None:
