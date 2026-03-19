@@ -1,4 +1,3 @@
-# core/image_service.py
 from __future__ import annotations
 
 import base64
@@ -33,11 +32,6 @@ def generate_image(
     reference_images: Optional[List[str]] = None,
     timeout: int = 240,
 ) -> Dict[str, Any]:
-    """
-    Gera imagem via OpenRouter usando chat/completions + modalities.
-    Sem fallback.
-    """
-
     api_key = _get_openrouter_api_key()
 
     content: List[Dict[str, Any]] = [
