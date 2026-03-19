@@ -1,4 +1,3 @@
-# core/image_prompt_builder.py
 from __future__ import annotations
 
 import re
@@ -41,10 +40,6 @@ def extract_visual_scene_summary(
     emocao: str = "",
     acao: str = "",
 ) -> str:
-    """
-    Gera um resumo visual curto a partir do estado atual.
-    Não tenta ser inteligente demais: só organiza o essencial.
-    """
     parts = []
 
     if acao:
@@ -59,7 +54,6 @@ def extract_visual_scene_summary(
     if emocao:
         parts.append(f"with a { _clean_text(emocao) } emotional tone")
 
-    # Usa um pouco da última resposta só como apoio, sem exagero
     last_reply_clean = _clean_text(last_reply)
     if last_reply_clean:
         parts.append(f"scene mood inspired by: {last_reply_clean[:220]}")
@@ -111,12 +105,6 @@ def build_negative_prompt(extra_negative: Optional[str] = None) -> str:
 
 
 def build_prompt_from_scene_context(ctx: Dict[str, str]) -> Dict[str, str]:
-    """
-    Recebe um dicionário simples da UI/session e devolve:
-    - scene_summary
-    - prompt
-    - negative_prompt
-    """
     scene_summary = extract_visual_scene_summary(
         last_reply=ctx.get("last_reply", ""),
         local=ctx.get("local", ""),
