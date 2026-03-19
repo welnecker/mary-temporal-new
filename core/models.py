@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 # ============================================================
 # Fonte única de verdade dos modelos por provider
@@ -17,10 +17,12 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "deepseek/deepseek-chat-v3-0324",
         "anthropic/claude-3.5-haiku",
         "openrouter/hunter-alpha",
-        "nousresearch/hermes-3-llama-3.1-405b", 
+        "nousresearch/hermes-3-llama-3.1-405b",
         "google/gemini-3-flash-preview",
         "moonshotai/kimi-k2.5",
         "anthropic/claude-sonnet-4.6",
+        "arcee-ai/trinity-large-preview:free",
+        "minimax/minimax-m2.5",
     ],
     "together": [
         "together/zai-org/GLM-5",
@@ -44,7 +46,7 @@ ENV_MODEL_VARS: Dict[str, str] = {
 }
 
 # ============================================================
-# Aliases aceitos
+# Aliases aceitos para provider
 # ============================================================
 
 PROVIDER_ALIASES: Dict[str, str] = {
@@ -55,10 +57,19 @@ PROVIDER_ALIASES: Dict[str, str] = {
 }
 
 # ============================================================
+# Aliases opcionais de modelo
+# ============================================================
+
+MODEL_ALIASES: Dict[str, str] = {
+    # Exemplo:
+    # "chimera": "tngtech/deepseek-r1t2-chimera",
+}
+
+# ============================================================
 # Helpers
 # ============================================================
 
-def _normalize_provider(provider: str | None) -> str:
+def _normalize_provider(provider: Optional[str]) -> str:
     p = (provider or "").strip().lower()
     return PROVIDER_ALIASES.get(p, p)
 
@@ -91,7 +102,14 @@ def _env_list(var_name: str, defaults: List[str]) -> List[str]:
 # API pública
 # ============================================================
 
-def list_models(provider: str | None) -> List[str]:
+def normalize_model_id(raw: str) -> str:
+    if not raw:
+        return ""
+    low = raw.strip().lower()
+    return MODEL_ALIASES.get(low, raw.strip())
+
+
+def list_models(provider: Optional[str]) -> List[str]:
     p = _normalize_provider(provider)
     defaults = MODEL_REGISTRY.get(p, [])
     env_var = ENV_MODEL_VARS.get(p)
@@ -120,15 +138,27 @@ def available_providers() -> List[str]:
     return out or ["openrouter", "together", "hf"]
 
 
-def default_model(provider: str | None) -> str:
+def default_model(provider: Optional[str]) -> str:
     models = list_models(provider)
     return models[0] if models else ""
 
 
-def provider_has_model(provider: str | None, model: str) -> bool:
+def provider_has_model(provider: Optional[str], model: str) -> bool:
     p = _normalize_provider(provider)
-    m = (model or "").strip()
+    m = normalize_model_id(model)
     return m in list_models(p)
+
+
+def resolve_provider(model: str) -> str:
+    m = normalize_model_id(model)
+    if not m:
+        raise RuntimeError("Modelo vazio.")
+
+    for provider in ("openrouter", "together", "hf"):
+        if m in list_models(provider):
+            return provider
+
+    raise RuntimeError(f"Modelo não cadastrado em core/models.py: {m}")
 
 
 def all_models() -> Dict[str, List[str]]:
