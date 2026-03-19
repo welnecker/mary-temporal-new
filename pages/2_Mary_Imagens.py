@@ -6,6 +6,7 @@ from core.repositories import get_facts
 from core.image_prompt_builder import build_prompt_from_scene_context
 from core.image_service import generate_image, image_data_url_to_bytes
 from core.cloudinary_service import upload_image_bytes
+from core.image_prompt_refiner import refine_visual_prompt
 
 
 st.set_page_config(
@@ -14,31 +15,19 @@ st.set_page_config(
     layout="centered",
 )
 
-
 SENHA_CORRETA = "311071"
 
 
+# ==========================================================
+# UI
+# ==========================================================
 def _apply_dark_ui() -> None:
     st.markdown(
         """
         <style>
         html, body, #root, .stApp { background: #0b0b0b !important; }
-        [data-testid="stAppViewContainer"],
-        [data-testid="stMain"],
-        [data-testid="stMainBlockContainer"] { background: #0b0b0b !important; }
-
-        .block-container {
-            max-width: 980px !important;
-            padding-top: 1rem !important;
-            padding-bottom: 4rem !important;
-        }
-
-        div[data-testid="stTextInput"] input,
-        div[data-testid="stTextArea"] textarea,
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-            background: #101010 !important;
-            color: #f2f2f2 !important;
-        }
+        .block-container { max-width: 980px !important; padding-top: 1rem !important; }
+        input, textarea { background: #101010 !important; color: #f2f2f2 !important; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -52,177 +41,84 @@ def check_password() -> bool:
     if st.session_state["senha_ok"]:
         return True
 
-    _apply_dark_ui()
     st.title("🔐 Acesso Restrito")
+    senha = st.text_input("Senha", type="password")
 
-    with st.form("form_senha", clear_on_submit=False):
-        senha = st.text_input("Digite a senha de acesso:", type="password")
-        ok = st.form_submit_button("Entrar")
-
-    if ok:
+    if st.button("Entrar"):
         if senha == SENHA_CORRETA:
             st.session_state["senha_ok"] = True
-            st.success("Acesso liberado!")
             st.rerun()
         else:
-            st.error("Senha incorreta.")
+            st.error("Senha incorreta")
 
     return False
 
 
-def _uid() -> str:
-    uid = (st.session_state.get("user_id") or "Janio Donisete").strip()
-    return uid or "Janio Donisete"
+# ==========================================================
+# HELPERS
+# ==========================================================
+def _uid():
+    return (st.session_state.get("user_id") or "Janio Donisete").strip()
 
 
-def _timeline() -> str:
-    return str(st.session_state.get("mary_timeline") or "cumplice").strip() or "cumplice"
+def _timeline():
+    return (st.session_state.get("mary_timeline") or "cumplice").strip()
 
 
-def _usuario_key_atual() -> str:
+def _usuario_key_atual():
     return f"{_uid()}::mary::{_timeline()}"
-
-
-def _get_nested_fact(data: dict, path: str, default=None):
-    cur = data
-    for part in path.split("."):
-        if not isinstance(cur, dict):
-            return default
-        cur = cur.get(part)
-        if cur is None:
-            return default
-    return cur
 
 
 def cached_get_facts(usuario_key: str) -> dict:
     try:
-        data = get_facts(usuario_key) or {}
-        return data if isinstance(data, dict) else {}
+        return get_facts(usuario_key) or {}
     except Exception:
         return {}
 
 
-def _get_current_visual_context() -> dict:
-    chat_history = st.session_state.get("chat_history", []) or []
-    last_reply = ""
+def _get_nested(data, path):
+    cur = data
+    for p in path.split("."):
+        if not isinstance(cur, dict):
+            return ""
+        cur = cur.get(p)
+    return cur or ""
 
-    try:
-        for item in reversed(chat_history):
-            if isinstance(item, tuple) and len(item) >= 2:
-                role, content = item[0], item[1]
-                if str(role).lower() == "assistant" and str(content or "").strip():
-                    last_reply = str(content).strip()
-                    break
-            elif isinstance(item, dict):
-                role = item.get("role", "")
-                content = item.get("content", "")
-                if str(role).lower() == "assistant" and str(content or "").strip():
-                    last_reply = str(content).strip()
-                    break
-    except Exception:
-        last_reply = ""
 
-    facts = cached_get_facts(_usuario_key_atual()) or {}
-
-    local = (
-        _get_nested_fact(facts, "cena.local", "")
-        or _get_nested_fact(facts, "state.local", "")
-        or ""
-    )
-
-    roupa_mary = (
-        _get_nested_fact(facts, "state.roupa", "")
-        or ""
-    )
-
-    acao = (
-        _get_nested_fact(facts, "cena.acao", "")
-        or _get_nested_fact(facts, "state.assunto", "")
-        or ""
-    )
-
-    emocao = str(st.session_state.get("visual_emotion") or "").strip()
+def _get_current_visual_context():
+    facts = cached_get_facts(_usuario_key_atual())
 
     return {
-        "last_reply": last_reply,
-        "local": str(local or ""),
-        "roupa_mary": str(roupa_mary or ""),
-        "emocao": emocao,
-        "acao": str(acao or ""),
-        "enquadramento": "medium shot",
-        "iluminacao": "cinematic warm lighting",
-        "extra": str(st.session_state.get("visual_extra") or "").strip(),
-        "extra_negative": str(st.session_state.get("visual_extra_negative") or "").strip(),
+        "local": _get_nested(facts, "cena.local") or _get_nested(facts, "state.local"),
+        "roupa_mary": _get_nested(facts, "state.roupa"),
+        "acao": _get_nested(facts, "cena.acao") or _get_nested(facts, "state.assunto"),
+        "emocao": st.session_state.get("visual_emotion", ""),
+        "extra": st.session_state.get("visual_extra", ""),
+        "extra_negative": st.session_state.get("visual_extra_negative", ""),
     }
 
 
-def _init_state() -> None:
+def _init_state():
     defaults = {
-        "visual_scene_summary": "",
         "visual_prompt": "",
         "visual_negative_prompt": "",
+        "visual_scene_summary": "",
+        "visual_manual_mode": False,
         "visual_last_image_bytes": None,
-        "visual_last_image_text": "",
-        "visual_seed": "",
-        "visual_reference_url": "",
-        "visual_extra": "",
-        "visual_extra_negative": "",
-        "visual_emotion": "",
-        "visual_last_seed": "",
         "visual_last_prompt": "",
         "visual_last_negative_prompt": "",
-        "visual_last_reference_url": "",
+        "visual_last_seed": "",
         "visual_last_cloudinary_url": "",
-        "visual_last_cloudinary_public_id": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 
-def _extract_image_url_from_result(result: dict) -> str:
-    images = result.get("images") or []
-    if not images:
-        raise RuntimeError(f"Resposta sem images: {result}")
-
-    first = images[0]
-    image_url = ""
-
-    if isinstance(first, dict):
-        image_url_obj = first.get("image_url")
-        if isinstance(image_url_obj, dict):
-            image_url = str(image_url_obj.get("url") or "").strip()
-        elif isinstance(image_url_obj, str):
-            image_url = image_url_obj.strip()
-
-    if not image_url:
-        raise RuntimeError(f"Campo image_url.url ausente no retorno: {first}")
-
-    return image_url
-
-
-def _save_last_generation_state(
-    *,
-    prompt: str,
-    negative_prompt: str,
-    seed: int | None,
-    reference_url: str,
-    img_bytes: bytes,
-    text: str,
-    cloudinary_url: str = "",
-    cloudinary_public_id: str = "",
-) -> None:
-    st.session_state["visual_last_image_bytes"] = img_bytes
-    st.session_state["visual_last_image_text"] = text
-    st.session_state["visual_last_seed"] = str(seed if seed is not None else "")
-    st.session_state["visual_last_prompt"] = prompt
-    st.session_state["visual_last_negative_prompt"] = negative_prompt
-    st.session_state["visual_last_reference_url"] = reference_url
-    st.session_state["visual_last_cloudinary_url"] = cloudinary_url
-    st.session_state["visual_last_cloudinary_public_id"] = cloudinary_public_id
-
-
-def main() -> None:
+# ==========================================================
+# MAIN
+# ==========================================================
+def main():
     _apply_dark_ui()
 
     if not check_password():
@@ -231,273 +127,117 @@ def main() -> None:
     _init_state()
 
     st.title("🎬 Mary Imagens")
-    st.caption(f"Usuário: {_uid()} • Timeline: {_timeline()} • Key: {_usuario_key_atual()}")
 
-    facts_now = cached_get_facts(_usuario_key_atual()) or {}
-
-    with st.expander("📄 Contexto atual da cena", expanded=False):
-        st.json(
-            {
-                "local": _get_nested_fact(facts_now, "cena.local", "") or _get_nested_fact(facts_now, "state.local", ""),
-                "roupa": _get_nested_fact(facts_now, "state.roupa", ""),
-                "acao": _get_nested_fact(facts_now, "cena.acao", "") or _get_nested_fact(facts_now, "state.assunto", ""),
-                "timeline": _timeline(),
-            }
-        )
+    # ======================================================
+    # CONTROLES
+    # ======================================================
+    st.toggle("✍️ Usar prompt manual", key="visual_manual_mode")
 
     c1, c2 = st.columns(2)
 
+    # =========================
+    # MONTAR PROMPT
+    # =========================
     with c1:
         if st.button("🛠️ Montar prompt automático", use_container_width=True):
-            try:
+
+            if st.session_state["visual_manual_mode"]:
+                st.warning("Modo manual ativo")
+            else:
                 ctx = _get_current_visual_context()
                 built = build_prompt_from_scene_context(ctx)
-                st.session_state["visual_scene_summary"] = built["scene_summary"]
+
                 st.session_state["visual_prompt"] = built["prompt"]
                 st.session_state["visual_negative_prompt"] = built["negative_prompt"]
-                st.success("Prompt visual montado.")
+                st.session_state["visual_scene_summary"] = built["scene_summary"]
+
+                st.success("Prompt criado")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Falha ao montar prompt: {type(e).__name__}: {e}")
 
+    # =========================
+    # REFINAR PROMPT
+    # =========================
     with c2:
-        if st.button("🖼️ Gerar imagem", use_container_width=True):
-            prompt_final = str(st.session_state.get("visual_prompt") or "").strip()
-            negative_final = str(st.session_state.get("visual_negative_prompt") or "").strip()
-            ref_url = str(st.session_state.get("visual_reference_url") or "").strip()
-            seed_raw = str(st.session_state.get("visual_seed") or "").strip()
+        if st.button("✨ Refinar com IA", use_container_width=True):
 
-            seed = None
-            if seed_raw:
-                try:
-                    seed = int(seed_raw)
-                except Exception:
-                    st.error("Seed inválida. Use apenas número inteiro.")
-                    st.stop()
+            prompt = st.session_state["visual_prompt"]
 
-            if not prompt_final:
-                st.error("Monte ou preencha o prompt antes de gerar.")
-            else:
-                with st.spinner("Gerando imagem..."):
-                    try:
-                        result = generate_image(
-                            prompt=prompt_final,
-                            negative_prompt=negative_final,
-                            aspect_ratio="3:4",
-                            image_size="1K",
-                            seed=seed,
-                            reference_images=[ref_url] if ref_url else None,
-                        )
-
-                        image_url = _extract_image_url_from_result(result)
-                        img_bytes = image_data_url_to_bytes(image_url)
-
-                        cloud_url = ""
-                        cloud_public_id = ""
-
-                        try:
-                            up = upload_image_bytes(
-                                img_bytes=img_bytes,
-                                folder="mary",
-                                tags=["mary", _timeline(), "scene"],
-                            )
-                            cloud_url = str(up.get("secure_url") or "").strip()
-                            cloud_public_id = str(up.get("public_id") or "").strip()
-                        except Exception as e:
-                            st.warning(
-                                f"Imagem gerada, mas falhou upload no Cloudinary: {type(e).__name__}: {e}"
-                            )
-
-                        _save_last_generation_state(
-                            prompt=prompt_final,
-                            negative_prompt=negative_final,
-                            seed=seed,
-                            reference_url=cloud_url or ref_url,
-                            img_bytes=img_bytes,
-                            text=result.get("text", ""),
-                            cloudinary_url=cloud_url,
-                            cloudinary_public_id=cloud_public_id,
-                        )
-
-                        st.success("Imagem gerada com sucesso.")
-                    except Exception as e:
-                        st.error(f"Falha ao gerar imagem: {type(e).__name__}: {e}")
-
-    st.markdown("**Emoção / clima da cena**")
-    st.text_input(
-        "emoção",
-        key="visual_emotion",
-        placeholder="Ex.: provocante, tensa, íntima, silenciosa",
-        label_visibility="collapsed",
-    )
-
-    st.markdown("**Detalhes extras**")
-    st.text_area(
-        "detalhes_extras",
-        key="visual_extra",
-        height=80,
-        placeholder="Ex.: luz lateral quente, bancada de mármore, vapor suave, olhar por cima do ombro",
-        label_visibility="collapsed",
-    )
-
-    st.markdown("**Detalhes a evitar**")
-    st.text_area(
-        "detalhes_negativos_extras",
-        key="visual_extra_negative",
-        height=70,
-        placeholder="Ex.: sem sorriso, sem fundo poluído, sem objetos extras",
-        label_visibility="collapsed",
-    )
-
-    col_a, col_b = st.columns(2)
-
-    with col_a:
-        st.markdown("**Seed (opcional)**")
-        st.text_input(
-            "seed",
-            key="visual_seed",
-            placeholder="Ex.: 123456",
-            label_visibility="collapsed",
-        )
-
-    with col_b:
-        st.markdown("**URL de referência (opcional)**")
-        st.text_input(
-            "referencia",
-            key="visual_reference_url",
-            placeholder="https://...",
-            label_visibility="collapsed",
-        )
-
-    st.markdown("**Resumo visual da cena**")
-    novo_summary = st.text_area(
-        "scene_summary",
-        value=st.session_state.get("visual_scene_summary", ""),
-        height=100,
-        label_visibility="collapsed",
-    )
-    st.session_state["visual_scene_summary"] = novo_summary
-
-    st.markdown("**Prompt visual atual**")
-    novo_prompt = st.text_area(
-        "visual_prompt",
-        value=st.session_state.get("visual_prompt", ""),
-        height=260,
-        label_visibility="collapsed",
-    )
-    st.session_state["visual_prompt"] = novo_prompt
-
-    st.markdown("**Prompt negativo**")
-    novo_neg = st.text_area(
-        "visual_negative_prompt",
-        value=st.session_state.get("visual_negative_prompt", ""),
-        height=100,
-        label_visibility="collapsed",
-    )
-    st.session_state["visual_negative_prompt"] = novo_neg
-
-    c3, c4 = st.columns(2)
-
-    with c3:
-        if st.button("🔁 Gerar variação da mesma imagem", use_container_width=True):
-            last_prompt = str(st.session_state.get("visual_last_prompt") or "").strip()
-            last_negative = str(st.session_state.get("visual_last_negative_prompt") or "").strip()
-            last_ref = str(
-                st.session_state.get("visual_last_cloudinary_url")
-                or st.session_state.get("visual_last_reference_url")
-                or ""
-            ).strip()
-            last_seed_raw = str(st.session_state.get("visual_last_seed") or "").strip()
-
-            if not last_prompt:
-                st.error("Ainda não existe imagem anterior para variar.")
+            if not prompt:
+                st.error("Sem prompt")
             else:
                 try:
-                    last_seed = int(last_seed_raw) if last_seed_raw else None
-                except Exception:
-                    last_seed = None
+                    refined = refine_visual_prompt(
+                        base_prompt=prompt,
+                        scene_summary=st.session_state["visual_scene_summary"],
+                        emotion=st.session_state.get("visual_emotion"),
+                        extra=st.session_state.get("visual_extra"),
+                    )
 
-                variation_prompt = (
-                    last_prompt
-                    + "\n\nCreate a highly consistent variation of the same character and scene, "
-                      "preserving facial identity, body proportions, hairstyle, comic style, "
-                      "and overall mood, with only subtle changes in pose, expression, framing, or lighting."
-                )
+                    st.session_state["visual_prompt"] = refined
+                    st.success("Refinado")
+                    st.rerun()
 
-                with st.spinner("Gerando variação..."):
-                    try:
-                        result = generate_image(
-                            prompt=variation_prompt,
-                            negative_prompt=last_negative,
-                            aspect_ratio="3:4",
-                            image_size="1K",
-                            seed=last_seed,
-                            reference_images=[last_ref] if last_ref else None,
-                        )
+                except Exception as e:
+                    st.error(f"Erro: {e}")
 
-                        image_url = _extract_image_url_from_result(result)
-                        img_bytes = image_data_url_to_bytes(image_url)
+    # ======================================================
+    # CAMPOS
+    # ======================================================
+    st.text_input("Emoção", key="visual_emotion")
+    st.text_area("Extras", key="visual_extra")
+    st.text_area("Negativos", key="visual_extra_negative")
 
-                        cloud_url = ""
-                        cloud_public_id = ""
+    st.text_area("Prompt", key="visual_prompt", height=250)
+    st.text_area("Negative Prompt", key="visual_negative_prompt", height=120)
 
-                        try:
-                            up = upload_image_bytes(
-                                img_bytes=img_bytes,
-                                folder="mary",
-                                tags=["mary", _timeline(), "variation"],
-                            )
-                            cloud_url = str(up.get("secure_url") or "").strip()
-                            cloud_public_id = str(up.get("public_id") or "").strip()
-                        except Exception as e:
-                            st.warning(
-                                f"Variação gerada, mas falhou upload no Cloudinary: {type(e).__name__}: {e}"
-                            )
+    # ======================================================
+    # GERAR
+    # ======================================================
+    if st.button("🖼️ Gerar imagem"):
 
-                        _save_last_generation_state(
-                            prompt=variation_prompt,
-                            negative_prompt=last_negative,
-                            seed=last_seed,
-                            reference_url=cloud_url or last_ref,
-                            img_bytes=img_bytes,
-                            text=result.get("text", ""),
-                            cloudinary_url=cloud_url,
-                            cloudinary_public_id=cloud_public_id,
-                        )
+        prompt = st.session_state["visual_prompt"]
+        neg = st.session_state["visual_negative_prompt"]
 
-                        st.success("Variação gerada com sucesso.")
-                    except Exception as e:
-                        st.error(f"Falha ao gerar variação: {type(e).__name__}: {e}")
+        if not prompt:
+            st.error("Sem prompt")
+            return
 
-    with c4:
-        st.caption("A variação reutiliza a última seed e prioriza a última URL do Cloudinary como referência.")
+        try:
+            result = generate_image(
+                prompt=prompt,
+                negative_prompt=neg,
+                aspect_ratio="3:4",
+                image_size="1K",
+            )
 
-    if st.session_state.get("visual_last_image_bytes"):
-        st.image(
-            st.session_state["visual_last_image_bytes"],
-            caption="Imagem gerada",
-            use_container_width=True,
-        )
+            img_url = result["images"][0]["image_url"]["url"]
+            img_bytes = image_data_url_to_bytes(img_url)
+
+            st.session_state["visual_last_image_bytes"] = img_bytes
+            st.session_state["visual_last_prompt"] = prompt
+
+            # upload cloudinary
+            up = upload_image_bytes(img_bytes=img_bytes, folder="mary")
+            st.session_state["visual_last_cloudinary_url"] = up.get("secure_url", "")
+
+        except Exception as e:
+            st.error(str(e))
+
+    # ======================================================
+    # RESULTADO
+    # ======================================================
+    if st.session_state["visual_last_image_bytes"]:
+        st.image(st.session_state["visual_last_image_bytes"])
 
         st.download_button(
-            label="💾 Baixar imagem",
-            data=st.session_state["visual_last_image_bytes"],
-            file_name="mary_scene.png",
-            mime="image/png",
-            use_container_width=True,
+            "💾 Baixar",
+            st.session_state["visual_last_image_bytes"],
+            file_name="mary.png",
         )
 
-    cloud_url = str(st.session_state.get("visual_last_cloudinary_url") or "").strip()
-    if cloud_url:
-        st.caption("URL pública da última imagem:")
-        st.code(cloud_url)
-
-    texto_modelo = str(st.session_state.get("visual_last_image_text") or "").strip()
-    if texto_modelo:
-        st.caption(texto_modelo)
+        if st.session_state["visual_last_cloudinary_url"]:
+            st.code(st.session_state["visual_last_cloudinary_url"])
 
 
 if __name__ == "__main__":
-    main()
-else:
     main()
