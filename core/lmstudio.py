@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -16,9 +16,9 @@ LMSTUDIO_BASE_URL = os.getenv(
 DEFAULT_TIMEOUT = float(os.getenv("LLM_HTTP_TIMEOUT", "180"))
 
 # Modelos exibidos na UI
-# Você pode sobrescrever isso no futuro via env ou models.py
 DEFAULT_MODELS: List[str] = [
-    "lmstudio/local-model",
+    "lmstudio/DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf",
+    "lmstudio/Lexi-Llama-3-8B-Uncensored_Q4_K_M.gguf",
 ]
 
 
