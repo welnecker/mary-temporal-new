@@ -40,6 +40,14 @@ except Exception as e:
     hf_chat = None  # type: ignore
     _IMPORT_ERRORS["hf"] = f"{type(e).__name__}: {e}"
 
+# LM Studio (opcional/local)
+try:
+    from .lmstudio import chat as lmstudio_chat, DEFAULT_MODELS as LMS_MODELS
+except Exception as e:
+    LMS_MODELS = []
+    lmstudio_chat = None  # type: ignore
+    _IMPORT_ERRORS["lmstudio"] = f"{type(e).__name__}: {e}"
+
 
 # ============================================================
 # Utils
@@ -124,6 +132,9 @@ def _model_for_provider(model: str, provider: str) -> str:
         m = _strip_prefix(m, "huggingface/")
         return m
 
+    if provider == "lmstudio":
+        return _strip_prefix(m, "lmstudio/")
+
     return m
 
 
@@ -150,10 +161,14 @@ def available_providers() -> List[Tuple[str, bool, str]]:
     have_tg = _env_has_any("TOGETHER_API_KEY")
     have_hf = _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN")
 
+    # provider local: disponível se o módulo carregou
+    have_lms = lmstudio_chat is not None
+
     return [
-        ("openrouter", have_or, "OK" if have_or else "sem chave"),
-        ("together", have_tg, "OK" if have_tg else "sem chave"),
-        ("hf", have_hf, "OK" if have_hf else "sem chave"),
+        ("OpenRouter", have_or, "OK" if have_or else "sem chave"),
+        ("Together", have_tg, "OK" if have_tg else "sem chave"),
+        ("HuggingFace", have_hf, "OK" if have_hf else "sem chave"),
+        ("LM Studio", have_lms, "OK" if have_lms else "indisponível"),
     ]
 
 
@@ -174,8 +189,11 @@ def list_models(provider: str | None = None) -> List[str]:
     if prov in ("hf", "huggingface"):
         return _dedupe_keep_order(list(registry_list_models("hf") or []))
 
+    if prov in ("lmstudio", "lm studio", "local"):
+        return _dedupe_keep_order(list(registry_list_models("lmstudio") or LMS_MODELS or []))
+
     out: List[str] = []
-    for p in ("openrouter", "together", "hf"):
+    for p in ("openrouter", "together", "hf", "lmstudio"):
         out.extend(registry_list_models(p) or [])
 
     return _dedupe_keep_order(out)
@@ -209,13 +227,22 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
             return resp
         return (resp, norm_model, "together")
 
+    if provider == "lmstudio":
+        if lmstudio_chat is None:
+            raise RuntimeError("LM Studio provider indisponível (lmstudio.py falhou ao importar).")
+        resp = lmstudio_chat(model_to_send, messages, **kwargs)
+        resp = _normalize_reasoning_into_content(resp)
+        _raise_if_provider_error(resp, "LM Studio")
+        if isinstance(resp, tuple):
+            return resp
+        return (resp, norm_model, "lmstudio")
+
     resp = openrouter_chat(model_to_send, messages, **kwargs)
     resp = _normalize_reasoning_into_content(resp)
     _raise_if_provider_error(resp, "OpenRouter")
     if isinstance(resp, tuple):
         return resp
     return (resp, norm_model, "openrouter")
-
 
 # ==========================================================
 # Compatibilidade (legado): call_model
@@ -275,6 +302,12 @@ def route_chat_strict(model: str, payload: Dict[str, Any]):
         if together_chat is None:
             raise RuntimeError("Together provider indisponível (together.py falhou ao importar).")
         resp = together_chat(model_to_send, msgs, **kwargs)
+        return _normalize_reasoning_into_content(resp)
+
+    if provider == "lmstudio":
+        if lmstudio_chat is None:
+            raise RuntimeError("LM Studio provider indisponível (lmstudio.py falhou ao importar).")
+        resp = lmstudio_chat(model_to_send, msgs, **kwargs)
         return _normalize_reasoning_into_content(resp)
 
     resp = openrouter_chat(model_to_send, msgs, **kwargs)
