@@ -1,4 +1,3 @@
-# core/models.py
 from __future__ import annotations
 
 import os
@@ -28,7 +27,8 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "moonshotai/Kimi-K2-Instruct-0905:fireworks-ai",
     ],
     "lmstudio": [
-        "lmstudio/local-model",
+        "lmstudio/DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf",
+        "lmstudio/Lexi-Llama-3-8B-Uncensored_Q4_K_M.gguf",
     ],
 }
 
@@ -160,10 +160,7 @@ def resolve_provider(model: str) -> str:
     if low.startswith("together/"):
         return "together"
 
-    # HF: hoje seu uso é por cadastro exato; se quiser, depois expandimos
-    # OpenRouter fica como fallback para modelos cadastrados fora de prefixo
-    openrouter_models = list_models("openrouter")
-    if m in openrouter_models:
+    if m in list_models("openrouter"):
         return "openrouter"
 
     raise RuntimeError(f"Modelo não cadastrado em core/models.py: {m}")
