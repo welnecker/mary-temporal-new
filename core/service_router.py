@@ -3,12 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Tuple
 
-from .models import (
-    list_models as registry_list_models,
-    normalize_model_id,
-    resolve_provider,
-)
-
+# core/service_router.py
 _IMPORT_ERRORS: Dict[str, str] = {}
 
 # ============================================================
@@ -33,14 +28,15 @@ except Exception as e:
     _IMPORT_ERRORS["together"] = f"{type(e).__name__}: {e}"
 
 
-# Hugging Face
+# HuggingFace Router
 try:
     from .hf import chat as hf_chat
 except Exception as e:
     hf_chat = None  # type: ignore
     _IMPORT_ERRORS["hf"] = f"{type(e).__name__}: {e}"
 
-# LM Studio (opcional/local)
+
+# LM Studio
 try:
     from .lmstudio import chat as lmstudio_chat, DEFAULT_MODELS as LMS_MODELS
 except Exception as e:
@@ -50,10 +46,26 @@ except Exception as e:
 
 
 # ============================================================
+# Registry central
+# ============================================================
+from .models import (
+    list_models as registry_list_models,
+    available_providers as registry_available_providers,
+    resolve_provider,
+    normalize_model_id,
+)
+
+# ============================================================
+# Config
+# ============================================================
+SAFE_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
+
+
+# ============================================================
 # Utils
 # ============================================================
-
 def _normalize_reasoning_into_content(resp: Any) -> Any:
+    # tuple: (data, used_model, provider)
     if isinstance(resp, tuple) and len(resp) >= 1:
         data = _normalize_reasoning_into_content(resp[0])
         if len(resp) == 3:
@@ -89,10 +101,6 @@ def _normalize_reasoning_into_content(resp: Any) -> Any:
         return resp
 
 
-def _env_has_any(*keys: str) -> bool:
-    return any(bool(os.getenv(k)) for k in keys)
-
-
 def import_errors() -> Dict[str, str]:
     return dict(_IMPORT_ERRORS)
 
@@ -108,9 +116,8 @@ def _raise_if_provider_error(resp: Any, provider: str) -> None:
     if "errors" in data and data["errors"]:
         raise RuntimeError(f"{provider} errors: {data['errors']}")
 
-    msg = data.get("message")
-    if isinstance(msg, str) and "error" in msg.lower():
-        raise RuntimeError(f"{provider} message: {msg}")
+    if data.get("message") and isinstance(data.get("message"), str) and ("error" in data.get("message", "").lower()):
+        raise RuntimeError(f"{provider} message: {data['message']}")
 
 
 def _strip_prefix(s: str, prefix: str) -> str:
@@ -157,11 +164,11 @@ def _dedupe_keep_order(items: List[str]) -> List[str]:
 # Providers disponíveis
 # -------------------------
 def available_providers() -> List[Tuple[str, bool, str]]:
-    have_or = _env_has_any("OPENROUTER_API_KEY", "OPENROUTER_TOKEN")
-    have_tg = _env_has_any("TOGETHER_API_KEY")
-    have_hf = _env_has_any("HUGGINGFACE_API_KEY", "HF_TOKEN")
+    reg = set(registry_available_providers())
 
-    # provider local: disponível se o módulo carregou
+    have_or = "openrouter" in reg
+    have_tg = "together" in reg
+    have_hf = "hf" in reg
     have_lms = lmstudio_chat is not None
 
     return [
@@ -175,8 +182,7 @@ def available_providers() -> List[Tuple[str, bool, str]]:
 def list_models(provider: str | None = None) -> List[str]:
     """
     Lê apenas do core/models.py.
-    Não injeta pinned models.
-    Não cria fallback.
+    Inclui LM Studio corretamente.
     """
     prov = (provider or "").strip().lower()
 
@@ -204,7 +210,7 @@ def list_models(provider: str | None = None) -> List[str]:
 # -----------------------------------------
 def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
     norm_model = normalize_model_id(model)
-    provider = resolve_provider(norm_model)
+    provider = resolve_provider(norm_model)  # openrouter | together | hf | lmstudio
     model_to_send = _model_for_provider(norm_model, provider)
 
     if provider == "hf":
@@ -244,8 +250,9 @@ def chat(model: str, messages: List[Dict[str, str]], **kwargs: Any):
         return resp
     return (resp, norm_model, "openrouter")
 
+
 # ==========================================================
-# Compatibilidade (legado): call_model
+# ✅ COMPATIBILIDADE (LEGADO): call_model
 # ==========================================================
 def call_model(*args: Any, **kwargs: Any):
     provider = kwargs.get("provider")
