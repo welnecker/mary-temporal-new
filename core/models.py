@@ -27,8 +27,8 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "moonshotai/Kimi-K2-Instruct-0905:fireworks-ai",
     ],
     "lmstudio": [
-        "lmstudio/DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf",
-        "lmstudio/Lexi-Llama-3-8B-Uncensored_Q4_K_M.gguf",
+        "lmstudio/deepseek/deepseek-r1-0528-qwen3-8b",
+        "lmstudio/llama-3-8b-lexi-uncensored",
     ],
 }
 
