@@ -2269,7 +2269,10 @@ def _render_sidebar() -> None:
             "openrouter": "OpenRouter",
             "together": "Together",
             "hf": "HuggingFace",
+            "lmstudio": "LM Studio",
         }
+
+        provider_label_to_id = {v: k for k, v in provider_labels.items()}
 
         try:
             providers_info = (
@@ -2278,13 +2281,24 @@ def _render_sidebar() -> None:
                 else []
             )
 
-            available_provider_ids = [
-                p[0] for p in providers_info
-                if isinstance(p, (list, tuple)) and len(p) >= 2 and bool(p[1])
-            ]
+            # providers_info vem como:
+            # [("OpenRouter", True, "OK"), ("Together", ...), ...]
+            available_provider_ids = []
+            for p in providers_info:
+                if not isinstance(p, (list, tuple)) or len(p) < 2:
+                    continue
+                provider_label = str(p[0] or "").strip()
+                provider_ok = bool(p[1])
+
+                if not provider_ok:
+                    continue
+
+                provider_id = provider_label_to_id.get(provider_label)
+                if provider_id:
+                    available_provider_ids.append(provider_id)
 
             if not available_provider_ids:
-                available_provider_ids = ["openrouter", "together", "hf"]
+                available_provider_ids = ["openrouter", "together", "hf", "lmstudio"]
 
             st.session_state["models_debug"] = {
                 "ok": True,
@@ -2294,7 +2308,7 @@ def _render_sidebar() -> None:
             }
 
         except Exception as e:
-            available_provider_ids = ["openrouter", "together", "hf"]
+            available_provider_ids = ["openrouter", "together", "hf", "lmstudio"]
             st.session_state["models_debug"] = {
                 "ok": False,
                 "providers_info": [],
@@ -2306,8 +2320,8 @@ def _render_sidebar() -> None:
         try:
             current_model = str(st.session_state.get("model") or "").strip()
             current_provider = (
-                service_router._provider_for(current_model)
-                if hasattr(service_router, "_provider_for") and current_model
+                service_router.resolve_provider(current_model)
+                if hasattr(service_router, "resolve_provider") and current_model
                 else "openrouter"
             )
         except Exception:
@@ -2332,16 +2346,22 @@ def _render_sidebar() -> None:
             key="provider_label_ui",
         )
 
-        selected_provider = next(
-            (pid for pid, label in provider_labels.items() if label == selected_provider_label),
-            "openrouter",
-        )
+        selected_provider = provider_label_to_id.get(selected_provider_label, "openrouter")
         st.session_state["provider"] = selected_provider
 
         try:
             all_models = service_router.list_models(selected_provider) or []
-        except Exception:
+        except Exception as e:
             all_models = []
+            st.session_state["models_debug_load_error"] = f"{type(e).__name__}: {e}"
+
+        # DEBUG VISÍVEL
+        st.caption(f"Provider selecionado: {selected_provider}")
+        st.caption(f"Modelos encontrados: {len(all_models)}")
+        if all_models:
+            st.code("\n".join(all_models[:10]))
+        else:
+            st.warning(f"Nenhum modelo retornado para provider={selected_provider}")
 
         if not all_models:
             all_models = [FALLBACK_MODEL]
@@ -2356,8 +2376,8 @@ def _render_sidebar() -> None:
 
         try:
             prov_detected = None
-            if hasattr(service_router, "_provider_for"):
-                prov_detected = service_router._provider_for(
+            if hasattr(service_router, "resolve_provider"):
+                prov_detected = service_router.resolve_provider(
                     str(st.session_state.get("model") or "").strip()
                 )
 
@@ -2366,9 +2386,6 @@ def _render_sidebar() -> None:
             )
         except Exception:
             st.caption("🔌 Provider detectado: **—**")
-            st.write("provider_label:", provider_label)
-            st.write("provider_key:", provider_key)
-            st.write("models_for_provider:", models_for_provider)
 
         st.markdown("---")
 
