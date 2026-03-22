@@ -8,21 +8,13 @@ import cloudinary
 import cloudinary.uploader
 
 
-# ==========================================================
-# CONFIG FIXA VIA CLOUDINARY_URL
-# ==========================================================
-CLOUDINARY_URL=cloudinary://<133845212134728>:<3biOYu17wxMikhrfTd0QJ65zvJI>@drupewp1y
-
-
 def _ensure_cloudinary_config() -> None:
-    url = str(CLOUDINARY_URL or "").strip() or os.getenv("CLOUDINARY_URL", "").strip()
-
-    if not url:
-        raise RuntimeError("CLOUDINARY_URL não definida.")
-
-    os.environ["CLOUDINARY_URL"] = url
-
-    cloudinary.config(secure=True)
+    cloudinary.config(
+        cloud_name="drupewp1y",
+        api_key="133845212134728",
+        api_secret="3biOYu17wxMikhrfTd0QJ65zvJI",
+        secure=True,
+    )
 
 
 # ==========================================================
