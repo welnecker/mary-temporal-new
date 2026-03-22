@@ -2367,6 +2367,10 @@ def _render_sidebar() -> None:
         except Exception:
             st.caption("🔌 Provider detectado: **—**")
 
+            st.write("provider_label:", provider_label)
+            st.write("provider_key:", provider_key)
+            st.write("models_for_provider:", models_for_provider)
+
         st.markdown("---")
 
         # ==========================================================
