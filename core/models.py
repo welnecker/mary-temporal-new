@@ -24,6 +24,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "together/moonshotai/Kimi-K2.5",
         "together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
         "together/zai-org/GLM-4.7",
+        "ServiceNow-AI/Apriel-1.5-15b-Thinker",
     ],
     "hf": [
         "moonshotai/Kimi-K2-Instruct-0905:fireworks-ai",
