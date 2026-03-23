@@ -17,6 +17,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "moonshotai/kimi-k2.5",
         "minimax/minimax-m2.5",
         "stepfun/step-3.5-flash",
+        "arcee-ai/trinity-large-preview:free",
     ],
     "together": [
         "together/zai-org/GLM-5",
