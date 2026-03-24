@@ -18,7 +18,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "minimax/minimax-m2.5",
         "stepfun/step-3.5-flash",
         "openai/gpt-5-nano",
-        "mistralai/mistral-small-creative",
+        "nex-agi/deepseek-v3.1-nex-n1",
     ],
     "together": [
         "together/zai-org/GLM-5",
