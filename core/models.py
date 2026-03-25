@@ -10,7 +10,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "tngtech/deepseek-r1t2-chimera",
         "xiaomi/mimo-v2-flash",
         "deepseek/deepseek-chat-v3-0324",
-        "anthropic/claude-3.5-haiku",
+        "deepseek/deepseek-v3.2",
         "openrouter/hunter-alpha",
         "nousresearch/hermes-3-llama-3.1-405b",
         "google/gemini-3-flash-preview",
