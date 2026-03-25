@@ -6,18 +6,13 @@ from typing import Dict, List, Optional
 
 MODEL_REGISTRY: Dict[str, List[str]] = {
     "openrouter": [
-        "x-ai/grok-4.1-fast",
-        "tngtech/deepseek-r1t2-chimera",
+        "deepseek/deepseek-v3.2",
+        "openai/gpt-oss-120b",
+        "x-ai/grok-4.1-fast",        
         "xiaomi/mimo-v2-flash",
         "deepseek/deepseek-chat-v3-0324",
-        "deepseek/deepseek-v3.2",
-        "openrouter/hunter-alpha",
-        "nousresearch/hermes-3-llama-3.1-405b",
-        "google/gemini-3-flash-preview",
-        "moonshotai/kimi-k2.5",
-        "minimax/minimax-m2.5",
-        "openai/gpt-5-nano",
-        "nex-agi/deepseek-v3.1-nex-n1",
+        "openrouter/hunter-alpha",       
+        "google/gemini-3-flash-preview",             
         "stepfun/step-3.5-flash:free",
     ],
     "together": [
