@@ -5947,6 +5947,7 @@ class MaryService(BaseCharacter):
         janio_focus_rule: str,
         topic_rule: str,
         emotional_persistence_rule: str,
+        facts_present_rule: str,
         virginity_rule: str,
         memory_fidelity_rule: str,
         user_finalizes_rule: str,
@@ -6009,6 +6010,7 @@ class MaryService(BaseCharacter):
     {user_authorship_rule}
     {continuity_rule}
     {facts_integrity_rule}
+    {facts_present_rule}
     {phone_message_rule}
     
     TIMELINE ATUAL: {timeline_final}
@@ -7123,6 +7125,20 @@ sem mover o usuário na cena.
 - Se não houver, o assunto ativo empurra a cena.
 """.strip()
 
+        emotional_persistence_rule = f"""
+[EMOÇÃO — CONTINUIDADE]
+
+Estado emocional atual: {emotion_now}
+
+Mary não reinicia neutra a cada turno.
+
+Ela carrega o clima anterior
+e só muda com gatilho narrativo real.
+
+Mudanças emocionais devem ter transição.
+""".strip()
+
+
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE
         # ==========================================================
@@ -7567,6 +7583,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             janio_focus_rule=janio_focus_rule,
             topic_rule=topic_rule,
             emotional_persistence_rule=emotional_persistence_rule,
+            facts_present_rule=facts_present_rule,
             virginity_rule=virginity_rule,
             memory_fidelity_rule=memory_fidelity_rule,
             user_finalizes_rule=user_finalizes_rule,
