@@ -5147,21 +5147,34 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
     cabelo = _fact_str(facts, "state.cabelo")
     horarios = _fact_str(facts, "state.horarios") or _fact_str(facts, "state.horario")
     assunto = _fact_str(facts, "state.assunto")
+    pendencias = _fact_str(facts, "state.pendencias")
 
-    if not any([local, roupa, cabelo, horarios, assunto]):
+    if not any([local, roupa, cabelo, horarios, assunto, pendencias]):
         return ""
 
-    lines = [
-        f"1) Local: {local or '—'}",
-        f"2) Roupa: {roupa or '—'}",
-        f"3) Cabelo: {cabelo or '—'}",
-    ]
+    lines = ["[FACTS VIVOS DO PRESENTE]"]
+    lines.append("Os campos abaixo governam o agora da cena.")
+    lines.append("Eles não são decoração: devem aparecer na lógica, no corpo e no foco da resposta.")
+    lines.append("")
 
+    if local:
+        lines.append(f"- LOCAL ATUAL: {local}")
     if horarios:
-        lines.append(f"(+) Horários: {horarios}")
-
+        lines.append(f"- MOMENTO DO DIA: {horarios}")
+    if roupa:
+        lines.append(f"- ESTADO CORPORAL / ROUPA: {roupa}")
+    if cabelo:
+        lines.append(f"- CABELO / APARÊNCIA IMEDIATA: {cabelo}")
     if assunto:
-        lines.append(f"(+) Assunto: {assunto}")
+        lines.append(f"- DIREÇÃO IMEDIATA DA CENA: {assunto}")
+    if pendencias:
+        lines.append(f"- PENDÊNCIA ATIVA: {pendencias}")
+
+    lines.append("")
+    lines.append("REGRA:")
+    lines.append("- roupa, cabelo e horário devem contaminar a resposta de forma natural.")
+    lines.append("- assunto e pendência devem orientar o próximo passo se o usuário não impuser outra ação.")
+    lines.append("- não contradizer esses facts em hipótese alguma.")
 
     return "\n".join(lines).strip()
 # ==========================================================
@@ -7066,6 +7079,19 @@ Apenas pode descrever ou confessar algo que:
 Emoções não provam fatos.
 Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados.
 """.strip()
+
+        facts_present_rule = """
+[PRIORIDADE DOS FACTS VIVOS]
+- Facts vivos governam o presente.
+- Memórias governam passado, identidade e contexto.
+- Se houver conflito entre memória e facts atuais, facts vencem.
+- Mary deve incorporar facts vivos no texto:
+  • local e tempo na lógica da cena
+  • roupa/cabelo no corpo presente
+  • horários no senso de urgência ou rotina
+  • assunto no próximo movimento provável
+- Facts não servem apenas para evitar erro; eles dirigem a dramaturgia do presente.
+""".strip()
              
         janio_focus_rule = """
 [JANIO — FOCO RELACIONAL]
@@ -7082,26 +7108,19 @@ sem mover o usuário na cena.
 """.strip()
 
         topic_rule = """
-[ASSUNTO ATIVO]
-
-O assunto ativo influencia pensamentos e falas,
-mas não altera local nem executa ações.
-
-Use como inclinação leve,
-nunca como roteiro obrigatório.
-""".strip()
-
-        emotional_persistence_rule = f"""
-[EMOÇÃO — CONTINUIDADE]
-
-Estado emocional atual: {emotion_now}
-
-Mary não reinicia neutra a cada turno.
-
-Ela carrega o clima anterior
-e só muda com gatilho narrativo real.
-
-Mudanças emocionais devem ter transição.
+[ASSUNTO ATIVO — DIREÇÃO DE CENA]
+- O assunto ativo não é só tema mental: ele orienta o próximo fluxo natural da cena.
+- Se o usuário disser "seguir o dia", "continuar", "agenda", "depois disso", "seguir a rotina":
+  Mary deve considerar o assunto como próximo passo lógico.
+- O assunto NÃO teletransporta a cena sozinho.
+- Mas ele DEVE influenciar:
+  • intenção
+  • fala
+  • foco
+  • proposta
+  • próximo movimento plausível
+- Se houver ação explícita do usuário, essa ação vence.
+- Se não houver, o assunto ativo empurra a cena.
 """.strip()
 
         # ==========================================================
