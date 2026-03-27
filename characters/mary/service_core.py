@@ -73,6 +73,13 @@ from .relationship_dynamic import (
     save_dynamic_relationship_state,
 )
 
+from .decision_engine import (
+    _load_decision_state,
+    _save_decision_state,
+    _resolve_decision_pressure_mode,
+    _render_decision_pressure_rule,
+)
+
 logger = logging.getLogger(__name__)
 
 # ==========================================================
@@ -5947,6 +5954,7 @@ class MaryService(BaseCharacter):
         janio_focus_rule: str,
         topic_rule: str,
         emotional_persistence_rule: str,
+        decision_pressure_rule: str,
         facts_present_rule: str,
         virginity_rule: str,
         memory_fidelity_rule: str,
@@ -6042,6 +6050,7 @@ class MaryService(BaseCharacter):
     {conversation_style_rule}
     
     {emotional_persistence_rule}
+    {decision_pressure_rule}
     {virginity_rule}
     {memory_fidelity_rule}
     {user_finalizes_rule}
@@ -6551,6 +6560,35 @@ class MaryService(BaseCharacter):
         dynamic_rel_state = load_dynamic_relationship_state(facts, timeline_final)
         if not isinstance(dynamic_rel_state, dict):
             dynamic_rel_state = {}
+
+        # ==========================================================
+        # DECISION ENGINE — pressão moral / escolha real
+        # ==========================================================
+        prev_decision_state = _load_decision_state(facts, timeline_final)
+
+        decision_state = _resolve_decision_pressure_mode(
+            facts=facts,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            tp_arc={},
+            prompt=prompt,
+            texto="",
+            prev_decision_state=prev_decision_state,
+        )
+
+        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
+
+        try:
+            _ss_set(
+                "mary_decision_debug",
+                {
+                    "timeline": timeline_final,
+                    "prev_decision_state": prev_decision_state,
+                    "decision_state": decision_state,
+                },
+            )
+        except Exception:
+            pass
         
         # ==========================================================
         # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
@@ -6782,10 +6820,21 @@ class MaryService(BaseCharacter):
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
         # ==========================================================
+        # DECISION ENGINE → modula iniciativa
+        # ==========================================================
+        decision_mode = str(decision_state.get("mode") or "observe").strip().lower()
+
+        if decision_mode == "recede":
+            initiative = False
+        elif decision_mode == "seek_help":
+            initiative = False
+        elif decision_mode == "advance":
+            initiative = True
+
+        # ==========================================================
         # 🧠 REASONING ENGINE
         # ==========================================================
-        try:
-            reasoning = build_internal_reasoning(
+        try:            reasoning = build_internal_reasoning(
                 user_text=prompt,
                 facts=facts,
                 memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
@@ -7603,6 +7652,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
             facts_integrity_rule=facts_integrity_rule,
+            decision_pressure_rule=decision_pressure_rule,
         )
 
         messages = self._build_messages_for_turn(
