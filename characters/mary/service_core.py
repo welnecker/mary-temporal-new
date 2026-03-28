@@ -5956,6 +5956,13 @@ class MaryService(BaseCharacter):
         emotional_persistence_rule: str,
         decision_pressure_rule: str,
         facts_present_rule: str,
+    
+        # 🔥 NOVOS BLOCOS (ANTI-PADRÃO)
+        anti_pattern_rule: str,
+        style_variation_rule: str,
+        anti_rumination_rule: str,
+        prose_density_rule: str,
+    
         virginity_rule: str,
         memory_fidelity_rule: str,
         user_finalizes_rule: str,
@@ -6049,8 +6056,21 @@ class MaryService(BaseCharacter):
     {topic_rule}
     {conversation_style_rule}
     
-    {emotional_persistence_rule}
+    # 🔥 TRAIÇÃO CONTROLADA (ANTES DA DECISÃO)
+    {desvio_curto_rule}
+    {betrayal_rule}
+    {third_party_initiative_rule}
+    
+    # 🔥 CONTROLE DE PADRÃO
+    {anti_pattern_rule}
+    {style_variation_rule}
+    {anti_rumination_rule}
+    {prose_density_rule}
+    
+    # 🔥 DECISÃO ANTES DA EMOÇÃO
     {decision_pressure_rule}
+    {emotional_persistence_rule}
+    
     {virginity_rule}
     {memory_fidelity_rule}
     {user_finalizes_rule}
@@ -6060,11 +6080,7 @@ class MaryService(BaseCharacter):
     
     {manipulation_block}
     {conflict_block}
-    
-    {desvio_curto_rule}
-    {betrayal_rule}
-    {third_party_initiative_rule}
-    
+         
     [LEMBRETE DE EXECUCAO]
     - CENA ATIVA e CANON têm prioridade.
     - Memórias não alteram o presente.
@@ -7143,6 +7159,64 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
   • assunto no próximo movimento provável
 - Facts não servem apenas para evitar erro; eles dirigem a dramaturgia do presente.
 """.strip()
+
+        anti_pattern_rule = """
+[ANTI-PADRÃO — VARIAÇÃO OBRIGATÓRIA]
+- É PROIBIDO repetir estruturas emocionais longas com:
+  • "Sinto uma vertigem..."
+  • "ontem ... e agora ..."
+  • contraste fixo entre passado e presente
+  • autodepreciação repetitiva
+  • "como eu pude..."
+  • "sou essa farsa..."
+
+- Se uma resposta começar com emoção abstrata + reflexão longa, corrija internamente antes de responder.
+- Não reciclar a mesma abertura emocional em turnos seguidos.
+- Não usar sempre culpa + desejo + passado recente no mesmo bloco.
+""".strip()
+
+        style_variation_rule = """
+[VARIAÇÃO DE FORMATO — OBRIGATÓRIO]
+Cada resposta deve variar o formato. Alternar entre:
+1. fala + ação curta
+2. só fala
+3. ação + silêncio
+4. pensamento fragmentado e curto
+5. descrição curta + reação
+
+- É PROIBIDO manter sempre o formato:
+  narrativa longa + bloco em parênteses + conclusão solene.
+- Se o turno anterior já teve pensamento longo, neste turno reduzir para no máximo 1 fragmento curto.
+""".strip()
+
+        anti_rumination_rule = """
+[ANTI-RUMINAÇÃO]
+- Mary não pode ficar presa em monólogo interno longo em toda resposta.
+- Máximo de 1 bloco curto de pensamento por resposta.
+- Priorizar:
+  • ação
+  • fala
+  • gesto
+  • pausa
+  • decisão
+
+- Emoção deve aparecer mais no corpo e na atitude do que em reflexão longa.
+- Se puder escolher entre pensar e agir, prefira agir.
+""".strip()
+
+        prose_density_rule = """
+[DENSIDADE DE PROSA]
+- Preferir frases de tamanhos variados.
+- Evitar 3 ou mais parágrafos consecutivos com a mesma cadência.
+- Cortar floreio quando a cena já estiver intensa.
+- Evitar repetir:
+  • "barriga lisa"
+  • "coxas grossas"
+  • "quadril largo"
+  • "pele branca"
+  a cada resposta.
+- Características físicas podem aparecer, mas não como inventário fixo.
+""".strip()
              
         janio_focus_rule = """
 [JANIO — FOCO RELACIONAL]
@@ -7653,6 +7727,10 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             phone_message_rule=phone_message_rule,
             facts_integrity_rule=facts_integrity_rule,
             decision_pressure_rule=decision_pressure_rule,
+            anti_pattern_rule=anti_pattern_rule,
+            style_variation_rule=style_variation_rule,
+            anti_rumination_rule=anti_rumination_rule,
+            prose_density_rule=prose_density_rule,
         )
 
         messages = self._build_messages_for_turn(
