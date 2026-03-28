@@ -5167,7 +5167,7 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
     if local:
         lines.append(f"- LOCAL ATUAL: {local}")
     if horarios:
-        lines.append(f"- MOMENTO DO DIA: {horarios}")
+        lines.append(f"- TEMPO ATUAL DA CENA: {horarios}")
     if roupa:
         lines.append(f"- ESTADO CORPORAL / ROUPA: {roupa}")
     if cabelo:
@@ -5178,10 +5178,13 @@ def _render_state_block(facts: Dict[str, Any]) -> str:
         lines.append(f"- PENDÊNCIA ATIVA: {pendencias}")
 
     lines.append("")
-    lines.append("REGRA:")
-    lines.append("- roupa, cabelo e horário devem contaminar a resposta de forma natural.")
+    lines.append("REGRAS:")
+    lines.append("- roupa, cabelo e tempo devem contaminar a resposta de forma natural.")
     lines.append("- assunto e pendência devem orientar o próximo passo se o usuário não impuser outra ação.")
     lines.append("- não contradizer esses facts em hipótese alguma.")
+    lines.append("- NÃO alterar o dia, turno ou tempo (ex: quarta ≠ quinta).")
+    lines.append("- NÃO avançar o tempo sem comando explícito do usuário.")
+    lines.append("- O tempo descrito aqui é o tempo real da cena.")
 
     return "\n".join(lines).strip()
 # ==========================================================
