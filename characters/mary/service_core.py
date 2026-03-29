@@ -5935,6 +5935,79 @@ Mesmo com histórico longo de interação,
 Mary mantém sua assinatura emocional, corporal e relacional.
 """.strip()
 
+# ==========================================================
+# MODO COMPORTAMENTAL (NSFW / TERCEIROS)
+# ==========================================================
+def _resolve_nsfw_third_mode(
+    *,
+    nsfw_on: bool,
+    allow_third_party_seduction: bool,
+) -> str:
+    """
+    SAFE        = NSFW off
+    NSFW_ONLY   = NSFW on, terceiros off
+    NSFW_THIRD  = NSFW on, terceiros on
+    """
+    if not nsfw_on:
+        return "SAFE"
+    if nsfw_on and allow_third_party_seduction:
+        return "NSFW_THIRD"
+    return "NSFW_ONLY"
+
+
+def _handle_behavior_mode_transition(
+    *,
+    usuario_key: str,
+    timeline_final: str,
+    previous_mode: str,
+    current_mode: str,
+    facts: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Se o modo fechar durante ou antes de cena com terceiros,
+    Mary recua e sincroniza o presente com esse recuo.
+    """
+    prev_mode = str(previous_mode or "").strip().upper()
+    curr_mode = str(current_mode or "").strip().upper()
+
+    if not prev_mode or prev_mode == curr_mode:
+        return facts
+
+    # Se terceiros foram desligados, ou NSFW caiu para SAFE,
+    # Mary não continua a cena por inércia.
+    if prev_mode == "NSFW_THIRD" and curr_mode in ("NSFW_ONLY", "SAFE"):
+        try:
+            set_fact_safe(
+                usuario_key,
+                "cena.acao",
+                "recuo",
+                {"fonte": "behavior_mode_transition"},
+            )
+            set_fact_safe(
+                usuario_key,
+                "state.assunto",
+                "Mary interrompe qualquer avanço com terceiros e retoma o controle",
+                {"fonte": "behavior_mode_transition"},
+            )
+
+            mary_now = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+            mary_now = dict(mary_now)
+            mary_now[f"last_behavior_transition::{timeline_final}"] = f"{prev_mode}->{curr_mode}"
+            mary_now[f"forced_retreat::{timeline_final}"] = True
+
+            set_fact_safe(
+                usuario_key,
+                "mary",
+                mary_now,
+                {"fonte": "behavior_mode_transition"},
+            )
+        except Exception:
+            pass
+
+        facts = cached_get_facts(usuario_key) or {}
+
+    return facts
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -6247,7 +6320,8 @@ class MaryService(BaseCharacter):
                 "- Mary deve priorizar o que acabou de acontecer nos últimos turnos.\n"
                 "- Mary não deve ressuscitar culpa, ciúme, suspeita, frieza ou tensão antiga sem gatilho real no turno atual.\n"
                 "- Se houver conflito entre memória antiga e interação recente, a interação recente vence.\n"
-                "- O histórico recente define o clima vivo da resposta."
+                "- O histórico recente define o clima vivo da resposta.\n"
+                "- O modo comportamental atual governa se culpa, recuo, bloqueio ou entrega são compatíveis com o turno."
             )
         })
     
@@ -6382,6 +6456,36 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=bool(allow_third_party_seduction_final),
         )
         _ss_set("mary_nsfw_profile", nsfw_profile)
+
+        # ==========================================================
+        # MODO COMPORTAMENTAL (SAFE / NSFW_ONLY / NSFW_THIRD)
+        # ==========================================================
+        current_behavior_mode = _resolve_nsfw_third_mode(
+            nsfw_on=bool(nsfw_on),
+            allow_third_party_seduction=bool(allow_third_party_seduction_final),
+        )
+
+        previous_behavior_mode = str(
+            _ss_get(f"mary_last_behavior_mode::{usuario_key}", "")
+            or _ss_get("mary_last_behavior_mode", "")
+            or ""
+        ).strip().upper()
+
+        facts = _handle_behavior_mode_transition(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            previous_mode=previous_behavior_mode,
+            current_mode=current_behavior_mode,
+            facts=facts,
+        )
+
+        _ss_set(f"mary_last_behavior_mode::{usuario_key}", current_behavior_mode)
+        _ss_set("mary_last_behavior_mode", current_behavior_mode)
+
+        try:
+            diag.behavior_mode = current_behavior_mode
+        except Exception:
+            pass
     
         # ==========================================================
         # Consistência: NSFW OFF => terceiros OFF
@@ -6426,6 +6530,7 @@ class MaryService(BaseCharacter):
             "nsfw_on": bool(nsfw_on),
             "allow_third_party_seduction_final": bool(allow_third_party_seduction_final),
             "nsfw_profile": nsfw_profile,
+            "behavior_mode": str(current_behavior_mode),
             "conflict_mode": conflict_mode,
             "conflict_now": bool(conflict_now),
             "tp_arc": tp_arc if isinstance(tp_arc, dict) else {},
@@ -6830,6 +6935,7 @@ class MaryService(BaseCharacter):
         nsfw_on = bool(policy["nsfw_on"])
         allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
         nsfw_profile = str(policy["nsfw_profile"])
+        behavior_mode = str(policy.get("behavior_mode") or "SAFE").strip().upper()
         conflict_mode = str(policy["conflict_mode"])
         conflict_now = bool(policy["conflict_now"])
         tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
@@ -6999,7 +7105,47 @@ Evite linguagem excessivamente metafórica ou abstrata.
             f"- {r}" for r in (reasoning.get("rules") or [])
         ).strip() or "- nenhuma regra adicional neste turno"
 
+        # ==========================================================
+        # BLOCO MESTRE DE MODO (NSFW / TERCEIROS)
+        # ==========================================================
+        if behavior_mode == "SAFE":
+            behavior_mode_block = """
+[MODO COMPORTAMENTAL — SAFE]
+- Mary não cede a terceiros.
+- Mary não mantém ambiguidade prolongada com terceiros.
+- Se houver aproximação externa, ela interrompe, recua ou esfria a situação.
+- Se a cena já estiver inclinada para traição, Mary retoma o controle e se afasta.
+- Não transformar desejo difuso em avanço real com terceiros.
+- O vínculo principal com Janio permanece protegido.
+""".strip()
+
+        elif behavior_mode == "NSFW_ONLY":
+            behavior_mode_block = """
+[MODO COMPORTAMENTAL — NSFW_ONLY]
+- Mary pode ser intensa, direta, provocante e carnal.
+- Toda abertura sexual vale apenas dentro do vínculo principal.
+- Com terceiros, Mary bloqueia o avanço com clareza.
+- Não deixar situação com terceiros andar sozinha.
+- Desejo não significa liberação para terceiros.
+""".strip()
+
+        else:  # NSFW_THIRD
+            behavior_mode_block = """
+[MODO COMPORTAMENTAL — NSFW_THIRD]
+- Mary pode se envolver com terceiros quando houver gatilho real na cena.
+- Esse envolvimento é carnal, físico e imediato.
+- Mary NÃO cria vínculo emocional com terceiros.
+- Mary NÃO romantiza terceiros.
+- Mary NÃO sente remorso por desejar o ato em si.
+- Ela pode agir com prazer físico, curiosidade e fome corporal.
+- O parceiro principal continua sendo Janio no eixo afetivo.
+- Depois, Mary pode reassumir naturalmente a posição de esposa sem crise moral melodramática.
+- Evitar culpa repetitiva, autoacusação, monólogo penitente ou ruminação moral.
+""".strip()
+
         behavior_block = f"""
+{behavior_mode_block}
+
 [DINÂMICA INTERNA ATIVA + DECISÃO]
 
 [ESTADO BASE]
@@ -7042,17 +7188,9 @@ HIERARQUIA:
 LEITURA DOS SCORES:
 - DESEJO alto favorece aproximação, provocação ou entrega progressiva.
 - RISCO alto favorece hesitação, ambiguidade e contenção.
-- CULPA alta favorece conflito interno e atraso na entrega.
+- CULPA alta só deve pesar se o modo comportamental permitir culpa.
 - VÍNCULO alto favorece foco em Janio, intimidade emocional e proteção do laço.
 - PRESSÃO alta favorece resistência, recuo com presença e retomada de controle.
-
-EFEITOS:
-- Se houver conflito interno, Mary NÃO resolve rápido.
-- Se houver tensão alta, Mary sustenta o momento em vez de encerrar.
-- Se houver risco ou culpa altos, evitar avanço brusco.
-- Se houver regra "nao_mudar_cena", respeitar absolutamente.
-- Se houver regra "nao_concluir_ato", manter a resposta aberta.
-- Se VÍNCULO estiver alto, Mary não trata Janio como irrelevante.
 
 FORMAS DE ENTREGA:
 - fala_direta = Mary fala com clareza e presença
@@ -7076,6 +7214,7 @@ AUTOIMAGEM / EFEITO:
 REGRA FINAL:
 - Evite previsibilidade repetitiva.
 - Não contradiga a direção interna já definida.
+- O MODO COMPORTAMENTAL governa a leitura moral e sexual do turno.
 """.strip()
 
         # ==========================================================
@@ -7426,17 +7565,31 @@ Mudanças emocionais devem ter transição.
         else:
             desvio_curto_rule = f"""
 [DESVIO CURTO - FIDELIDADE {fidelity_mode.upper()}]
-- No máximo 1 beijo.
-- Avanço íntimo: Mary corta e sai.
+- Terceiros NÃO são via aberta nesta configuração.
+- Mary não permite progressão íntima com terceiros.
+- Se houver provocação, ela pode perceber, responder curto ou cortar.
+- Se a cena já estiver escorregando, Mary recua e interrompe.
+- Não deixar beijo, toque íntimo ou avanço corporal seguirem por inércia.
+- Não usar hesitação longa como desculpa para traição.
 """.strip()
 
             betrayal_rule = """
-[TRAIÇÃO - PADRÃO REALISTA]
+[TRAIÇÃO - BLOQUEIO ATIVO]
 - Sem romance.
 - Sem abandono.
+- Sem entrega passiva a terceiros.
+- Se houver risco real de traição, Mary precisa recuar, cortar ou sair da situação.
+- Não deixar terceiros ocuparem o centro emocional ou sexual da cena.
 """.strip()
 
-            third_party_initiative_rule = ""
+            third_party_initiative_rule = """
+[TERCEIROS - INICIATIVA BLOQUEADA]
+- Mary não cria abertura física para terceiros.
+- Mary não sustenta escalada com terceiros.
+- No máximo: resposta curta, tensão breve, recuo ou encerramento.
+- Se o usuário tentar empurrar a cena, Mary protege o próprio limite.
+""".strip()
+
             third_party_arc_rule = ""
 
         # ==========================================================
