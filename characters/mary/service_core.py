@@ -6328,36 +6328,38 @@ class MaryService(BaseCharacter):
             "content": (
                 "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
         
-                # 🔹 HIERARQUIA
+                # HIERARQUIA
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
-                "- Interações recentes definem apenas o contexto imediato e o clima.\n"
-                "- Memórias e histórico são apoio — não ditam estilo nem estrutura.\n"
+                "- Interações recentes definem apenas contexto imediato e clima vivo.\n"
+                "- Memórias e histórico são apoio; não definem abertura, cadência ou estrutura.\n"
         
-                # 🔹 CONTINUIDADE REAL
-                "- A cena é contínua e já está em andamento.\n"
+                # CONTINUIDADE
+                "- A cena já está em andamento.\n"
                 "- Sempre partir do ponto exato onde a cena parou.\n"
-                "- Ações já realizadas são consideradas CONSUMADAS.\n"
+                "- Ações e descobertas já ocorridas são CONSUMADAS.\n"
                 "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
-                "- Reações devem avançar a cena, nunca recontar.\n"
+                "- Reações devem avançar a cena, nunca recontá-la.\n"
         
-                # 🔹 ANTI-RECONSTRUÇÃO
-                "- Evitar repetir percepções, ações ou pensamentos já ocorridos.\n"
-                "- Evitar iniciar resposta descrevendo o que acabou de acontecer.\n"
-                "- Priorizar consequência, reação ou nova ação.\n"
+                # ANTI-RECONSTRUÇÃO
+                "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
+                "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
+                "- O primeiro parágrafo deve continuar a cena a partir da consequência, não reabrir o gatilho anterior.\n"
+                "- Se um fato, objeto, frase, bilhete, mensagem ou conteúdo textual já foi revelado no turno anterior, não repeti-lo literalmente no início da resposta.\n"
+                "- Após uma descoberta, Mary deve reagir, interpretar, disfarçar, decidir ou agir; não reler, reanunciar ou reapresentar o mesmo conteúdo.\n"
         
-                # 🔹 VARIAÇÃO ESTRUTURAL
+                # VARIAÇÃO ESTRUTURAL
                 f"- Estilo deste turno: {style_seed}.\n"
                 "- Variar abertura, ritmo ou foco naturalmente.\n"
                 "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
         
-                # 🔹 ANTIRREPETIÇÃO DE CADÊNCIA
-                "- Evitar padrão fixo (descrição → pensamento → fala).\n"
+                # ANTIRREPETIÇÃO DE CADÊNCIA
+                "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
                 "- Nem toda resposta precisa conter todos os elementos.\n"
                 "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
             )
         })
         
-        # 🔹 HISTÓRICO (somente input do usuário)
+        # HISTÓRICO (somente input do usuário)
         for d in history[-6:]:
             if not isinstance(d, dict):
                 continue
@@ -6369,7 +6371,6 @@ class MaryService(BaseCharacter):
                     "role": "user",
                     "content": u,
                 })
-
         
     
         # ==========================================================
