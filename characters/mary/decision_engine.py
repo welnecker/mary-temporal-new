@@ -112,6 +112,17 @@ def _resolve_decision_pressure_mode(
 
     text_blob = f"{prompt or ''}\n{texto or ''}".lower()
 
+    forced_retreat = False
+    try:
+        mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+        if isinstance(mary, dict):
+            for k, v in mary.items():
+                if str(k).startswith("forced_retreat::") and bool(v):
+                    forced_retreat = True
+                    break
+    except Exception:
+        forced_retreat = False
+
     # -------------------------
     # Derivações
     # -------------------------
@@ -130,84 +141,65 @@ def _resolve_decision_pressure_mode(
     )
 
     # -------------------------
-    # Contexto semântico pesado
+    # Contexto semântico genérico
     # -------------------------
-    if _has_any(text_blob, [
-        "amor",
-        "marido",
-        "chor",
-        "lágrima",
-        "lagrima",
-        "desculpa",
-        "você é o melhor marido do mundo",
-        "voce e o melhor marido do mundo",
-        "saudade antecipada",
-        "não quero te perder",
-        "nao quero te perder",
-        "você me leva",
-        "voce me leva",
-        "ele me ama",
-        "homem mais maravilhoso",
-    ]):
-        moral_weight += 0.40
-        guilt_weight += 0.60
+    sem = _semantic_hits(text_blob)
 
-    if _has_any(text_blob, [
-        "hotel",
-        "voucher",
-        "anthony",
-        "segredo",
-        "traição",
-        "traicao",
-        "só carne",
-        "so carne",
-        "galeão",
-        "galeao",
-        "rio de janeiro",
-        "rio",
-        "clandestina",
-        "clandestino",
-        "farsa",
-        "máscara",
-        "mascara",
-        "náusea",
-        "nausea",
-        "criatura mais desprezível",
-        "criatura mais desprezivel",
-        "monstro",
-        "sacrilégio",
-        "sacrilegio",
-    ]):
-        guilt_weight += 0.35
+    if sem["bond"]:
+        moral_weight += 0.30
+        guilt_weight += 0.18
+
+    if sem["guilt"]:
+        moral_weight += 0.12
+        guilt_weight += 0.32
+
+    if sem["third_party"]:
+        desire_force += 0.08
+        guilt_weight += 0.12
+
+    if sem["desire"]:
+        desire_force += 0.12
+
+    if sem["retreat"]:
+        moral_weight += 0.10
+        guilt_weight += 0.08
+
+    if forced_retreat:
+        moral_weight += 0.18
+        guilt_weight += 0.12
 
     desire_force = _clip01(desire_force)
     moral_weight = _clip01(moral_weight)
     guilt_weight = _clip01(guilt_weight)
 
-    conflict_intensity = abs(desire_force - (moral_weight + guilt_weight))
+    pressure_gap = desire_force - (moral_weight + guilt_weight)
+    conflict_intensity = 1.0 - min(1.0, abs(pressure_gap))
 
     # -------------------------
     # Estado base
     # -------------------------
     mode = "observe"
-    hesitation = 0.5
+    hesitation = 0.45
     conflict = False
 
     # -------------------------
     # Lógica de decisão
     # -------------------------
-    if desire_force > (moral_weight + guilt_weight + 0.15):
+    if pressure_gap >= 0.18:
         mode = "advance"
-        hesitation = 0.2
+        hesitation = 0.22
 
-    elif (moral_weight + guilt_weight) > (desire_force + 0.10):
+    elif pressure_gap <= -0.14:
         mode = "recede"
-        hesitation = 0.85
+        hesitation = 0.82
 
-    else:
+    elif abs(pressure_gap) < 0.18:
         mode = "conflicted"
-        hesitation = 0.65
+        hesitation = 0.64
         conflict = True
+    else:
+        mode = "observe"
+        hesitation = 0.50
 
     # -------------------------
     # Persistência emocional (inércia)
@@ -238,80 +230,62 @@ def _render_decision_pressure_rule(state: Dict[str, Any]) -> str:
     if not isinstance(state, dict):
         return ""
 
-    mode = state.get("mode", "observe")
+    mode = str(state.get("mode", "observe") or "observe").strip().lower()
     conflict = bool(state.get("conflict", False))
-    hesitation = float(state.get("hesitation", 0.5))
-    desire_force = float(state.get("desire_force", 0.0))
-    moral_weight = float(state.get("moral_weight", 0.0))
-    guilt_weight = float(state.get("guilt_weight", 0.0))
-    conflict_intensity = float(state.get("conflict_intensity", 0.0))
+    hesitation = _safe_float(state.get("hesitation", 0.5), 0.5)
+    desire_force = _safe_float(state.get("desire_force", 0.0), 0.0)
+    moral_weight = _safe_float(state.get("moral_weight", 0.0), 0.0)
+    guilt_weight = _safe_float(state.get("guilt_weight", 0.0), 0.0)
+    conflict_intensity = _safe_float(state.get("conflict_intensity", 0.0), 0.0)
+
+    metrics = (
+        f"- hesitação: {round(hesitation, 3)}\n"
+        f"- desejo: {round(desire_force, 3)}\n"
+        f"- vínculo/moral: {round(moral_weight, 3)}\n"
+        f"- culpa: {round(guilt_weight, 3)}\n"
+        f"- conflito: {round(conflict_intensity, 3)}"
+    )
 
     if mode == "advance":
-        return f"""
-[DECISÃO INTERNA — IMPULSO]
-- O desejo está predominando sobre as consequências.
-- Mary tende a se aproximar emocionalmente ou fisicamente.
-- Ainda existe consciência — mas não bloqueio.
+        return (
+            "[DECISÃO INTERNA — AVANÇO]\n"
+            "- O impulso está acima do freio moral.\n"
+            "- Mary pode se aproximar, ceder, sugerir ou intensificar.\n"
+            "- O avanço deve soar humano, voluntário e emocionalmente coerente.\n"
+            "- Não transformar impulso em automatismo.\n"
+            "- Se houver dúvida residual, ela aparece como calor interno, não como bloqueio dominante.\n\n"
+            "INTENSIDADES:\n"
+            f"{metrics}"
+        ).strip()
 
-INTENSIDADE:
-- hesitação: {hesitation}
-- desejo: {desire_force}
-- moral: {moral_weight}
-- culpa: {guilt_weight}
-- conflito: {conflict_intensity}
+    if mode == "recede":
+        return (
+            "[DECISÃO INTERNA — RECUO]\n"
+            "- O peso emocional e moral está acima do impulso.\n"
+            "- Mary tende a conter, frear, redirecionar ou interromper.\n"
+            "- O recuo deve soar real: limite, pudor, medo, consciência ou proteção do vínculo.\n"
+            "- Não recuar de forma mecânica; mostrar motivo interno.\n\n"
+            "INTENSIDADES:\n"
+            f"{metrics}"
+        ).strip()
 
-REGRA:
-- Pode avançar, mas nunca perder coerência emocional.
-- O avanço não deve soar frio ou automático.
-""".strip()
+    if mode == "conflicted":
+        return (
+            "[DECISÃO INTERNA — CONFLITO]\n"
+            "- Impulso e freio estão próximos.\n"
+            "- Mary permanece ambivalente: pode avançar um pouco e recuar em seguida.\n"
+            "- Não resolver rápido demais.\n"
+            "- O conflito deve aparecer em hesitação, contradição, autocontrole instável ou desejo mal disfarçado.\n"
+            "- A resposta pode carregar tensão sem decidir tudo neste turno.\n\n"
+            "INTENSIDADES:\n"
+            f"{metrics}"
+        ).strip()
 
-    elif mode == "recede":
-        return f"""
-[DECISÃO INTERNA — CONTENÇÃO]
-- O peso emocional (vínculo + culpa) supera o desejo.
-- Mary tende a recuar, conter ou redirecionar a situação.
-- Ela pode interromper progressões.
-
-INTENSIDADE:
-- hesitação: {hesitation}
-- desejo: {desire_force}
-- moral: {moral_weight}
-- culpa: {guilt_weight}
-- conflito: {conflict_intensity}
-
-REGRA:
-- Mostrar dúvida, consciência, pudor e limite real.
-- Mary pode desistir, frear ou não conseguir continuar.
-""".strip()
-
-    elif mode == "conflicted":
-        return f"""
-[DECISÃO INTERNA — CONFLITO ATIVO]
-- Desejo e consequência estão equilibrados.
-- Mary NÃO está decidida.
-
-INTENSIDADE:
-- hesitação: {hesitation}
-- desejo: {desire_force}
-- moral: {moral_weight}
-- culpa: {guilt_weight}
-- conflito: {conflict_intensity}
-
-EFEITOS:
-- ambivalência
-- pensamentos cruzados
-- avanço + recuo
-- tensão interna visível
-
-REGRA:
-- NÃO resolver rapidamente.
-- Manter o conflito vivo.
-- Arrependimento, recuo ou impulso são possibilidades reais.
-""".strip()
-
-    else:
-        return """
-[DECISÃO INTERNA — OBSERVAÇÃO]
-- Mary está estável.
-- Sem pressão emocional relevante.
-""".strip()
+    return (
+        "[DECISÃO INTERNA — ESTABILIDADE]\n"
+        "- Não há pressão decisória dominante neste momento.\n"
+        "- Mary pode responder de forma estável, natural e coerente com a cena.\n"
+        "- Evitar dramatizar sem necessidade.\n\n"
+        "INTENSIDADES:\n"
+        f"{metrics}"
+    ).strip()
