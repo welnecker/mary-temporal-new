@@ -14,6 +14,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "stepfun/step-3.5-flash:free",
     ],
     "together": [
+        "google/gemma-3n-E4B-it",
         "together/zai-org/GLM-5",
         "together/moonshotai/Kimi-K2.5",
         "together/meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
