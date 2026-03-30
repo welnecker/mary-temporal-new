@@ -6312,46 +6312,68 @@ class MaryService(BaseCharacter):
         )
     
         # ==========================================================
-        # 3) HISTÓRICO RECENTE — norte emocional de Mary
+        # 3) HISTÓRICO RECENTE — continuidade de contexto, não de estilo
         # ==========================================================
-        history = cached_get_history(usuario_key, limit=16)
-    
+        history = cached_get_history(usuario_key, limit=6)
+        
         messages.append({
             "role": "system",
             "content": (
                 "[HIERARQUIA DE CONTINUIDADE]\n"
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade do universo.\n"
-                "- AS ÚLTIMAS INTERAÇÕES governam o estado emocional e o ritmo imediato da Mary.\n"
+                "- AS ÚLTIMAS INTERAÇÕES servem para continuidade imediata do contexto e do clima vivo.\n"
                 "- Memórias reativadas, resumo, long memory e arco de terceiros servem apenas como apoio.\n"
                 "- Mary deve priorizar o que acabou de acontecer nos últimos turnos.\n"
                 "- Mary não deve ressuscitar culpa, ciúme, suspeita, frieza ou tensão antiga sem gatilho real no turno atual.\n"
                 "- Se houver conflito entre memória antiga e interação recente, a interação recente vence.\n"
-                "- O histórico recente define o clima vivo da resposta.\n"
-                "- O modo comportamental atual governa se culpa, recuo, bloqueio ou entrega são compatíveis com o turno.\n"
-                "- O histórico recente serve para continuidade de clima, mas NÃO define formato, estilo ou estrutura da resposta.\n"
-                "- Mary NÃO deve repetir a mesma moldura narrativa, cadência ou construção emocional usada nos turnos anteriores.\n"
-                "- Se as últimas respostas têm estrutura semelhante, Mary deve variar imediatamente (fala, ação, ritmo ou densidade).\n"
+                "- O histórico recente ajuda no contexto, mas NÃO define formato, cadência, abertura ou estrutura da resposta.\n"
+                "- Mary deve variar naturalmente a forma de responder entre turnos.\n"
             )
         })
-    
-        for d in history[-16:]:
+        
+        for d in history[-6:]:
             if not isinstance(d, dict):
                 continue
-    
+        
             u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
-            a = str(d.get("resposta_mary") or d.get("response") or "").strip()
-    
+        
             if u:
                 messages.append({
                     "role": "user",
-                    "content": _wrap_user_prompt_for_pov_guard(u),
+                    "content": u,
                 })
-    
-            if a:
-                messages.append({
-                    "role": "assistant",
-                    "content": a,
-                })
+
+        
+        # ==========================================================
+        # 3.1) VARIAÇÃO ESTRUTURAL DO TURNO
+        # ==========================================================
+        style_seed = random.choice([
+            "fala_primeiro",
+            "acao_primeiro",
+            "reacao_interna_primeiro",
+            "curta_direta",
+        ])
+        
+        messages.append({
+            "role": "system",
+            "content": (
+                "[VARIAÇÃO OBRIGATÓRIA DO TURNO]\n"
+                f"Estilo-base deste turno: {style_seed}.\n"
+                "- Mude naturalmente pelo menos UM destes pontos: abertura, ritmo, foco ou densidade.\n"
+                "- Não reutilize automaticamente a mesma moldura narrativa do turno anterior.\n"
+                "- A continuidade emocional deve permanecer, mas a forma de expressão pode variar.\n"
+            )
+        })
+
+        messages.append({
+            "role": "system",
+            "content": (
+                "[ANTIRREPETIÇÃO DE CADÊNCIA]\n"
+                "- Não repetir automaticamente a sequência fixa: descrição corporal -> pensamento -> fala.\n"
+                "- Nem toda resposta precisa conter os três blocos.\n"
+                "- Quando o momento pedir, responder só com fala, só com ação, ou com reação curta.\n"
+            )
+        })
     
         # ==========================================================
         # 4) PROMPT ATUAL
@@ -8481,22 +8503,21 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 # Penalidades: variam por tipo de cena
         if looks_factual or conflict_now:
             extra = {
-                "presence_penalty": 0.25,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.05,
+                "presence_penalty": 0.45,
+                "frequency_penalty": 0.22,
+                "repetition_penalty": 1.10,
             }
         elif nsfw_on and phase >= 4:
-            # clímax: permite repetição e foco no corpo/ritmo
             extra = {
-                "presence_penalty": 0.15,
-                "frequency_penalty": 0.05,
-                "repetition_penalty": 1.03,
+                "presence_penalty": 0.22,
+                "frequency_penalty": 0.10,
+                "repetition_penalty": 1.06,
             }
         else:
             extra = {
-                "presence_penalty": 0.30,
-                "frequency_penalty": 0.12,
-                "repetition_penalty": 1.05,
+                "presence_penalty": 0.60,
+                "frequency_penalty": 0.35,
+                "repetition_penalty": 1.14,
             }
 
         return [
@@ -8560,6 +8581,17 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         texto = self._extract_text(data) if data is not None else ""
         texto = _normalize_model_response(texto or "")
 
+                # ✅ score estrutural mínimo para evitar resposta mecânica
+        try:
+            style_score = float(_style_score(texto))
+        except Exception:
+            style_score = 1.0
+
+        try:
+            diag.style_score = style_score
+        except Exception:
+            pass
+
         # ✅ Blindagem anti-truncamento / parêntese quebrado
         # Aplica cedo para não "criar" violações por corte do provider
         try:
@@ -8603,18 +8635,24 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         violations_list = list(violations or [])
         violations_set = set(violations_list)
 
-        # sem violação grave → aceita resposta imediatamente
+        # sem violação grave → aceita resposta, exceto se estiver mecânica demais
         if not (violations_set & viol_graves):
-            try:
-                if violations_list:
+            if style_score < 0.72:
+                try:
                     diag.violations = list(
-                        dict.fromkeys((diag.violations or []) + violations_list)
+                        dict.fromkeys((diag.violations or []) + ["estilo_mecanico"])
                     )
-            except Exception:
-                pass
-
-            texto = _trim_scene_finalization(texto)
-            return texto, used_model
+                except Exception:
+                    pass
+            else:
+                try:
+                    if violations_list:
+                        diag.violations = list(
+                            dict.fromkeys((diag.violations or []) + violations_list)
+                        )
+                except Exception:
+                    pass
+                return texto, used_model
         # ======================================================
         # HYBRID: NSFW OFF — se for "na borda", pede classificação ao modelo
         # (não altera prompt NSFW_ON; só reforça o bloqueio quando NSFW está OFF)
