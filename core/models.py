@@ -10,8 +10,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "deepseek/deepseek-v3.2",
         "x-ai/grok-4.1-fast",        
         "xiaomi/mimo-v2-flash",
-        "deepseek/deepseek-chat-v3-0324",
-        "openrouter/hunter-alpha",                  
+        "deepseek/deepseek-chat-v3-0324",                        
         "stepfun/step-3.5-flash:free",
     ],
     "together": [
