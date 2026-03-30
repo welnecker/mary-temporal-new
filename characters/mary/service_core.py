@@ -6736,35 +6736,7 @@ class MaryService(BaseCharacter):
         if not isinstance(dynamic_rel_state, dict):
             dynamic_rel_state = {}
 
-        # ==========================================================
-        # DECISION ENGINE — pressão moral / escolha real
-        # ==========================================================
-        prev_decision_state = _load_decision_state(facts, timeline_final)
-
-        decision_state = _resolve_decision_pressure_mode(
-            facts=facts,
-            rel_state=rel_state,
-            dynamic_rel_state=dynamic_rel_state,
-            tp_arc={},
-            prompt=prompt,
-            texto="",
-            prev_decision_state=prev_decision_state,
-        )
-
-        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
-
-        try:
-            _ss_set(
-                "mary_decision_debug",
-                {
-                    "timeline": timeline_final,
-                    "prev_decision_state": prev_decision_state,
-                    "decision_state": decision_state,
-                },
-            )
-        except Exception:
-            pass
-        
+                
         # ==========================================================
         # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
         # - pode alimentar ambas as Marys
@@ -6994,6 +6966,35 @@ class MaryService(BaseCharacter):
         initiative = bool(policy["initiative"])
         emotion_now = str(policy["emotion_now"] or "neutro")
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
+
+        # ==========================================================
+        # DECISION ENGINE — pressão moral / escolha real
+        # ==========================================================
+        prev_decision_state = _load_decision_state(facts, timeline_final)
+
+        decision_state = _resolve_decision_pressure_mode(
+            facts=facts,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            tp_arc={},
+            prompt=prompt,
+            texto="",
+            prev_decision_state=prev_decision_state,
+        )
+
+        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
+
+        try:
+            _ss_set(
+                "mary_decision_debug",
+                {
+                    "timeline": timeline_final,
+                    "prev_decision_state": prev_decision_state,
+                    "decision_state": decision_state,
+                },
+            )
+        except Exception:
+            pass
 
         # ==========================================================
         # DECISION ENGINE → modula iniciativa
