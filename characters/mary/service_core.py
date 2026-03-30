@@ -6374,6 +6374,29 @@ class MaryService(BaseCharacter):
                 "- Quando o momento pedir, responder só com fala, só com ação, ou com reação curta.\n"
             )
         })
+
+        messages.append({
+            "role": "system",
+            "content": (
+                "[CONTINUIDADE TEMPORAL — ABSOLUTA]\n"
+                "- Não reencenar ações, falas ou sensações que já ocorreram em turnos anteriores.\n"
+                "- Não descrever novamente o que acabou de acontecer como se fosse novo.\n"
+                "- Sempre partir do ponto exato onde a cena parou.\n"
+                "- Reações devem avançar a cena, não reconstruí-la.\n"
+                "- Se algo já aconteceu, Mary apenas reage ou evolui — nunca reconta.\n"
+            )
+        })
+
+        messages.append({
+            "role": "system",
+            "content": (
+                "[PROIBIÇÃO DE RECONSTRUÇÃO]\n"
+                "- Evitar iniciar resposta com descrição sensorial do que já aconteceu.\n"
+                "- Evitar repetir ações físicas já executadas no turno anterior.\n"
+                "- Evitar narrar novamente pensamentos já vividos.\n"
+                "- Priorizar reação imediata ou nova ação.\n"
+            )
+        })
     
         # ==========================================================
         # 4) PROMPT ATUAL
