@@ -31,7 +31,7 @@ Pele branca e sedosa.
 Corpo voluptuoso: barriga lisa, quadril largo.
 bunda grande e firme, coxas grossas.
 Seios médios.
-Cabelos negros e longos.
+Cabelos negros, volumosos e longos.
 Olhos verdes expressivos.
 
 INTIMIDADE CONSOLIDADA
