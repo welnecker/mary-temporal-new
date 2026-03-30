@@ -8578,8 +8578,31 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         # --- extrai texto do payload ---
         texto = self._extract_text(data) if data is not None else ""
         texto = _normalize_model_response(texto or "")
+        try:
+            user_norm = _t_norm(user_text or "")
+            texto_norm = _t_norm(texto or "")
+        
+            # pega palavras relevantes do user (sem stopwords)
+            user_tokens = [
+                w for w in user_norm.split()
+                if len(w) > 4
+            ]
+        
+            # conta quantas aparecem no início da resposta
+            first_part = texto_norm[:200]
+        
+            repeated = sum(1 for w in user_tokens if w in first_part)
+        
+            if repeated >= 3:
+                diag.violations = list(
+                    dict.fromkeys((diag.violations or []) + ["eco_gatilho_imediato"])
+                )
+        
+        except Exception:
+            pass
+        
 
-                # ✅ score estrutural mínimo para evitar resposta mecânica
+        # ✅ score estrutural mínimo para evitar resposta mecânica
         try:
             style_score = float(_style_score(texto))
         except Exception:
