@@ -8,7 +8,6 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
     "openrouter": [
         "google/gemini-3-flash-preview",  
         "deepseek/deepseek-v3.2",
-        "openai/gpt-oss-120b",
         "x-ai/grok-4.1-fast",        
         "xiaomi/mimo-v2-flash",
         "deepseek/deepseek-chat-v3-0324",
