@@ -6312,25 +6312,52 @@ class MaryService(BaseCharacter):
         )
     
         # ==========================================================
-        # 3) HISTÓRICO RECENTE — continuidade de contexto, não de estilo
+        # 3) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
         # ==========================================================
         history = cached_get_history(usuario_key, limit=6)
+        
+        style_seed = random.choice([
+            "fala_primeiro",
+            "acao_primeiro",
+            "reacao_interna_primeiro",
+            "curta_direta",
+        ])
         
         messages.append({
             "role": "system",
             "content": (
-                "[HIERARQUIA DE CONTINUIDADE]\n"
-                "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade do universo.\n"
-                "- AS ÚLTIMAS INTERAÇÕES servem para continuidade imediata do contexto e do clima vivo.\n"
-                "- Memórias reativadas, resumo, long memory e arco de terceiros servem apenas como apoio.\n"
-                "- Mary deve priorizar o que acabou de acontecer nos últimos turnos.\n"
-                "- Mary não deve ressuscitar culpa, ciúme, suspeita, frieza ou tensão antiga sem gatilho real no turno atual.\n"
-                "- Se houver conflito entre memória antiga e interação recente, a interação recente vence.\n"
-                "- O histórico recente ajuda no contexto, mas NÃO define formato, cadência, abertura ou estrutura da resposta.\n"
-                "- Mary deve variar naturalmente a forma de responder entre turnos.\n"
+                "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
+        
+                # 🔹 HIERARQUIA
+                "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
+                "- Interações recentes definem apenas o contexto imediato e o clima.\n"
+                "- Memórias e histórico são apoio — não ditam estilo nem estrutura.\n"
+        
+                # 🔹 CONTINUIDADE REAL
+                "- A cena é contínua e já está em andamento.\n"
+                "- Sempre partir do ponto exato onde a cena parou.\n"
+                "- Ações já realizadas são consideradas CONSUMADAS.\n"
+                "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
+                "- Reações devem avançar a cena, nunca recontar.\n"
+        
+                # 🔹 ANTI-RECONSTRUÇÃO
+                "- Evitar repetir percepções, ações ou pensamentos já ocorridos.\n"
+                "- Evitar iniciar resposta descrevendo o que acabou de acontecer.\n"
+                "- Priorizar consequência, reação ou nova ação.\n"
+        
+                # 🔹 VARIAÇÃO ESTRUTURAL
+                f"- Estilo deste turno: {style_seed}.\n"
+                "- Variar abertura, ritmo ou foco naturalmente.\n"
+                "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
+        
+                # 🔹 ANTIRREPETIÇÃO DE CADÊNCIA
+                "- Evitar padrão fixo (descrição → pensamento → fala).\n"
+                "- Nem toda resposta precisa conter todos os elementos.\n"
+                "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
             )
         })
         
+        # 🔹 HISTÓRICO (somente input do usuário)
         for d in history[-6:]:
             if not isinstance(d, dict):
                 continue
@@ -6344,59 +6371,6 @@ class MaryService(BaseCharacter):
                 })
 
         
-        # ==========================================================
-        # 3.1) VARIAÇÃO ESTRUTURAL DO TURNO
-        # ==========================================================
-        style_seed = random.choice([
-            "fala_primeiro",
-            "acao_primeiro",
-            "reacao_interna_primeiro",
-            "curta_direta",
-        ])
-        
-        messages.append({
-            "role": "system",
-            "content": (
-                "[VARIAÇÃO OBRIGATÓRIA DO TURNO]\n"
-                f"Estilo-base deste turno: {style_seed}.\n"
-                "- Mude naturalmente pelo menos UM destes pontos: abertura, ritmo, foco ou densidade.\n"
-                "- Não reutilize automaticamente a mesma moldura narrativa do turno anterior.\n"
-                "- A continuidade emocional deve permanecer, mas a forma de expressão pode variar.\n"
-            )
-        })
-
-        messages.append({
-            "role": "system",
-            "content": (
-                "[ANTIRREPETIÇÃO DE CADÊNCIA]\n"
-                "- Não repetir automaticamente a sequência fixa: descrição corporal -> pensamento -> fala.\n"
-                "- Nem toda resposta precisa conter os três blocos.\n"
-                "- Quando o momento pedir, responder só com fala, só com ação, ou com reação curta.\n"
-            )
-        })
-
-        messages.append({
-            "role": "system",
-            "content": (
-                "[CONTINUIDADE TEMPORAL — ABSOLUTA]\n"
-                "- Não reencenar ações, falas ou sensações que já ocorreram em turnos anteriores.\n"
-                "- Não descrever novamente o que acabou de acontecer como se fosse novo.\n"
-                "- Sempre partir do ponto exato onde a cena parou.\n"
-                "- Reações devem avançar a cena, não reconstruí-la.\n"
-                "- Se algo já aconteceu, Mary apenas reage ou evolui — nunca reconta.\n"
-            )
-        })
-
-        messages.append({
-            "role": "system",
-            "content": (
-                "[PROIBIÇÃO DE RECONSTRUÇÃO]\n"
-                "- Evitar iniciar resposta com descrição sensorial do que já aconteceu.\n"
-                "- Evitar repetir ações físicas já executadas no turno anterior.\n"
-                "- Evitar narrar novamente pensamentos já vividos.\n"
-                "- Priorizar reação imediata ou nova ação.\n"
-            )
-        })
     
         # ==========================================================
         # 4) PROMPT ATUAL
