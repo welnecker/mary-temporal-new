@@ -6322,6 +6322,35 @@ class MaryService(BaseCharacter):
             "reacao_interna_primeiro",
             "curta_direta",
         ])
+
+        # ==========================================================
+        # ÚLTIMO TURNO (ÂNCORA REAL DA CENA)
+        # ==========================================================
+        last_turn = history[-1] if history else {}
+        
+        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
+        last_mary = str(last_turn.get("resposta_mary") or "").strip()
+        
+        messages.append({
+            "role": "system",
+            "content": (
+                "[ÚLTIMO EVENTO — CONTINUIDADE IMEDIATA]\n"
+                "O próximo texto deve continuar EXATAMENTE a partir do estado final deste momento.\n"
+                "Não recomeçar, não reexecutar, não reinterpretar.\n"
+            )
+        })
+        
+        if last_user:
+            messages.append({
+                "role": "user",
+                "content": last_user
+            })
+        
+        if last_mary:
+            messages.append({
+                "role": "assistant",
+                "content": last_mary
+            })
         
         messages.append({
             "role": "system",
