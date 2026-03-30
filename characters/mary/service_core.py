@@ -6327,45 +6327,38 @@ class MaryService(BaseCharacter):
             "role": "system",
             "content": (
                 "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
-        
-                # HIERARQUIA
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
                 "- Interações recentes definem apenas contexto imediato e clima vivo.\n"
                 "- Memórias e histórico são apoio; não definem abertura, cadência ou estrutura.\n"
         
-                # CONTINUIDADE
                 "- A cena já está em andamento.\n"
                 "- Sempre partir do ponto exato onde a cena parou.\n"
-                "- Ações e descobertas já ocorridas são CONSUMADAS.\n"
+                "- Ações, descobertas e gestos já realizados são CONSUMADOS.\n"
                 "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
                 "- Reações devem avançar a cena, nunca recontá-la.\n"
         
-                # ANTI-RECONSTRUÇÃO
                 "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
                 "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
-                "- O primeiro parágrafo deve continuar a cena a partir da consequência, não reabrir o gatilho anterior.\n"
-                "- Se um fato, objeto, frase, bilhete, mensagem ou conteúdo textual já foi revelado no turno anterior, não repeti-lo literalmente no início da resposta.\n"
-                "- Após uma descoberta, Mary deve reagir, interpretar, disfarçar, decidir ou agir; não reler, reanunciar ou reapresentar o mesmo conteúdo.\n"
+                "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
+                "- Se um objeto já foi guardado, escondido, pego, lido ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
+                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se o usuário pedir ou se houver novo motivo real.\n"
+                "- Não usar o mesmo objeto secreto como eixo do primeiro parágrafo em turnos consecutivos.\n"
+                "- Após uma descoberta, Mary deve reagir, decidir, disfarçar, responder ou agir; não reabrir a cena com o mesmo gesto físico.\n"
         
-                # VARIAÇÃO ESTRUTURAL
                 f"- Estilo deste turno: {style_seed}.\n"
                 "- Variar abertura, ritmo ou foco naturalmente.\n"
                 "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
-        
-                # ANTIRREPETIÇÃO DE CADÊNCIA
                 "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
                 "- Nem toda resposta precisa conter todos os elementos.\n"
                 "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
             )
         })
         
-        # HISTÓRICO (somente input do usuário)
         for d in history[-6:]:
             if not isinstance(d, dict):
                 continue
         
             u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
-        
             if u:
                 messages.append({
                     "role": "user",
