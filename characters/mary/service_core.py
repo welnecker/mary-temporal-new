@@ -9770,4 +9770,3 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
-"""
