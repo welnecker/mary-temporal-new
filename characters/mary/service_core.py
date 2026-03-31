@@ -7732,7 +7732,8 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # 🧠 REASONING ENGINE
         # ==========================================================
-        try:            reasoning = build_internal_reasoning(
+        try:
+            reasoning = build_internal_reasoning(
                 user_text=prompt,
                 facts=facts,
                 memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
