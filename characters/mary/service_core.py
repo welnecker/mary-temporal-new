@@ -7672,6 +7672,8 @@ class MaryService(BaseCharacter):
         emotion_now = str(policy["emotion_now"] or "neutro")
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
+        intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
+
         # ==========================================================
         # DECISION ENGINE - pressão moral / escolha real
         # ==========================================================
