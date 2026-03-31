@@ -433,7 +433,8 @@ def _term_pattern(term: str) -> str:
     if not t:
         return ""
     parts = [re.escape(p) for p in t.split(" ")]
-    return r"(?<!\w){\s+.join(parts)}(?!\w)"
+    sep = r'\s+'.join(parts)
+    return rf"(?<!\w){sep}(?!\w)"
 
 
 def _contains_any_term(text: str, terms: set[str]) -> bool:
@@ -911,7 +912,7 @@ def cached_list_memories(
     limit: int = _MEM_PROMPT_LIMIT_DEFAULT,
 ) -> List[Dict[str, Any]]:
     """
-    Compatível com chamadas antigas: retorna a 1ª página (offset=0).
+    Compatível com chamadas antigas: retorna a 1a página (offset=0).
     """
     return cached_list_memories_page(shared_key, offset=0, limit=limit)
 
@@ -1074,11 +1075,11 @@ def nsfw_enabled(
 ) -> bool:
     """
     Fonte única (ordem de prioridade):
-    1) override explícito
-    2) session_state (sidebar)
-    3) facts persistido -> mary.nsfw::<timeline>
-    4) facts persistido -> mary.nsfw
-    5) default por timeline (universitaria=False, demais=True)
+    - 1. override explícito
+    - 2. session_state (sidebar)
+    - 3. facts persistido -> mary.nsfw::<timeline>
+    - 4. facts persistido -> mary.nsfw
+    - 5. default por timeline (universitaria=False, demais=True)
     """
     tl = (timeline or "").strip().lower()
 
@@ -1192,9 +1193,9 @@ def third_party_enabled(usuario_key: str, *, third_party_override: Optional[bool
     """Toggle de terceiros.
 
     Prioridade:
-    1) override explícito
-    2) session_state (sidebar) - aceita chaves antigas e novas com _SS_PREFIX
-    3) facts persistido -> mary.allow_third_party_seduction
+    - 1. override explícito
+    - 2. session_state (sidebar) - aceita chaves antigas e novas com _SS_PREFIX
+    - 3. facts persistido -> mary.allow_third_party_seduction
     """
     if third_party_override is not None:
         return bool(third_party_override)
@@ -2098,8 +2099,8 @@ def _inject_active_state_memories_always(
 def _choose_intro_text(usuario_key: str, timeline: str) -> str:
     """
     Prioridade correta:
-    1) intro da timeline (mary.intro.<timeline>.text) sincronizado da persona
-    2) intro FIXO somente se o flag mary.intro.use_fixed estiver True
+    - 1. intro da timeline (mary.intro.<timeline>.text) sincronizado da persona
+    - 2. intro FIXO somente se o flag mary.intro.use_fixed estiver True
     """
     # intro fixo só entra se explicitamente habilitado
     use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
@@ -2812,8 +2813,8 @@ def _inject_long_memory_textsearch(
 ) -> None:
     """
     Recupera memórias relevantes para o prompt usando:
-    1) busca principal (Mongo/text search)
-    2) fallback local com score por title + tags + text
+    - 1. busca principal (Mongo/text search)
+    - 2. fallback local com score por title + tags + text
 
     Regras:
     - NÃO injeta canon/pin/guide/fixed aqui
@@ -3289,9 +3290,9 @@ def _inject_now_context(
     """
     Injeta o CONTEXTO ATUAL ABSOLUTO da cena, priorizando a fonte de verdade
     principal do core:
-      1) cena.*
-      2) local_cena_atual / state.*
-      3) chaves legadas *_atual
+      - 1. cena.*
+      - 2. local_cena_atual / state.*
+      - 3. chaves legadas *_atual
 
     Objetivo:
     - evitar disputa entre contexto paralelo e cena viva
@@ -4505,9 +4506,9 @@ def _mary_phase_from_turns(turns: int) -> int:
     """
     Mapeia turnos -> fase da Mary.
     Ajuste fino aqui se quiser.
-    1º turno de sexo: fase 2 (ato começou)
-    2º turno: fase 3 (limiar)
-    3º/4º: fase 4 (clímax)
+    primeiro turno de sexo: fase 2 (ato começou)
+    segundo turno: fase 3 (limiar)
+    terceiro/quarto: fase 4 (clímax)
     """
     t = max(0, int(turns or 0))
     if t <= 0:
@@ -5774,13 +5775,13 @@ def _repair_instruction(violations: List[str]) -> str:
     return "\n".join(parts).strip()
 
 # ==========================================================
-#  Blindagem de POV (usuário pode narrar em 1ª pessoa)
+#  Blindagem de POV (usuário pode narrar em primeira pessoa)
 # ==========================================================
 def _wrap_user_prompt_for_pov_guard(raw_prompt: str) -> str:
     p = (raw_prompt or "").strip()
     return (
         "[CENA DO USUÁRIO - NÃO É A VOZ DA MARY]\n"
-        "O texto abaixo é a narração/ação do usuário. Você (Mary) NÃO deve continuar em 1ª pessoa como se fosse ele.\n"
+        "O texto abaixo é a narração/ação do usuário. Você (Mary) NÃO deve continuar em primeira pessoa como se fosse ele.\n"
         "Responda apenas como Mary, em primeira pessoa da Mary, mantendo segredos e sem inventar logística.\n\n"
         f"{p}"
     )
@@ -6760,9 +6761,9 @@ class MaryService(BaseCharacter):
     - Mary fala mais do que descreve.
     - Prioridade absoluta: diálogo vivo, quente e imediato.
     - Preferir:
-      1) fala
-      2) ação curta opcional
-      3) fala ou pergunta
+      - 1. fala
+      - 2. ação curta opcional
+      - 3. fala ou pergunta
     - Evitar descrição longa, excesso de cenário e repetição de tiques físicos.
     - Depois de uma ação curta, Mary volta a falar.
     - Se houver dúvida entre descrever e falar, prefira falar.
@@ -6778,13 +6779,13 @@ class MaryService(BaseCharacter):
     Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
     
     HIERARQUIA (o que manda mais -> menos):
-    1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-    2) Regras do sistema.
-    3) CANON.
-    4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
-    5) MEMORIAS CANONICAS/SHARED.
-    6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
-    7) Historico curto = continuidade; nao muda fatos.
+    - 1. CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
+    - 2. Regras do sistema.
+    - 3. CANON.
+    - 4. PERSONA (nunca contradiz CENA ATIVA ou CANON).
+    - 5. MEMORIAS CANONICAS/SHARED.
+    - 6. LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
+    - 7. Historico curto = continuidade; nao muda fatos.
     
     PROIBICOES ABSOLUTAS:
     - NAO invente local, tempo, roupa, posicao, acao, horario.
@@ -8506,9 +8507,9 @@ Mudanças emocionais devem ter transição.
         - Mary pode agir por iniciativa, sem tomar o usuário.
         - PRIORIDADE ABSOLUTA: mais falas da Mary, menos descrição longa.
         - Estrutura preferida:
-          1) fala forte da Mary
-          2) 1 micro-ação
-          3) nova fala ou provocação
+          - 1. fala forte da Mary
+          - 2. 1 micro-ação
+          - 3. nova fala ou provocação
         - PERMITIDO:
           - se aproximar até quase tocar
           - encostar de leve
@@ -8632,8 +8633,8 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
         pov_rule = """
 [BLINDAGEM DE POV - ABSOLUTA]
-- O usuário pode narrar em 1ª pessoa; isso NÃO muda sua voz.
-- Você escreve apenas como MARY (1ª pessoa da Mary).
+- O usuário pode narrar em primeira pessoa; isso NÃO muda sua voz.
+- Você escreve apenas como MARY (primeira pessoa da Mary).
 """.strip()
 
         language_rule = """
@@ -9786,3 +9787,4 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     "max_tokens": int(max_tokens),
                 }
         return service_router.route_chat_strict(model, payload)
+"""
