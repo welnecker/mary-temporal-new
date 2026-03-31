@@ -6922,6 +6922,7 @@ class MaryService(BaseCharacter):
             })
     
         dedupe_hashes: set = set()
+        history_docs = cached_get_history(usuario_key, limit=40)
     
         # ==========================================================
         # 1) CONTEXTO ESTRUTURAL — verdade do universo
