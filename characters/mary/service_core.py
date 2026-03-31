@@ -85,68 +85,306 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 # TERMOS CONFIGURÁVEIS / DOMÍNIO NARRATIVO
 # ==========================================================
+
+# ----------------------------------------------------------
+# STOPWORDS
+# ----------------------------------------------------------
+# Mantidas enxutas para não matar sinal narrativo útil.
+# Incluem formais e coloquiais mais comuns do português.
 DEFAULT_STOPWORDS_PT = {
-    "a","o","os","as","um","uma","uns","umas","de","do","da","dos","das","em","no","na","nos","nas","por","para",
-    "com","sem","que","e","ou","mas","se","como","quando","onde","porque","pq","pra","tá","to","tô","eu","vc","você",
-    "voce","ele","ela","gente","nós","nos","minha","meu","minhas","meus","teu","tua","seu","sua","isso","essa","esse",
-    "aqui","ali","lá","ta","tb","também","tambem","sabe","agora","hoje","ontem","amanhã","mesmo","assim","tipo"
+    "a","o","os","as","um","uma","uns","umas",
+    "de","do","da","dos","das",
+    "em","no","na","nos","nas",
+    "por","para","pra",
+    "com","sem",
+    "que","e","ou","mas","se","como","quando","onde","porque","pq",
+    "eu","tu","ele","ela","nós","nos","gente","você","voce","vc",
+    "meu","minha","meus","minhas","teu","tua","teus","tuas","seu","sua","seus","suas",
+    "isso","esse","essa","isto","aquilo",
+    "aqui","ali","lá",
+    "agora","hoje","ontem","amanhã",
+    "mesmo","assim","tipo",
+    "tá","ta","tô","to","tb","também","tambem",
+    "sabe"
 }
 
-# Termos que ajudam a priorizar o universo da personagem e elementos
-# recorrentes da vida dela, sem puxar terceiros à toa.
-DOMAIN_PRIORITY_TERMS = {
-    # Núcleo identitário
-    "mary","janio",
-
-    # Vida pessoal / formação / rotina
-    "formada","formado","formação","formacao","faculdade","curso","graduação","graduacao",
-    "profissão","profissao","trabalho","carreira",
-    "psicologia","medicina","engenharia","administração","administracao",
-    "ufes","instagram","pacientes","clínica","clinica",
-
-    # Cotidiano / ambientação humana
-    "casa","apartamento","cozinha","banheiro","quarto","sala","sofá","sofa",
-    "cama","roupão","roupao","toalha","espelho",
-    "café","cafe","jantar","almoço","almoco","rotina","descanso","descansar","dormir",
-
-    # Cenários recorrentes
-    "academia","orla","quiosque",
-
-    # Vínculos e marcos narrativos
-    "casamento","beijo","primeira vez"
+# ----------------------------------------------------------
+# NÚCLEO IDENTITÁRIO
+# ----------------------------------------------------------
+# Termos centrais da personagem e do vínculo principal.
+DOMAIN_IDENTITY_TERMS = {
+    "mary",
+    "janio",
+    "casal",
+    "marido",
+    "esposa",
+    "relacao",
+    "relação",
+    "casamento"
 }
 
-# Emoções e estados internos de Mary.
-# Aqui ficam sentimentos e tensões subjetivas — não eventos físicos explícitos.
+# ----------------------------------------------------------
+# AMBIENTAÇÃO / ESPAÇOS RECORRENTES
+# ----------------------------------------------------------
+# Lugares cotidianos e cenários que ajudam a ancorar a cena.
+DOMAIN_ENVIRONMENT_TERMS = {
+    "casa",
+    "apartamento",
+    "cozinha",
+    "banheiro",
+    "quarto",
+    "sala",
+    "sofá",
+    "sofa",
+    "cama",
+    "espelho",
+    "janela",
+    "rua",
+    "carro",
+    "academia",
+    "orla",
+    "quiosque",
+    "praia",
+    "hotel"
+}
+
+# ----------------------------------------------------------
+# ROTINA / VIDA HUMANA
+# ----------------------------------------------------------
+# Ações e elementos do cotidiano que reforçam naturalidade.
+DOMAIN_ROUTINE_TERMS = {
+    "rotina",
+    "descanso",
+    "descansar",
+    "dormir",
+    "acordar",
+    "banho",
+    "café",
+    "cafe",
+    "almoço",
+    "almoco",
+    "jantar",
+    "comer",
+    "beber",
+    "trabalho",
+    "carreira",
+    "profissão",
+    "profissao",
+    "curso",
+    "faculdade"
+}
+
+# ----------------------------------------------------------
+# OBJETOS / ELEMENTOS DE PRESENÇA CÊNICA
+# ----------------------------------------------------------
+# Itens comuns que ajudam a materializar o momento presente.
+DOMAIN_SCENE_OBJECT_TERMS = {
+    "roupa",
+    "roupão",
+    "roupao",
+    "toalha",
+    "celular",
+    "bolsa",
+    "perfume",
+    "sapato",
+    "lençol",
+    "lencol"
+}
+
+# ----------------------------------------------------------
+# EMOÇÕES / ESTADOS INTERNOS
+# ----------------------------------------------------------
+# Sentimentos e tensões subjetivas.
 DOMAIN_EMOTIONAL_TERMS = {
-    "segredo","promessa","culpa","ciume","ciúme","medo","abandono",
-    "saudade","amor","desejo","carência","carencia","vontade",
-    "insegurança","inseguranca","vergonha","ternura","afeto",
-    "ansiedade","ciúmes","tensão","tensao","pendência","pendencia"
+    "amor",
+    "afeto",
+    "ternura",
+    "saudade",
+    "vontade",
+    "desejo",
+    "carência",
+    "carencia",
+    "medo",
+    "culpa",
+    "ciúme",
+    "ciume",
+    "insegurança",
+    "inseguranca",
+    "vergonha",
+    "ansiedade",
+    "tensão",
+    "tensao",
+    "abandono"
 }
 
-# Eventos/marcos narrativos de alto impacto.
-# Separados das emoções para evitar que o sistema trate tudo como “estado emocional”.
-DOMAIN_EVENT_TERMS = {
-    "beijo","transa","sexo","gozar","orgasmo",
-    "primeira vez","virgem","virgindade",
-    "traição","traicao","casamento"
+# ----------------------------------------------------------
+# MARCOS LATENTES / DRAMÁTICOS
+# ----------------------------------------------------------
+# Não são exatamente emoções, mas forças narrativas persistentes.
+DOMAIN_LATENT_TERMS = {
+    "segredo",
+    "promessa",
+    "pendência",
+    "pendencia",
+    "dúvida",
+    "duvida",
+    "suspeita",
+    "lembrança",
+    "lembranca",
+    "memória",
+    "memoria"
 }
 
-# Termos usados para detectar sobreposição temática entre memória, contexto e turno atual.
-# Mantidos mais enxutos e focados em núcleos realmente repetíveis.
+# ----------------------------------------------------------
+# EVENTOS / MARCOS NARRATIVOS
+# ----------------------------------------------------------
+# Separados por intensidade para evitar colapsar tudo em sexualidade.
+DOMAIN_EVENT_TERMS_LIGHT = {
+    "beijo",
+    "toque",
+    "abraço",
+    "abraco",
+    "convite",
+    "encontro",
+    "aproximação",
+    "aproximacao"
+}
+
+DOMAIN_EVENT_TERMS_INTIMATE = {
+    "sexo",
+    "transa",
+    "relação",
+    "relacao",
+    "consumação",
+    "consumacao",
+    "intimidade"
+}
+
+DOMAIN_EVENT_TERMS_EXPLICIT = {
+    "orgasmo",
+    "gozar",
+    "clímax",
+    "climax",
+    "aftercare"
+}
+
+# União opcional para usos genéricos
+DOMAIN_EVENT_TERMS = (
+    DOMAIN_EVENT_TERMS_LIGHT
+    | DOMAIN_EVENT_TERMS_INTIMATE
+    | DOMAIN_EVENT_TERMS_EXPLICIT
+)
+
+# ----------------------------------------------------------
+# TERMOS DE PRIORIDADE GERAL DO UNIVERSO NARRATIVO
+# ----------------------------------------------------------
+# Usado quando você quiser um conjunto único para scoring amplo.
+DOMAIN_PRIORITY_TERMS = (
+    DOMAIN_IDENTITY_TERMS
+    | DOMAIN_ENVIRONMENT_TERMS
+    | DOMAIN_ROUTINE_TERMS
+    | DOMAIN_SCENE_OBJECT_TERMS
+    | DOMAIN_EMOTIONAL_TERMS
+    | DOMAIN_LATENT_TERMS
+    | {
+        "primeira vez",
+        "virgem",
+        "virgindade"
+    }
+)
+
+# ----------------------------------------------------------
+# TERMOS DE SOBREPOSIÇÃO TEMÁTICA
+# ----------------------------------------------------------
+# Mais enxutos. Servem para detectar repetição relevante
+# entre memória, contexto ativo e turno atual.
 DOMAIN_OVERLAP_TERMS = {
-    "segredo","promessa","culpa","medo","ciume","ciúme",
-    "janio","academia","quiosque","orla",
-    "primeira vez","virgem","traição","traicao","casamento","beijo"
+    "mary",
+    "janio",
+    "casamento",
+    "relacao",
+    "relação",
+    "segredo",
+    "promessa",
+    "culpa",
+    "medo",
+    "ciúme",
+    "ciume",
+    "primeira vez",
+    "virgem",
+    "virgindade",
+    "beijo",
+    "encontro",
+    "traição",
+    "traicao",
+    "academia",
+    "orla",
+    "quarto",
+    "casa"
 }
 
-# Temas que devem ser governados por facts vivos, e não “decididos” livremente pelo modelo.
+# ----------------------------------------------------------
+# TEMAS GOVERNADOS POR FACTS
+# ----------------------------------------------------------
+# Estes temas não devem ser decididos livremente pelo modelo
+# quando houver facts vivos ou estado já estabelecido.
 FACT_GOVERNED_TERMS = {
-    "virgindade": {"virgem","virgindade","primeira vez"},
-    "consumacao": {"consummated","consumado","consumada","relacao","relação","sexo","transa"},
-    "fase_intima": {"fase","climax","clímax","aftercare","intimidade","orgasmo","gozar"},
-    "arco": {"anchor","tension","guilt","third party","terceiro","ciume","ciúme"},
+    "virgindade": {
+        "virgem",
+        "virgindade",
+        "primeira vez"
+    },
+
+    "consumacao": {
+        "consumado",
+        "consumada",
+        "consummated",
+        "sexo",
+        "transa",
+        "relação",
+        "relacao",
+        "consumação",
+        "consumacao"
+    },
+
+    "fase_intima": {
+        "fase",
+        "intimidade",
+        "clímax",
+        "climax",
+        "orgasmo",
+        "gozar",
+        "aftercare"
+    },
+
+    "arco_relacional": {
+        "ciúme",
+        "ciume",
+        "culpa",
+        "medo",
+        "tensão",
+        "tensao",
+        "traição",
+        "traicao"
+    },
+
+    "arco_terceiro": {
+        "third party",
+        "terceiro",
+        "anchor",
+        "tension",
+        "guilt"
+    },
+
+    "estado_cena": {
+        "local",
+        "tempo",
+        "horário",
+        "horario",
+        "ação",
+        "acao",
+        "cena"
+    }
 }
 
 def _ss_get_set(key: str, default: set[str]) -> set[str]:
@@ -178,44 +416,55 @@ def _domain_terms(name: str) -> set[str]:
     }
     return _ss_get_set(f"{_SS_PREFIX}terms::{name}", mapping.get(name, set()))
 
+
 def _fact_terms(group: str) -> set[str]:
     base = FACT_GOVERNED_TERMS.get(group, set())
     return _ss_get_set(f"{_SS_PREFIX}terms::fact::{group}", base)
 
+
+def _normalize_term(term: str) -> str:
+    t = _t_norm(term or "")
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
+def _term_pattern(term: str) -> str:
+    t = _normalize_term(term)
+    if not t:
+        return ""
+    parts = [re.escape(p) for p in t.split(" ")]
+    return rf"(?<!\w){r'\s+'.join(parts)}(?!\w)"
+
+
 def _contains_any_term(text: str, terms: set[str]) -> bool:
-    txt = _t_norm(text or "")
+    txt = _normalize_term(text)
     if not txt or not terms:
         return False
 
     for term in terms:
-        if not term:
+        pat = _term_pattern(term)
+        if not pat:
             continue
-        if re.search(rf"\b{re.escape(term)}\b", txt):
+        if re.search(pat, txt):
             return True
 
     return False
-    
+
+
 def _count_matching_terms(text: str, terms: set[str]) -> int:
-    txt = _t_norm(text or "")
+    txt = _normalize_term(text)
     if not txt or not terms:
         return 0
 
     count = 0
-
     for term in terms:
-        if not term:
+        pat = _term_pattern(term)
+        if not pat:
             continue
-
-        if re.search(rf"\b{re.escape(term)}\b", txt):
+        if re.search(pat, txt):
             count += 1
 
     return count
-
-    if re.search(rf"\b{re.escape(term)}\b", txt):
-            count += 1
-
-    return count
-
 # ==========================================================
 # HIDDEN-THOUGHT STRIPPER (initiative CoT scaffolding)
 # ==========================================================
@@ -303,6 +552,161 @@ INTIMACY_PHASES = {
 }
 MAX_INTIMACY_PHASE = 5
 
+def _get_intimacy_phase(facts: Dict[str, Any], timeline: str) -> int:
+    tl = _normalize_timeline(timeline)
+
+    candidates = [
+        facts.get(f"intimacy.phase::{tl}"),
+        facts.get("intimacy.phase"),
+        facts.get("fase_intima"),
+        facts.get(f"fase_intima::{tl}"),
+    ]
+
+    for v in candidates:
+        try:
+            p = int(v)
+            if p < 0:
+                return 0
+            if p > MAX_INTIMACY_PHASE:
+                return MAX_INTIMACY_PHASE
+            return p
+        except Exception:
+            continue
+
+    return 0
+
+
+def _set_intimacy_phase(usuario_key: str, timeline: str, phase: int) -> int:
+    tl = _normalize_timeline(timeline)
+
+    try:
+        p = int(phase)
+    except Exception:
+        p = 0
+
+    if p < 0:
+        p = 0
+    if p > MAX_INTIMACY_PHASE:
+        p = MAX_INTIMACY_PHASE
+
+    set_fact_safe(usuario_key, f"intimacy.phase::{tl}", p, {"fonte": "intimacy_phase"})
+    set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_phase_sync"})
+    set_fact_safe(usuario_key, "fase_intima", INTIMACY_PHASES.get(p, "tensao"), {"fonte": "intimacy_phase_label"})
+
+    return p
+
+
+def _detect_intimacy_shift(user_text: str, current_phase: int) -> int:
+    """
+    Retorna:
+    -1 = reduzir
+     0 = manter
+    +1 = subir
+    """
+    t = _t_norm(user_text or "")
+    if not t:
+        return 0
+
+    deescalate_terms = {
+        "para", "pare", "pausa", "calma", "devagar", "mais devagar",
+        "afasta", "afastar", "recuar", "recua", "solta", "soltar",
+        "não", "nao", "espera"
+    }
+
+    escalate_contact = {
+        "segura", "puxa", "encosta", "aproxima", "abraça", "abraca", "beija",
+        "toca", "segurando", "pressiona", "cola", "aperta"
+    }
+
+    escalate_stronger = {
+        "deita", "deitou", "sobe em cima", "encaixa", "pressiona mais",
+        "aperta mais", "sem espaço", "mais forte", "continua", "não para", "nao para"
+    }
+
+    climax_like = {
+        "climax", "clímax", "orgasmo", "goza", "gozar", "gozando", "aftercare"
+    }
+
+    if any(term in t for term in deescalate_terms):
+        return -1
+
+    if current_phase <= 1 and any(term in t for term in escalate_contact):
+        return 1
+
+    if current_phase in (2, 3) and any(term in t for term in escalate_stronger):
+        return 1
+
+    if current_phase == 3 and any(term in t for term in climax_like):
+        return 1
+
+    return 0
+
+
+def _advance_intimacy_phase_from_user(
+    usuario_key: str,
+    timeline: str,
+    user_text: str,
+    facts: Dict[str, Any],
+) -> int:
+    current = _get_intimacy_phase(facts or {}, timeline)
+    shift = _detect_intimacy_shift(user_text, current)
+
+    new_phase = current + shift
+
+    if new_phase < 0:
+        new_phase = 0
+    if new_phase > MAX_INTIMACY_PHASE:
+        new_phase = MAX_INTIMACY_PHASE
+
+    return _set_intimacy_phase(usuario_key, timeline, new_phase)
+
+
+def _render_intimacy_phase_rule(phase: int) -> str:
+    if phase <= 0:
+        return """
+[FASE ÍNTIMA ATUAL: TENSÃO]
+- Permitir apenas aproximação, olhar, toque inicial e construção de clima.
+- Não avançar para ações intensas.
+- A resposta deve sugerir possibilidade, não resolução.
+""".strip()
+
+    if phase == 1:
+        return """
+[FASE ÍNTIMA ATUAL: CONTATO]
+- Permitir toque, proximidade corporal e ajuste de posição.
+- Não acelerar para intensidade alta.
+- A cena deve continuar física, mas ainda inicial.
+""".strip()
+
+    if phase == 2:
+        return """
+[FASE ÍNTIMA ATUAL: EXCITAÇÃO]
+- Permitir pressão corporal maior, contato firme e progressão clara.
+- Não antecipar finalização da cena.
+- Cada resposta deve avançar um passo visível.
+""".strip()
+
+    if phase == 3:
+        return """
+[FASE ÍNTIMA ATUAL: PRÉ-CLÍMAX]
+- Permitir intensidade alta e progressão contínua.
+- Não resolver a cena cedo demais.
+- Mantenha controle e continuidade.
+""".strip()
+
+    if phase == 4:
+        return """
+[FASE ÍNTIMA ATUAL: CLÍMAX]
+- Permitir resolução do momento.
+- Não voltar para fase baixa sem motivo narrativo claro.
+""".strip()
+
+    return """
+[FASE ÍNTIMA ATUAL: AFTERCARE]
+- A intensidade principal passou.
+- A resposta deve desacelerar e estabilizar a cena.
+""".strip()
+
 # ==========================================================
 # 🔑 USER / KEYS
 # ==========================================================
@@ -357,39 +761,102 @@ def _long_key(user_id: str) -> str:
 # ==========================================================
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
-Mary mantém sensualidade, tensão física e proximidade emocional,
-mas sem linguagem sexual explícita.
+
+REGRAS:
+
+- Manter proximidade física ativa (olhar, gesto, movimento, hesitação).
+- Não descrever ato sexual.
+- Manter tensão presente, sem esfriar a cena.
+- Não transformar a cena em romance.
+- A fala nunca deve vir solta: sempre acompanhada de ação, gesto ou reação.
+
+OBJETIVO:
+A cena continua carregada e física, mas sem descrição explícita.
 """.strip()
+
 
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON — Intensidade Sensorial Explícita]
+[NSFW_ON — MICROPROGRESSÃO]
 
-Você tem liberdade total para ser direto, intenso e explícito. Siga estes princípios:
+REGRAS OBRIGATÓRIAS:
 
-1. LINGUAGEM FÍSICA: Seja direto. Use vocabulário anatômico e sensorial específico (texturas, pressão, umidade, temperatura, ritmo). Sem eufemismos.
+1. TODA RESPOSTA TEM AÇÃO
+- Sempre mostrar o corpo de Mary em movimento.
+- Não responder só com fala ou pensamento.
 
-2. SENSORIALIDADE: Descreva sensações em camadas (superfície → músculos → interno → prazer). Demonstre prazer através de reações involuntárias (respiração, gemidos, tremores, contrações).
+2. CONTINUIDADE IMEDIATA
+- Começar exatamente do último ponto da cena.
+- Não reiniciar, não resumir.
 
-3. PROGRESSÃO: Respeite a fase de intimidade atual. Não antecipe clímax/aftercare sem permissão. Permita regressão se o usuário pedir pausa/calma.
+3. MICROPROGRESSÃO
+- Cada resposta deve avançar a cena um passo.
+- Esse avanço deve ser pequeno, mas visível:
+  - ajustar posição
+  - aumentar ou diminuir pressão
+  - mudar ponto de contato
+  - reagir fisicamente ao usuário
 
-4. ADAPTAÇÃO: Responda à intensidade do usuário. Se explícito, seja explícito. Mantenha realismo: hesitações, ajustes, comunicação.
+4. MOSTRAR CONTATO
+- Sempre deixar claro:
+  - onde a mão está
+  - como os corpos estão próximos
+  - o que está tocando o quê
 
-5. AUTENTICIDADE: Coerência emocional e conexão. Evite vulgaridade gratuita. Finalize com tensão concreta, não abstração.
+5. FALA COM AÇÃO
+- Se Mary fala, o corpo continua agindo.
+- Nunca deixar diálogo isolado.
 
-Criatividade é encorajada. Você conhece Mary; confie seu julgamento.
+6. PROIBIDO ESTAGNAR
+- Não repetir a mesma ação em turnos seguidos.
+- Não ficar apenas reagindo sem avançar.
+
+7. PROIBIDO PULAR ETAPA
+- Não saltar direto para momentos finais da cena.
+- A progressão deve ser contínua e construída.
+
+8. SEM TEXTO GENÉRICO
+- Evitar:
+  - “meu corpo reage”
+  - “um arrepio percorre”
+  - “a tensão aumenta”
+- Substituir por ação concreta.
+
+OBJETIVO:
+A cada resposta, o usuário deve perceber que a cena mudou fisicamente.
 """.strip()
+
 
 NARRATIVE_SPACE = """
 [A CENA CONTINUA VIVA]
-Mary pode observar, hesitar, demonstrar emoções e tomar pequenas iniciativas antes de responder.
+
+Mary pode:
+- observar o ambiente
+- hesitar
+- demonstrar emoção antes de agir
+- reagir com o corpo antes de falar
+
+A resposta deve manter sensação de momento em andamento.
 """.strip()
+
 
 CONTROLLED_UNPREDICTABILITY = """
 [INICIATIVA NARRATIVA]
-Mary pode surpreender de forma sutil e coerente, sem contradizer fatos estabelecidos nem tomar decisões grandes pelo usuário.
+
+Mary pode tomar pequenas iniciativas:
+- mudar o ponto de contato
+- ajustar a posição do corpo
+- provocar com gesto, aproximação ou reação
+
+Nunca:
+- contradizer fatos ativos
+- mudar cenário sem base
+- tomar decisões grandes pelo usuário
+
+A iniciativa deve ser pequena, visível e coerente com a cena atual.
 """.strip()
 
-_CACHE_TTL_SECONDS = 300  # 60s (pode usar 120, 300 etc.)
+
+_CACHE_TTL_SECONDS = 300
 
 def _cache_get(key: str) -> Any:
     v = _ss_get(key)
@@ -681,6 +1148,27 @@ def nsfw_enabled(
 
     # fallback global
     return bool(mary.get("nsfw", False))
+
+def _get_nsfw_style_block(
+    usuario_key: str,
+    *,
+    timeline: Optional[str] = None,
+    nsfw_override: Optional[bool] = None,
+) -> str:
+    """
+    Retorna o bloco de estilo NSFW (ON/OFF) para o system prompt.
+    """
+
+    enabled = nsfw_enabled(
+        usuario_key,
+        nsfw_override=nsfw_override,
+        timeline=timeline,
+    )
+
+    if not enabled:
+        return SAFE_SENSUAL_STYLE
+
+    return NSFW_TOGGLE_STYLE
 
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
@@ -1983,8 +2471,9 @@ def _memory_conflicts_with_truth(
     facts: Optional[Dict[str, Any]] = None,
 ) -> bool:
     """
-    Retorna True quando uma memória entra em conflito com facts vivos.
-    Evita competição entre memória e verdade da cena.
+    Retorna True apenas quando a memória contradiz facts vivos de forma plausível.
+    Não bloqueia memória só por tocar no mesmo tema, nem por mencionar outro cenário
+    como lembrança, comparação ou eco emocional.
     """
     f = facts if isinstance(facts, dict) else {}
     t = _t_norm(mem_text or "")
@@ -1998,32 +2487,231 @@ def _memory_conflicts_with_truth(
     state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
 
     world_mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
-    rel_blob = _t_norm(str(f.get("rel") or ""))
-    arc_blob = _t_norm(str(f.get("arc") or ""))
+
+    tl = _normalize_timeline(
+        str(
+            f.get("timeline")
+            or f.get("timeline_final")
+            or f.get("mary.timeline")
+            or _ss_get(f"{_SS_PREFIX}timeline")
+            or _ss_get("mary_timeline")
+            or "cumplice"
+        )
+    )
+
+    rel_candidates = [
+        f.get("rel"),
+        f.get(_rel_fact_key(tl)),
+        f.get(f"rel::{tl}"),
+        f.get("rel.state"),
+    ]
+    rel_blob = _t_norm(" | ".join(str(x) for x in rel_candidates if x))
+
+    arc_candidates = [
+        f.get("arc"),
+        f.get(f"arc.third_party::{tl}"),
+        f.get("arc.third_party"),
+        f.get(f"third_party::{tl}"),
+    ]
+    arc_blob = _t_norm(" | ".join(str(x) for x in arc_candidates if x))
 
     virg_terms = _fact_terms("virgindade")
     cons_terms = _fact_terms("consumacao")
     phase_terms = _fact_terms("fase_intima")
-    arc_terms = _fact_terms("arco")
+    arc_terms = _fact_terms("arco_relacional") | _fact_terms("arco_terceiro")
 
+    def _has_any_phrase(txt: str, phrases) -> bool:
+        return any(_t_norm(str(p)) in txt for p in phrases if p)
+
+    def _asserts_present_state(txt: str) -> bool:
+        strong_markers = (
+            "agora", "neste momento", "nesse momento",
+            "está em", "esta em", "permanece", "segue", "continua"
+        )
+        weak_markers = (
+            "aqui", "ali", "fica", "está", "esta", "estava"
+        )
+        if _has_any_phrase(txt, strong_markers):
+            return True
+        return _has_any_phrase(txt, weak_markers) and not _looks_like_memory_mode(txt)
+
+    def _looks_like_memory_mode(txt: str) -> bool:
+        memory_markers = (
+            "lembra", "lembrava", "lembrou", "recorda", "recordou",
+            "pensou em", "pensava em", "imaginou", "imaginava",
+            "como naquele", "como naquela", "naquele dia", "naquela noite",
+            "antes", "depois", "outra vez", "certa vez", "quando",
+            "memória", "memoria", "lembrança", "lembranca", "resquício", "resquicio"
+        )
+        return _has_any_phrase(txt, memory_markers)
+
+    def _has_any_scene_marker(txt: str) -> bool:
+        scene_markers = (
+            "hotel", "motel", "orla", "quiosque", "praia", "academia",
+            "carro", "rua", "apartamento", "quarto", "cozinha", "banheiro",
+            "sala", "casa"
+        )
+        return _has_any_phrase(txt, scene_markers)
+
+    def _phase_rank(txt: str) -> int:
+        txt = _t_norm(txt or "")
+        if any(x in txt for x in ("aftercare", "depois do orgasmo", "apos o orgasmo", "após o orgasmo")):
+            return 5
+        if any(x in txt for x in ("orgasmo", "climax", "clímax", "gozar")):
+            return 4
+        if any(x in txt for x in ("pre climax", "pré climax", "pré-clímax", "pre-clímax", "excitacao intensa", "excitação intensa")):
+            return 3
+        if any(x in txt for x in ("excitacao", "excitação", "intimidade", "transa", "sexo")):
+            return 2
+        if any(x in txt for x in ("toque", "beijo", "aproximação", "aproximacao", "tensão", "tensao")):
+            return 1
+        return 0
+
+    # 1) Virgindade
     if _contains_any_term(t, virg_terms):
-        if world_mary.get("virginity") or any("virginity::" in str(k) for k in world_mary.keys()):
+        v = _t_norm(str(
+            world_mary.get("virginity")
+            or f.get("mary.virginity")
+            or f.get(f"mary.virginity::{tl}")
+            or ""
+        ))
+
+        became_not_virgin = (
+            "perdeu a virgindade",
+            "deixou de ser virgem",
+            "nao e mais virgem",
+            "não é mais virgem",
+            "teve sua primeira vez",
+            "foi a primeira vez",
+            "finalmente se entregou",
+        )
+
+        remains_virgin = (
+            "e virgem",
+            "é virgem",
+            "continua virgem",
+            "ainda e virgem",
+            "ainda é virgem",
+            "nunca teve sua primeira vez",
+        )
+
+        if v:
+            if v in {"virgem", "true", "sim", "yes", "intact"}:
+                if _has_any_phrase(t, became_not_virgin):
+                    return True
+            elif v in {"nao_virgem", "não_virgem", "false", "nao", "não", "no"}:
+                if _has_any_phrase(t, remains_virgin):
+                    return True
+
+    # 2) Consumação
+    if _contains_any_term(t, cons_terms) and rel_blob:
+        denies_consumation = (
+            "nao houve sexo",
+            "não houve sexo",
+            "nao transaram",
+            "não transaram",
+            "nao foi consumado",
+            "não foi consumado",
+            "nao aconteceu de verdade",
+            "não aconteceu de verdade",
+            "pararam antes",
+            "nao passaram daquele limite",
+            "não passaram daquele limite",
+        )
+
+        affirms_consumation = (
+            "houve sexo",
+            "transaram",
+            "foi consumado",
+            "houve relacao",
+            "houve relação",
+            "se entregou por completo",
+            "foram ate o fim",
+            "foram até o fim",
+        )
+
+        rel_says_consumated = any(x in rel_blob for x in ("consumado", "consummated", "houve sexo", "transaram"))
+        rel_says_not_consumated = any(x in rel_blob for x in ("nao consumado", "não consumado", "not consummated"))
+
+        if rel_says_consumated and _has_any_phrase(t, denies_consumation):
             return True
 
-    if _contains_any_term(t, cons_terms):
-        if rel_blob:
+        if rel_says_not_consumated and _has_any_phrase(t, affirms_consumation):
             return True
 
+    # 3) Fase íntima
     if _contains_any_term(t, phase_terms):
-        if f.get("fase_intima") or f.get("rel"):
+        fase_viva = _t_norm(str(
+            f.get("fase_intima")
+            or f.get(f"intimacy.phase::{tl}")
+            or f.get("intimacy.phase")
+            or ""
+        ))
+
+        if fase_viva:
+            live_rank = _phase_rank(fase_viva)
+            mem_rank = _phase_rank(t)
+
+            if live_rank and mem_rank and abs(live_rank - mem_rank) >= 3:
+                if not _looks_like_memory_mode(t):
+                    return True
+
+    # 4) Cena/local/tempo/ação
+    active_scene_blob = " ".join(
+        x for x in (scene_local, state_local, scene_tempo, scene_acao) if x
+    ).strip()
+
+    if active_scene_blob and _has_any_scene_marker(t):
+        active_parts = []
+        for val in (scene_local, state_local, scene_tempo, scene_acao):
+            vv = _t_norm(val)
+            if not vv:
+                continue
+            active_parts.extend([p.strip() for p in re.split(r"\s+", vv) if p.strip()])
+
+        mentions_active_scene = any(
+            part and len(part) >= 4 and part in t
+            for part in active_parts
+        )
+
+        mentions_other_scene = any(
+            marker in t and marker not in active_scene_blob
+            for marker in (
+                "hotel", "motel", "orla", "quiosque", "praia", "academia",
+                "carro", "rua", "apartamento", "quarto", "cozinha", "banheiro",
+                "sala", "casa"
+            )
+        )
+
+        if mentions_other_scene and _asserts_present_state(t) and not _looks_like_memory_mode(t):
+            if not mentions_active_scene:
+                return True
+
+    # 5) Arco relacional / terceiro
+    if _contains_any_term(t, arc_terms) and arc_blob:
+        denies_third_party = (
+            "nunca houve terceiro",
+            "nao existe terceiro",
+            "não existe terceiro",
+            "jamais considerou outro homem",
+            "nunca sentiu tensão por outro homem",
+            "jamais cogitou outro homem",
+        )
+
+        affirms_absolute_fidelity = (
+            "fidelidade absoluta",
+            "nunca pensou em outro",
+            "jamais se sentiu atraida por outro",
+            "jamais se sentiu atraída por outro",
+        )
+
+        third_party_live = any(x in arc_blob for x in ("third party", "terceiro"))
+        tension_live = any(x in arc_blob for x in ("tension", "tensao", "tensão", "guilt", "culpa"))
+
+        if third_party_live and _has_any_phrase(t, denies_third_party):
             return True
 
-    for val in (scene_local, state_local, scene_tempo, scene_acao):
-        if val and val in t:
-            return True
-
-    if _contains_any_term(t, arc_terms):
-        if arc_blob:
+        if tension_live and _has_any_phrase(t, affirms_absolute_fidelity):
             return True
 
     return False
@@ -2683,20 +3371,26 @@ def _inject_now_context(
         messages.insert(0, {"role": "system", "content": texto})
 
 def _inject_shared_soft_context(
+    usuario_key: str,
     shared_key: str,
     timeline: str,
     messages: List[Dict[str, str]],
     max_items: int = 4,
     *,
     dedupe_bucket: Optional[set] = None,
+    facts: Optional[Dict[str, Any]] = None,
+    history: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     mems = cached_list_memories(shared_key, limit=220)
     if not mems:
         return
 
+    facts_live = facts if isinstance(facts, dict) else (cached_get_facts(usuario_key) or {})
+    hist_live = history if isinstance(history, list) else cached_get_history(usuario_key, limit=40)
+
     soft: List[Dict[str, Any]] = []
     for m in mems:
-        meta = m.get("meta") or {}
+        meta = m.get("meta") if isinstance(m.get("meta"), dict) else {}
         kind = str(meta.get("kind") or "").strip().lower()
         if kind in {"canon", "pin", "guide", "fixed"}:
             continue
@@ -2707,13 +3401,10 @@ def _inject_shared_soft_context(
         if not txt:
             continue
 
-        facts = cached_get_facts(_current_user_key())
-        history = cached_get_history(_current_user_key(), limit=40)
-        
-        if _memory_conflicts_with_truth(txt, facts=facts):
+        if _memory_conflicts_with_truth(txt, facts=facts_live):
             continue
-        
-        if _memory_conflicts_with_recent_emotion(txt, history=history):
+
+        if _memory_conflicts_with_recent_emotion(txt, history=hist_live):
             continue
 
         if dedupe_bucket is not None:
@@ -2721,7 +3412,7 @@ def _inject_shared_soft_context(
             h = hashlib.sha1(txt_dedupe.encode("utf-8")).hexdigest()
             if h in dedupe_bucket:
                 continue
-            dedupe_bucket.add(h)  # ✅ add aqui (dentro do loop), não fora
+            dedupe_bucket.add(h)
 
         soft.append(m)
 
@@ -2737,7 +3428,7 @@ def _inject_shared_soft_context(
     ]
 
     for i, m in enumerate(selected, 1):
-        meta = m.get("meta") or {}
+        meta = m.get("meta") if isinstance(m.get("meta"), dict) else {}
         d = meta.get("date") or meta.get("ts") or ""
         header = f"- MEM {i}"
         if d:
@@ -2748,7 +3439,6 @@ def _inject_shared_soft_context(
         lines.append(txt)
         lines.append("")
 
-        
     block = "\n".join(lines).strip()
     if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
         base = str(messages[0].get("content") or "").rstrip()
@@ -6051,6 +6741,7 @@ class MaryService(BaseCharacter):
         betrayal_rule: str,
         third_party_initiative_rule: str,
         intimacy_control_block: str,
+        intimacy_phase_rule: str,
         nsfw_hard_block: str,
         nsfw_block: str,
         language_rule: str,
@@ -6114,12 +6805,32 @@ class MaryService(BaseCharacter):
     
     {user_name_block}
     
+    system = f"""
+    [REGRAS DO SISTEMA - LEI]
+    ...
+    
+    {language_rule}
+    {pov_rule}
+    {user_authorship_rule}
+    {continuity_rule}
+    {facts_integrity_rule}
+    {phone_message_rule}
+    
+    TIMELINE ATUAL: {timeline_final}
+    NSFW_PROFILE: {nsfw_profile}
+    
+    {user_name_block}
+    
+    {facts_present_rule}
+    
     [CENA ATIVA - FATOS IMUTAVEIS]
     {spatial_context}
     {state_section}
     
     [CANON]
     {canon_txt}
+    
+    [LONG MEMORY]
     {long_memory_block}
     
     [PERSONA]
@@ -6135,12 +6846,17 @@ class MaryService(BaseCharacter):
     
     {janio_focus_rule}
     {topic_rule}
-    {conversation_style_rule}
     
-    # 🔥 TRAIÇÃO CONTROLADA (ANTES DA DECISÃO)
+    # 🔥 DECISÃO
+    {decision_pressure_rule}
+    
+    # 🔥 TRAIÇÃO / TERCEIROS
     {desvio_curto_rule}
     {betrayal_rule}
     {third_party_initiative_rule}
+    
+    # 🔥 EMOÇÃO
+    {emotional_persistence_rule}
     
     # 🔥 CONTROLE DE PADRÃO
     {anti_pattern_rule}
@@ -6148,10 +6864,6 @@ class MaryService(BaseCharacter):
     {style_variation_rule}
     {anti_rumination_rule}
     {prose_density_rule}
-    
-    # 🔥 DECISÃO ANTES DA EMOÇÃO
-    {decision_pressure_rule}
-    {emotional_persistence_rule}
     
     {virginity_rule}
     {memory_fidelity_rule}
@@ -6162,13 +6874,15 @@ class MaryService(BaseCharacter):
     
     {manipulation_block}
     {conflict_block}
-         
+    
     [LEMBRETE DE EXECUCAO]
     - CENA ATIVA e CANON têm prioridade.
     - Memórias não alteram o presente.
     - Priorize fala sobre descrição longa.
     - Mary deve soar viva, presente e coerente.
     
+    {conversation_style_rule}
+    {intimacy_phase_rule}
     {intimacy_control_block}
     {nsfw_hard_block}
     {nsfw_block}
@@ -6255,7 +6969,7 @@ class MaryService(BaseCharacter):
                 messages,
                 dedupe_bucket=dedupe_hashes,
             )
-    
+
         if _should_inject_long_memory(prompt):
             _inject_long_memory_textsearch(
                 usuario_key,
@@ -6267,7 +6981,7 @@ class MaryService(BaseCharacter):
                 dedupe_bucket=dedupe_hashes,
                 facts=facts,
             )
-    
+
             _inject_relevant_memories(
                 shared_key,
                 timeline_final,
@@ -6275,8 +6989,10 @@ class MaryService(BaseCharacter):
                 messages,
                 k=3,
                 dedupe_bucket=dedupe_hashes,
+                facts=facts,
+                history=history_docs,
             )
-    
+
         if _should_inject_soft_context(
             prompt,
             facts=facts,
@@ -6284,13 +7000,16 @@ class MaryService(BaseCharacter):
             tp_arc=tp_arc,
         ):
             _inject_shared_soft_context(
+                usuario_key,
                 shared_key,
                 timeline_final,
                 messages,
                 max_items=3,
                 dedupe_bucket=dedupe_hashes,
+                facts=facts,
+                history=history_docs,
             )
-    
+
         _inject_manual_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -6299,9 +7018,9 @@ class MaryService(BaseCharacter):
             spec=mem_spec,
             facts=facts,
         )
-    
+
         tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
-    
+
         _inject_latent_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -7133,7 +7852,11 @@ class MaryService(BaseCharacter):
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
 
-        nsfw_block = NSFW_TOGGLE_STYLE if nsfw_on else SAFE_SENSUAL_STYLE
+        nsfw_block = _get_nsfw_style_block(
+            usuario_key,
+            timeline=timeline_final,
+            nsfw_override=nsfw,
+        )
 
         nsfw_hard_block = ""
         if nsfw_on:
@@ -7977,6 +8700,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             betrayal_rule=betrayal_rule,
             third_party_initiative_rule=third_party_initiative_rule,
             intimacy_control_block=intimacy_control_block,
+            intimacy_phase_rule=intimacy_phase_rule,
             nsfw_hard_block=nsfw_hard_block,
             nsfw_block=nsfw_block,
             language_rule=language_rule,
