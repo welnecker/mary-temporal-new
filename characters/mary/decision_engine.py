@@ -72,6 +72,40 @@ def _has_any(text: str, terms: list[str]) -> bool:
     t = (text or "").lower()
     return any(term in t for term in terms)
 
+def _semantic_hits(text: str) -> Dict[str, bool]:
+    t = (text or "").lower()
+
+    return {
+        "bond": _has_any(t, [
+            "amor", "marido", "casamento", "nossa historia", "nossa história",
+            "familia", "família", "nao quero te perder", "não quero te perder",
+            "desculpa", "perdao", "perdão", "te amo", "nosso vínculo", "nosso vinculo"
+        ]),
+
+        "guilt": _has_any(t, [
+            "culpa", "vergonha", "arrependimento", "errado", "pecado",
+            "traição", "traicao", "mentira", "escondido", "escondida",
+            "segredo", "sacrilegio", "sacrilégio", "nojento", "monstro"
+        ]),
+
+        "third_party": _has_any(t, [
+            "terceiro", "outro homem", "outro cara", "desconhecido",
+            "cartão", "cartao", "telefone", "mensagem", "convite",
+            "me liga", "segredo", "curiosidade", "tentação", "tentacao"
+        ]),
+
+        "desire": _has_any(t, [
+            "quero", "vontade", "desejo", "tesão", "tesao", "beijo",
+            "toque", "pele", "gozo", "gozar", "gozei", "orgasmo",
+            "foder", "transar", "sexo", "corpo", "molhada", "excitada"
+        ]),
+
+        "retreat": _has_any(t, [
+            "para", "pare", "calma", "espera", "não", "nao", "chega",
+            "recuo", "medo", "não posso", "nao posso", "não devo", "nao devo"
+        ]),
+    }
+
 
 # ==========================================================
 # Núcleo psicológico
