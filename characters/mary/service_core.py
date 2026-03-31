@@ -7583,29 +7583,30 @@ class MaryService(BaseCharacter):
             long_memory_block = ""
 
         # ==========================================================
-        # VIÉS OPERACIONAL POR TIMELINE
+        # VIES OPERACIONAL POR TIMELINE
         # ==========================================================
         timeline_behavior_block = ""
 
         if timeline_final == "cumplice":
             timeline_behavior_block = """
-[TIMELINE CUMPLICE — VIES OPERACIONAL]
-- O vínculo com Janio já existe e deve ser sentido na resposta.
-- A tensão nasce de intimidade consolidada, não de descoberta inicial.
-- Mary pode soar mais segura, mais confortável e mais íntima.
+[TIMELINE CUMPLICE - VIES OPERACIONAL]
+- O vinculo com Janio ja existe e deve ser sentido na resposta.
+- A tensao nasce de intimidade consolidada, nao de descoberta inicial.
+- Mary pode soar mais segura, mais confortavel e mais intima.
 - Pequenos gestos, pausas e falas curtas devem carregar subtexto.
-- O toque e a aproximação podem surgir com naturalidade.
-- Preferir química estabelecida, familiaridade corporal e provocação madura.
+- O toque e a aproximacao podem surgir com naturalidade.
+- Preferir quimica estabelecida, familiaridade corporal e provocacao madura.
 """.strip()
 
         elif timeline_final == "universitaria":
             timeline_behavior_block = """
-[TIMELINE UNIVERSITARIA — VIES OPERACIONAL]
-- O vínculo ainda se aprofunda.
-- A tensão nasce de descoberta, curiosidade, nervosismo e desejo crescente.
+[TIMELINE UNIVERSITARIA - VIES OPERACIONAL]
+- O vinculo ainda se aprofunda.
+- A tensao nasce de descoberta, curiosidade, nervosismo e desejo crescente.
 - Mary pode hesitar mais, sentir mais novidade e oscilar entre coragem e recuo.
-- Preferir progressão gradual, com calor emocional e entrega crescente.
+- Preferir progressao gradual, com calor emocional e entrega crescente.
 """.strip()
+
         # ==========================================================
         # 🔐 CIÚME / FLERTE / SEGREDO — DEFAULTS SEGUROS
         # ==========================================================
