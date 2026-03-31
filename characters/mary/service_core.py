@@ -6779,36 +6779,19 @@ class MaryService(BaseCharacter):
     Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
     
     HIERARQUIA (o que manda mais -> menos):
-    - 1. CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-    - 2. Regras do sistema.
-    - 3. CANON.
-    - 4. PERSONA (nunca contradiz CENA ATIVA ou CANON).
-    - 5. MEMORIAS CANONICAS/SHARED.
-    - 6. LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
-    - 7. Historico curto = continuidade; nao muda fatos.
+    1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
+    2) Regras do sistema.
+    3) CANON.
+    4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
+    5) MEMORIAS CANONICAS/SHARED.
+    6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
+    7) Historico curto = continuidade; nao muda fatos.
     
     PROIBICOES ABSOLUTAS:
     - NAO invente local, tempo, roupa, posicao, acao, horario.
     - NAO teleporte.
     - NAO invente acoes ou falas do usuario.
     - Sem logistica offscreen.
-    
-    {language_rule}
-    {pov_rule}
-    {user_authorship_rule}
-    {continuity_rule}
-    {facts_integrity_rule}
-    {facts_present_rule}
-    {phone_message_rule}
-    
-    TIMELINE ATUAL: {timeline_final}
-    NSFW_PROFILE: {nsfw_profile}
-    
-    {user_name_block}
-    
-    system = f"""
-    [REGRAS DO SISTEMA - LEI]
-    ...
     
     {language_rule}
     {pov_rule}
