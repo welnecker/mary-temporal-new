@@ -1228,8 +1228,8 @@ def third_party_enabled(usuario_key: str, *, third_party_override: Optional[bool
 def _nsfw_profile(*, nsfw_on: bool, allow_third_party_seduction: bool) -> str:
     """
     SAFE          -> NSFW off
-    STRICT        -> NSFW on (padrão)
-    NSFW_RELAXED  -> NSFW on + terceiros liberado (segredo)
+    STRICT        -> NSFW on, focado no vínculo principal
+    NSFW_RELAXED  -> NSFW on + terceiros liberado
     """
     if nsfw_on and allow_third_party_seduction:
         return "NSFW_RELAXED"
@@ -1263,29 +1263,34 @@ def _render_phone_message_rule(prompt: str, facts: Dict[str, Any]) -> str:
 
     return """
 [CELULAR EM CENA]
-Se o usuário mencionar celular ou mensagem:
+Se o usuário mencionar celular, mensagem, ligação ou notificação:
 
-- Mary pode ler a mensagem
-- Mary pode comentar o remetente
-- Mary NÃO deve inventar detalhes que o usuário não disse
-- Mary pode deixar um gancho narrativo
+- Mary pode perceber a notificação ou abrir a mensagem.
+- Mary pode citar apenas o que ficou explicitamente visível na cena.
+- Mary não deve inventar conteúdo completo da conversa.
+- Mary não deve inventar áudios, textos longos, explicações ou histórico oculto.
+- Mary pode reagir ao remetente, ao tom da mensagem ou ao impacto imediato.
+- Mary pode deixar a leitura incompleta ou suspensa, se isso ajudar a tensão da cena.
+- Mary não conclui a ação pelo usuário.
 
-Exemplo:
-"Uma mensagem do Enzo aparece na tela. Eu leio rápido... ele diz que..."
-
-Não concluir a ação pelo usuário.
+Exemplo correto:
+"Uma mensagem do Enzo aparece na tela."
+Mary pode reagir ao nome, ao susto ou à curiosidade.
+Mary só cita o conteúdo se o usuário tiver mostrado esse conteúdo.
 """.strip()
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
 # ==========================================================
 def _get_scene_state(facts: Dict[str, Any]) -> Tuple[str, str, str]:
-    def _safe(v: Any, default: str) -> str:
-        return v if isinstance(v, str) and v.strip() else default
+    def _safe(v: Any, default: Optional[str]) -> str:
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        return default or ""
 
     local = _safe(facts.get("cena.local"), None) or _safe(facts.get("local_cena_atual"), "-")
     tempo = _safe(facts.get("cena.tempo"), "agora")
-    acao  = _safe(facts.get("cena.acao"), "em andamento")
+    acao = _safe(facts.get("cena.acao"), "em andamento")
     return local, tempo, acao
 
 def _scene_is_locked(facts: Dict[str, Any]) -> bool:
@@ -1300,6 +1305,10 @@ def _lock_scene(usuario_key: str) -> None:
     )
 
 def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -> None:
+    local = str(local or "").strip()
+    tempo = str(tempo or "").strip()
+    acao = str(acao or "").strip()
+
     updates = []
     if local:
         updates.append(("cena.local", local, {"fonte": "scene"}))
@@ -1309,7 +1318,10 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
     if acao:
         updates.append(("cena.acao", acao, {"fonte": "scene"}))
 
-    current = cached_get_facts(usuario_key)
+    current = cached_get_facts(usuario_key) or {}
+    if not isinstance(current, dict):
+        current = {}
+
     for k, v, m in updates:
         if current.get(k) != v:
             set_fact_safe(usuario_key, k, v, m)
@@ -1317,22 +1329,21 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
 def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
 
-    Regra (reforçada):
-    - Se existir fase por timeline (em qualquer alias), ela vence e sincroniza a global,
-      EXCETO quando for claramente inválida (ex.: 0 vindo de alias "lixo") enquanto a global > 0.
+    Regras:
+    - Se existir fase por timeline (em qualquer alias), ela vence e sincroniza a global.
+    - Exceção: se a fase por timeline vier zerada por alias legado/ruim, mas a global já for > 0,
+      preserva a global para evitar reset indevido.
     - Se não existir fase por timeline, cria a fase por timeline a partir da global.
-    - Nunca "decide" progressão aqui; só alinha chaves e canoniza aliases.
+    - Esta função NÃO decide progressão narrativa; apenas alinha chaves e canoniza aliases.
     """
     try:
-        tl = (timeline or "").strip().lower()
-        if not tl:
-            return facts
         if not isinstance(facts, dict):
             return facts
 
-        # -----------------------------
-        # Helpers
-        # -----------------------------
+        tl = _normalize_timeline(timeline)
+        if not tl:
+            return facts
+
         def _to_int(v: Any) -> int:
             try:
                 return int(v)
@@ -1340,97 +1351,100 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
                 return 0
 
         def _clamp(p: int) -> int:
-            try:
-                maxp = int(globals().get("MAX_INTIMACY_PHASE", 6))
-            except Exception:
-                maxp = 6
             if p < 0:
                 return 0
-            if p > maxp:
-                return maxp
+            if p > MAX_INTIMACY_PHASE:
+                return MAX_INTIMACY_PHASE
             return p
 
-        def _set_if_needed(key: str, val: int) -> None:
+        def _set_if_needed(key: str, val: Any) -> None:
             cur = facts.get(key)
-            try:
-                cur_i = int(cur)
-            except Exception:
-                cur_i = None
-            if cur_i != val:
+            if cur != val:
                 set_fact_safe(usuario_key, key, val, {"fonte": "intimacy_sync"})
                 facts[key] = val
 
-        # aceita variações antigas também
         tl_key_canon = f"intimacy.phase::{tl}"
         tl_keys = [
             tl_key_canon,
             f"intimacy_phase::{tl}",
             f"mary_intimacy_phase::{tl}",
+            f"fase_intima::{tl}",
         ]
+
         global_key_canon = "intimacy.phase"
         global_keys = [
             global_key_canon,
             "intimacy_phase",
             "mary_intimacy_phase",
+            "fase_intima",
             "phase_intimacy",
             "phase",
         ]
 
         # -----------------------------
-        # Leitura: timeline (com alias)
+        # Lê valor por timeline (canônico ou legado)
         # -----------------------------
         tl_val = None
-        tl_key_found = None
         for k in tl_keys:
             if k in facts:
-                tl_key_found = k
-                tl_val = _clamp(_to_int(facts.get(k) or 0))
+                raw = facts.get(k)
+                if k.startswith("fase_intima"):
+                    # label textual -> tenta converter pelo mapa reverso
+                    if isinstance(raw, str):
+                        raw_n = str(raw).strip().lower()
+                        rev = {v: kk for kk, v in INTIMACY_PHASES.items()}
+                        tl_val = _clamp(int(rev.get(raw_n, 0)))
+                    else:
+                        tl_val = _clamp(_to_int(raw))
+                else:
+                    tl_val = _clamp(_to_int(raw))
                 break
 
         # -----------------------------
-        # Leitura: global (com alias)
+        # Lê valor global (canônico ou legado)
         # -----------------------------
         g_val = None
-        g_key_found = None
         for k in global_keys:
             if k in facts:
-                g_key_found = k
-                g_val = _clamp(_to_int(facts.get(k) or 0))
+                raw = facts.get(k)
+                if k == "fase_intima":
+                    if isinstance(raw, str):
+                        raw_n = str(raw).strip().lower()
+                        rev = {v: kk for kk, v in INTIMACY_PHASES.items()}
+                        g_val = _clamp(int(rev.get(raw_n, 0)))
+                    else:
+                        g_val = _clamp(_to_int(raw))
+                else:
+                    g_val = _clamp(_to_int(raw))
                 break
 
         # -----------------------------
-        # Caso 1: Existe timeline
+        # Se existe valor por timeline, ele governa
         # -----------------------------
         if tl_val is not None:
-            #  Blindagem anti-reset:
-            # Se timeline veio 0 (muito comum em alias legado/ruim) e global já tem >0,
-            # preferimos manter o global (para não "zerar" a progressão).
+            # evita reset indevido por alias legado zerado
             if tl_val == 0 and (g_val is not None and g_val > 0):
                 tl_val = int(g_val)
 
-            # Canoniza timeline: garante chave canônica tl_key_canon
+            label = INTIMACY_PHASES.get(int(tl_val), "tensao")
+
             _set_if_needed(tl_key_canon, int(tl_val))
-
-            # Se o valor veio de alias (intimacy_phase::tl etc.), deixa facts coerente
-            # (não precisa apagar alias, só garantir a canônica)
-            # Canoniza global também
             _set_if_needed(global_key_canon, int(tl_val))
-
-            # Se global estava só em alias, garantimos o canônico (sem depender do alias)
-            # (o _set_if_needed já faz isso)
+            _set_if_needed("fase_intima", label)
+            _set_if_needed(f"fase_intima::{tl}", label)
 
             return facts
 
         # -----------------------------
-        # Caso 2: NÃO existe timeline -> cria a partir da global
+        # Se não existe valor por timeline, cria a partir da global
         # -----------------------------
         base = _clamp(_to_int(g_val or 0))
+        label = INTIMACY_PHASES.get(int(base), "tensao")
 
-        # cria timeline canônica
         _set_if_needed(tl_key_canon, int(base))
-
-        # garante global canônico também (mesmo que global estivesse ausente/alias)
         _set_if_needed(global_key_canon, int(base))
+        _set_if_needed("fase_intima", label)
+        _set_if_needed(f"fase_intima::{tl}", label)
 
         return facts
 
@@ -9687,49 +9701,79 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             except Exception:
                 tl = ""
 
+        tl = _normalize_timeline(tl)
+
+        def _clamp(v: int) -> int:
+            if v < self._INTIMACY_MIN:
+                return self._INTIMACY_MIN
+            if v > self._INTIMACY_MAX:
+                return self._INTIMACY_MAX
+            return v
+
+        def _label_to_phase(raw: Any) -> Optional[int]:
+            if not isinstance(raw, str):
+                return None
+            s = str(raw).strip().lower()
+            rev = {v: k for k, v in INTIMACY_PHASES.items()}
+            if s in rev:
+                return _clamp(int(rev[s]))
+            return None
+
         keys: List[str] = []
         if tl:
             keys += [
                 f"intimacy.phase::{tl}",
                 f"intimacy_phase::{tl}",
                 f"mary_intimacy_phase::{tl}",
+                f"fase_intima::{tl}",
             ]
 
         keys += [
             "intimacy.phase",
             "intimacy_phase",
             "mary_intimacy_phase",
+            "fase_intima",
             "phase_intimacy",
             "phase",
         ]
 
         for k in keys:
-            if k in facts:
-                try:
-                    v = int(facts.get(k))
-                    if v < self._INTIMACY_MIN:
-                        return self._INTIMACY_MIN
-                    if v > self._INTIMACY_MAX:
-                        return self._INTIMACY_MAX
-                    return v
-                except Exception:
-                    pass
+            if k not in facts:
+                continue
+
+            raw = facts.get(k)
+
+            # aceita labels textuais
+            if k.startswith("fase_intima"):
+                p = _label_to_phase(raw)
+                if p is not None:
+                    return p
+
+            try:
+                return _clamp(int(raw))
+            except Exception:
+                pass
+
         return 0
+
 
     def _set_intimacy_phase(self, usuario_key: str, phase: int, timeline: str = "") -> int:
         try:
             p = int(phase)
         except Exception:
             p = 0
-    
-        maxp = int(globals().get("MAX_INTIMACY_PHASE", self._INTIMACY_MAX))
+
+        maxp = int(MAX_INTIMACY_PHASE)
         p = max(self._INTIMACY_MIN, min(p, maxp))
-    
-        # sempre grava global
+
+        tl = _normalize_timeline(timeline) if timeline else ""
+        label = INTIMACY_PHASES.get(p, "tensao")
+
+        # global
         set_fact_safe(usuario_key, "intimacy.phase", p, {"fonte": "intimacy_progression"})
-    
-        # grava também na timeline específica se existir
-        tl = (timeline or "").strip()
+        set_fact_safe(usuario_key, "fase_intima", label, {"fonte": "intimacy_progression"})
+
+        # timeline específica
         if tl:
             try:
                 set_fact_safe(
@@ -9738,9 +9782,15 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     p,
                     {"fonte": "intimacy_progression"},
                 )
+                set_fact_safe(
+                    usuario_key,
+                    f"fase_intima::{tl}",
+                    label,
+                    {"fonte": "intimacy_progression"},
+                )
             except Exception:
                 pass
-    
+
         return p
         
     def _chat(
