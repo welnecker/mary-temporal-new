@@ -1223,6 +1223,36 @@ def _delete_last_turn_active() -> bool:
     _clear_mary_caches_all_related()
     return ok
 
+def _delete_last_n_turns_active(n: int) -> int:
+    """
+    Apaga os últimos N turnos da timeline ativa.
+    Cada 'turno' = 1 registro backend com mensagem_usuario + resposta_mary.
+    """
+    usuario_key = _usuario_key_atual()
+
+    try:
+        n = int(n)
+    except Exception:
+        return 0
+
+    if n <= 0:
+        return 0
+
+    apagados = 0
+    for _ in range(n):
+        try:
+            ok = bool(delete_last_interaction(usuario_key))
+        except Exception:
+            ok = False
+
+        if not ok:
+            break
+
+        apagados += 1
+
+    _invalidate_backend_cache()
+    _clear_mary_caches_all_related()
+    return apagados
 
 def _reset_chapter_current_timeline() -> int:
     """
@@ -3002,12 +3032,47 @@ def _render_sidebar() -> None:
                 hist = st.session_state.get("chat_history", [])
                 if len(hist) >= 2:
                     st.session_state["chat_history"] = hist[:-2]
+                else:
+                    st.session_state["chat_history"] = []
                 st.session_state["mary_intro_done"] = False
                 st.success("✅ Último turno apagado (timeline ativa).")
             else:
                 st.warning("Nada para apagar (backend não retornou sucesso).")
             st.rerun()
-
+        
+        col_del_n_1, col_del_n_2 = st.columns([1, 1])
+        
+        with col_del_n_1:
+            n_delete = st.number_input(
+                "Qtd. de turnos para apagar",
+                min_value=1,
+                max_value=50,
+                value=3,
+                step=1,
+                key="num_delete_last_n_turns",
+            )
+        
+        with col_del_n_2:
+            st.write("")
+            st.write("")
+            if st.button("Apagar últimas N interações (backend)", key="btn_delete_last_n_turns"):
+                apagados = _delete_last_n_turns_active(int(n_delete))
+        
+                if apagados > 0:
+                    hist = st.session_state.get("chat_history", [])
+                    remover = apagados * 2  # user + assistant
+                    if remover >= len(hist):
+                        st.session_state["chat_history"] = []
+                    else:
+                        st.session_state["chat_history"] = hist[:-remover]
+        
+                    st.session_state["mary_intro_done"] = False
+                    st.success(f"✅ Apaguei {apagados} turno(s) da timeline ativa.")
+                else:
+                    st.warning("Nada para apagar (backend não retornou sucesso).")
+        
+                st.rerun()
+        
         if st.button("Limpar tela (visual)", key="btn_clear_screen_visual"):
             st.session_state["chat_history"] = []
             st.session_state["mary_intro_done"] = False
