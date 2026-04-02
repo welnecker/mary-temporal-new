@@ -10201,10 +10201,27 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         _set_intimacy_phase(usuario_key, timeline_final, desired_next)
         
                     # re-sync facts para garantir aliases corretos
-                    facts_now = cached_get_facts(usuario_key) or {}
-                    _sync_intimacy_phase_facts(usuario_key, facts_now, timeline_final)
-                        except Exception:
-                            pass
+                    try:
+                        facts_now = cached_get_facts(usuario_key) or {}
+                        _sync_intimacy_phase_facts(usuario_key, facts_now, timeline_final)
+                    except Exception:
+                        pass
+
+                # ----------------------------------------------------------
+                # Arco persistente com terceiros
+                # ----------------------------------------------------------
+                try:
+                    _update_tp_arc_for_turn(
+                        usuario_key=usuario_key,
+                        facts=cached_get_facts(usuario_key),
+                        timeline=timeline_final,
+                        prompt=prompt,
+                        texto=texto,
+                        allow_third_party_seduction=allow_third_party_seduction_final,
+                        nsfw_on=nsfw_on,
+                    )
+                except Exception:
+                    pass
 
                 # ----------------------------------------------------------
                 # Arco persistente com terceiros
