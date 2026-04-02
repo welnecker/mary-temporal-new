@@ -1677,8 +1677,16 @@ def _looks_like_memory_fact_query(query: str) -> bool:
 
 def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     """
-    Ranking local simples em cima de title + kind + text + tags.
-    Complementa o Mongo $text.
+    Ranking local em cima de title + kind + text + tags.
+    Complementa o Mongo $text com pesos mais equilibrados.
+
+    Prioridade:
+    - title: forte
+    - tags: forte, mas ligeiramente abaixo do título
+    - text: base
+    - query inteira: bônus
+    - perguntas factuais: leve reforço estrutural
+    - recência: bônus pequeno
     """
     q = _t_norm(query or "")
     if not q:
@@ -1705,37 +1713,67 @@ def _score_long_memory_local(mem: Dict[str, Any], query: str) -> float:
     elif isinstance(mtags, str):
         tags = [_t_norm(t.strip()) for t in mtags.split(",") if t.strip()]
 
-    # título pesa bem
+    # -------------------------
+    # title: peso forte
+    # -------------------------
     for term in q_terms_norm:
         if term and term in title_n:
-            score += 4.0
+            score += 4.25
 
-    # tags pesam muito
+    # -------------------------
+    # tags: peso forte, com match exato OU parcial
+    # -------------------------
     for term in q_terms_norm:
-        if term and term in tags:
-            score += 4.5
+        if not term:
+            continue
 
-    # texto pesa normal
+        if term in tags:
+            score += 4.0
+            continue
+
+        if any(term in tg for tg in tags):
+            score += 3.0
+
+    # -------------------------
+    # text: peso base
+    # -------------------------
     for term in q_terms_norm:
         if term and term in txt_n:
-            score += 1.0
+            score += 1.15
 
-    # bonus por casar query inteira
+    # -------------------------
+    # bônus por casar query inteira
+    # -------------------------
     if q and q in hay:
         score += 2.0
 
-    # bônus para factual
+    # -------------------------
+    # bônus leve por sobreposição temática do domínio
+    # -------------------------
+    overlap_terms = _domain_terms("overlap")
+    if overlap_terms:
+        overlap_count = _count_matching_terms(q, overlap_terms)
+        if overlap_count > 0:
+            score += min(0.9, overlap_count * 0.3)
+
+    # -------------------------
+    # bônus estrutural para queries factuais
+    # -------------------------
     if _looks_like_memory_fact_query(query):
         if title_n:
-            score += 0.4
+            score += 0.45
         if tags:
-            score += 0.6
+            score += 0.55
 
-    # pin não deveria entrar aqui normalmente, mas se entrar por algum motivo:
+    # -------------------------
+    # pin não deveria entrar aqui normalmente, mas se entrar:
+    # -------------------------
     if str(kind or "").strip().lower() == "pin":
         score += 1.0
 
+    # -------------------------
     # leve bônus por recência
+    # -------------------------
     ts = _memory_timestamp(mem)
     if ts is not None:
         try:
@@ -1759,16 +1797,14 @@ def _fallback_local_long_memory_search(
     facts: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Fallback genérico quando o Mongo $text não encontra bem.
-    Faz varredura local nas long memories usando:
-    - title
-    - kind
-    - text
-    - tags
+    Fallback local para Long Memory quando o Mongo $text não encontra bem.
 
-    IMPORTANTE:
-    - recebe usuario_key para poder verificar conflito com emoção recente;
-    - respeita facts/canon e também o histórico recente.
+    Estratégia:
+    - varre long memories por title + tags + text
+    - respeita timeline
+    - exclui canon/pin/guide/fixed
+    - evita competir com facts/canon do turno
+    - reduz viés de bloqueio excessivo por emoção recente
     """
     rows = list_long_memory(long_key, limit=300) or []
     if not rows:
@@ -1784,30 +1820,106 @@ def _fallback_local_long_memory_search(
         s = (x or "").strip().lower()
         return s in ("[all]", "all", "*")
 
+    def _timeline_matches(tms_raw: str, tl_norm: str) -> bool:
+        if not tms_raw:
+            return True
+        if _is_all_marker(tms_raw):
+            return True
+        try:
+            return _normalize_timeline(tms_raw) == tl_norm
+        except Exception:
+            return str(tms_raw).strip().lower() == tl_norm
+
     for d in rows:
+        if not isinstance(d, dict):
+            continue
+
         txt = str(d.get("text") or "").strip()
         if not txt:
             continue
 
         meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
 
+        # -------------------------
+        # timeline
+        # -------------------------
         tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
-        if tms and not (_is_all_marker(tms) or _normalize_timeline(tms) == tl):
+        if not _timeline_matches(tms, tl):
             continue
 
+        # -------------------------
+        # kind: este fallback NÃO injeta memórias permanentes/canon
+        # -------------------------
         kind = str(meta.get("kind") or "").strip().lower()
         if kind in ("canon", "pin", "guide", "fixed"):
             continue
 
-        # impede memory de competir com facts/canon do turno
+        if re.search(r"\[\s*kind\s*=\s*(pin|guide|fixed|canon)\s*\]", txt, flags=re.IGNORECASE):
+            continue
+
+        # -------------------------
+        # facts/canon do turno têm prioridade real
+        # -------------------------
         if _memory_conflicts_with_truth(txt, facts=facts):
             continue
 
-        # impede memory de reacender estados emocionais já estabilizados
-        if _memory_conflicts_with_recent_emotion(txt, history=history):
-            continue
-
+        # -------------------------
+        # score local híbrido
+        # -------------------------
         score = _score_long_memory_local(d, prompt)
+
+        # reforço leve por estrutura da memória
+        title = str(meta.get("title") or "").strip()
+        tags = meta.get("tags")
+        has_title = bool(title)
+
+        tag_list: List[str] = []
+        if isinstance(tags, list):
+            tag_list = [str(x).strip() for x in tags if str(x).strip()]
+        elif isinstance(tags, str):
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+        if has_title:
+            score += 0.15
+        if tag_list:
+            score += 0.20
+
+        # -------------------------
+        # bloqueio emocional recente: NÃO matar cedo demais
+        # Só penaliza; só exclui quando a memória já veio fraca
+        # -------------------------
+        recent_emotion_conflict = False
+        try:
+            recent_emotion_conflict = _memory_conflicts_with_recent_emotion(txt, history=history)
+        except Exception:
+            recent_emotion_conflict = False
+
+        if recent_emotion_conflict:
+            score -= 1.25
+
+        # -------------------------
+        # segunda chance para memória bem estruturada
+        # mesmo quando o prompt vem indireto
+        # -------------------------
+        if score <= 0:
+            title_n = _t_norm(title)
+            txt_n = _t_norm(txt)
+            prompt_n = _t_norm(prompt or "")
+
+            tags_n = [_t_norm(x) for x in tag_list]
+            prompt_terms = [
+                t for t in re.findall(r"[\w\u00C0-\u017F']+", prompt_n, flags=re.UNICODE)
+                if len(t) >= 4
+            ]
+
+            title_hit = any(t in title_n for t in prompt_terms) if prompt_terms else False
+            tag_hit = any(t in tags_n for t in prompt_terms) if prompt_terms else False
+            text_hit = any(t in txt_n for t in prompt_terms) if prompt_terms else False
+
+            # recupera memória se houver boa estrutura semântica mínima
+            if (has_title and tag_list and (title_hit or tag_hit)) or (has_title and text_hit):
+                score = 0.85
+
         if score <= 0:
             continue
 
@@ -2215,14 +2327,22 @@ def _inject_intro_as_context_once(
 # ==========================================================
 def _lm_query_from_prompt(user_prompt: str) -> str:
     """
-    Gera consulta curta para Mongo $text, com expansão factual leve.
+    Gera uma consulta curta para Mongo $text, com expansão leve baseada
+    em CONCEITOS narrativos/factuais, nunca em nomes próprios.
+
+    Objetivo:
+    - melhorar recall sem acoplar o script a personagens/lugares fixos
+    - manter a query curta e limpa
+    - privilegiar termos úteis do prompt original
     """
     s = (user_prompt or "").strip().lower()
     if not s:
         return ""
 
+    # limpeza básica
     s = re.sub(r"https?://\S+", " ", s)
     s = re.sub(r"\bwww\.\S+", " ", s)
+    s = re.sub(r"[^\w\u00C0-\u017F'\s-]", " ", s, flags=re.UNICODE)
     s = re.sub(r"\s{2,}", " ", s).strip()
     if not s:
         return ""
@@ -2235,19 +2355,31 @@ def _lm_query_from_prompt(user_prompt: str) -> str:
     stop = _domain_terms("stopwords")
     keep = [t for t in toks if len(t) >= 3 and t not in stop]
 
-    priority_terms_cfg = _domain_terms("priority")
+    # prioriza termos conceituais importantes, sem depender de nomes
+    priority_terms_cfg = set(_domain_terms("priority") or [])
     priority_terms = [t for t in keep if t in priority_terms_cfg]
 
-    q_terms = list(dict.fromkeys(priority_terms + keep[:15]))
+    # preserva ordem e remove duplicatas
+    q_terms = list(dict.fromkeys(priority_terms + keep))
+
+    # limita tamanho para não poluir o $text
+    q_terms = q_terms[:18]
+
     q = " ".join(q_terms).strip()
     q = re.sub(r"\s{2,}", " ", q).strip()
     return q or s
 
+
 def _expand_memory_query(user_prompt: str) -> str:
     """
-    Expande a query com aliases narrativos/factuais.
-    Pequeno upgrade de recall para perguntas sobre passado,
-    família, primeira vez, primeiro beijo, formação etc.
+    Expande a query com aliases conceituais, sem usar nomes próprios.
+
+    Regras:
+    - expandir apenas por temas estáveis do domínio
+    - não inventar entidades específicas
+    - não privilegiar nomes, lugares ou fatos hardcoded
+    - melhorar recall para perguntas indiretas sobre passado, vínculos,
+      biografia, moradia, eventos e conflitos
     """
     p = _t_norm(user_prompt or "")
     if not p:
@@ -2255,35 +2387,223 @@ def _expand_memory_query(user_prompt: str) -> str:
 
     extras: List[str] = []
 
-    # família
-    if any(x in p for x in ("mae", "mãe")):
-        extras += ["mae", "mãe", "familia", "joselina"]
-    if "pai" in p:
-        extras += ["pai", "familia"]
+    def has_any(*terms: str) -> bool:
+        return any(t in p for t in terms)
 
-    # relação / história
-    if any(x in p for x in ("conhecemos", "conheceu", "nos conhecemos", "onde nos conhecemos")):
-        extras += ["conheceram", "conhecer", "se conheceram", "onde se conheceram"]
+    # -------------------------
+    # família e vínculos pessoais
+    # -------------------------
+    if has_any("mae", "mãe"):
+        extras += ["mae", "mãe", "familia", "parentesco", "origem"]
 
-    if any(x in p for x in ("primeiro beijo", "nosso beijo", "beijamos primeiro")):
-        extras += ["primeiro_beijo", "primeiro beijo", "beijo"]
+    if has_any("pai"):
+        extras += ["pai", "familia", "parentesco", "origem"]
 
-    if any(x in p for x in ("primeira vez", "transamos", "sexo", "transa", "ja transou", "já transou")):
-        extras += ["primeira_vez", "primeira vez", "sexo", "transa", "consumado", "consumada"]
+    if has_any("irma", "irmã", "irmao", "irmão", "filho", "filha", "parentes"):
+        extras += ["familia", "parentesco", "parentes"]
 
-    # biografia
-    if any(x in p for x in ("formacao", "formação", "formada", "curso", "faculdade", "graduacao", "graduação")):
-        extras += ["formacao", "formação", "curso", "faculdade", "graduacao", "graduação", "ufes", "psicologia"]
+    # -------------------------
+    # relação / história em comum
+    # -------------------------
+    if has_any(
+        "conhecemos",
+        "conheceu",
+        "nos conhecemos",
+        "onde nos conhecemos",
+        "como nos conhecemos",
+        "quando nos conhecemos",
+    ):
+        extras += [
+            "historia",
+            "história",
+            "passado",
+            "relacao",
+            "relação",
+            "conhecer",
+            "conheceram",
+            "inicio",
+            "início",
+            "comeco",
+            "começo",
+        ]
 
-    if any(x in p for x in ("profissao", "profissão", "trabalho", "trabalha", "carreira")):
-        extras += ["profissao", "profissão", "trabalho", "carreira"]
+    if has_any("primeiro beijo", "nosso beijo", "beijamos primeiro", "beijo"):
+        extras += [
+            "beijo",
+            "primeiro_beijo",
+            "primeiro",
+            "historia",
+            "história",
+            "marco",
+        ]
 
-    if any(x in p for x in ("onde mora", "mora onde", "moram", "moradia", "casa")):
-        extras += ["mora", "moradia", "casa", "camburi"]
+    if has_any(
+        "primeira vez",
+        "transamos",
+        "sexo",
+        "transa",
+        "ja transou",
+        "já transou",
+        "consumado",
+        "consumada",
+    ):
+        extras += [
+            "primeira_vez",
+            "primeira",
+            "sexo",
+            "transa",
+            "intimidade",
+            "consumado",
+            "consumada",
+            "marco",
+            "historia",
+            "história",
+        ]
+
+    # -------------------------
+    # biografia / formação / trabalho
+    # -------------------------
+    if has_any(
+        "formacao",
+        "formação",
+        "formada",
+        "curso",
+        "faculdade",
+        "graduacao",
+        "graduação",
+        "estudou",
+        "estudo",
+    ):
+        extras += [
+            "formacao",
+            "formação",
+            "curso",
+            "faculdade",
+            "graduacao",
+            "graduação",
+            "estudo",
+            "biografia",
+            "historico",
+            "histórico",
+        ]
+
+    if has_any(
+        "profissao",
+        "profissão",
+        "trabalho",
+        "trabalha",
+        "carreira",
+        "emprego",
+        "ocupacao",
+        "ocupação",
+    ):
+        extras += [
+            "profissao",
+            "profissão",
+            "trabalho",
+            "carreira",
+            "emprego",
+            "ocupacao",
+            "ocupação",
+            "biografia",
+        ]
+
+    # -------------------------
+    # moradia / vida prática
+    # -------------------------
+    if has_any(
+        "onde mora",
+        "mora onde",
+        "moram",
+        "moradia",
+        "casa",
+        "apartamento",
+        "vive",
+        "endereco",
+        "endereço",
+    ):
+        extras += [
+            "mora",
+            "moradia",
+            "casa",
+            "apartamento",
+            "residencia",
+            "residência",
+            "vive",
+            "local",
+        ]
+
+    # -------------------------
+    # passado / memória / eventos
+    # -------------------------
+    if has_any(
+        "lembra",
+        "lembrar",
+        "passado",
+        "aconteceu",
+        "evento",
+        "episodio",
+        "episódio",
+        "caso",
+        "historia",
+        "história",
+    ):
+        extras += [
+            "memoria",
+            "memória",
+            "passado",
+            "evento",
+            "episodio",
+            "episódio",
+            "historia",
+            "história",
+            "contexto",
+        ]
+
+    # -------------------------
+    # emoções / conflitos / tensão
+    # -------------------------
+    if has_any(
+        "medo",
+        "culpa",
+        "vergonha",
+        "raiva",
+        "ciume",
+        "ciúme",
+        "conflito",
+        "briga",
+        "discussao",
+        "discussão",
+        "suspeita",
+        "inseguranca",
+        "insegurança",
+    ):
+        extras += [
+            "emocao",
+            "emoção",
+            "sentimento",
+            "conflito",
+            "culpa",
+            "medo",
+            "vergonha",
+            "raiva",
+            "ciume",
+            "ciúme",
+            "suspeita",
+            "inseguranca",
+            "insegurança",
+            "tensao",
+            "tensão",
+        ]
 
     toks = re.findall(r"[\w\u00C0-\u017F']+", p, flags=re.UNICODE)
-    all_terms = list(dict.fromkeys(toks + extras))
-    return " ".join(t for t in all_terms if t).strip()
+
+    all_terms = list(dict.fromkeys(
+        t for t in (toks + extras)
+        if t and len(t) >= 3
+    ))
+
+    return " ".join(all_terms).strip()
 
 def _inject_long_memory_pins_always(
     shared_key: str,
@@ -2294,11 +2614,14 @@ def _inject_long_memory_pins_always(
     dedupe_bucket: Optional[set] = None,
 ) -> None:
     """
-     Injeta memórias FIXAS (pin/guide/fixed) em TODAS as respostas.
-    Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando meta.kind veio "memory".
+    Injeta memórias FIXAS (pin/guide/fixed) em TODAS as respostas.
+    Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando
+    meta.kind veio "memory".
     """
+
     try:
-        long_key = _long_key(shared_key)
+        user_id = str(shared_key or "").split("::")[0].strip()
+        long_key = _long_key(user_id) if user_id else _long_key(_current_user_id_fallback())
         rows = list_long_memory(long_key, limit=200) or []
     except Exception:
         rows = []
@@ -2307,6 +2630,7 @@ def _inject_long_memory_pins_always(
         return
 
     tl = _normalize_timeline(timeline)
+    used = dedupe_bucket if dedupe_bucket is not None else set()
 
     def _is_all_marker(x: str) -> bool:
         s = (x or "").strip().lower()
@@ -2314,24 +2638,20 @@ def _inject_long_memory_pins_always(
 
     def _timeline_matches(tms_raw: str, tl_norm: str) -> bool:
         if not tms_raw:
-            return True  # sem timeline -> considera all (para pins)
+            return True  # sem timeline -> considera all para pin/guide/fixed
         if _is_all_marker(tms_raw):
             return True
         try:
             return _normalize_timeline(tms_raw) == tl_norm
         except Exception:
-            return tms_raw.strip() == tl_norm
-
-    picked: List[Dict[str, Any]] = []
+            return str(tms_raw).strip().lower() == tl_norm
 
     _RE_KIND_TAG = re.compile(r"\[\s*kind\s*=\s*(pin|guide|fixed)\s*\]", re.IGNORECASE)
     _RE_TIMELINE_TAG = re.compile(r"\[\s*timeline\s*=\s*([^\]]+)\s*\]", re.IGNORECASE)
     _RE_ANY_BRACKETS = re.compile(r"\[[^\]]+\]")
 
     def _clean_text(txt: str) -> str:
-        # remove tags [kind=...][timeline=...], etc.
         cleaned = _RE_ANY_BRACKETS.sub("", txt or "")
-        # normaliza espaços
         cleaned = re.sub(r"[ \t]+", " ", cleaned).strip()
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         return cleaned
@@ -2340,117 +2660,104 @@ def _inject_long_memory_pins_always(
         k = (meta_kind or "").strip().lower()
         if k in ("pin", "guide", "fixed"):
             return k
-        # compat: meta.kind veio "memory" (ou vazio), mas o text está tagueado
         m = _RE_KIND_TAG.search(txt or "")
         if m:
             return m.group(1).lower()
-        return k  # mantém como está (provavelmente "memory"/"")
+        return k
 
-    def _infer_timeline(meta: Dict[str, Any], txt: str) -> str:
-        # prioridade: meta.timeline_at_save / meta.timeline
-        tms = str(meta.get("timeline_at_save") or meta.get("timeline") or "").strip()
+    def _extract_timeline(meta: Dict[str, Any], txt: str) -> str:
+        tms = (
+            str(meta.get("timeline_at_save") or "").strip()
+            or str(meta.get("timeline") or "").strip()
+        )
         if tms:
             return tms
-        # fallback: ler do texto [timeline=...]
         m = _RE_TIMELINE_TAG.search(txt or "")
-        if not m:
-            return ""
-        raw = (m.group(1) or "").strip()
-        # aceita formatos: [all], "[all]", [timeline=[all]]
-        raw = raw.strip().strip('"').strip("'")
-        raw = raw.replace("[", "").replace("]", "").strip()
-        return raw
+        if m:
+            return str(m.group(1) or "").strip()
+        return ""
 
-    #  ordena por ts desc quando existir (mais recentes primeiro)
-    try:
-        def _ts_key(d: Dict[str, Any]) -> float:
-            v = d.get("ts") or (d.get("meta") or {}).get("ts") or (d.get("meta") or {}).get("date")
-            if v is None:
-                return 0.0
-            # datetime-like
-            try:
-                ts_fn = getattr(v, "timestamp", None)
-                if callable(ts_fn):
-                    return float(ts_fn())
-            except Exception:
-                pass
-            # numeric
-            try:
-                return float(v)
-            except Exception:
-                pass
-            # iso-ish / other string (best-effort)
-            try:
-                return float(str(v).strip())
-            except Exception:
-                return 0.0
+    def _dedupe_key(kind: str, title: str, text: str) -> str:
+        base = f"{kind}|{(title or '').strip()}|{(text or '').strip()[:220]}"
+        return hashlib.md5(base.encode("utf-8", errors="ignore")).hexdigest()
 
-        rows = sorted(rows, key=_ts_key, reverse=True)
-    except Exception:
-        pass
+    picked: List[Tuple[str, str]] = []
 
-    for d in rows:
-        raw_txt = str(d.get("text") or "").strip()
-        if not raw_txt:
+    for row in rows:
+        if not isinstance(row, dict):
             continue
 
-        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-        kind = _infer_kind(str(meta.get("kind") or ""), raw_txt)
+        txt_raw = str(row.get("text") or row.get("conteudo") or "").strip()
+        if not txt_raw:
+            continue
 
-        #  só entra o que for "fixo"
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        kind = _infer_kind(str(meta.get("kind") or ""), txt_raw)
+
         if kind not in ("pin", "guide", "fixed"):
             continue
 
-        # respeita timeline_at_save se existir; senão tenta timeline do text; senão considera "all"
-        tms = _infer_timeline(meta, raw_txt)
-        if not _timeline_matches(tms, tl):
+        tms_raw = _extract_timeline(meta, txt_raw)
+        if not _timeline_matches(tms_raw, tl):
             continue
 
-        txt = _clean_text(raw_txt)
+        title = str(meta.get("title") or "").strip()
+        txt = _clean_text(txt_raw)
         if not txt:
             continue
 
-        if dedupe_bucket is not None:
-            h = hashlib.sha1(txt.encode("utf-8")).hexdigest()
-            if h in dedupe_bucket:
+        try:
+            if _memory_conflicts_with_truth(txt):
                 continue
-            dedupe_bucket.add(h)
+        except Exception:
+            pass
 
-        picked.append(d)
-        if len(picked) >= int(max_items or 12):
+        key = _dedupe_key(kind, title, txt)
+        if key in used:
+            continue
+
+        used.add(key)
+
+        if title:
+            picked.append((kind, f"- {title}: {txt}"))
+        else:
+            picked.append((kind, f"- {txt}"))
+
+        if len(picked) >= max_items:
             break
 
     if not picked:
         return
 
-    lines = [
-        "[MEMÓRIAS FIXAS - LONG MEMORY] - NÃO altera CENA ATIVA",
-        "FATOS DE MUNDO (guia prático): use para orientar locais, rotina e coerência.",
-        "Não citar literalmente; incorporar naturalmente.",
-        "",
-    ]
+    fixed_lines = [line for kind, line in picked if kind == "fixed"]
+    pin_lines   = [line for kind, line in picked if kind == "pin"]
+    guide_lines = [line for kind, line in picked if kind == "guide"]
 
-    for i, d in enumerate(picked, 1):
-        meta = d.get("meta") if isinstance(d.get("meta"), dict) else {}
-        title = str(meta.get("title") or meta.get("key") or "").strip()
-        header = f"- PIN {i}"
-        if title:
-            header += f" - {title}"
-        lines.append(header)
+    parts: List[str] = []
 
-        raw_txt = str(d.get("text") or "").strip()
-        txt = _clean_text(raw_txt)
+    if fixed_lines:
+        parts.append("[MEMÓRIAS FIXAS]")
+        parts.extend(fixed_lines)
 
-        lines.append(txt)
-        lines.append("")
+    if pin_lines:
+        if parts:
+            parts.append("")
+        parts.append("[PINS PERMANENTES]")
+        parts.extend(pin_lines)
 
-    block = "\n".join(lines).strip()
+    if guide_lines:
+        if parts:
+            parts.append("")
+        parts.append("[GUIAS PERMANENTES]")
+        parts.extend(guide_lines)
 
-    if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
-        base = str(messages[0].get("content") or "").rstrip()
-        messages[0]["content"] = (base + "\n\n" + block).strip()
-    else:
-        messages.append({"role": "system", "content": block})
+    if not parts:
+        return
+
+    messages.append({
+        "role": "system",
+        "content": "\n".join(parts).strip()
+    })
 
 def _norm_any(value: Any) -> str:
     """
