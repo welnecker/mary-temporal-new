@@ -2787,6 +2787,188 @@ def _norm_any(value: Any) -> str:
 
     return _t_norm(str(value))
 
+def _scene_markers_base() -> Tuple[str, ...]:
+    """
+    Marcadores simples de cenário físico recorrente.
+    Mantido centralizado para evitar divergência entre helpers.
+    """
+    return (
+        "hotel",
+        "motel",
+        "orla",
+        "quiosque",
+        "praia",
+        "academia",
+        "carro",
+        "rua",
+        "apartamento",
+        "quarto",
+        "cozinha",
+        "banheiro",
+        "sala",
+        "casa",
+    )
+
+
+def _truth_has_any_phrase(txt: str, phrases) -> bool:
+    txt_n = _t_norm(txt or "")
+    return any(_t_norm(str(p)) in txt_n for p in phrases if p)
+
+
+def _truth_looks_like_memory_mode(txt: str) -> bool:
+    memory_markers = (
+        "lembra", "lembrava", "lembrou",
+        "recorda", "recordou", "recordacao", "recordação",
+        "pensou em", "pensava em",
+        "imaginou", "imaginava",
+        "como naquele", "como naquela",
+        "naquele dia", "naquela noite", "naquela epoca", "naquela época",
+        "antes", "depois", "outra vez", "certa vez", "quando",
+        "memoria", "memória", "lembranca", "lembrança",
+        "resquicio", "resquício",
+        "na memoria", "na memória",
+        "na lembranca", "na lembrança",
+        "eco", "recordação", "fantasma daquela noite",
+        "residuo", "resíduo",
+    )
+    return _truth_has_any_phrase(txt, memory_markers)
+
+
+def _truth_asserts_present_state(txt: str) -> bool:
+    strong_markers = (
+        "agora", "neste momento", "nesse momento",
+        "esta em", "está em", "permanece", "segue", "continua",
+        "aqui e agora", "neste instante",
+    )
+    weak_markers = (
+        "aqui", "esta", "está",
+    )
+
+    if _truth_has_any_phrase(txt, strong_markers):
+        return True
+
+    if _truth_looks_like_memory_mode(txt):
+        return False
+
+    return _truth_has_any_phrase(txt, weak_markers)
+
+
+def _truth_has_any_scene_marker(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, _scene_markers_base())
+
+
+def _truth_mentions_competing_scene(txt: str, active_blob: str) -> bool:
+    txt_n = _t_norm(txt or "")
+    active_n = _t_norm(active_blob or "")
+
+    return any(
+        marker in txt_n and marker not in active_n
+        for marker in _scene_markers_base()
+    )
+
+
+def _truth_phase_rank(txt: str) -> int:
+    txt_n = _t_norm(txt or "")
+
+    if any(x in txt_n for x in ("aftercare", "depois do orgasmo", "apos o orgasmo", "após o orgasmo")):
+        return 5
+    if any(x in txt_n for x in ("orgasmo", "climax", "clímax", "gozar", "gozou")):
+        return 4
+    if any(x in txt_n for x in ("pre climax", "pré climax", "pré-clímax", "pre-clímax", "excitacao intensa", "excitação intensa")):
+        return 3
+    if any(x in txt_n for x in ("excitacao", "excitação", "intimidade", "transa", "sexo", "consumacao", "consumação")):
+        return 2
+    if any(x in txt_n for x in ("toque", "beijo", "aproximacao", "aproximação", "tensao", "tensão")):
+        return 1
+    return 0
+
+
+def _truth_affirms_not_virgin(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "perdeu a virgindade",
+        "deixou de ser virgem",
+        "nao e mais virgem",
+        "não é mais virgem",
+        "teve sua primeira vez",
+        "foi a primeira vez",
+        "ja nao e virgem",
+        "já não é virgem",
+        "se entregou pela primeira vez",
+        "ja tinha sido iniciada",
+        "já tinha sido iniciada",
+    ))
+
+
+def _truth_affirms_still_virgin(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "e virgem",
+        "é virgem",
+        "continua virgem",
+        "ainda e virgem",
+        "ainda é virgem",
+        "nunca teve sua primeira vez",
+        "segue virgem",
+    ))
+
+
+def _truth_denies_consumation(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "nao houve sexo",
+        "não houve sexo",
+        "nao transaram",
+        "não transaram",
+        "nao foi consumado",
+        "não foi consumado",
+        "nao aconteceu de verdade",
+        "não aconteceu de verdade",
+        "pararam antes",
+        "nao passaram daquele limite",
+        "não passaram daquele limite",
+        "nao foram ate o fim",
+        "não foram até o fim",
+        "nunca chegou a acontecer",
+        "ficaram a um passo",
+    ))
+
+
+def _truth_affirms_consumation(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "houve sexo",
+        "transaram",
+        "foi consumado",
+        "houve relacao",
+        "houve relação",
+        "foram ate o fim",
+        "foram até o fim",
+        "se entregou por completo",
+        "de fato aconteceu",
+        "atravessaram o limite",
+    ))
+
+
+def _truth_denies_third_party(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "nunca houve terceiro",
+        "nao existe terceiro",
+        "não existe terceiro",
+        "jamais considerou outro homem",
+        "nunca sentiu tensão por outro homem",
+        "jamais cogitou outro homem",
+        "nenhum outro homem mexeu com ela",
+    ))
+
+
+def _truth_affirms_absolute_fidelity(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "fidelidade absoluta",
+        "nunca pensou em outro",
+        "jamais se sentiu atraida por outro",
+        "jamais se sentiu atraída por outro",
+        "nenhum outro homem despertou desejo",
+        "o desejo dela sempre foi exclusivo",
+    ))
+
+
 def _memory_conflicts_with_truth(
     mem_text: str,
     *,
@@ -2794,17 +2976,21 @@ def _memory_conflicts_with_truth(
 ) -> bool:
     """
     Retorna True apenas quando a memória contradiz facts vivos de forma plausível.
-    Não bloqueia memória só por tocar no mesmo tema, nem por mencionar outro cenário
-    como lembrança, comparação ou eco emocional.
+
+    Filosofia:
+    - NÃO bloqueia memória só por tocar no mesmo tema
+    - NÃO bloqueia lembranças, ecos emocionais ou comparações de cenário
+    - bloqueia apenas quando a memória tenta competir com a verdade ativa
+      da cena, da relação ou dos estados governados por facts
     """
     f = facts if isinstance(facts, dict) else {}
     t = _t_norm(mem_text or "")
-
     if not t:
         return False
 
     scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
     scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
+   
     scene_acao = _t_norm(str(f.get("cena.acao") or ""))
     state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
 
@@ -2842,54 +3028,9 @@ def _memory_conflicts_with_truth(
     phase_terms = _fact_terms("fase_intima")
     arc_terms = _fact_terms("arco_relacional") | _fact_terms("arco_terceiro")
 
-    def _has_any_phrase(txt: str, phrases) -> bool:
-        return any(_t_norm(str(p)) in txt for p in phrases if p)
-
-    def _asserts_present_state(txt: str) -> bool:
-        strong_markers = (
-            "agora", "neste momento", "nesse momento",
-            "está em", "esta em", "permanece", "segue", "continua"
-        )
-        weak_markers = (
-            "aqui", "ali", "fica", "está", "esta", "estava"
-        )
-        if _has_any_phrase(txt, strong_markers):
-            return True
-        return _has_any_phrase(txt, weak_markers) and not _looks_like_memory_mode(txt)
-
-    def _looks_like_memory_mode(txt: str) -> bool:
-        memory_markers = (
-            "lembra", "lembrava", "lembrou", "recorda", "recordou",
-            "pensou em", "pensava em", "imaginou", "imaginava",
-            "como naquele", "como naquela", "naquele dia", "naquela noite",
-            "antes", "depois", "outra vez", "certa vez", "quando",
-            "memória", "memoria", "lembrança", "lembranca", "resquício", "resquicio"
-        )
-        return _has_any_phrase(txt, memory_markers)
-
-    def _has_any_scene_marker(txt: str) -> bool:
-        scene_markers = (
-            "hotel", "motel", "orla", "quiosque", "praia", "academia",
-            "carro", "rua", "apartamento", "quarto", "cozinha", "banheiro",
-            "sala", "casa"
-        )
-        return _has_any_phrase(txt, scene_markers)
-
-    def _phase_rank(txt: str) -> int:
-        txt = _t_norm(txt or "")
-        if any(x in txt for x in ("aftercare", "depois do orgasmo", "apos o orgasmo", "após o orgasmo")):
-            return 5
-        if any(x in txt for x in ("orgasmo", "climax", "clímax", "gozar")):
-            return 4
-        if any(x in txt for x in ("pre climax", "pré climax", "pré-clímax", "pre-clímax", "excitacao intensa", "excitação intensa")):
-            return 3
-        if any(x in txt for x in ("excitacao", "excitação", "intimidade", "transa", "sexo")):
-            return 2
-        if any(x in txt for x in ("toque", "beijo", "aproximação", "aproximacao", "tensão", "tensao")):
-            return 1
-        return 0
-
+    # ------------------------------------------------------
     # 1) Virgindade
+    # ------------------------------------------------------
     if _contains_any_term(t, virg_terms):
         v = _t_norm(str(
             world_mary.get("virginity")
@@ -2898,70 +3039,35 @@ def _memory_conflicts_with_truth(
             or ""
         ))
 
-        became_not_virgin = (
-            "perdeu a virgindade",
-            "deixou de ser virgem",
-            "nao e mais virgem",
-            "não é mais virgem",
-            "teve sua primeira vez",
-            "foi a primeira vez",
-            "finalmente se entregou",
-        )
-
-        remains_virgin = (
-            "e virgem",
-            "é virgem",
-            "continua virgem",
-            "ainda e virgem",
-            "ainda é virgem",
-            "nunca teve sua primeira vez",
-        )
-
         if v:
             if v in {"virgem", "true", "sim", "yes", "intact"}:
-                if _has_any_phrase(t, became_not_virgin):
+                if _truth_text_affirms_not_virgin(t):
                     return True
+
             elif v in {"nao_virgem", "não_virgem", "false", "nao", "não", "no"}:
-                if _has_any_phrase(t, remains_virgin):
+                if _truth_text_affirms_still_virgin(t):
                     return True
 
+    # ------------------------------------------------------
     # 2) Consumação
+    # ------------------------------------------------------
     if _contains_any_term(t, cons_terms) and rel_blob:
-        denies_consumation = (
-            "nao houve sexo",
-            "não houve sexo",
-            "nao transaram",
-            "não transaram",
-            "nao foi consumado",
-            "não foi consumado",
-            "nao aconteceu de verdade",
-            "não aconteceu de verdade",
-            "pararam antes",
-            "nao passaram daquele limite",
-            "não passaram daquele limite",
-        )
+        rel_says_consumated = any(x in rel_blob for x in (
+            "consumado", "consummated", "houve sexo", "transaram"
+        ))
+        rel_says_not_consumated = any(x in rel_blob for x in (
+            "nao consumado", "não consumado", "not consummated"
+        ))
 
-        affirms_consumation = (
-            "houve sexo",
-            "transaram",
-            "foi consumado",
-            "houve relacao",
-            "houve relação",
-            "se entregou por completo",
-            "foram ate o fim",
-            "foram até o fim",
-        )
-
-        rel_says_consumated = any(x in rel_blob for x in ("consumado", "consummated", "houve sexo", "transaram"))
-        rel_says_not_consumated = any(x in rel_blob for x in ("nao consumado", "não consumado", "not consummated"))
-
-        if rel_says_consumated and _has_any_phrase(t, denies_consumation):
+        if rel_says_consumated and _truth_text_denies_consumation(t):
             return True
 
-        if rel_says_not_consumated and _has_any_phrase(t, affirms_consumation):
+        if rel_says_not_consumated and _truth_text_affirms_consumation(t):
             return True
 
+    # ------------------------------------------------------
     # 3) Fase íntima
+    # ------------------------------------------------------
     if _contains_any_term(t, phase_terms):
         fase_viva = _t_norm(str(
             f.get("fase_intima")
@@ -2971,19 +3077,31 @@ def _memory_conflicts_with_truth(
         ))
 
         if fase_viva:
-            live_rank = _phase_rank(fase_viva)
-            mem_rank = _phase_rank(t)
+            live_rank = _truth_phase_rank(fase_viva)
+            mem_rank = _truth_phase_rank(t)
 
-            if live_rank and mem_rank and abs(live_rank - mem_rank) >= 3:
-                if not _looks_like_memory_mode(t):
+            if live_rank and mem_rank:
+                # discrepância forte já basta, desde que não seja memória/eco
+                if abs(live_rank - mem_rank) >= 3 and not _truth_looks_like_memory_mode(t):
                     return True
 
+                # discrepância média só bloqueia se a memória estiver
+                # tentando se impor como presente ativo
+                if (
+                    abs(live_rank - mem_rank) >= 2
+                    and _truth_asserts_present_state(t)
+                    and not _truth_looks_like_memory_mode(t)
+                ):
+                    return True
+
+    # ------------------------------------------------------
     # 4) Cena/local/tempo/ação
+    # ------------------------------------------------------
     active_scene_blob = " ".join(
         x for x in (scene_local, state_local, scene_tempo, scene_acao) if x
     ).strip()
 
-    if active_scene_blob and _has_any_scene_marker(t):
+    if active_scene_blob and _truth_has_any_scene_marker(t):
         active_parts = []
         for val in (scene_local, state_local, scene_tempo, scene_acao):
             vv = _t_norm(val)
@@ -2996,59 +3114,48 @@ def _memory_conflicts_with_truth(
             for part in active_parts
         )
 
-        mentions_other_scene = any(
-            marker in t and marker not in active_scene_blob
-            for marker in (
-                "hotel", "motel", "orla", "quiosque", "praia", "academia",
-                "carro", "rua", "apartamento", "quarto", "cozinha", "banheiro",
-                "sala", "casa"
-            )
-        )
+        mentions_other_scene = _truth_mentions_competing_scene(t, active_scene_blob)
 
-        if mentions_other_scene and _asserts_present_state(t) and not _looks_like_memory_mode(t):
-            if not mentions_active_scene:
-                return True
+        if (
+            mentions_other_scene
+            and _truth_asserts_present_state(t)
+            and not _truth_looks_like_memory_mode(t)
+            and not mentions_active_scene
+        ):
+            return True
 
+    # ------------------------------------------------------
     # 5) Arco relacional / terceiro
+    # ------------------------------------------------------
     if _contains_any_term(t, arc_terms) and arc_blob:
-        denies_third_party = (
-            "nunca houve terceiro",
-            "nao existe terceiro",
-            "não existe terceiro",
-            "jamais considerou outro homem",
-            "nunca sentiu tensão por outro homem",
-            "jamais cogitou outro homem",
-        )
-
-        affirms_absolute_fidelity = (
-            "fidelidade absoluta",
-            "nunca pensou em outro",
-            "jamais se sentiu atraida por outro",
-            "jamais se sentiu atraída por outro",
-        )
-
         third_party_live = any(x in arc_blob for x in ("third party", "terceiro"))
         tension_live = any(x in arc_blob for x in ("tension", "tensao", "tensão", "guilt", "culpa"))
 
-        if third_party_live and _has_any_phrase(t, denies_third_party):
+        if third_party_live and _truth_text_denies_third_party(t):
             return True
 
-        if tension_live and _has_any_phrase(t, affirms_absolute_fidelity):
+        if tension_live and _truth_text_affirms_absolute_fidelity(t):
             return True
 
     return False
-    
     
 def _recent_emotion_signature(history: List[Dict[str, Any]], *, last_turns: int = 6) -> str:
     """
     Consolida os últimos turnos em um blob textual leve para detectar
     o clima emocional recente da conversa.
+
+    Ajustes:
+    - privilegia os turnos mais recentes
+    - reduz ruído de textos muito longos
+    - preserva falas do usuário e de Mary
     """
     if not history:
         return ""
 
+    turns = history[-max(1, int(last_turns)):]
     parts: List[str] = []
-    for d in history[-max(1, int(last_turns)):]:
+
+    for i, d in enumerate(turns):
         if not isinstance(d, dict):
             continue
 
@@ -3056,11 +3163,123 @@ def _recent_emotion_signature(history: List[Dict[str, Any]], *, last_turns: int 
         a = str(d.get("resposta_mary") or d.get("response") or "").strip()
 
         if u:
-            parts.append(u)
+            u = u[:500].strip()
         if a:
-            parts.append(a)
+            a = a[:700].strip()
+
+        chunk_parts = []
+        if u:
+            chunk_parts.append(u)
+        if a:
+            chunk_parts.append(a)
+
+        if not chunk_parts:
+            continue
+
+        chunk = " \n ".join(chunk_parts).strip()
+        if not chunk:
+            continue
+
+        parts.append(chunk)
+
+    if not parts:
+        return ""
+
+    # reforço leve do trecho mais recente
+    parts.append(parts[-1])
 
     return _t_norm(" \n ".join(parts))
+
+def _emotion_calming_terms() -> Set[str]:
+    """
+    Sinais de estabilização emocional real.
+    Evita termos soltos demais e prioriza expressões mais concretas.
+    """
+    return {
+        "alivio", "alívio",
+        "aliviada", "aliviado",
+        "mais tranquila", "mais tranquilo",
+        "tranquila de novo", "tranquilo de novo",
+        "respirei melhor", "respirou melhor",
+        "o medo passou", "passou o medo",
+        "mais leve por dentro", "ficou mais leve",
+        "relaxou", "relaxada", "relaxado",
+        "em paz", "em seguranca", "em segurança",
+        "desarmou", "baixou a guarda",
+        "parou de tremer", "tensão cedeu",
+        "se acalmou", "me acalmei", "ficou mais calma",
+        "se sentiu acolhida", "se sentiu protegido", "se sentiu protegida",
+        "acolhida", "acolhido",
+        "confortada", "confortado",
+        "protegida", "protegido",
+    }
+
+
+def _emotion_bond_terms() -> Set[str]:
+    """
+    Sinais de restauração concreta de vínculo.
+    """
+    return {
+        "com voce", "com você",
+        "com janio",
+        "eu confio em voce", "eu confio em você",
+        "confio em ti", "confio em voce", "confio em você",
+        "me sinto bem com voce", "me sinto bem com você",
+        "me senti bem com voce", "me senti bem com você",
+        "me sinto segura com voce", "me sinto segura com você",
+        "me senti segura com voce", "me senti segura com você",
+        "te amo", "eu te amo",
+        "te quero aqui", "quero voce aqui", "quero você aqui",
+        "fiquei melhor com voce", "fiquei melhor com você",
+        "me acalmou", "me ajudou a respirar",
+        "ao seu lado ficou mais facil", "ao seu lado ficou mais fácil",
+        "me senti acolhida por voce", "me senti acolhida por você",
+        "voce me trouxe paz", "você me trouxe paz",
+    }
+
+
+def _emotion_threat_terms() -> Set[str]:
+    """
+    Sinais de reabertura de ameaça, triangulação, suspeita ou culpa.
+    """
+    return {
+        "traicao", "traição",
+        "infidelidade",
+        "culpa", "culpada", "culpado",
+        "peso na consciencia", "peso na consciência",
+        "segredo perigoso", "segredo entre nos", "segredo entre nós",
+        "ameaca", "ameaça",
+        "ameaça de perder", "medo de perder",
+        "risco de perder", "risco de estragar tudo",
+        "desconfiada", "desconfiado",
+        "desconfiança", "suspeita", "suspeito",
+        "ciume", "ciúme",
+        "terceiro", "outro homem", "outra pessoa",
+        "triangulo", "triângulo",
+        "tentacao", "tentação",
+        "medo de ser descoberta", "medo de ser descoberto",
+        "sensacao de traicao", "sensação de traição",
+        "culpa antiga", "culpa voltou",
+    }
+
+
+def _emotion_shame_terms() -> Set[str]:
+    """
+    Sinais de retração, vergonha, fechamento ou afastamento.
+    """
+    return {
+        "vergonha", "envergonhada", "envergonhado",
+        "arrependida", "arrependido",
+        "repulsa", "nojo",
+        "quis sumir", "queria sumir",
+        "nao conseguiu sustentar o olhar", "não conseguiu sustentar o olhar",
+        "desviou o olhar", "baixou os olhos",
+        "se fechou", "me fecho", "se recolheu",
+        "travou", "ficou travada", "ficou travado",
+        "recuou", "recuo dele", "recuo dela",
+        "me afasto", "se afastou", "se distanciou",
+        "nao conseguiu ficar perto", "não conseguiu ficar perto",
+    }
 
 
 def _memory_conflicts_with_recent_emotion(
@@ -3074,8 +3293,8 @@ def _memory_conflicts_with_recent_emotion(
 
     Objetivo:
     - impedir regressão emocional sem gatilho atual;
-    - evitar que memória antiga reacenda traição/culpa/ameaça quando
-      a conversa recente já desarmou isso.
+    - evitar que memória antiga reacenda culpa, ameaça, triangulação,
+      retração ou vergonha quando a conversa recente já desarmou isso.
     """
     txt = _t_norm(mem_text or "")
     if not txt:
@@ -3086,37 +3305,17 @@ def _memory_conflicts_with_recent_emotion(
     if not recent:
         return False
 
-    calming_terms = {
-        "alivio", "alívio", "aliviada", "mais calma", "calma", "tranquila",
-        "segura", "seguro", "acolhida", "acolhido", "conforto", "mais leve",
-        "relaxada", "relaxado", "em paz", "confiante", "protegida", "protegido"
-    }
+    def _has_any_phrase(blob: str, phrases) -> bool:
+        return any(_t_norm(str(p)) in blob for p in phrases if p)
 
-    bond_terms = {
-        "com voce", "com você", "com janio", "me sinto bem", "eu confio",
-        "te amo", "te quero aqui", "fiquei melhor", "me acalmou",
-        "me sinto segura", "me senti segura", "alivio ao te ver", "alívio ao te ver"
-    }
+    recent_has_calming = _has_any_phrase(recent, _emotion_calming_terms())
+    recent_has_bond = _has_any_phrase(recent, _emotion_bond_terms())
 
-    suspicion_terms = {
-        "traicao", "traição", "culpa", "ameaca", "ameaça", "risco",
-        "desconfiada", "desconfiado", "ciume", "ciúme", "terceiro",
-        "medo de perder", "infidelidade", "segredo perigoso"
-    }
+    mem_has_threat = _has_any_phrase(txt, _emotion_threat_terms())
+    mem_has_shame = _has_any_phrase(txt, _emotion_shame_terms())
 
-    shame_terms = {
-        "vergonha", "culpada", "culpado", "repulsa", "nojo", "arrependida",
-        "arrependido", "me afasto", "me fecho", "recuo dele", "recuo dela"
-    }
-
-    recent_has_calming = any(t in recent for t in calming_terms)
-    recent_has_bond = any(t in recent for t in bond_terms)
-
-    mem_has_suspicion = any(t in txt for t in suspicion_terms)
-    mem_has_shame = any(t in txt for t in shame_terms)
-
-    # se os últimos turnos estabilizaram Mary, não reabrir ameaça/culpa antiga
-    if (recent_has_calming or recent_has_bond) and (mem_has_suspicion or mem_has_shame):
+    # janela estabilizada: não reabrir ameaça/culpa/retração sem gatilho recente
+    if (recent_has_calming or recent_has_bond) and (mem_has_threat or mem_has_shame):
         return True
 
     return False
@@ -4764,15 +4963,29 @@ def _has_user_action_violation(texto: str) -> bool:
 # Aftercare / signals
 # ----------------------------------------------------------
 _RE_AFTERCARE_SIGNAL = re.compile(
-    r"\b(abraca|abraça|acolhe|dorme|dormimos|banho|agua|água|calma|respira|carinho)\b",
+    r"\b("
+    r"me\s+abra[cç]a|abra[cç]a\s+forte|"
+    r"fica\s+comigo|"
+    r"me\s+acolhe|acolhe\s+ela|"
+    r"deita\s+comigo|deita\s+com\s+ela|"
+    r"faz\s+carinho|carinho\s+lento|"
+    r"respira\s+comigo|vamos\s+respirar|"
+    r"me\s+segura|segura\s+ela|"
+    r"fica\s+perto|nao\s+vai|não\s+vai"
+    r")\b",
     re.IGNORECASE,
 )
 
 def _user_signals_aftercare(user_text: str) -> bool:
+    """
+    Detecta pedido claro de cuidado, contenção ou presença pós-intimidade.
+    Mais assertivo que termos genéricos como 'água' ou 'calma' isolados.
+    """
     return bool(_RE_AFTERCARE_SIGNAL.search(_t_norm(user_text)))
 
+
 # ----------------------------------------------------------
-# Regressão de fase (novo) - aumenta realismo sem mexer no prompt
+# Regressão de fase / leitura de desaceleração
 # ----------------------------------------------------------
 _RE_PHASE_BRAKE = re.compile(
     r"\b("
@@ -4787,28 +5000,41 @@ _RE_PHASE_BRAKE = re.compile(
     re.IGNORECASE,
 )
 
+def _user_requests_slowdown(user_text: str) -> bool:
+    """
+    Detecta sinal bruto de desaceleração.
+    A interpretação final (recuo real vs. intensificador de ritmo)
+    é resolvida em _slowdown_is_intensifier().
+    """
+    return bool(_RE_PHASE_BRAKE.search(_t_norm(user_text)))
+
+
 # ==========================================================
-#  ORGASMO DA MARY POR TURNOS (sensação dela, máx 4)
+# ORGASMO / SEXO ATIVO / PROGRESSÃO CORPORAL
 # ==========================================================
 
 _RE_SEX_ACTIVE = re.compile(
     r"\b("
-    r"boca\s+se\s+fecha|chupo|chupando|boquete|"
-    r"pau|p[eê]nis|rola|"
-    r"meter|metendo|penetr|"
-    r"bucet|vagin|cl[ií]tor|"
-    r"goz|orgasmo|cl[ií]max|"
-    r"trem(e|endo)|contra[ií]|espasm|"
+    r"metendo|penetrando|entrando\s+dentro|"
+    r"movendo\s+dentro|vai\s+e\s+vem|"
+    r"rebolando\s+em\s+cima|"
+    r"chupando|boquete|boca\s+envolvendo|"
+    r"contra[ií]coes|espasmos|tremendo\s+forte|"
+    r"gozando|chegando\s+ao\s+climax|"
+    r"perto\s+de\s+gozar"
     r")\b",
     re.IGNORECASE,
 )
 
 def _mary_sex_is_active(user_text: str, mary_text: str) -> bool:
-    """Heurística: sexo realmente em andamento (não só flerte)."""
-    t = (mary_text or "").strip()
+    """
+    Heurística: sexo realmente em andamento (não só flerte ou anatomia citada).
+    """
     u = (user_text or "").strip()
-    if not t and not u:
+    t = (mary_text or "").strip()
+    if not u and not t:
         return False
+
     blob = f"{u}\n{t}"
     return bool(_RE_SEX_ACTIVE.search(blob))
 
@@ -4825,38 +5051,166 @@ def _mary_orgasm_fact_keys(timeline: str) -> tuple[str, str]:
 
 def _mary_phase_from_turns(turns: int) -> int:
     """
-    Mapeia turnos -> fase da Mary.
-    Ajuste fino aqui se quiser.
-    primeiro turno de sexo: fase 2 (ato começou)
-    segundo turno: fase 3 (limiar)
-    terceiro/quarto: fase 4 (clímax)
+    Mapeia turnos -> fase sensorial da Mary
+
+    0 -> neutro
+    1 -> início do contato físico real
+    2 -> excitação crescente
+    3+ -> limiar/clímax
     """
     t = max(0, int(turns or 0))
-    if t <= 0:
-        return 0
-    if t == 1:
-        return 2
-    if t == 2:
-        return 3
-    return 4
-def _user_requests_slowdown(user_text: str) -> bool:
-    return bool(_RE_PHASE_BRAKE.search(_t_norm(user_text)))
 
-def _compute_next_phase(
+    if t == 0:
+        return 0
+    elif t == 1:
+        return 2
+    elif t == 2:
+        return 3
+    else:
+        return 4
+
+
+def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any = None) -> bool:
+    """
+    Detecta quando 'devagar'/'calma' é controle de ritmo erótico
+    e não recuo emocional/narrativo.
+    """
+
+    # sinais claros de pausa/recuo
+    if re.search(r"\b(para|pare|espera|pausa|segura|não\s+continua|não\s+vai)\b", ut):
+        return False
+
+    # sinais explícitos de continuação/intensificação
+    if re.search(r"\b(continua|não\s+para|vai|isso|assim|mais|bem\s+assim|desse\s+jeito)\b", ut):
+        return True
+
+    # sensação corporal / entrega -> normalmente é ritmo, não recuo
+    if re.search(r"\b(treme|arrepia|respira\s+fundo|olhos\s+fechados|corpo\s+reage)\b", ut):
+        return True
+
+    # o texto da Mary já marcou continuidade física
+    if re.search(r"\b(ritmo|cadência|mais\s+devagar|pauso\s+e\s+volto|diminuo\s+o\s+ritmo)\b", at):
+        return True
+
+    try:
+        if isinstance(engine_meta, dict) and engine_meta.get("forced_variation") in ("mudanca_ritmo", "pacing"):
+            return True
+    except Exception:
+        pass
+
+    # em fase mais alta, "devagar" tende a ser ajuste de ritmo
+    return bool(phase >= 2)
+
+
+def _build_intimacy_signal_snapshot(
     current_phase: int,
     user_text: str,
-    texto: str,
+    mary_text: str,
     *,
+    history: Optional[List[Dict[str, Any]]] = None,
+    reactivated_memory_text: str = "",
+    engine_meta: Any = None,
+) -> Dict[str, Any]:
+    """
+    Consolida sinais físicos, emocionais e narrativos do turno atual.
+    Não decide a fase sozinho; apenas organiza evidências.
+    """
+    ut = _t_norm(user_text or "")
+    mt = _t_norm(mary_text or "")
+    mem = _t_norm(reactivated_memory_text or "")
+
+    sex_active = _mary_sex_is_active(user_text or "", mary_text or "")
+    aftercare_signal = _user_signals_aftercare(user_text or "")
+    slowdown_request = _user_requests_slowdown(user_text or "")
+
+    slowdown_is_rhythm = (
+        _slowdown_is_intensifier(
+            ut,
+            mt,
+            phase=int(current_phase or 0),
+            engine_meta=engine_meta,
+        )
+        if slowdown_request
+        else False
+    )
+
+    emotional_regression_risk = (
+        _memory_conflicts_with_recent_emotion(mem, history=history or [])
+        if mem else False
+    )
+
+    explicit_now = _is_explicit(user_text or "") or _is_explicit(mary_text or "")
+
+    return {
+        "phase": max(0, int(current_phase or 0)),
+        "sex_active": bool(sex_active),
+        "aftercare_signal": bool(aftercare_signal),
+        "slowdown_request": bool(slowdown_request),
+        "slowdown_is_rhythm": bool(slowdown_is_rhythm),
+        "emotional_regression_risk": bool(emotional_regression_risk),
+        "explicit_now": bool(explicit_now),
+        "has_memory_pressure": bool(mem),
+        "user_text": ut,
+        "mary_text": mt,
+        "memory_text": mem,
+    }
+
+
+def _resolve_intimacy_turn_direction(signals: Dict[str, Any]) -> str:
+    """
+    Decide a direção narrativa do turno:
+    - aftercare
+    - regress
+    - hold
+    - advance
+
+    Ordem importa.
+    """
+    p = int(signals.get("phase", 0) or 0)
+
+    # aftercare explícito vence tudo
+    if signals.get("aftercare_signal"):
+        return "aftercare"
+
+    # pedido de desaceleração real
+    if signals.get("slowdown_request") and not signals.get("slowdown_is_rhythm"):
+        return "regress"
+
+    # memória puxando vergonha/ameaça antiga -> segura ou recua
+    if signals.get("emotional_regression_risk"):
+        if p >= 3:
+            return "hold"
+        return "regress"
+
+    # sexo ativo real favorece avanço
+    if signals.get("sex_active"):
+        return "advance"
+
+    # explícito isolado não obriga avanço
+    if signals.get("explicit_now"):
+        return "hold"
+
+    return "hold"
+
+
+def _compute_next_phase_unified(
+    current_phase: int,
+    user_text: str,
+    mary_text: str,
+    *,
+    history: Optional[List[Dict[str, Any]]] = None,
+    reactivated_memory_text: str = "",
     engine_meta: Any = None,
 ) -> int:
     """
-    Motor estável de progressão.
-
-    - Nunca salta mais de 1 fase.
-    - Pode regredir 1 fase se houver desaceleração real.
-    - Não força clímax.
+    Motor unificado de progressão íntima.
+    Integra:
+    - corpo
+    - ritmo
+    - aftercare
+    - memória emocional
+    - direção narrativa do turno
     """
-
     try:
         p = int(current_phase or 0)
     except Exception:
@@ -4864,93 +5218,90 @@ def _compute_next_phase(
 
     p = max(0, min(int(MAX_INTIMACY_PHASE), p))
 
-    ut = _t_norm(user_text or "")
-    at = _t_norm(texto or "")
+    signals = _build_intimacy_signal_snapshot(
+        p,
+        user_text,
+        mary_text,
+        history=history or [],
+        reactivated_memory_text=reactivated_memory_text or "",
+        engine_meta=engine_meta,
+    )
 
-    # ----------------------------------------------------------
-    # 1) Desaceleração real
-    # ----------------------------------------------------------
-    if _user_requests_slowdown(user_text or ""):
-        if _slowdown_is_intensifier(ut, at, phase=p, engine_meta=engine_meta):
-            return p
+    direction = _resolve_intimacy_turn_direction(signals)
+
+    # 1) aftercare
+    if direction == "aftercare":
+        if p >= 4:
+            return 5
+        if p == 3:
+            return 4
+        return max(p, 1)
+
+    # 2) regressão
+    if direction == "regress":
         return max(0, p - 1)
 
-    # ----------------------------------------------------------
-    # 2) Avanço natural
-    # ----------------------------------------------------------
-    if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
-        next_p = p + 1
-        return min(next_p, int(MAX_INTIMACY_PHASE))
+    # 3) manutenção
+    if direction == "hold":
+        return p
+
+    # 4) avanço
+    if direction == "advance":
+        return min(p + 1, int(MAX_INTIMACY_PHASE))
 
     return p
 
 
-def _slowdown_is_intensifier(ut: str, at: str, *, phase: int, engine_meta: Any = None) -> bool:
+def _compute_next_phase(
+    current_phase: int,
+    user_text: str,
+    texto: str,
+    *,
+    engine_meta: Any = None,
+    history: Optional[List[Dict[str, Any]]] = None,
+    reactivated_memory_text: str = "",
+) -> int:
     """
-    Detecta quando 'devagar'/'calma' está sendo usado como intensificador erótico
-    (manter/continuar) e não como pedido de recuo/pausa.
+    Wrapper de compatibilidade.
+    Mantém o nome antigo, mas usa o motor unificado.
     """
-    # Se já está alto (fase 3+), 'devagar' costuma ser direção de ritmo, não recuo.
-    # Ainda assim, se houver palavras de "para/espera/não", aí é recuo.
-    if re.search(r"\b(para|pare|espera|pausa|calma\s+a[ií]|segura|não\s+continua|não\s+vai)\b", ut):
-        return False
+    return _compute_next_phase_unified(
+        current_phase,
+        user_text,
+        texto,
+        history=history or [],
+        reactivated_memory_text=reactivated_memory_text or "",
+        engine_meta=engine_meta,
+    )
 
-    # Indicadores fortes de continuação/intensificação
-    if re.search(r"\b(não\s+para|continua|vai|assim|isso|mais|bem\s+assim|desse\s+jeito)\b", ut):
-        return True
-
-    # Se o próprio texto da Mary descreve continuidade física intensa, tratar como ritmo, não recuo
-    if re.search(r"\b(ritmo|cadência|mais\s+devagar|diminuo\s+o\s+ritmo|acelero|pauso\s+e\s+volto)\b", at):
-        return True
-
-    # Sinal meta do engine (se você quiser usar): forced_variation pode pedir mudança de ritmo
-    try:
-        if isinstance(engine_meta, dict) and engine_meta.get("forced_variation") in ("mudanca_ritmo", "pacing"):
-            return True
-    except Exception:
-        pass
-
-    # Heurística por fase:
-    # - fase 0/1: 'devagar' pode ser recuo real, então não forçamos intensificador
-    # - fase 2+: tende a ser comando de ritmo -> intensificador
-    return bool(phase >= 2)
 
 # ==================================================================
-# 1 DETECÇÃO DE CONTEÚDO EXPLÍCITO
+# DETECÇÃO DE CONTEÚDO EXPLÍCITO
 # ==================================================================
 
-# Famílias semânticas de conteúdo explícito (stems curtos, eficientes)
 _EXPLICIT_STEMS = [
-    # Atos sexuais explícitos
-    "penetr",      # penetração, penetrar
-    "meter",       # meter dentro
-    "foder",       # foder, fodendo
-    "enfi",        # enfiar
-    "bombe",       # bombeando
-    "vai e vem",   # movimento explícito
-    
-    # Anatomia genital explícita
-    "bucet",       # buceta
-    "vagin",       # vagina
-    "clitor",      # clitóris
-    "penis",       # pênis
-    "pau",         # pau (gíria)
-    "pica",        # pica (gíria)
-    "cabaço",      # hímen  
-    
-    # Atos orais/anais explícitos
-    "boquete",     # boquete
-    "chupar",      # chupar (pênis)
-    "anal",        # anal
-    "cu",          # cu (gíria)
-    
-    # Fluidos/Sensações explícitas
-    "gozada",      # gozada
-    "porra",       # porra (gíria)
-    "leite",       # leite (gíria para sêmen)
+    # atos explícitos reais
+    "penetr",
+    "meter",
+    "enfi",
+    "foder",
+    "bombe",
+
+    # movimentos explícitos
+    "vai e vem",
+    "socando",
+    "empurrando dentro",
+
+    # oral explícito
+    "boquete",
+    "chupando fundo",
+
+    # fluidos explícitos
+    "gozada",
+    "porra",
+    "leite",
 ]
 
-# Regex compilado para explícito
 def _build_explicit_regex(stems: list[str]) -> re.Pattern:
     parts = []
     for s in stems:
@@ -4958,7 +5309,6 @@ def _build_explicit_regex(stems: list[str]) -> re.Pattern:
         if not s:
             continue
 
-        # suporta stems com espaço ("vai e vem")
         if " " in s:
             parts.append(re.escape(s))
         else:
@@ -4967,18 +5317,14 @@ def _build_explicit_regex(stems: list[str]) -> re.Pattern:
     pattern = r"\b(?:" + "|".join(parts) + r")\b"
     return re.compile(pattern, re.IGNORECASE)
 
+
 _RE_EXPLICIT_SEX = _build_explicit_regex(_EXPLICIT_STEMS)
-    
+
 
 def _is_explicit(texto: str) -> bool:
     """
     Retorna True se o texto contém descrição direta de ato sexual explícito.
-    
-    Exemplos:
-    - "Ele me fode com vontade" -> True
-    - "Meu pau entra dentro" -> True
-    - "Estou gozando muito" -> False (orgasmo, não ato explícito)
-    - "Beijo apaixonado" -> False
+    Não confunde anatomia citada com ato em andamento.
     """
     t = _t_norm(texto)
     if not t:
@@ -7019,6 +7365,40 @@ def _handle_behavior_mode_transition(
         facts = cached_get_facts(usuario_key) or {}
 
     return facts
+
+def _extract_reactivated_memory_text(messages: List[Dict[str, Any]]) -> str:
+    """
+    Extrai, dos blocos system já injetados em `messages`,
+    o texto de memórias reativadas no turno atual.
+
+    Isso permite que o motor de progressão íntima leve em conta
+    pressão emocional de memória sem refazer busca na Long Memory.
+    """
+    if not messages:
+        return ""
+
+    blocks: List[str] = []
+
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+
+        if str(m.get("role") or "") != "system":
+            continue
+
+        content = str(m.get("content") or "").strip()
+        if not content:
+            continue
+
+        if (
+            "[MEMÓRIAS RELEVANTES]" in content
+            or "[MEMÓRIAS FIXAS]" in content
+            or "[PINS PERMANENTES]" in content
+            or "[GUIAS PERMANENTES]" in content
+        ):
+            blocks.append(content)
+
+    return "\n".join(blocks).strip()
 
 class MaryService(BaseCharacter):
     id = "mary"
@@ -9354,11 +9734,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
 
                     else:
                         desired_next = _compute_next_phase(
-                            current_phase,
-                            prompt,
-                            texto,
-                            engine_meta=meta,
-                        )
+                           current_phase,
+                           prompt,
+                           texto,
+                           engine_meta=meta,
+                           history=cached_get_history(usuario_key, limit=40),
+                           reactivated_memory_text=_extract_reactivated_memory_text(messages),
+                       )
 
                         try:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
