@@ -5348,6 +5348,79 @@ def _resolve_intimacy_turn_direction(signals: Dict[str, Any]) -> str:
 
     return "hold"
 
+def _tp_arc_influence_on_intimacy(
+    tp_arc: Optional[Dict[str, Any]],
+    *,
+    current_phase: int,
+) -> Dict[str, Any]:
+    """
+    Traduz o arco de terceiros em influência prática sobre a progressão íntima.
+
+    Retorna:
+    - max_phase_cap: teto sugerido de fase
+    - force_hold: segura progressão
+    - force_regress: recua progressão
+    - bias_aftercare: favorece desaceleração/acolhimento
+    """
+    arc = tp_arc if isinstance(tp_arc, dict) else {}
+
+    try:
+        arc_phase = int(arc.get("phase") or 0)
+    except Exception:
+        arc_phase = 0
+
+    tension = _clamp01(arc.get("tension", 0.0))
+    guilt = _clamp01(arc.get("guilt", 0.0))
+    anchor = _clamp01(arc.get("anchor", 0.85))
+    mode = str(arc.get("mode") or "return").strip().lower()
+
+    max_phase_cap = int(MAX_INTIMACY_PHASE)
+    force_hold = False
+    force_regress = False
+    bias_aftercare = False
+
+    # âncora alta: terceiros não puxam progressão forte
+    if anchor >= 0.80:
+        max_phase_cap = min(max_phase_cap, 2)
+
+    elif anchor >= 0.40:
+        max_phase_cap = min(max_phase_cap, 4)
+
+    else:
+        max_phase_cap = min(max_phase_cap, int(MAX_INTIMACY_PHASE))
+
+    # culpa alta tende a frear ou recuar
+    if guilt >= 0.75:
+        if current_phase >= 3:
+            force_hold = True
+        else:
+            force_regress = True
+        bias_aftercare = True
+
+    # retorno ativo do arco
+    if mode == "return":
+        if guilt >= 0.55:
+            force_hold = True
+        if tension <= 0.30 and guilt >= 0.70:
+            force_regress = True
+
+    # risco real com pouca culpa: pode sustentar intensidade
+    if mode == "push" and tension >= 0.65 and guilt <= 0.45:
+        force_hold = False
+        force_regress = False
+
+    return {
+        "max_phase_cap": max_phase_cap,
+        "force_hold": bool(force_hold),
+        "force_regress": bool(force_regress),
+        "bias_aftercare": bool(bias_aftercare),
+        "arc_phase": arc_phase,
+        "anchor": anchor,
+        "tension": tension,
+        "guilt": guilt,
+        "mode": mode,
+    }
+
 
 def _compute_next_phase_unified(
     current_phase: int,
@@ -5357,6 +5430,7 @@ def _compute_next_phase_unified(
     history: Optional[List[Dict[str, Any]]] = None,
     reactivated_memory_text: str = "",
     engine_meta: Any = None,
+    tp_arc: Optional[Dict[str, Any]] = None,
 ) -> int:
     """
     Motor unificado de progressão íntima.
@@ -5366,6 +5440,7 @@ def _compute_next_phase_unified(
     - aftercare
     - memória emocional
     - direção narrativa do turno
+    - influência do arco de terceiros
     """
     try:
         p = int(current_phase or 0)
@@ -5384,28 +5459,36 @@ def _compute_next_phase_unified(
     )
 
     direction = _resolve_intimacy_turn_direction(signals)
+    arc_fx = _tp_arc_influence_on_intimacy(tp_arc, current_phase=p)
 
-    # 1) aftercare
-    if direction == "aftercare":
+    # 1) influência forte do arco
+    if arc_fx.get("force_regress"):
+        return max(0, min(p - 1, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE))))
+
+    if arc_fx.get("force_hold"):
+        return min(p, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
+
+    # 2) aftercare
+    if direction == "aftercare" or arc_fx.get("bias_aftercare"):
         if p >= 4:
-            return 5
+            return min(5, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
         if p == 3:
-            return 4
-        return max(p, 1)
+            return min(4, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
+        return min(max(p, 1), int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
 
-    # 2) regressão
+    # 3) regressão
     if direction == "regress":
-        return max(0, p - 1)
+        return max(0, min(p - 1, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE))))
 
-    # 3) manutenção
+    # 4) manutenção
     if direction == "hold":
-        return p
+        return min(p, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
 
-    # 4) avanço
+    # 5) avanço
     if direction == "advance":
-        return min(p + 1, int(MAX_INTIMACY_PHASE))
+        return min(p + 1, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
 
-    return p
+    return min(p, int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)))
 
 
 def _compute_next_phase(
@@ -5416,10 +5499,10 @@ def _compute_next_phase(
     engine_meta: Any = None,
     history: Optional[List[Dict[str, Any]]] = None,
     reactivated_memory_text: str = "",
+    tp_arc: Optional[Dict[str, Any]] = None,
 ) -> int:
     """
     Wrapper de compatibilidade.
-    Mantém o nome antigo, mas usa o motor unificado.
     """
     return _compute_next_phase_unified(
         current_phase,
@@ -5428,6 +5511,7 @@ def _compute_next_phase(
         history=history or [],
         reactivated_memory_text=reactivated_memory_text or "",
         engine_meta=engine_meta,
+        tp_arc=tp_arc,
     )
 
 
@@ -5543,7 +5627,6 @@ def _orgasm_signal_score(texto: str) -> int:
         "onda", "ondas",
         "puls", "pulsando", "pulsar",
         "latej", "latejando",
-        "me atravessa", "atravessa como um raio",
         "explod", "explodindo",
         "desaba", "desabando",
         "choque", "choque de prazer",
@@ -5640,7 +5723,6 @@ _RE_SEXUAL_METAPHOR = re.compile(
     r"me\s+preenche|preenchid[ao]|"
     r"me\s+toma\s+por\s+dentro|toma\s+meu\s+corpo|"
     r"me\s+abro\s+inteira|me\s+abrindo\s+inteira|"
-    r"me\s+rasga|rasgando|"
     r"me\s+possui|possu[ií]do|"
     r"me\s+consome|consumid[ao]|"
     r"por\s+dentro|dentro\s+de\s+mim|"
@@ -6134,79 +6216,106 @@ def _user_explicitly_allows_user_orgasm(user_text: str) -> bool:
 # ==========================================================
 
 _THIRD_PARTY_PATTERNS: Dict[int, re.Pattern] = {
+
+    # --------------------------------------------------
+    # NÍVEL 1 → PRESENÇA / INTERESSE REAL
+    # (agora exige interação, não só existência)
+    # --------------------------------------------------
     1: re.compile(
         r"\b("
-        r"barman|bartender|barista|gar[cç]om|gar[cç]onete|atendente|"
-        r"seguran[cç]a|dj|m[uú]sico|instrutor|professor|personal|"
-        r"cara|homem|rapaz|garoto|estrangeiro|moreno|sujeito|"
-        r"outro\s+cara|aquele\s+cara|"
-        r"olha(r)?\s+pra\s+ele|sorri(r)?\s+pra\s+ele|encara(r)?\s+ele|"
-        r"flerta(r)?|cantada|convite|provoca(r)?|"
-        r"dan[cç]a(r)?\s+com|"
-        r"ele\s+me\s+olha|ele\s+me\s+chama"
+        r"(ele|outro\s+cara|outro\s+homem)\s+(me\s+olha|me\s+encara|me\s+observa|me\s+chama)|"
+        r"(troca(m)?\s+olhares|olhar\s+demorado|olhar\s+fixo)|"
+        r"(sorri(r)?\s+pra\s+(ele|mim)|sorriso\s+de\s+volta)|"
+        r"(flerta(r)?\s+com|troca\s+flertes)|"
+        r"(provoca(r)?\s+com\s+olhar|olhar\s+provocante)|"
+        r"(dan[cç]a(r)?\s+com\s+(ele|outro))"
         r")\b",
         re.IGNORECASE,
     ),
+
+    # --------------------------------------------------
+    # NÍVEL 2 → CONTATO / AVANÇO ÍNTIMO
+    # (remove termos soltos tipo "decote")
+    # --------------------------------------------------
     2: re.compile(
         r"\b("
-        r"ele\s+me\s+beija|ele\s+me\s+beijou|beijar\s+ele|"
-        r"ele\s+encosta|ele\s+me\s+toca|ele\s+me\s+pega|ele\s+me\s+puxa|"
-        r"m[aã]o\s+dele|m[aã]os\s+dele|"
-        r"m[aã]os?\s+(sub(em|indo)|deslizam|entram|apertam)|"
-        r"decote|seios?|peitos?|mamil|"
-        r"por\s+baixo\s+da\s+roupa|por\s+dentro|"
-        r"tirar\s+.*roupa|abrir\s+.*roupa|"
-        r"calcinha|suti[aã]|"
-        r"encostar\s+.*(entre\s+as\s+pernas|virilha)|"
-        r"volume\s+ro[cç]a|duro\s+na\s+minha\s+.*|"
-        r"penetra[cç][aã]o|penetrar|meter|foder|chupar|boquete|"
-        r"buceta|vagina|clit[oó]ris|pau|p[eê]nis|anal"
+        r"(ele\s+(me\s+)?beija(r|ou)|beijar\s+ele)|"
+        r"(ele\s+(me\s+)?toca|me\s+toca\s+(ele|por\s+ele))|"
+        r"(ele\s+(me\s+)?puxa|me\s+puxa\s+contra\s+ele)|"
+        r"(m[aã]os?\s+dele\s+(sobem|descem|deslizam|apertam))|"
+        r"(m[aã]o\s+dele\s+em\s+mim)|"
+        r"(por\s+baixo\s+da\s+roupa|por\s+dentro\s+da\s+roupa)|"
+        r"(ele\s+encosta\s+em\s+mim)|"
+        r"(corpo\s+dele\s+contra\s+o\s+meu)|"
+        r"(me\s+aproximo\s+demais\s+dele)"
         r")\b",
         re.IGNORECASE,
     ),
+
+    # --------------------------------------------------
+    # NÍVEL 3 → ISOLAMENTO / DESLOCAMENTO REAL
+    # (agora exige intenção + contexto)
+    # --------------------------------------------------
     3: re.compile(
         r"\b("
-        r"sumir\s+(com\s+voc[eê]|comigo)|"
-        r"noite\s+fora\s+com|"
-        r"vamos\s+(pro|pra|para)\s+(hotel|motel|matagal|barraco|lugar\s+isolado)|"
-        r"vem\s+comigo|"
-        r"no\s+uber|entra\s+no\s+uber|"
-        r"rep[uú]blica|"
-        r"depois\s+a\s+gente\s+vai|"
-        r"fica\s+comigo\s+hoje"
+        r"(vamos\s+(pro|pra|para)\s+(hotel|motel))|"
+        r"(entra\s+no\s+uber\s+com\s+ele|no\s+uber\s+com\s+ele)|"
+        r"(vou\s+com\s+ele\s+pra\s+algum\s+lugar)|"
+        r"(fica\s+comigo\s+hoje\s+sozinho)|"
+        r"(vamos\s+pra\s+um\s+lugar\s+sozinho)|"
+        r"(me\s+leva\s+pra\s+um\s+lugar\s+mais\s+reservado)|"
+        r"(sumo\s+com\s+ele|vou\s+sumir\s+com\s+ele)"
         r")\b",
         re.IGNORECASE,
     ),
 }
 
-def _third_party_signal_level(text: str) -> int:
+def _clamp_tp_level(x: int) -> int:
+    try:
+        v = int(x)
+    except Exception:
+        v = 0
+    if v < 0:
+        return 0
+    if v > 3:
+        return 3
+    return v
+
+def _third_party_signal_level(
+    text: str,
+    *,
+    arc: Optional[Dict[str, Any]] = None,
+) -> int:
     """
-    Níveis:
-    0 = nada
-    1 = presença/interesse
-    2 = avanço íntimo
-    3 = fuga/isolamento
+    Detector com continuidade.
+    Usa o turno atual + estado prévio do arco para evitar oscilações bruscas.
     """
-    if not text:
+    raw = _third_party_signal_level_raw(text)
+    arc = arc if isinstance(arc, dict) else {}
+
+    prev_phase = _clamp_tp_level(arc.get("phase", 0))
+    tension = _clamp01(arc.get("tension", 0.0))
+    guilt = _clamp01(arc.get("guilt", 0.0))
+    mode = str(arc.get("mode") or "return").strip().lower()
+
+    # 1) se houve sinal explícito agora, ele vence
+    if raw >= 1:
+        return raw
+
+    # 2) sem sinal textual forte, mas havia contexto recente de terceiros:
+    #    mantém um eco leve em vez de cair seco para 0
+    if prev_phase >= 3 and tension >= 0.55 and mode == "push":
+        return 2
+
+    if prev_phase >= 2 and tension >= 0.35:
+        return 1
+
+    # 3) culpa alta puxa para baixo mais rápido
+    if guilt >= 0.70:
         return 0
 
-    t = str(text).lower()
-
-    # avalia do nível mais alto para o mais baixo
-    for level in (3, 2, 1):
-        pattern = _THIRD_PARTY_PATTERNS[level]
-        if pattern.search(t):
-            return level
-
     return 0
-
-
-def _third_party_deviation(text: str) -> bool:
-    """
-    Compatibilidade com o código antigo:
-    retorna True se houver qualquer sinal relevante de terceiros.
-    """
-    return _third_party_signal_level(text) >= 1
+ 
 # ==========================================================
 # CLIMAX VERBALIZATION (SOFT HINT - SEM VIOLAÇÃO)
 # ==========================================================
@@ -7169,27 +7278,68 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
         pass
 
 
-def _tp_arc_event(prompt: str, texto: str) -> str:
+def _tp_arc_event(prompt: str, texto: str, arc: Optional[Dict[str, Any]] = None) -> str:
     """
-    Evento resumido do arco:
-    - return: usuário explicitamente quer voltar / encerrar / reancorar
-    - test: há sinal real de terceiros
-    - none: nada relevante
+    Evento do arco com leitura mais inteligente:
+    - return: retorno explícito ou emocional
+    - test: presença ou avanço com terceiros
+    - none: neutro
     """
     p = (prompt or "").lower()
-    blob = ((prompt or "") + "\n" + (texto or "")).lower()
+    t = (texto or "").lower()
+    blob = p + "\n" + t
 
+    arc = arc if isinstance(arc, dict) else {}
+
+    # ----------------------------------
+    # 1) retorno explícito (usuário)
+    # ----------------------------------
     ret_kw = (
-        "voltar", "de volta", "indo embora", "ir embora", "chegar em casa",
-        "vou embora", "vamos embora", "acabou", "encerrar", "parar com isso",
-        "desisto", "não quero mais", "quero você", "eu escolho você",
-        "quero o janio", "só o janio", "fica comigo", "volta pra mim",
+        "voltar", "de volta", "indo embora", "ir embora",
+        "vou embora", "vamos embora",
+        "acabou", "encerrar", "parar com isso",
+        "desisto", "não quero mais", "nao quero mais",
+        "quero você", "quero voce", "eu escolho você", "eu escolho voce",
+        "quero o janio", "só o janio", "so o janio",
+        "fica comigo", "volta pra mim",
     )
 
     if any(re.search(rf"\b{re.escape(k)}\b", p) for k in ret_kw):
         return "return"
 
-    signal_level = _third_party_signal_level(blob)
+    # ----------------------------------
+    # 2) retorno emocional (Mary)
+    # ----------------------------------
+    emotional_return_signals = (
+        "não sei se quero isso", "nao sei se quero isso",
+        "acho que não", "acho que nao",
+        "isso não tá certo", "isso nao ta certo", "isso não está certo", "isso nao está certo",
+        "eu devia parar", "melhor parar",
+        "me afasto", "dou um passo atrás", "dou um passo atras",
+        "respiro fundo", "me seguro",
+        "penso no janio", "lembro do janio",
+        "isso não sou eu", "isso nao sou eu",
+    )
+
+    if any(sig in t for sig in emotional_return_signals):
+        return "return"
+
+    # ----------------------------------
+    # 3) retorno por estado interno
+    # ----------------------------------
+    try:
+        guilt = float(arc.get("guilt", 0.0) or 0.0)
+        tension = float(arc.get("tension", 0.0) or 0.0)
+    except Exception:
+        guilt, tension = 0.0, 0.0
+
+    if guilt >= 0.70 and tension <= 0.40:
+        return "return"
+
+    # ----------------------------------
+    # 4) presença de terceiros com continuidade
+    # ----------------------------------
+    signal_level = _third_party_signal_level(blob, arc=arc)
     if signal_level >= 1:
         return "test"
 
@@ -7213,9 +7363,15 @@ def _update_tp_arc_for_turn(
     Atualiza o arco de terceiros.
 
     Regras fixas de anchor:
-    - NSFW OFF  -> 0.85
-    - NSFW ON   -> 0.50
-    - terceiros ON -> 0.20
+    - NSFW OFF            -> 0.85
+    - NSFW ON             -> 0.50
+    - terceiros liberados -> 0.20
+
+    Melhorias:
+    - desired_phase funciona como baseline real
+    - crescimento de fase mais estável
+    - retorno pode acontecer por culpa alta/tensão baixa
+    - detector de terceiros usa continuidade via arc
     """
     if prompt is not None and not user_text:
         user_text = prompt or ""
@@ -7238,96 +7394,158 @@ def _update_tp_arc_for_turn(
     arc.setdefault("last", "third_party_off")
     arc.setdefault("last_anchor_mode", "init")
 
+    current_phase = int(arc.get("phase", 0) or 0)
     arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
     arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
     backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
-    
-    # Anchor reage diretamente ao estado atual dos toggles
+
+    # ------------------------------------------------------
+    # 1) Anchor reage diretamente ao estado atual dos toggles
+    # ------------------------------------------------------
     if not nsfw_on:
         arc["anchor"] = round(backup, 2)
         arc["last"] = "nsfw_off"
         arc["last_anchor_mode"] = "nsfw_off_restore_backup"
-    
+
     elif third_party_on:
         arc["anchor"] = 0.20
         arc["last"] = "third_party_on"
         arc["last_anchor_mode"] = "third_party_on_fixed"
-    
+
     else:
         arc["anchor"] = 0.50
         arc["last"] = "nsfw_on"
         arc["last_anchor_mode"] = "nsfw_on_fixed"
-    
+
     freedom = _clamp01(1.0 - float(arc["anchor"]))
-    # 2) limites coerentes com 3 níveis reais
+
+    # ------------------------------------------------------
+    # 2) limites e ganhos por anchor
+    # ------------------------------------------------------
     if arc["anchor"] >= 0.80:   # 0.85
         max_phase_allowed = 2
+        desired_phase = 0
         test_gain = 0.10
         guilt_gain = 0.06
+        tension_decay = 0.84
+        guilt_decay = 0.90
+
     elif arc["anchor"] >= 0.40: # 0.50
         max_phase_allowed = 4
+        desired_phase = 1
         test_gain = 0.20
         guilt_gain = 0.10
+        tension_decay = 0.88
+        guilt_decay = 0.92
+
     else:                       # 0.20
         max_phase_allowed = 5
+        desired_phase = 2
         test_gain = 0.30
         guilt_gain = 0.12
+        tension_decay = 0.91
+        guilt_decay = 0.94
 
-    # 3) evento + sinal
+    # ------------------------------------------------------
+    # 3) evento + sinal (com continuidade)
+    # ------------------------------------------------------
     blob = (user_text or "") + "\n" + (mary_text or "")
-    arc_event = _tp_arc_event(user_text or "", mary_text or "")
-    signal_level = _third_party_signal_level(blob)
+    arc_event = _tp_arc_event(user_text or "", mary_text or "", arc=arc)
+    signal_level = _third_party_signal_level(blob, arc=arc)
 
-    if arc["anchor"] <= 0.20:
-        desired_phase = 2
-    elif arc["anchor"] <= 0.50:
-        desired_phase = 1
-    else:
-        desired_phase = 0
+    # retorno espontâneo por culpa alta + tensão já enfraquecida
+    spontaneous_return = bool(
+        arc["guilt"] >= 0.70
+        and arc["tension"] <= 0.35
+    )
 
-    current_phase = int(arc.get("phase", 0) or 0)
+    baseline_phase = max(0, min(int(desired_phase), int(max_phase_allowed)))
 
-    if arc_event == "return":
+    # ------------------------------------------------------
+    # 4) retorno explícito ou espontâneo
+    # ------------------------------------------------------
+    if arc_event == "return" or spontaneous_return:
         arc["mode"] = "return"
-        arc["phase"] = max(0, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * 0.82)
-        arc["guilt"] = _clamp01(arc["guilt"] * 0.88)
 
+        next_phase = current_phase - 1
+        if spontaneous_return:
+            next_phase = min(next_phase, baseline_phase)
+
+        arc["phase"] = max(0, next_phase)
+
+        arc["tension"] = _clamp01(arc["tension"] * (tension_decay + (freedom * 0.03)))
+        arc["guilt"] = _clamp01(arc["guilt"] * (guilt_decay + (freedom * 0.02)))
+
+        if spontaneous_return:
+            arc["last"] = "spontaneous_return"
+        else:
+            arc["last"] = "explicit_return"
+
+    # ------------------------------------------------------
+    # 5) terceiros ON + sinal real
+    # ------------------------------------------------------
     elif third_party_on and signal_level >= 1:
         arc["mode"] = "push"
-        target_phase = current_phase
+
+        target_phase = max(current_phase, baseline_phase)
 
         if signal_level == 1:
-            target_phase = max(current_phase, 1)
+            if target_phase < 1:
+                target_phase = 1
+
             arc["tension"] = _clamp01(arc["tension"] + (test_gain * 0.60))
             arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 0.40))
 
         elif signal_level == 2:
-            target_phase = max(current_phase + 1, 2)
+            target_phase = min(target_phase + 1, max_phase_allowed)
+            if target_phase < 2:
+                target_phase = min(2, max_phase_allowed)
+
             arc["tension"] = _clamp01(arc["tension"] + test_gain)
             arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
 
         elif signal_level >= 3:
-            target_phase = max(current_phase + 1, 3)
-            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 1.20))
-            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 1.15))
+            # sobe no máximo 1 fase por turno, sem salto brusco
+            target_phase = min(target_phase + 1, max_phase_allowed)
+            if target_phase < 3:
+                target_phase = min(3, max_phase_allowed)
 
-        arc["phase"] = min(target_phase, max_phase_allowed)
+            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 1.15))
+            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 1.10))
 
+        arc["phase"] = max(baseline_phase, min(int(target_phase), int(max_phase_allowed)))
+        arc["last"] = f"push_signal_{int(signal_level)}"
+
+    # ------------------------------------------------------
+    # 6) sem sinal relevante -> retorno gradual ao baseline
+    # ------------------------------------------------------
     else:
         arc["mode"] = "return"
-        arc["phase"] = max(desired_phase, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
-        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
+
+        decayed_phase = current_phase - 1
+        arc["phase"] = max(baseline_phase, decayed_phase)
+
+        arc["tension"] = _clamp01(arc["tension"] * (tension_decay + (freedom * 0.04)))
+        arc["guilt"] = _clamp01(arc["guilt"] * (guilt_decay + (freedom * 0.03)))
+        arc["last"] = "natural_return"
+
+    # ------------------------------------------------------
+    # 7) sanidade final
+    # ------------------------------------------------------
+    arc["phase"] = max(0, min(int(arc.get("phase", 0) or 0), int(max_phase_allowed)))
+    arc["tension"] = _clamp01(arc.get("tension", 0.0))
+    arc["guilt"] = _clamp01(arc.get("guilt", 0.0))
+    arc["anchor"] = _clamp01(arc.get("anchor", 0.85))
+    arc["anchor_backup"] = _clamp01(arc.get("anchor_backup", 0.85))
 
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
 
 
 def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
-    """Gera instruções narrativas do arco com base no anchor."""
+    """Gera instruções narrativas do arco com base no anchor + estado emocional."""
     try:
         phase = int(arc.get("phase") or 0)
     except Exception:
@@ -7338,6 +7556,9 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     anchor = _clamp01(arc.get("anchor", 0.85))
     tl = (timeline or "").strip().lower() or "cumplice"
 
+    # -----------------------------
+    # intensidade da tensão
+    # -----------------------------
     if tension >= 0.80:
         vol = "altíssima"
     elif tension >= 0.55:
@@ -7347,108 +7568,105 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     else:
         vol = "baixa"
 
-    if phase <= 0:
-        phase_txt = "0) estabilidade (flertes leves podem existir, mas com autocontrole)"
-    elif phase == 1:
-        phase_txt = "1) teste leve (curiosidade + provocação; recuos rápidos)"
-    elif phase == 2:
-        phase_txt = "2) teste insistente (limite sendo cutucado; ambivalência real)"
-    elif phase == 3:
-        phase_txt = "3) risco real (adrenalina/culpa altas; decisões podem surpreender)"
-    elif phase == 4:
-        phase_txt = "4) tensão crítica (puxão forte entre impulso, culpa e retorno)"
+    # -----------------------------
+    # leitura emocional combinada
+    # -----------------------------
+    if guilt >= 0.70:
+        emotional_state = "conflito alto (culpa começa a puxar Mary de volta)"
+    elif guilt >= 0.40:
+        emotional_state = "ambivalência (desejo e culpa coexistem)"
     else:
-        phase_txt = "5) retorno/reconstrução (Mary volta para Janio e reancora)"
-    if anchor >= 0.80:   # 0.85
+        emotional_state = "predomínio do desejo"
+
+    # -----------------------------
+    # fase narrativa
+    # -----------------------------
+    if phase <= 0:
+        phase_txt = "0) estabilidade (controle firme, flertes leves podem existir)"
+    elif phase == 1:
+        phase_txt = "1) curiosidade (testes leves, aproximação controlada)"
+    elif phase == 2:
+        phase_txt = "2) tensão crescente (limites começam a ser pressionados)"
+    elif phase == 3:
+        phase_txt = "3) risco real (impulso e conflito disputam espaço)"
+    elif phase == 4:
+        phase_txt = "4) ponto crítico (decisão emocional iminente)"
+    else:
+        phase_txt = "5) retorno (Mary se reorganiza emocionalmente)"
+
+    # -----------------------------
+    # comportamento por anchor
+    # -----------------------------
+    if anchor >= 0.80:
         anchor_mode = "REANCORADA (Janio no centro)"
-        behavior = """
-- Mary mantém foco emocional e físico em Janio.
-- Terceiros só existem como ruído externo ou provocação mínima.
-- Se houver terceiro: Mary corta rápido, sente incômodo e reafirma limites.
-- Tom: firme, controlado, ciúme leve a moderado, retorno rápido.
-""".strip()
-        hard_limits = """
-- PROIBIDO: romance paralelo estável.
-- PROIBIDO: tratar terceiro como destino já consumado ("já fui", "já cheguei", "estou com ele agora").
-- PERMITIDO: declarar intenção futura, hesitação, recusa ou curiosidade, sem executar a mudança de cena.
-- PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
+
+        behavior = f"""
+- Mary mantém conexão emocional e física centrada em Janio.
+- Terceiros aparecem como ruído ou provocação leve.
+- Se a tensão sobe: ela percebe rápido e recua.
+- Se a culpa aparece: ela se reaproxima de Janio de forma ativa.
+- Estado atual: {emotional_state}.
 """.strip()
 
-    elif anchor >= 0.40: # 0.50
-        anchor_mode = "AQUECIDA (NSFW ON, Janio-first)"
-        behavior = """
-- Mary está mais quente, ousada e física com Janio.
-- Terceiros podem existir como tempero, provocação ou jogo psicológico.
-- Se surgir terceiro: Mary pode testar o clima, mas sem cruzar a linha principal.
-- Tom: safado, direto, adulto, com pequenas pontadas de culpa e risco.
-""".strip()
-        hard_limits = """
-- PROIBIDO: romance paralelo estável.
-- PROIBIDO: tratar terceiro como destino já consumado
-  ("já fui", "já cheguei", "estou com ele agora").
-- PERMITIDO: declarar intenção futura, hesitação, recusa,
-  curiosidade ou impulso momentâneo envolvendo terceiro,
-  sem executar a mudança de cena.
-- PERMITIDO: decidir "talvez eu vá", "não vou", "vou dar um pulo lá",
-  desde que Mary permaneça na cena atual e o usuário conduza a transição depois.
-- PERMITIDO: provocar, testar, recuar e usar terceiro como tensão.
+    elif anchor >= 0.40:
+        anchor_mode = "AQUECIDA (equilíbrio instável)"
+
+        behavior = f"""
+- Mary está mais aberta ao jogo, mais provocativa e curiosa.
+- Pode testar limites com terceiros, mas sem se afastar de Janio.
+- Se a tensão cresce: ela se permite ir um pouco além.
+- Se a culpa cresce: ela hesita, desacelera ou recua parcialmente.
+- Estado atual: {emotional_state}.
 """.strip()
 
-    else:                # 0.20
-        anchor_mode = "IMPULSIVA (terceiros ON: risco real)"
-        behavior = """
-- Mary pode testar limites de verdade.
-- Ela flerta, provoca e sustenta tensão real com terceiros.
-- Pode oscilar entre tesão, culpa, autoengano e medo de perder Janio.
-- Continua sendo Mary: mais volátil, mais ousada, mas sem virar outra pessoa.
-- Mesmo no risco, existe fio de retorno para Janio.
-""".strip()
-        hard_limits = """
-- AINDA PROIBIDO: romance paralelo estável.
-- AINDA PROIBIDO: locais perigosos/isolados.
-- PERMITIDO: flerte forte, avanço situacional e risco emocional real.
+    else:
+        anchor_mode = "IMPULSIVA (risco emocional real)"
+
+        behavior = f"""
+- Mary permite aproximações mais intensas e sustentadas.
+- A tensão pode guiar decisões momentâneas.
+- A culpa não desaparece: ela entra depois, gerando conflito.
+- Oscila entre impulso, desejo, medo de perder e autojustificação.
+- Estado atual: {emotional_state}.
 """.strip()
 
-        
+    # -----------------------------
+    # limites
+    # -----------------------------
+    hard_limits = """
+- PROIBIDO: transformar terceiro em destino já consumado.
+- PROIBIDO: saltos de cena sem transição conduzida pelo usuário.
+- PERMITIDO: desejo, dúvida, provocação, recuo, ambivalência.
+- PERMITIDO: declarar intenções sem executar imediatamente.
+""".strip()
+
+    # -----------------------------
+    # regra de coerência
+    # -----------------------------
+    coherence = """
+- Toda aproximação deve gerar reação interna (desejo, culpa, dúvida ou tensão).
+- A intensidade emocional deve evoluir gradualmente, sem saltos bruscos.
+- Mesmo no risco, Mary mantém coerência com sua história e vínculo principal.
+""".strip()
+
     return f"""
 [ARCO COM TERCEIROS - PERSISTENTE (facts)]
 - Timeline: {tl}
-- Fase atual: {phase_txt}
-- Gradiente: tensão={tension:.2f} (volatilidade {vol}); culpa={guilt:.2f}
-- ÂNCORA: vínculo com Janio = {anchor:.2f} -> {anchor_mode}
+- Fase: {phase_txt}
+- Tensão: {tension:.2f} ({vol})
+- Culpa: {guilt:.2f}
+- Âncora: {anchor:.2f} -> {anchor_mode}
 
-[COMPORTAMENTO (âncora -> ação)]
+[COMPORTAMENTO]
 {behavior}
 
-[LIMITES DUROS]
+[LIMITES]
 {hard_limits}
 
-[REGRA DE COERÊNCIA]
-- Se Mary testar limites: mostre consequências internas (tesão, culpa, medo de perder, irritação, autoengano, melancolia).
-- Não finalizar com terceiro como destino; sempre manter caminho de retorno/reconstrução.
+[COERÊNCIA]
+{coherence}
 """.strip()
-
-# ==========================================================
-# REANCORAGEM DA PERSONAGEM (evita prompt drift)
-# ==========================================================
-mary_identity_anchor = """
-IDENTIDADE VIVA DE MARY
-Mary possui presença física naturalmente marcante.
-
-Sua sensualidade não precisa ser explicada.
-Ela aparece em pequenos sinais sensoriais durante a interação:
-um olhar que se sustenta um pouco mais,
-uma pausa antes de responder,
-uma aproximação natural,
-uma mudança sutil no tom de voz.
-
-Esses sinais podem surgir de forma orgânica
-quando houver tensão emocional ou intimidade na cena.
-
-Mesmo com histórico longo de interação,
-Mary mantém sua assinatura emocional, corporal e relacional.
-""".strip()
-
+ 
 # ==========================================================
 # MODO COMPORTAMENTAL (NSFW / TERCEIROS)
 # ==========================================================
@@ -9907,75 +10125,84 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
                 _lock_scene(usuario_key)
                 
-                # ----------------------------------------------------------
+                # ==========================================================
                 # Intimacy progression
-                # ----------------------------------------------------------
-                try:
-                    current_facts = cached_get_facts(usuario_key)
-                
-                    try:
-                        current_facts = _sync_intimacy_phase_facts(
-                            usuario_key,
-                            current_facts,
-                            timeline_final,
-                        )
-                    except Exception:
-                        pass
-                
-                except Exception:
-                    current_facts = cached_get_facts(usuario_key)
+                # ==========================================================
+                current_facts = cached_get_facts(usuario_key) or {}
                 current_phase = self._get_intimacy_phase(current_facts)
-
+        
+                # se já entrou em aftercare explícito, não reabre progressão sem novo gatilho real
                 if phase != 5:
                     sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-
-                    k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
-                    mary_active = bool((current_facts or {}).get(k_active, False))
-                    mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-
+        
+                    try:
+                        k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
+                        orgasm_active = bool(current_facts.get(k_active, False))
+                        orgasm_turns = int(current_facts.get(k_turns, 0) or 0)
+                    except Exception:
+                        k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
+                        orgasm_active, orgasm_turns = False, 0
+        
                     if sex_active:
-                        if not mary_active:
-                            mary_turns = 0
-
-                        mary_turns = min(4, mary_turns + 1)
-                        target_phase = _mary_phase_from_turns(mary_turns)
-                        desired_next = max(current_phase, target_phase)
-
                         try:
-                            set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
-                            set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
+                            orgasm_turns = max(0, int(orgasm_turns)) + 1
+                        except Exception:
+                            orgasm_turns = 1
+        
+                        desired_next = _mary_phase_from_turns(orgasm_turns)
+        
+                        # deixa o arco de terceiros também limitar a fase íntima
+                        try:
+                            arc_fx = _tp_arc_influence_on_intimacy(tp_arc, current_phase=current_phase)
+                            desired_next = min(
+                                int(desired_next),
+                                int(arc_fx.get("max_phase_cap", MAX_INTIMACY_PHASE)),
+                            )
                         except Exception:
                             pass
-
+        
+                        try:
+                            set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
+                            set_fact_safe(usuario_key, k_turns, orgasm_turns, {"fonte": "mary_orgasm_turns"})
+                        except Exception:
+                            pass
+        
                     else:
                         desired_next = _compute_next_phase(
-                           current_phase,
-                           prompt,
-                           texto,
-                           engine_meta=meta,
-                           history=cached_get_history(usuario_key, limit=40),
-                           reactivated_memory_text=_extract_reactivated_memory_text(messages),
-                       )
-
+                            current_phase,
+                            prompt,
+                            texto,
+                            engine_meta=meta,
+                            history=cached_get_history(usuario_key, limit=40),
+                            reactivated_memory_text=_filter_reactivated_memory_for_intimacy(
+                                _extract_reactivated_memory_text(messages)
+                            ),
+                            tp_arc=tp_arc,
+                        )
+        
                         try:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
                         except Exception:
                             pass
-
+        
+                    # sanidade final
+                    try:
+                        desired_next = int(desired_next)
+                    except Exception:
+                        desired_next = int(current_phase or 0)
+        
+                    if desired_next < 0:
+                        desired_next = 0
+                    if desired_next > int(MAX_INTIMACY_PHASE):
+                        desired_next = int(MAX_INTIMACY_PHASE)
+        
                     if desired_next != current_phase:
-                        self._set_intimacy_phase(
-                            usuario_key,
-                            desired_next,
-                            timeline_final,
-                        )
-
-                        try:
-                            _sync_intimacy_phase_facts(
-                                usuario_key,
-                                cached_get_facts(usuario_key),
-                                timeline_final,
-                            )
+                        _set_intimacy_phase(usuario_key, timeline_final, desired_next)
+        
+                    # re-sync facts para garantir aliases corretos
+                    facts_now = cached_get_facts(usuario_key) or {}
+                    _sync_intimacy_phase_facts(usuario_key, facts_now, timeline_final)
                         except Exception:
                             pass
 
