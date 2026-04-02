@@ -7369,10 +7369,7 @@ def _handle_behavior_mode_transition(
 def _extract_reactivated_memory_text(messages: List[Dict[str, Any]]) -> str:
     """
     Extrai, dos blocos system já injetados em `messages`,
-    o texto de memórias reativadas no turno atual.
-
-    Isso permite que o motor de progressão íntima leve em conta
-    pressão emocional de memória sem refazer busca na Long Memory.
+    o texto bruto de memórias reativadas no turno atual.
     """
     if not messages:
         return ""
@@ -7399,6 +7396,68 @@ def _extract_reactivated_memory_text(messages: List[Dict[str, Any]]) -> str:
             blocks.append(content)
 
     return "\n".join(blocks).strip()
+
+def _filter_reactivated_memory_for_intimacy(memory_text: str) -> str:
+    """
+    Filtra o bloco bruto de memórias reativadas e mantém apenas trechos
+    com potencial de influenciar o motor íntimo/emocional.
+
+    Objetivo:
+    - ignorar memória neutra/factual sem pressão emocional;
+    - priorizar culpa, vínculo, ameaça, vergonha, desejo e triangulação;
+    - reduzir ruído no motor de progressão de fase.
+    """
+    txt = str(memory_text or "").strip()
+    if not txt:
+        return ""
+
+    emotional_markers = (
+        # culpa / ameaça / conflito
+        "culpa", "culpada", "culpado",
+        "vergonha", "arrependida", "arrependido",
+        "medo", "ameaça", "ameaca",
+        "risco", "perder", "segredo",
+        "desconfiança", "desconfiada", "desconfiado",
+        "suspeita", "ciúme", "ciume",
+        "traição", "traicao", "infidelidade",
+
+        # vínculo / acolhimento
+        "confio", "segura", "seguro",
+        "acolhida", "acolhido",
+        "protegida", "protegido",
+        "alívio", "alivio",
+        "calma", "tranquila", "tranquilo",
+        "em paz", "com janio", "com você", "com voce",
+
+        # desejo / tensão / atração
+        "desejo", "tesão", "tesao",
+        "vontade", "atraída", "atraida",
+        "tensão", "tensao",
+        "excitação", "excitacao",
+
+        # triangulação / terceiro
+        "terceiro", "outro homem", "outra pessoa",
+        "triângulo", "triangulo",
+        "anthony", "enzo",
+    )
+
+    keep_lines: List[str] = []
+
+    for raw_line in txt.splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+
+        line_n = _t_norm(line)
+
+        # ignora cabeçalhos dos blocos
+        if line_n.startswith("[memorias") or line_n.startswith("[pins") or line_n.startswith("[guias"):
+            continue
+
+        if any(marker in line_n for marker in emotional_markers):
+            keep_lines.append(line)
+
+    return "\n".join(keep_lines).strip()
 
 class MaryService(BaseCharacter):
     id = "mary"
