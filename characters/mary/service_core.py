@@ -2968,6 +2968,163 @@ def _truth_affirms_absolute_fidelity(txt: str) -> bool:
         "o desejo dela sempre foi exclusivo",
     ))
 
+def _truth_has_any_phrase(txt: str, phrases) -> bool:
+    txt_n = _t_norm(txt or "")
+    return any(_t_norm(str(p)) in txt_n for p in phrases if p)
+
+
+def _truth_looks_like_memory_mode(txt: str) -> bool:
+    memory_markers = (
+        "lembra", "lembrava", "lembrou",
+        "recorda", "recordou", "recordacao", "recordação",
+        "pensou em", "pensava em",
+        "imaginou", "imaginava",
+        "como naquele", "como naquela",
+        "naquele dia", "naquela noite", "naquela epoca", "naquela época",
+        "antes", "depois", "outra vez", "certa vez", "quando",
+        "memoria", "memória", "lembranca", "lembrança",
+        "resquicio", "resquício",
+        "na memoria", "na memória",
+        "na lembranca", "na lembrança",
+        "eco", "recordação", "fantasma daquela noite",
+        "residuo", "resíduo"
+    )
+    return _truth_has_any_phrase(txt, memory_markers)
+
+
+def _truth_asserts_present_state(txt: str) -> bool:
+    strong_markers = (
+        "agora", "neste momento", "nesse momento",
+        "esta em", "está em", "permanece", "segue", "continua",
+        "aqui e agora", "neste instante"
+    )
+    weak_markers = (
+        "aqui", "esta", "está"
+    )
+
+    if _truth_has_any_phrase(txt, strong_markers):
+        return True
+
+    if _truth_looks_like_memory_mode(txt):
+        return False
+
+    return _truth_has_any_phrase(txt, weak_markers)
+
+
+def _truth_has_any_scene_marker(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, _scene_markers_base())
+
+
+def _truth_mentions_competing_scene(txt: str, active_blob: str) -> bool:
+    txt_n = _t_norm(txt or "")
+    active_n = _t_norm(active_blob or "")
+    return any(
+        marker in txt_n and marker not in active_n
+        for marker in _scene_markers_base()
+    )
+
+
+def _truth_phase_rank(txt: str) -> int:
+    txt_n = _t_norm(txt or "")
+
+    if any(x in txt_n for x in ("aftercare", "depois do orgasmo", "apos o orgasmo", "após o orgasmo")):
+        return 5
+    if any(x in txt_n for x in ("orgasmo", "climax", "clímax", "gozar", "gozou")):
+        return 4
+    if any(x in txt_n for x in ("pre climax", "pré climax", "pré-clímax", "pre-clímax", "excitacao intensa", "excitação intensa")):
+        return 3
+    if any(x in txt_n for x in ("excitacao", "excitação", "intimidade", "transa", "sexo", "consumacao", "consumação")):
+        return 2
+    if any(x in txt_n for x in ("toque", "beijo", "aproximacao", "aproximação", "tensao", "tensão")):
+        return 1
+    return 0
+
+
+def _truth_text_affirms_not_virgin(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "perdeu a virgindade",
+        "deixou de ser virgem",
+        "nao e mais virgem",
+        "não é mais virgem",
+        "teve sua primeira vez",
+        "foi a primeira vez",
+        "ja nao e virgem",
+        "já não é virgem",
+        "se entregou pela primeira vez",
+        "ja tinha sido iniciada",
+        "já tinha sido iniciada",
+    ))
+
+
+def _truth_text_affirms_still_virgin(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "e virgem",
+        "é virgem",
+        "continua virgem",
+        "ainda e virgem",
+        "ainda é virgem",
+        "nunca teve sua primeira vez",
+        "segue virgem",
+    ))
+
+
+def _truth_text_denies_consumation(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "nao houve sexo",
+        "não houve sexo",
+        "nao transaram",
+        "não transaram",
+        "nao foi consumado",
+        "não foi consumado",
+        "nao aconteceu de verdade",
+        "não aconteceu de verdade",
+        "pararam antes",
+        "nao passaram daquele limite",
+        "não passaram daquele limite",
+        "nao foram ate o fim",
+        "não foram até o fim",
+        "nunca chegou a acontecer",
+        "ficaram a um passo",
+    ))
+
+
+def _truth_text_affirms_consumation(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "houve sexo",
+        "transaram",
+        "foi consumado",
+        "houve relacao",
+        "houve relação",
+        "foram ate o fim",
+        "foram até o fim",
+        "se entregou por completo",
+        "de fato aconteceu",
+        "atravessaram o limite",
+    ))
+
+
+def _truth_text_denies_third_party(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "nunca houve terceiro",
+        "nao existe terceiro",
+        "não existe terceiro",
+        "jamais considerou outro homem",
+        "nunca sentiu tensão por outro homem",
+        "jamais cogitou outro homem",
+        "nenhum outro homem mexeu com ela",
+    ))
+
+
+def _truth_text_affirms_absolute_fidelity(txt: str) -> bool:
+    return _truth_has_any_phrase(txt, (
+        "fidelidade absoluta",
+        "nunca pensou em outro",
+        "jamais se sentiu atraida por outro",
+        "jamais se sentiu atraída por outro",
+        "nenhum outro homem despertou desejo",
+        "o desejo dela sempre foi exclusivo",
+    ))
+
 
 def _memory_conflicts_with_truth(
     mem_text: str,
@@ -2988,9 +3145,11 @@ def _memory_conflicts_with_truth(
     if not t:
         return False
 
+    # ------------------------------------------------------
+    # contexto vivo
+    # ------------------------------------------------------
     scene_local = _t_norm(str(f.get("cena.local") or f.get("local_cena_atual") or ""))
     scene_tempo = _t_norm(str(f.get("cena.tempo") or ""))
-   
     scene_acao = _t_norm(str(f.get("cena.acao") or ""))
     state_local = _t_norm(str(_fact_str(f, "state.local") or ""))
 
@@ -3081,12 +3240,9 @@ def _memory_conflicts_with_truth(
             mem_rank = _truth_phase_rank(t)
 
             if live_rank and mem_rank:
-                # discrepância forte já basta, desde que não seja memória/eco
                 if abs(live_rank - mem_rank) >= 3 and not _truth_looks_like_memory_mode(t):
                     return True
 
-                # discrepância média só bloqueia se a memória estiver
-                # tentando se impor como presente ativo
                 if (
                     abs(live_rank - mem_rank) >= 2
                     and _truth_asserts_present_state(t)
