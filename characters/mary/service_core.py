@@ -6671,6 +6671,7 @@ def _handle_behavior_mode_transition(
     """
     Se o modo fechar durante ou antes de cena com terceiros,
     Mary recua e sincroniza o presente com esse recuo.
+    O forced_retreat deve funcionar como freio temporario, nao permanente.
     """
     prev_mode = str(previous_mode or "").strip().upper()
     curr_mode = str(current_mode or "").strip().upper()
@@ -6678,8 +6679,6 @@ def _handle_behavior_mode_transition(
     if not prev_mode or prev_mode == curr_mode:
         return facts
 
-    # Se terceiros foram desligados, ou NSFW caiu para SAFE,
-    # Mary não continua a cena por inércia.
     if prev_mode == "NSFW_THIRD" and curr_mode in ("NSFW_ONLY", "SAFE"):
         try:
             set_fact_safe(
@@ -6699,6 +6698,7 @@ def _handle_behavior_mode_transition(
             mary_now = dict(mary_now)
             mary_now[f"last_behavior_transition::{timeline_final}"] = f"{prev_mode}->{curr_mode}"
             mary_now[f"forced_retreat::{timeline_final}"] = True
+            mary_now["forced_retreat"] = True
 
             set_fact_safe(
                 usuario_key,
@@ -6710,6 +6710,66 @@ def _handle_behavior_mode_transition(
             pass
 
         facts = cached_get_facts(usuario_key) or {}
+
+    return facts
+
+def _release_forced_retreat_if_allowed(
+    *,
+    usuario_key: str,
+    timeline_final: str,
+    facts: Dict[str, Any],
+) -> Dict[str, Any]:
+    try:
+        if not isinstance(facts, dict):
+            return facts
+
+        mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+        mary = dict(mary)
+
+        rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
+        intimacy = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
+        cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+
+        rel_state = rel.get(f"state::{timeline_final}")
+        if not isinstance(rel_state, dict):
+            rel_state = {}
+
+        phase = intimacy.get(f"phase::{timeline_final}", intimacy.get("phase", 0))
+        try:
+            phase = int(phase)
+        except Exception:
+            phase = 0
+
+        nsfw_on = bool(
+            mary.get(f"nsfw::{timeline_final}", mary.get("nsfw", False))
+        )
+        scene_locked = bool(cena.get("locked", False))
+        allows_touch = bool(rel_state.get("allows_extended_touch"))
+        allows_relief = bool(rel_state.get("allows_mutual_relief"))
+        consummated = bool(rel_state.get("consummated"))
+
+        can_release = (
+            nsfw_on
+            and scene_locked
+            and phase >= 2
+            and (allows_touch or allows_relief or consummated)
+        )
+
+        if can_release:
+            mary[f"forced_retreat::{timeline_final}"] = False
+            mary["forced_retreat"] = False
+
+            set_fact_safe(
+                usuario_key,
+                "mary",
+                mary,
+                {"fonte": "release_forced_retreat"},
+            )
+
+            facts = cached_get_facts(usuario_key) or facts
+
+    except Exception:
+        pass
 
     return facts
 
@@ -7254,6 +7314,12 @@ class MaryService(BaseCharacter):
             timeline_final=timeline_final,
             previous_mode=previous_behavior_mode,
             current_mode=current_behavior_mode,
+            facts=facts,
+        )
+
+        facts = _release_forced_retreat_if_allowed(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
             facts=facts,
         )
 
