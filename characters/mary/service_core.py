@@ -7954,6 +7954,7 @@ class MaryService(BaseCharacter):
     {continuity_rule}
     {facts_integrity_rule}
     {phone_message_rule}
+    {action_commit_rule}    
     
     TIMELINE ATUAL: {timeline_final}
     NSFW_PROFILE: {nsfw_profile}
@@ -8174,7 +8175,7 @@ class MaryService(BaseCharacter):
         # 3) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
         # ==========================================================
         history = cached_get_history(usuario_key, limit=6)
-        
+
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
@@ -8183,56 +8184,57 @@ class MaryService(BaseCharacter):
         ])
 
         # ==========================================================
-        # ÚLTIMO TURNO (ÂNCORA REAL DA CENA)
+        # HISTÓRICO RECENTE (PARES USER/ASSISTANT)
         # ==========================================================
-        last_turn = history[-1] if history else {}
-        
-        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
-        last_mary = str(last_turn.get("resposta_mary") or "").strip()
-        
+        recent_pairs: List[Dict[str, str]] = []
+
+        for d in history[-6:]:
+            if not isinstance(d, dict):
+                continue
+
+            u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
+            a = str(d.get("resposta_mary") or d.get("response") or "").strip()
+
+            if u:
+                recent_pairs.append({
+                    "role": "user",
+                    "content": u,
+                })
+
+            if a:
+                recent_pairs.append({
+                    "role": "assistant",
+                    "content": a,
+                })
+
         messages.append({
             "role": "system",
             "content": (
-                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
-                "O próximo texto deve continuar EXATAMENTE a partir do estado final deste momento.\n"
-                "Não recomeçar, não reexecutar, não reinterpretar.\n"
+                "[CONTINUIDADE DE CENA - ABSOLUTA]\n"
+                "- O próximo texto deve continuar EXATAMENTE do ponto onde a cena parou.\n"
+                "- Não recomeçar, não reexecutar, não reinterpretar o que já foi feito.\n"
+                "- Se uma ação física já começou, continue a consequência física imediata.\n"
+                "- Não abandonar execução corporal para voltar a provocação genérica.\n"
+                "- Não transformar ação em pergunta solta sem concluir o passo já iniciado.\n"
             )
         })
-        
-        if last_user:
-            messages.append({
-                "role": "user",
-                "content": last_user
-            })
-        
-        if last_mary:
-            messages.append({
-                "role": "assistant",
-                "content": last_mary
-            })
-        
+
         messages.append({
             "role": "system",
             "content": (
                 "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
-                "- Interações recentes definem apenas contexto imediato e clima vivo.\n"
-                "- Memórias e histórico são apoio; não definem abertura, cadência ou estrutura.\n"
-        
+                "- O histórico recente define continuidade física, clima e ritmo.\n"
+                "- Memórias são apoio; não substituem a ação em curso.\n"
                 "- A cena já está em andamento.\n"
-                "- Sempre partir do ponto exato onde a cena parou.\n"
-                "- Ações, descobertas e gestos já realizados são CONSUMADOS.\n"
-                "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
+                "- Sempre partir da consequência atual, nunca do gatilho anterior.\n"
+                "- Ações, descobertas, gestos e posicionamentos já realizados são CONSUMADOS.\n"
+                "- Não reencenar, repetir ou reconstruir o que já aconteceu.\n"
                 "- Reações devem avançar a cena, nunca recontá-la.\n"
-        
-                "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
+                "- Se houve posição, encaixe, toque, mudança corporal ou aproximação iniciada, continuar o passo seguinte lógico.\n"
+                "- Não usar pergunta genérica para quebrar uma ação já iniciada.\n"
                 "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
                 "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
-                "- Se um objeto já foi guardado, escondido, pego, lido ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
-                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se o usuário pedir ou se houver novo motivo real.\n"
-                "- Não usar o mesmo objeto secreto como eixo do primeiro parágrafo em turnos consecutivos.\n"
-                "- Após uma descoberta, Mary deve reagir, decidir, disfarçar, responder ou agir; não reabrir a cena com o mesmo gesto físico.\n"
-        
                 f"- Estilo deste turno: {style_seed}.\n"
                 "- Variar abertura, ritmo ou foco naturalmente.\n"
                 "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
@@ -8241,17 +8243,18 @@ class MaryService(BaseCharacter):
                 "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
             )
         })
-        
-        for d in history[-6:]:
-            if not isinstance(d, dict):
-                continue
-        
-            u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
-            if u:
-                messages.append({
-                    "role": "user",
-                    "content": u,
-                })
+
+        messages.extend(recent_pairs)
+
+        # ==========================================================
+        # 4) PROMPT ATUAL
+        # ==========================================================
+        messages.append({
+            "role": "user",
+            "content": _wrap_user_prompt_for_pov_guard(prompt),
+        })
+
+        return messages
         
     
         # ==========================================================
@@ -9345,19 +9348,20 @@ sem mover o usuário na cena.
 """.strip()
 
         topic_rule = """
-[ASSUNTO ATIVO - DIREÇÃO DE CENA]
-- O assunto ativo não é só tema mental: ele orienta o próximo fluxo natural da cena.
-- Se o usuário disser "seguir o dia", "continuar", "agenda", "depois disso", "seguir a rotina":
-  Mary deve considerar o assunto como próximo passo lógico.
+[ASSUNTO ATIVO - DIREÇÃO OBRIGATÓRIA DA CENA]
+- O assunto ativo não é só tema mental: ele define a direção da ação em curso.
+- Se o assunto trouxer uma dinâmica física específica, Mary deve seguir essa dinâmica.
+- Não abandonar uma linha corporal já iniciada para voltar a fala genérica.
+- Se posição, encaixe, toque, oral, pressão corporal ou mudança de postura já começaram,
+  a resposta seguinte deve continuar da consequência física imediata.
 - O assunto NÃO teletransporta a cena sozinho.
-- Mas ele DEVE influenciar:
+- Mas ele DEVE governar:
   - intenção
-  - fala
   - foco
-  - proposta
+  - continuidade física
   - próximo movimento plausível
 - Se houver ação explícita do usuário, essa ação vence.
-- Se não houver, o assunto ativo empurra a cena.
+- Se não houver novo gatilho, o assunto ativo mantém a direção já estabelecida.
 """.strip()
 
         emotional_persistence_rule = f"""
@@ -9371,6 +9375,15 @@ Ela carrega o clima anterior
 e só muda com gatilho narrativo real.
 
 Mudanças emocionais devem ter transição.
+""".strip()
+
+        action_commit_rule = """
+[CONTINUIDADE DE AÇÃO FÍSICA - ABSOLUTA]
+- Se Mary iniciar uma ação física concreta, ela deve continuar essa ação no próximo passo lógico.
+- Não interromper ação iniciada com provocação genérica, pergunta solta ou recuo sem gatilho real.
+- Se a cena já entrou em execução corporal, a resposta seguinte deve partir da consequência física imediata.
+- Não voltar de execução para tensão abstrata sem motivo narrativo explícito.
+- Não transformar um movimento já iniciado em mera sugestão.
 """.strip()
 
 
@@ -10171,6 +10184,12 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             orgasm_turns = 1
         
                         desired_next = _mary_phase_from_turns(orgasm_turns)
+
+                        # GARANTIA: se a ação física já começou, nunca ficar abaixo de 2
+                        try:
+                            desired_next = max(int(desired_next or 0), 2)
+                        except Exception:
+                            desired_next = 2
         
                         # deixa o arco de terceiros também limitar a fase íntima
                         try:
@@ -10200,6 +10219,14 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             ),
                             tp_arc=tp_arc,
                         )
+
+                        # GARANTIA: se a resposta já entrou em execução física,
+                        # não deixa a fase cair para 0/1
+                        try:
+                            if _mary_sex_is_active(prompt, texto):
+                                desired_next = max(int(desired_next or 0), 2)
+                        except Exception:
+                            pass
         
                         try:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
