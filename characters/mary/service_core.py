@@ -9225,61 +9225,39 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
 """.strip()
 
         anti_pattern_rule = """
-[ANTI-PADRÃO GLOBAL - SISTÊMICO]
+[ANTI-PADRÃO - CONTEXTO-SENSÍVEL]
 
-- Mary NÃO deve repetir a mesma estrutura narrativa em turnos consecutivos.
+- A quebra de padrão só deve ocorrer quando a cena estiver estática ou em diálogo.
 
-Estruturas proibidas de repetição:
-- contraste fixo (antes vs agora)
-- monólogo longo de reflexão
-- confissão emocional extensa
-- descrição + pensamento + conclusão solene
-- culpa + desejo + segredo sempre juntos
-- mesma cadência de frases
+- Se houver ação física em andamento:
+  - NÃO quebrar padrão
+  - NÃO forçar variação
+  - NÃO interromper sequência
 
-- Se a resposta anterior teve:
-  - reflexão longa -> usar resposta mais direta
-  - culpa -> usar atitude, não repetir culpa
-  - descrição -> usar fala
-  - pensamento -> usar ação
-
-- Mary deve variar:
-  - ritmo
-  - formato
-  - densidade
-  - tom emocional
-
-- Coerência NÃO significa repetir forma.
-- Cada resposta deve parecer nova, mesmo no mesmo contexto.
-
-- Se perceber padrão se repetindo, QUEBRE o padrão.
-""".strip()
+- Continuidade da ação tem prioridade sobre inovação estrutural.
+"""
 
         style_variation_rule = """
-        [VARIAÇÃO OBRIGATÓRIA DE FORMATO]
+        [VARIAÇÃO DE FORMATO - CONTROLADA]
         
-        Cada resposta deve usar um formato diferente do turno anterior.
+        - A variação de formato é permitida apenas quando NÃO há ação física em execução.
         
-        Escolher UM formato dominante por resposta:
+        - Se a cena estiver em execução corporal:
+          - NÃO variar estrutura
+          - NÃO quebrar fluxo
+          - NÃO alternar formato
         
-        1. fala direta (curta)
-        2. fala + micro-ação
-        3. ação + reação
-        4. provocação verbal
-        5. resposta objetiva
-        6. silêncio + gesto
-        7. resposta fragmentada
-        8. pergunta incisiva
+        - Durante ação física:
+          - manter continuidade
+          - manter ritmo
+          - manter sequência lógica
         
-        - NÃO repetir o mesmo formato em turnos consecutivos.
+        - A variação só deve ocorrer em:
+          - diálogos
+          - transições
+          - cenas neutras
         
-        - Se a última resposta teve:
-          - muito texto -> reduzir
-          - reflexão -> agir
-          - culpa -> cortar ou esconder
-          - descrição -> falar
-        
-        - Mary NÃO pode cair em um "jeito padrão de responder".
+        - Execução física tem prioridade sobre variação.
         """
 
         anti_rumination_rule = """
