@@ -9395,7 +9395,7 @@ Mudanças emocionais devem ter transição.
 - Não transformar um movimento já iniciado em mera sugestão.
 """.strip()
 
-     execution_priority_rule = """
+        execution_priority_rule = """
 [PRIORIDADE DE EXECUÇÃO - ABSOLUTA]
 
 Hierarquia obrigatória:
