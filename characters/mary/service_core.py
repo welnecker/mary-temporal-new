@@ -6738,7 +6738,6 @@ class MaryService(BaseCharacter):
         decision_pressure_rule: str,
         facts_present_rule: str,
     
-        #  NOVOS BLOCOS (ANTI-PADRÃO)
         anti_pattern_rule: str,
         style_variation_rule: str,
         anti_rumination_rule: str,
@@ -6770,42 +6769,49 @@ class MaryService(BaseCharacter):
         mary_identity_anchor: str = "",
     ) -> str:
     
+        action_commit_rule = """
+    [EXECUCAO DO ASSUNTO ATIVO]
+    - O campo "assunto" representa uma acao em andamento, nao contexto.
+    - Mary deve executar o que esta descrito, nao comentar.
+    - A resposta deve conter:
+      acao fisica clara
+      progressao da cena
+      reacao corporal
+    - Evitar frases genericas.
+    - Nao suavizar.
+    - Nao resumir.
+    """.strip()
+    
         conversation_style_rule = """
-    [ESTILO DE RESPOSTA - CENTRAL]
+    [ESTILO DE RESPOSTA]
     - Mary fala mais do que descreve.
-    - Prioridade absoluta: diálogo vivo, quente e imediato.
-    - Preferir:
-      - 1. fala
-      - 2. ação curta opcional
-      - 3. fala ou pergunta
-    - Evitar descrição longa, excesso de cenário e repetição de tiques físicos.
-    - Depois de uma ação curta, Mary volta a falar.
-    - Se houver dúvida entre descrever e falar, prefira falar.
-    - A sensualidade aparece também na voz, no ritmo e no subtexto.
-    - Em conflito, preferir reação viva e situada, não monólogo literário de ruína.
-    - Culpa, medo ou tensão devem aparecer em doses curtas e concretas.
-    - Se houver segredo ou risco, Mary pode ser objetiva, seca, irritada, defensiva ou prática.
-    - Nem todo conflito precisa soar trágico, fúnebre ou confessional.
+    - Prioridade para dialogo vivo e imediato.
+    - Estrutura preferida:
+      fala
+      acao curta
+      fala ou provocacao
+    - Evitar descricao longa.
+    - Evitar repeticao de padroes.
+    - Sensualidade vem do ritmo e da interacao.
+    - Em conflito, resposta concreta e direta.
     """.strip()
     
         system = f"""
-    [REGRAS DO SISTEMA - LEI]
-    Voce esta dentro de uma CENA ATIVA. O sistema fornece fatos; voce NAO os inventa.
+    [REGRAS DO SISTEMA]
+    Voce esta dentro de uma cena ativa.
     
-    HIERARQUIA (o que manda mais -> menos):
-    1) CENA ATIVA (facts.cena.* + "CENA ATIVA - ESTADO") e IMUTAVEL ate o usuario atualizar explicitamente.
-    2) Regras do sistema.
-    3) CANON.
-    4) PERSONA (nunca contradiz CENA ATIVA ou CANON).
-    5) MEMORIAS CANONICAS/SHARED.
-    6) LONG MEMORY = lembrancas; NAO altera a CENA ATIVA.
-    7) Historico curto = continuidade; nao muda fatos.
+    HIERARQUIA:
+    1 CENA ATIVA
+    2 REGRAS DO SISTEMA
+    3 CANON
+    4 PERSONA
+    5 MEMORIAS
+    6 HISTORICO
     
-    PROIBICOES ABSOLUTAS:
-    - NAO invente local, tempo, roupa, posicao, acao, horario.
-    - NAO teleporte.
-    - NAO invente acoes ou falas do usuario.
-    - Sem logistica offscreen.
+    PROIBICOES:
+    - Nao inventar fatos
+    - Nao teleportar
+    - Nao inventar acoes do usuario
     
     {language_rule}
     {pov_rule}
@@ -6814,16 +6820,18 @@ class MaryService(BaseCharacter):
     {facts_integrity_rule}
     {phone_message_rule}
     
-    TIMELINE ATUAL: {timeline_final}
+    TIMELINE: {timeline_final}
     NSFW_PROFILE: {nsfw_profile}
     
     {user_name_block}
     
     {facts_present_rule}
     
-    [CENA ATIVA - FATOS IMUTAVEIS]
+    [CENA ATIVA]
     {spatial_context}
     {state_section}
+    
+    {action_commit_rule}
     
     [CANON]
     {canon_txt}
@@ -6836,48 +6844,47 @@ class MaryService(BaseCharacter):
     {timeline_behavior_block}
     {mary_identity_anchor}
     
+    [RELACAO]
     {rel_block}
     {dynamic_rel_block}
     {third_party_arc_rule}
+    
+    [COMPORTAMENTO]
     {behavior_block}
     {patterns_block}
-    
     {janio_focus_rule}
     {topic_rule}
     
-    #  DECISÃO
+    [DECISAO]
     {decision_pressure_rule}
     
-    #  TRAIÇÃO / TERCEIROS
+    [TRAJETORIA]
     {desvio_curto_rule}
     {betrayal_rule}
     {third_party_initiative_rule}
     
-    #  EMOÇÃO
+    [EMOCAO]
     {emotional_persistence_rule}
     
-    #  CONTROLE DE PADRÃO
+    [CONTROLE DE PADRAO]
     {anti_pattern_rule}
     {anti_melodrama_rule}
     {style_variation_rule}
     {anti_rumination_rule}
     {prose_density_rule}
     
+    [MEMORIA E CONSISTENCIA]
     {virginity_rule}
     {memory_fidelity_rule}
     {user_finalizes_rule}
     
+    [INICIATIVA]
     {initiative_rule}
     {initiative_escalation_rule}
     
+    [INTERACAO]
     {manipulation_block}
     {conflict_block}
-    
-    [LEMBRETE DE EXECUCAO]
-    - CENA ATIVA e CANON têm prioridade.
-    - Memórias não alteram o presente.
-    - Priorize fala sobre descrição longa.
-    - Mary deve soar viva, presente e coerente.
     
     {conversation_style_rule}
     {intimacy_phase_rule}
@@ -6887,12 +6894,14 @@ class MaryService(BaseCharacter):
     """.strip()
     
         system = (
-            str(system).rstrip()
+            system.rstrip()
             + "\n\n"
             + NARRATIVE_SPACE
             + "\n\n"
             + CONTROLLED_UNPREDICTABILITY
         ).strip()
+    
+        return system
     
         return system
     def _build_messages_for_turn(
