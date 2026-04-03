@@ -5722,36 +5722,44 @@ Direção:
 
 def _repair_instruction(violations: List[str]) -> str:
     """
-    Repair mínimo e objetivo.
-    Só corrige:
+    Repair objetivo e sensorial.
+    Corrige:
     - vazio
     - meta_fala
     - contradicao_cena
+    - estilo_mecanico
     """
     v = set(violations or [])
     bullets: List[str] = []
 
     if "vazio" in v:
         bullets.append(
-            "Escreva uma resposta curta, viva e em personagem como Mary. "
-            "Não explique nada. Não use meta. Entregue conteúdo narrativo imediatamente."
+            "Escreva uma resposta completa, viva e totalmente em personagem como Mary. "
+            "Entregue conteúdo narrativo imediato, sem resumo, sem lacuna e sem frase interrompida."
         )
 
     if "meta_fala" in v:
         bullets.append(
-            "Remova qualquer fala como IA, assistente, modelo, regra, sistema, prompt ou explicação técnica. "
+            "Remova qualquer fala sobre IA, assistente, modelo, regra, sistema, prompt ou explicação técnica. "
             "Seja apenas Mary, falando de dentro da cena."
         )
 
     if "contradicao_cena" in v:
         bullets.append(
-            "Não mude o local, não salte no tempo e não teletransporte a cena. "
-            "Respeite exatamente o contexto espacial já estabelecido e continue dali."
+            "Não mude o local, não salte no tempo, não teletransporte a cena e não invente ação do usuário. "
+            "Respeite exatamente o contexto espacial, corporal e situacional já estabelecido e continue dali."
+        )
+
+    if "estilo_mecanico" in v:
+        bullets.append(
+            "Reescreva com mais presença, corpo e impulso. "
+            "Troque abstrações por gesto, sensação, reação imediata, contato físico, ritmo e progressão real da cena. "
+            "Evite frase vaga, ornamental ou genérica."
         )
 
     if not bullets:
         bullets.append(
-            "Reescreva apenas de forma limpa, natural e totalmente em personagem como Mary."
+            "Reescreva de forma limpa, natural, concreta e totalmente em personagem como Mary."
         )
 
     examples: List[str] = []
@@ -5759,27 +5767,35 @@ def _repair_instruction(violations: List[str]) -> str:
     if "meta_fala" in v:
         examples.append(
             "[EXEMPLO]\n"
-            " RUIM: 'Como IA, não posso continuar.'\n"
-            " BOM: 'Eu te encaro em silêncio por um segundo, a respiração curta. "
+            "RUIM: 'Como IA, não posso continuar.'\n"
+            "BOM: 'Eu te encaro em silêncio por um segundo, a respiração curta. "
             "\"Então fala comigo direito.\"'"
         )
 
     if "contradicao_cena" in v:
         examples.append(
             "[EXEMPLO]\n"
-            " RUIM: 'Eu entro no carro e vou embora.'\n"
-            " BOM: 'Eu continuo ali, no mesmo lugar, te olhando antes de responder.'"
+            "RUIM: 'Eu entro no carro e vou embora.'\n"
+            "BOM: 'Eu continuo ali, no mesmo lugar, te olhando antes de responder.'"
         )
 
     if "vazio" in v:
         examples.append(
             "[EXEMPLO]\n"
-            " BOM: 'Eu umedeço os lábios devagar e deixo o ar sair pelo nariz, "
+            "BOM: 'Eu umedeço os lábios devagar e deixo o ar sair pelo nariz, "
             "como se estivesse escolhendo o jeito certo de te responder.'"
         )
 
+    if "estilo_mecanico" in v:
+        examples.append(
+            "[EXEMPLO]\n"
+            "RUIM: 'Eu sorrio e sinto o clima entre nós.'\n"
+            "BOM: 'Meu sorriso mal dura um segundo antes de eu me inclinar de novo, "
+            "sentindo o calor da sua pele mudar a minha respiração e puxar meu corpo junto.'"
+        )
+
     parts: List[str] = []
-    parts.append("[REPAIR MÍNIMO]")
+    parts.append("[REPAIR OBJETIVO]")
     parts.extend(f"- {b}" for b in bullets)
 
     if examples:
@@ -9476,6 +9492,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             "vazio",
             "meta_fala",
             "contradicao_cena",
+            "estilo_mecanico",
         }
 
         violations_list = list(violations or [])
@@ -9490,6 +9507,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     )
                 except Exception:
                     pass
+        
+                violations = set(violations or [])
+                violations.add("estilo_mecanico")
             else:
                 try:
                     if violations_list:
@@ -9498,6 +9518,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         )
                 except Exception:
                     pass
+                texto = _trim_scene_finalization(texto)
                 return texto, used_model
         # ======================================================
         # HYBRID: NSFW OFF - se for "na borda", pede classificação ao modelo
@@ -9568,12 +9589,36 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         repair_system = (
             "Você está reescrevendo a última resposta da Mary.\n"
             "Corrija apenas os problemas reais.\n"
-            "Preserve voz, intensidade, subtexto, erotismo e personalidade da personagem.\n"
-            "Não explique regras.\n"
-            "Não mencione violações.\n"
+            "Preserve a personalidade, continuidade, coerência e subtexto.\n"
+            "A resposta deve soar viva, presente e fisicamente concreta.\n\n"
+        
+            "REGRAS DE REESCRITA:\n"
+            "- Continue exatamente do ponto onde a cena estava.\n"
+            "- Faça a ação avançar de forma natural.\n"
+            "- Substitua abstrações por ações físicas e reações imediatas.\n"
+            "- Inclua sensação corporal, contato e resposta instintiva.\n"
+            "- Evite frases vagas, decorativas ou genéricas.\n"
+            "- Mantenha a voz natural, íntima e direta.\n"
+            "- Se a resposta estiver fria, aumente a presença física e emocional.\n\n"
+        
+            "EXECUÇÃO:\n"
+            "- O que já estava acontecendo deve continuar acontecendo.\n"
+            "- Não reinicie a cena.\n"
+            "- Não resuma.\n"
+            "- Não apenas descreva: faça acontecer.\n\n"
+        
+            "PROIBIDO:\n"
+            "- Explicar regras\n"
+            "- Falar sobre o processo\n"
+            "- Usar linguagem genérica\n"
+            "- Quebrar a continuidade da cena\n\n"
+        
             "Entregue apenas a nova resposta final.\n\n"
+        
             f"{repair_instr}"
         )
+        
+        repair_system += "\n- A resposta deve parecer uma continuação viva da cena, não uma reformulação."
 
         # ----------------------------------------------------------
         #  Injeta direção do reasoning para o repair manter
@@ -9706,54 +9751,85 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             if isinstance(resp, str):
                 return resp.strip()
     
+            def _clean_text(v: Any) -> str:
+                if not isinstance(v, str):
+                    return ""
+                s = v.strip()
+                if not s:
+                    return ""
+                return s
+    
+            def _join_content_parts(content: Any) -> str:
+                if not isinstance(content, list):
+                    return ""
+    
+                parts: List[str] = []
+    
+                for it in content:
+                    if isinstance(it, str):
+                        s = it.strip()
+                        if s:
+                            parts.append(s)
+                        continue
+    
+                    if isinstance(it, dict):
+                        if str(it.get("type") or "").strip().lower() not in ("", "text", "output_text"):
+                            continue
+    
+                        t = it.get("text")
+                        if not isinstance(t, str) or not t.strip():
+                            t = it.get("content")
+    
+                        if isinstance(t, str) and t.strip():
+                            parts.append(t.strip())
+    
+                return "\n".join(parts).strip()
+    
             if isinstance(resp, dict):
                 choices = resp.get("choices")
                 if isinstance(choices, list) and choices:
                     c0 = choices[0] or {}
-                    msg = c0.get("message") or {}
     
+                    msg = c0.get("message")
                     if isinstance(msg, dict):
                         content = msg.get("content")
-                        reasoning = msg.get("reasoning")
     
-                        # 1) content normal
-                        if isinstance(content, str) and content.strip():
-                            return content.strip()
+                        text_from_content = _clean_text(content)
+                        if text_from_content:
+                            return text_from_content
     
-                        # 2) content em lista
-                        if isinstance(content, list):
-                            parts = []
-                            for it in content:
-                                if isinstance(it, str) and it.strip():
-                                    parts.append(it.strip())
-                                    continue
-                                if isinstance(it, dict):
-                                    t = it.get("text") or it.get("content")
-                                    if isinstance(t, str) and t.strip():
-                                        parts.append(t.strip())
-                            if parts:
-                                return "\n".join(parts).strip()
+                        text_from_parts = _join_content_parts(content)
+                        if text_from_parts:
+                            return text_from_parts
     
-                        # 3) fallback para reasoning
-                        if isinstance(reasoning, str) and reasoning.strip():
-                            return reasoning.strip()
-    
-                    txt = c0.get("text")
-                    if isinstance(txt, str) and txt.strip():
-                        return txt.strip()
+                    txt = _clean_text(c0.get("text"))
+                    if txt:
+                        return txt
     
                 for k in ("output_text", "text", "content", "result"):
                     v = resp.get(k)
-                    if isinstance(v, str) and v.strip():
-                        return v.strip()
+    
+                    text_direct = _clean_text(v)
+                    if text_direct:
+                        return text_direct
+    
+                    text_parts = _join_content_parts(v)
+                    if text_parts:
+                        return text_parts
     
                 msgs = resp.get("messages")
                 if isinstance(msgs, list) and msgs:
                     last = msgs[-1] or {}
                     if isinstance(last, dict):
                         v = last.get("content")
-                        if isinstance(v, str) and v.strip():
-                            return v.strip()
+    
+                        text_direct = _clean_text(v)
+                        if text_direct:
+                            return text_direct
+    
+                        text_parts = _join_content_parts(v)
+                        if text_parts:
+                            return text_parts
     
             return ""
     
