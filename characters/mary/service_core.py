@@ -6871,7 +6871,7 @@ class MaryService(BaseCharacter):
    - Este estilo nunca pode violar continuidade, facts, autoria ou fase intima.
    """.strip()
 
-       continuity_of_action_rule = """
+        continuity_of_action_rule = """
 [CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
 
 - A cena é contínua e NÃO reinicia a cada resposta.
