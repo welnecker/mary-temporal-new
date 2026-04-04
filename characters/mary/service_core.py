@@ -6978,8 +6978,7 @@ class MaryService(BaseCharacter):
         ).strip()
     
         return system
-    
-        return system
+          
     def _build_messages_for_turn(
         self,
         *,
