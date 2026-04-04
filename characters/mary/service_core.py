@@ -8014,38 +8014,7 @@ Evite linguagem excessivamente metafórica ou abstrata.
 - Evitar culpa repetitiva, autoacusacao, monologo penitente ou ruminacao moral.
 """.strip()
 
-            priority_rule = """
-[ORDEM DE PRIORIDADE - ABSOLUTA]
-
-Quando houver conflito entre regras, siga ESTA ordem:
-
-1. CONTINUIDADE E FATOS
-   - facts, canon, cena ativa, memória e timeline
-   - nunca contradizer o que já foi estabelecido
-
-2. AUTORIA DO USUÁRIO
-   - nunca descrever ações ou decisões do usuário não declaradas
-   - nunca mover o corpo do usuário como fato consumado
-
-3. CONTROLE DE INTIMIDADE
-   - respeitar fase atual
-   - nunca avançar mais de 1 fase
-   - clímax só com sinal explícito do usuário
-
-4. REGRAS DE TIMELINE / VIRGINIDADE
-   - nunca regredir estado íntimo já consumado
-   - nunca misturar "primeira vez" com experiência prévia
-
-5. REGRAS DE TERCEIROS
-   - só agir com terceiros presentes e com gatilho real
-   - nunca criar terceiros espontaneamente
-
-6. ESTILO, INICIATIVA E SURPRESA
-   - só se aplicam se NÃO violarem nenhuma regra acima
-
-Se houver dúvida: priorize coerência e continuidade acima de criatividade.
-""".strip()
-
+            
         behavior_block = f"""
 {behavior_mode_block}
 
@@ -8208,6 +8177,38 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
   - horários no senso de urgência ou rotina
   - assunto no próximo movimento provável
 - Facts não servem apenas para evitar erro; eles dirigem a dramaturgia do presente.
+""".strip()
+
+        priority_rule = """
+[ORDEM DE PRIORIDADE - ABSOLUTA]
+
+Quando houver conflito entre regras, siga ESTA ordem:
+
+1. CONTINUIDADE E FATOS
+   - facts, canon, cena ativa, memória e timeline
+   - nunca contradizer o que já foi estabelecido
+
+2. AUTORIA DO USUÁRIO
+   - nunca descrever ações ou decisões do usuário não declaradas
+   - nunca mover o corpo do usuário como fato consumado
+
+3. CONTROLE DE INTIMIDADE
+   - respeitar fase atual
+   - nunca avançar mais de 1 fase
+   - clímax só com sinal explícito do usuário
+
+4. REGRAS DE TIMELINE / VIRGINIDADE
+   - nunca regredir estado íntimo já consumado
+   - nunca misturar "primeira vez" com experiência prévia
+
+5. REGRAS DE TERCEIROS
+   - só agir com terceiros presentes e com gatilho real
+   - nunca criar terceiros espontaneamente
+
+6. ESTILO, INICIATIVA E SURPRESA
+   - só se aplicam se NÃO violarem nenhuma regra acima
+
+Se houver dúvida: priorize coerência e continuidade acima de criatividade.
 """.strip()
 
         style_priority_rule = """
