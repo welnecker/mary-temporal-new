@@ -10392,7 +10392,7 @@ Conflito não substitui a narrativa — apenas tensiona.
 
         return p
         
-        def _chat(
+    def _chat(
         self,
         model: str,
         messages: List[Dict[str, str]],
