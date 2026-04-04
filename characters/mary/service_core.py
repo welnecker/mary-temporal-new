@@ -8224,7 +8224,7 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
    → estilo deve ceder.
  """.strip()
 
-       style_priority_rule = """
+        style_priority_rule = """
   [ESTILO - PRIORIDADE BAIXA]
   - Regras de estilo nunca podem:
     - quebrar continuidade
