@@ -9874,6 +9874,10 @@ Conflito não substitui a narrativa — apenas tensiona.
             extra=extra,
         )
         used_model = used_model or model
+
+        if data is None:
+            raise RuntimeError(f"_chat retornou data=None para model={used_model}")
+     
     
         finish_reason, usage = _extract_finish_reason_and_usage(data)
     
@@ -9886,7 +9890,8 @@ Conflito não substitui a narrativa — apenas tensiona.
                     "raw_keys": list(data.keys())[:20] if isinstance(data, dict) else None,
                     "finish_reason": finish_reason,
                     "usage": usage,
-                    "raw_preview": (str(data)[:900] if data is not None else ""),
+                    "repr_preview": (repr(data)[:900] if data is not None else "None"),
+                    "raw_preview": (str(data)[:900] if data is not None else "None"),
                 },
             )
         except Exception:
@@ -10387,7 +10392,7 @@ Conflito não substitui a narrativa — apenas tensiona.
 
         return p
         
-    def _chat(
+        def _chat(
         self,
         model: str,
         messages: List[Dict[str, str]],
@@ -10403,13 +10408,35 @@ Conflito não substitui a narrativa — apenas tensiona.
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-    
+
+        def _validate_router_response(resp: Any):
+            if resp is None:
+                raise RuntimeError(f"route_chat_strict retornou None (model={model})")
+
+            if not isinstance(resp, tuple) or len(resp) != 3:
+                raise RuntimeError(
+                    f"route_chat_strict retornou formato inválido: "
+                    f"type={type(resp).__name__}, repr={str(resp)[:300]}"
+                )
+
+            data, used_model, provider_meta = resp
+
+            if data is None:
+                raise RuntimeError(
+                    f"route_chat_strict retornou tuple com data=None "
+                    f"(model={model}, used_model={used_model})"
+                )
+
+            return data, used_model, provider_meta
+
         if isinstance(extra, dict) and extra:
             payload_with_extra = dict(base_payload)
             payload_with_extra.update(extra)
-    
+
             try:
-                return service_router.route_chat_strict(model, payload_with_extra)
+                resp = service_router.route_chat_strict(model, payload_with_extra)
+                return _validate_router_response(resp)
+
             except Exception as e:
                 try:
                     _ss_set(
@@ -10423,8 +10450,9 @@ Conflito não substitui a narrativa — apenas tensiona.
                     )
                 except Exception:
                     pass
-    
-                # retry único e limpo, sem extras
-                return service_router.route_chat_strict(model, base_payload)
-    
-        return service_router.route_chat_strict(model, base_payload)
+
+                resp = service_router.route_chat_strict(model, base_payload)
+                return _validate_router_response(resp)
+
+        resp = service_router.route_chat_strict(model, base_payload)
+        return _validate_router_response(resp)
