@@ -5979,29 +5979,37 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 # HELPERS (misc)
 
 def _infer_emotion_bucket(texto: str) -> str:
-    """Heurística leve e segura para persistir um 'clima' emocional entre turnos.
-    Retorna um bucket curto em PT-BR: 'neutro', 'tesao', 'afeto', 'culpa', 'raiva', 'triste', 'euforia', 'ansiedade'.
-    """
     t = (texto or "").lower()
-    # ordem importa: sinais fortes primeiro
+
+    # negativos fortes
     if any(k in t for k in ["chorei", "chorando", "lágrima", "lagrima", "soluço", "soluco", "triste", "vazia"]):
         return "triste"
+
     if any(k in t for k in ["raiva", "irritad", "puta", "furiosa", "briguei", "brigar", "odiei"]):
         return "raiva"
+
     if any(k in t for k in ["culpa", "envergonh", "me sinto mal", "arrepend"]):
         return "culpa"
+
     if any(k in t for k in ["ansiosa", "ansiedade", "tremendo", "medo", "apavor", "pânico", "panico"]):
         return "ansiedade"
-    if any(k in t for k in ["rindo", "risada", "engraçad", "engracad", "zoei", "deboche", "sarcas"]):
-        return "euforia"
-    # buckets positivos / íntimos
-    if any(k in t for k in ["eu te amo", "amo você", "amo voce", "apaixon", "saudade", "carinho", "colo"]):
-        return "afeto"
+
+    # TESÃO PRIMEIRO ENTRE OS POSITIVOS
     if any(k in t for k in [
-        "tesão", "tesao", "gozar", "gozo", "pau", "boceta", "clitóris", "clitoris",
-        "gem", "ofego", "arrepio", "calor", "tremo", "latejando", "molhada"
+        "tesão", "tesao", "gozar", "gozo", "pau", "buceta", "clitóris", "clitoris",
+        "gem", "ofego", "arrepio", "calor", "tremo", "latejando", "molhada",
+        "gemido", "respiração", "respiracao", "suspiro", "meu corpo", "me arqueio"
     ]):
         return "tesao"
+
+    # afeto (mais suave que tesão)
+    if any(k in t for k in ["eu te amo", "amo você", "amo voce", "apaixon", "saudade", "carinho", "colo"]):
+        return "afeto"
+
+    # euforia leve (só se não for sexual)
+    if any(k in t for k in ["rindo", "risada", "engraçad", "engracad", "zoei", "deboche", "sarcas"]):
+        return "euforia"
+
     return "neutro"
 
 
@@ -8419,12 +8427,17 @@ sem mover o usuário na cena.
 
 Estado emocional atual: {emotion_now}
 
-Mary não reinicia neutra a cada turno.
+- Este estado deve ser mantido durante toda a resposta.
+- A resposta deve ser coerente com esse estado.
 
-Ela carrega o clima anterior
-e só muda com gatilho narrativo real.
+- Mary não reinicia neutra a cada turno.
+- Ela continua emocionalmente de onde parou.
 
-Mudanças emocionais devem ter transição.
+- Mudança emocional só ocorre se houver gatilho claro.
+- Mudanças devem ser graduais, não abruptas.
+
+Regra prática:
+→ continuar emoção > resetar emoção
 """.strip()
 
 
@@ -9221,23 +9234,46 @@ Conflito não substitui a narrativa — apenas tensiona.
                     },
                 )
         
-                # ----------------------------------------------------------
-                # Persistência oficial do turno
-                # ----------------------------------------------------------
-                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-                _lock_scene(usuario_key)
-        
-                # ----------------------------------------------------------
-                # Intimacy progression
-                # ----------------------------------------------------------
-                try:
-                    current_facts = cached_get_facts(usuario_key)
-                    try:
-                        current_facts = _sync_intimacy_phase_facts(
-                            usuario_key,
-                            current_facts,
-                            timeline_final,
-                        )
+               # ----------------------------------------------------------
+               # Persistência oficial do turno
+               # ----------------------------------------------------------
+               save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+               _lock_scene(usuario_key)
+               
+               # 🔥 NOVO BLOCO — persistência de emoção
+               try:
+                   new_emotion = _infer_emotion_bucket(texto)
+               
+                   if new_emotion:
+                       _save_emotion_state_to_facts(
+                           usuario_key,
+                           new_emotion,
+                           timeline_final,
+                       )
+               except Exception as e:
+                   try:
+                       _ss_set(
+                           "mary_emotion_error",
+                           {
+                               "type": type(e).__name__,
+                               "msg": str(e)[:500],
+                               "timeline": timeline_final,
+                           },
+                       )
+                   except Exception:
+                       pass
+               
+               # ----------------------------------------------------------
+               # Intimacy progression
+               # ----------------------------------------------------------
+               try:
+                   current_facts = cached_get_facts(usuario_key)
+                   try:
+                       current_facts = _sync_intimacy_phase_facts(
+                           usuario_key,
+                           current_facts,
+                           timeline_final,
+                       )
                     except Exception as e_sync:
                         try:
                             _ss_set(
