@@ -8832,30 +8832,203 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         except Exception as e:
             print(f"[DEBUG messages] falha ao imprimir: {e}")
 
-        # ==========================================================
-        # Fase efetiva usada no decoding
-        # ==========================================================
+    def _finalize_model_text(self, texto: str) -> str:
+        texto = (texto or "").strip()
+        if not texto:
+            texto = self._fallback_text()
+    
+        try:
+            texto = _seal_broken_ending(texto)
+        except Exception:
+            pass
+    
+        texto = (texto or "").strip()
+        if not texto:
+            texto = self._fallback_text()
+    
+        return texto
+    
+    
+    def _resolve_effective_phase_for_generation(
+        self,
+        *,
+        intimacy_phase: int,
+        usuario_key: str,
+        timeline_final: str,
+        diag: Any,
+    ) -> Tuple[int, int, int]:
         phase = int(intimacy_phase)
-
+    
         prev_phase_key = f"_mary_prev_phase::{usuario_key}"
         streak_key = f"_mary_phase_streak::{usuario_key}"
+    
         prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
-
+    
         if prev_phase == phase:
             phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
         else:
             phase_streak = 1
-
+    
         pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
         if _ss_has(pk):
             stt = _ss_get(pk)
             if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
                 prev_phase = phase
                 phase = 5
-                diag.intimacy_phase_pre = 5
+                try:
+                    diag.intimacy_phase_pre = 5
+                except Exception:
+                    pass
+    
                 stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
                 _ss_set(pk, stt)
+    
+        try:
+            _ss_set(prev_phase_key, phase)
+            _ss_set(streak_key, phase_streak)
+        except Exception:
+            pass
+    
+        return phase, prev_phase, phase_streak
+    
+    
+    def _should_run_relationship_assessor(
+        self,
+        prompt: str,
+        texto: str,
+        *,
+        conflict_now: bool,
+        phase: int,
+        tp_arc: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        if conflict_now:
+            return False
+    
+        blob = _t_norm((prompt or "") + "\n" + (texto or ""))
+    
+        if int(phase or 0) >= 4:
+            return True
+    
+        if _third_party_signal_level(blob) >= 3:
+            return True
+    
+        if any(k in blob for k in (
+            "primeira vez",
+            "consumado",
+            "consumada",
+            "orgasmo",
+            "gozei",
+            "vou gozar",
+            "estou gozando",
+            "me entrego",
+            "cedo",
+            "não resisto",
+            "nao resisto",
+        )):
+            return True
+    
+        return False
+    
+    
+    def _enrich_relationship_state_from_text(
+        self,
+        rel_state: Dict[str, Any],
+        *,
+        texto: str,
+    ) -> Dict[str, Any]:
+        rs = dict(rel_state or {})
+        t2 = (texto or "").lower()
+    
+        rs.setdefault("mood", "intensa")
+        rs.setdefault("energy", "energetica")
+        rs.setdefault("attitude", "equilibrada")
+        rs.setdefault("_last_success_pattern", "")
+        rs.setdefault("self_awareness", 0.30)
+    
+        if any(k in t2 for k in [
+            "prendo", "prender",
+            "abraço apertado",
+            "beijo com urgência",
+            "aperto contra"
+        ]):
+            rs["_last_success_pattern"] = "dominancia_fisica"
+            rs["attitude"] = "dominante"
+            rs["energy"] = "energetica"
+    
+        if any(k in t2 for k in [
+            "tremo", "tremor", "arfar",
+            "ofegar", "respiração falha",
+            "voz rouca", "arquejo",
+            "contração", "aperto involuntário"
+        ]):
+            rs["_last_success_pattern"] = "prazer_corporal"
+            rs["mood"] = "intensa"
+    
+        if any(k in t2 for k in [
+            "de repente", "sem aviso",
+            "surpresa", "não esperava",
+            "nao esperava",
+            "mudo o ritmo", "pauso e volto"
+        ]):
+            rs["_last_success_pattern"] = "mudanca_ritmo"
+            rs["energy"] = "energetica"
+    
+        if any(k in t2 for k in [
+            "paro por um segundo",
+            "respiro fundo antes",
+            "hesito por um instante"
+        ]):
+            rs["mood"] = "melancolica"
+    
+        if _RE_SELF_AWARE_BEHAVIOR.search(t2):
+            rs["self_awareness"] = min(
+                1.0,
+                float(rs.get("self_awareness", 0.30)) + 0.05
+            )
+    
+        rs["_last_updated_ts"] = int(time.time())
+        return rs
+    
+    
+    def _maybe_apply_universitaria_transition(
+        self,
+        rel_state: Dict[str, Any],
+        *,
+        timeline_final: str,
+        prompt: str,
+        texto: str,
+    ) -> Dict[str, Any]:
+        rs = dict(rel_state or {})
+    
+        if timeline_final != "universitaria":
+            return rs
+    
+        txt_all = f"{prompt}\n{texto}".lower()
+    
+        transition = bool(
+            re.search(
+                r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
+                txt_all,
+                re.IGNORECASE,
+            )
+        )
+    
+        if transition and rs.get("virginity") == "virgem":
+            rs["virginity"] = "nao_virgem"
+            rs["consummated"] = True
+    
+        return rs
 
+        # ==========================================================
+        # Fase efetiva usada no decoding
+        # ==========================================================
+        phase, prev_phase, phase_streak = self._resolve_effective_phase_for_generation(
+            intimacy_phase=intimacy_phase,
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            diag=diag,
+        )
+        
         attempts = self._build_attempt_plan(
             model=model,
             nsfw_on=nsfw_on,
@@ -8865,12 +9038,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             conflict_now=bool(conflict_now),
             user_text=prompt,
         )
-
+        
         last_err: Optional[Exception] = None
         texto = ""
-
+        
         for plan in attempts:
             diag.attempts += 1
+        
             try:
                 texto, used_model = self._generate_with_repair(
                     model=plan["model"],
@@ -8889,43 +9063,19 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
-
+        
                 diag.model_used = used_model
                 meta: Dict[str, Any] = {}
-
-                def _should_run_relationship_assessor(
-                    prompt: str,
-                    texto: str,
-                    *,
-                    conflict_now: bool,
-                    phase: int,
-                    tp_arc: Optional[Dict[str, Any]] = None,
-                ) -> bool:
-                    if conflict_now:
-                        return False
-                
-                    blob = _t_norm((prompt or "") + "\n" + (texto or ""))
-                
-                    # só roda em momentos realmente estruturais
-                    if int(phase or 0) >= 4:
-                        return True
-                
-                    if _third_party_signal_level(blob) >= 3:
-                        return True
-                
-                    if any(k in blob for k in (
-                        "primeira vez",
-                        "consumado",
-                        "consumada",
-                        "orgasmo",
-                        "gozei",
-                        "vou gozar",
-                        "estou gozando",
-                    )):
-                        return True
-                
-                    return False
-                if _should_run_relationship_assessor(
+        
+                # ----------------------------------------------------------
+                # Texto final oficial do turno
+                # ----------------------------------------------------------
+                texto = self._finalize_model_text(texto)
+        
+                # ----------------------------------------------------------
+                # Relationship assessor
+                # ----------------------------------------------------------
+                if self._should_run_relationship_assessor(
                     prompt,
                     texto,
                     conflict_now=bool(conflict_now),
@@ -8934,7 +9084,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                 ):
                     try:
                         assessor_model = diag.model_used or plan["model"]
-
+        
                         def _assessor(system_prompt: str, user_prompt: str) -> str:
                             data2, _, _ = self._chat(
                                 assessor_model,
@@ -8946,7 +9096,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                                 max_tokens=280,
                             )
                             return self._extract_text(data2)
-
+        
                         new_rel, _assessment, meta = evolve_relationship(
                             rel_state,
                             prompt,
@@ -8955,80 +9105,21 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             _assessor,
                             cfg=EngineConfig(),
                         )
-
-                        rel_state = new_rel
-
-                        try:
-                            t2 = (texto or "").lower()
-
-                            rel_state.setdefault("mood", "intensa")
-                            rel_state.setdefault("energy", "energetica")
-                            rel_state.setdefault("attitude", "equilibrada")
-                            rel_state.setdefault("_last_success_pattern", "")
-                            rel_state.setdefault("self_awareness", 0.30)
-
-                            if any(k in t2 for k in [
-                                "prendo", "prender",
-                                "abraço apertado",
-                                "beijo com urgência",
-                                "aperto contra"
-                            ]):
-                                rel_state["_last_success_pattern"] = "dominancia_fisica"
-                                rel_state["attitude"] = "dominante"
-                                rel_state["energy"] = "energetica"
-
-                            if any(k in t2 for k in [
-                                "tremo", "tremor", "arfar",
-                                "ofegar", "respiração falha",
-                                "voz rouca", "arquejo",
-                                "contração", "aperto involuntário"
-                            ]):
-                                rel_state["_last_success_pattern"] = "prazer_corporal"
-                                rel_state["mood"] = "intensa"
-
-                            if any(k in t2 for k in [
-                                "de repente", "sem aviso",
-                                "surpresa", "não esperava",
-                                "mudo o ritmo", "pauso e volto"
-                            ]):
-                                rel_state["_last_success_pattern"] = "mudanca_ritmo"
-                                rel_state["energy"] = "energetica"
-
-                            if any(k in t2 for k in [
-                                "paro por um segundo",
-                                "respiro fundo antes",
-                                "hesito por um instante"
-                            ]):
-                                rel_state["mood"] = "melancolica"
-
-                            if _RE_SELF_AWARE_BEHAVIOR.search(t2):
-                                rel_state["self_awareness"] = min(
-                                    1.0,
-                                    float(rel_state.get("self_awareness", 0.30)) + 0.05
-                                )
-
-                            rel_state["_last_updated_ts"] = int(time.time())
-
-                        except Exception:
-                            pass
-
-                        if timeline_final == "universitaria":
-                            txt_all = f"{prompt}\n{texto}".lower()
-
-                            transition = bool(
-                                re.search(
-                                    r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
-                                    txt_all,
-                                    re.IGNORECASE,
-                                )
-                            )
-
-                            if transition and rel_state.get("virginity") == "virgem":
-                                rel_state["virginity"] = "nao_virgem"
-                                rel_state["consummated"] = True
-
+        
+                        rel_state = dict(new_rel or {})
+                        rel_state = self._enrich_relationship_state_from_text(
+                            rel_state,
+                            texto=texto,
+                        )
+                        rel_state = self._maybe_apply_universitaria_transition(
+                            rel_state,
+                            timeline_final=timeline_final,
+                            prompt=prompt,
+                            texto=texto,
+                        )
+        
                         _save_rel_state(usuario_key, timeline_final, rel_state)
-
+        
                         if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
                             _ss_set(
                                 "mary_timeline_suggested",
@@ -9039,10 +9130,25 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                                     "reason": meta.get("pattern") or "suggested_by_engine",
                                 },
                             )
-
-                    except Exception:
+        
+                    except Exception as e:
                         meta = meta or {}
-
+                        try:
+                            _ss_set(
+                                "mary_relationship_assessor_error",
+                                {
+                                    "type": type(e).__name__,
+                                    "msg": str(e)[:500],
+                                    "timeline": timeline_final,
+                                    "model": assessor_model if "assessor_model" in locals() else None,
+                                },
+                            )
+                        except Exception:
+                            pass
+        
+                # ----------------------------------------------------------
+                # Debug/meta
+                # ----------------------------------------------------------
                 _ss_set(
                     "mary_rel_meta_last",
                     {
@@ -9067,7 +9173,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         "fidelity_mode": fidelity_mode,
                     },
                 )
-
+        
                 _ss_set(
                     "mary_debug_nsfw",
                     {
@@ -9081,61 +9187,71 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         "fidelity_mode": fidelity_mode,
                     },
                 )
-
+        
                 # ----------------------------------------------------------
-                # Garantir texto válido antes de qualquer persistência
-                # ----------------------------------------------------------
-                texto = (texto or "").strip()
-                
-                if not texto:
-                    texto = self._fallback_text()
-                
-                # ----------------------------------------------------------
-                # Agora sim salva interação correta
+                # Persistência oficial do turno
                 # ----------------------------------------------------------
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
                 _lock_scene(usuario_key)
-                
+        
                 # ----------------------------------------------------------
                 # Intimacy progression
                 # ----------------------------------------------------------
                 try:
                     current_facts = cached_get_facts(usuario_key)
-                
                     try:
                         current_facts = _sync_intimacy_phase_facts(
                             usuario_key,
                             current_facts,
                             timeline_final,
                         )
-                    except Exception:
-                        pass
-                
+                    except Exception as e_sync:
+                        try:
+                            _ss_set(
+                                "mary_sync_intimacy_error",
+                                {
+                                    "type": type(e_sync).__name__,
+                                    "msg": str(e_sync)[:500],
+                                    "timeline": timeline_final,
+                                },
+                            )
+                        except Exception:
+                            pass
                 except Exception:
                     current_facts = cached_get_facts(usuario_key)
+        
                 current_phase = self._get_intimacy_phase(current_facts)
-
+        
                 if phase != 5:
                     sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-
+        
                     k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
                     mary_active = bool((current_facts or {}).get(k_active, False))
                     mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-
+        
                     if sex_active:
                         if not mary_active:
                             mary_turns = 0
-
+        
                         mary_turns = min(4, mary_turns + 1)
                         target_phase = _mary_phase_from_turns(mary_turns)
                         desired_next = max(current_phase, target_phase)
-
+        
                         try:
                             set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
-                        except Exception:
-                            pass
-
+                        except Exception as e_org:
+                            try:
+                                _ss_set(
+                                    "mary_orgasm_turns_error",
+                                    {
+                                        "type": type(e_org).__name__,
+                                        "msg": str(e_org)[:500],
+                                        "timeline": timeline_final,
+                                    },
+                                )
+                            except Exception:
+                                pass
                     else:
                         desired_next = _compute_next_phase(
                             current_phase,
@@ -9143,29 +9259,49 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             texto,
                             engine_meta=meta,
                         )
-
+        
                         try:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
-                        except Exception:
-                            pass
-
+                        except Exception as e_org2:
+                            try:
+                                _ss_set(
+                                    "mary_orgasm_turns_error",
+                                    {
+                                        "type": type(e_org2).__name__,
+                                        "msg": str(e_org2)[:500],
+                                        "timeline": timeline_final,
+                                    },
+                                )
+                            except Exception:
+                                pass
+        
                     if desired_next != current_phase:
                         self._set_intimacy_phase(
                             usuario_key,
                             desired_next,
                             timeline_final,
                         )
-
+        
                         try:
                             _sync_intimacy_phase_facts(
                                 usuario_key,
                                 cached_get_facts(usuario_key),
                                 timeline_final,
                             )
-                        except Exception:
-                            pass
-
+                        except Exception as e_sync2:
+                            try:
+                                _ss_set(
+                                    "mary_sync_intimacy_error",
+                                    {
+                                        "type": type(e_sync2).__name__,
+                                        "msg": str(e_sync2)[:500],
+                                        "timeline": timeline_final,
+                                    },
+                                )
+                            except Exception:
+                                pass
+        
                 # ----------------------------------------------------------
                 # Arco persistente com terceiros
                 # ----------------------------------------------------------
@@ -9179,14 +9315,19 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         allow_third_party_seduction=allow_third_party_seduction_final,
                         nsfw_on=nsfw_on,
                     )
-                except Exception:
-                    pass
-
-                texto = (texto or "").strip()
-
-                if not texto:
-                    texto = self._fallback_text()
-
+                except Exception as e_tp:
+                    try:
+                        _ss_set(
+                            "mary_tp_arc_error",
+                            {
+                                "type": type(e_tp).__name__,
+                                "msg": str(e_tp)[:500],
+                                "timeline": timeline_final,
+                            },
+                        )
+                    except Exception:
+                        pass
+        
                 # ----------------------------------------------------------
                 # HOOK ENGINE - progresso do sub-enredo
                 # ----------------------------------------------------------
@@ -9197,9 +9338,19 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         active_hook=active_hook if isinstance(active_hook, dict) else {},
                         response_text=texto,
                     )
-                except Exception:
-                    pass
-
+                except Exception as e_hook:
+                    try:
+                        _ss_set(
+                            "mary_hook_engine_error",
+                            {
+                                "type": type(e_hook).__name__,
+                                "msg": str(e_hook)[:500],
+                                "timeline": timeline_final,
+                            },
+                        )
+                    except Exception:
+                        pass
+        
                 # ----------------------------------------------------------
                 # RELATIONSHIP DYNAMIC - evolução relacional viva
                 # ----------------------------------------------------------
@@ -9209,18 +9360,18 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         texto,
                         tp_arc=tp_arc,
                     )
-
+        
                     dynamic_rel_state = apply_relationship_shift(
                         dynamic_rel_state,
                         rel_delta,
                     )
-
+        
                     save_dynamic_relationship_state(
                         usuario_key,
                         timeline_final,
                         dynamic_rel_state,
                     )
-
+        
                     _ss_set(
                         "mary_dynamic_rel_debug",
                         {
@@ -9229,18 +9380,28 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                             "delta": rel_delta,
                         },
                     )
-                except Exception:
-                    pass
-
+                except Exception as e_dyn:
+                    try:
+                        _ss_set(
+                            "mary_dynamic_rel_error",
+                            {
+                                "type": type(e_dyn).__name__,
+                                "msg": str(e_dyn)[:500],
+                                "timeline": timeline_final,
+                            },
+                        )
+                    except Exception:
+                        pass
+        
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
-
+        
             except Exception as e:
                 last_err = e
-
+        
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-
+        
             _ss_set(
                 "mary_last_error",
                 {
@@ -9254,12 +9415,8 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                     "violations": diag.violations or [],
                 },
             )
-
-        texto = (texto or "").strip()
-
-        if not texto:
-            texto = self._fallback_text()
-
+        
+        texto = self._finalize_model_text(texto)
         _ss_set("mary_last_diagnostics", diag.as_dict())
         return texto
 
