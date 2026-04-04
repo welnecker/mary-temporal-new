@@ -9052,7 +9052,10 @@ Conflito não substitui a narrativa — apenas tensiona.
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
-        
+             
+                if not texto or not str(texto).strip():
+                    raise RuntimeError(f"Resposta vazia do modelo (model={plan['model']})")
+                 
                 diag.model_used = used_model
                 meta: Dict[str, Any] = {}
         
