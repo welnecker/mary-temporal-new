@@ -9277,93 +9277,237 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         user_text: str,
     ) -> List[Dict[str, Any]]:
         """
-        Plano dinâmico de geração para maximizar imersão:
-        - Clímax/tensão: temperature sobe e top_p desce levemente (criatividade controlada)
-        - Conflito: temperature desce (resposta mais firme/limpa)
-        - Explicações/fatos: mais contido
-        Campos opcionais em cada plano:
-        - top_p
-        - extra (best-effort: alguns providers ignoram/rejeitam)
+        Plano dinâmico de geração mais estável:
+        - factual/conflito -> menor variabilidade
+        - fases altas -> criatividade controlada, sem explodir sampling
+        - aftercare/cooldown -> estabiliza e encurta levemente
+        - retries ficam progressivamente mais conservadores
         """
-        ut = (user_text or "").lower()
-        looks_factual = bool(re.search(r"\b(explica|resumo|o que é|defina|por que|como funciona)\b", ut))
-
-        # Cool-down: aftercare (fase 5) logo após clímax (fase >=4) ou fase 5 prolongada
+        ut = (user_text or "").strip().lower()
+    
+        looks_factual = bool(
+            re.search(
+                r"\b(explica|explique|resumo|resuma|o que é|defina|por que|porque|como funciona|qual a diferença|liste|mostre)\b",
+                ut,
+            )
+        )
+    
+        looks_directive = bool(
+            re.search(
+                r"\b(responda|diga|fale|continue|prossiga|descreva|narre|mantenha|sem|não|nao)\b",
+                ut,
+            )
+        )
+    
         cooldown = bool(phase == 5 and (prev_phase >= 4 or phase_streak >= 3))
-
-        # Base tokens (fôlego)
-        # Obs: tokens altos aumentam risco de truncamento/length em alguns providers.
-        base_tokens = 3000 if nsfw_on else 2000
-
-        # mais fôlego só quando realmente precisa
-        if nsfw_on and phase >= 3:
-            base_tokens = 3400
-
-        # explicações: menor
-        if looks_factual and not nsfw_on:
-            base_tokens = 1700
-
-        # aftercare: resposta costuma ser menor/mais controlada
-        if phase == 5:
-            base_tokens = 2200 if nsfw_on else 1800
-
-        #  CAP defensivo
-        base_tokens = min(base_tokens, 3400)
-
-        # Decoding por cena
-        if conflict_now:
-            base_temp = 0.62 if nsfw_on else 0.58
-            base_top_p = 0.90
-        elif looks_factual:
-            base_temp = 0.55
-            base_top_p = 0.92
+    
+        # --------------------------------------------------
+        # tokens-base
+        # --------------------------------------------------
+        if looks_factual:
+            base_tokens = 1600 if not nsfw_on else 1900
+        elif phase == 5:
+            base_tokens = 2100 if nsfw_on else 1700
+        elif nsfw_on and phase >= 3:
+            base_tokens = 3200
         else:
-            # Aftercare (fase 5): estabiliza ritmo e evita "ressaca" de criatividade
-            if phase == 5:
-                if cooldown:
-                    base_temp = 0.58 if nsfw_on else 0.55
-                    base_top_p = 0.93 if nsfw_on else 0.94
-                else:
-                    base_temp = 0.64 if nsfw_on else 0.60
-                    base_top_p = 0.94 if nsfw_on else 0.95
-            elif phase >= 4:
-                base_temp = 1.0
+            base_tokens = 2200 if nsfw_on else 1900
+    
+        base_tokens = max(900, min(base_tokens, 3400))
+    
+        # --------------------------------------------------
+        # decoding-base
+        # --------------------------------------------------
+        if looks_factual:
+            base_temp = 0.50
+            base_top_p = 0.90
+        elif conflict_now:
+            base_temp = 0.58 if nsfw_on else 0.54
+            base_top_p = 0.89
+        elif phase == 5:
+            if cooldown:
+                base_temp = 0.55 if nsfw_on else 0.52
                 base_top_p = 0.92
-            elif phase == 3:
-                base_temp = 0.84
-                base_top_p = 0.93
-            elif phase == 2:
-                base_temp = 0.80
-                base_top_p = 0.95
             else:
-                base_temp = 0.74
-                base_top_p = 0.96
-
-                # Penalidades: variam por tipo de cena
+                base_temp = 0.62 if nsfw_on else 0.58
+                base_top_p = 0.93
+        elif phase >= 4:
+            base_temp = 0.90
+            base_top_p = 0.91
+        elif phase == 3:
+            base_temp = 0.80
+            base_top_p = 0.92
+        elif phase == 2:
+            base_temp = 0.76
+            base_top_p = 0.94
+        else:
+            base_temp = 0.70
+            base_top_p = 0.95
+    
+        # usuário muito diretivo pede menos dispersão
+        if looks_directive and not looks_factual:
+            base_temp = max(0.50, base_temp - 0.04)
+            base_top_p = min(base_top_p, 0.94)
+    
+        # --------------------------------------------------
+        # penalties
+        # --------------------------------------------------
         if looks_factual or conflict_now:
             extra = {
-                "presence_penalty": 0.45,
-                "frequency_penalty": 0.22,
-                "repetition_penalty": 1.10,
+                "presence_penalty": 0.35,
+                "frequency_penalty": 0.18,
+                "repetition_penalty": 1.08,
             }
         elif nsfw_on and phase >= 4:
             extra = {
-                "presence_penalty": 0.22,
-                "frequency_penalty": 0.10,
-                "repetition_penalty": 1.06,
+                "presence_penalty": 0.18,
+                "frequency_penalty": 0.08,
+                "repetition_penalty": 1.04,
+            }
+        elif phase == 5:
+            extra = {
+                "presence_penalty": 0.28,
+                "frequency_penalty": 0.16,
+                "repetition_penalty": 1.08,
             }
         else:
             extra = {
-                "presence_penalty": 0.60,
-                "frequency_penalty": 0.35,
-                "repetition_penalty": 1.14,
+                "presence_penalty": 0.52,
+                "frequency_penalty": 0.28,
+                "repetition_penalty": 1.12,
             }
-
-        return [
-            {"model": model, "temperature": base_temp, "top_p": base_top_p, "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.45, base_temp - 0.10), "top_p": min(0.97, base_top_p + 0.02), "max_tokens": base_tokens, "extra": extra},
-            {"model": model, "temperature": max(0.40, base_temp - 0.20), "top_p": min(0.98, base_top_p + 0.03), "max_tokens": base_tokens, "extra": extra},
+    
+        # --------------------------------------------------
+        # retries mais conservadores
+        # --------------------------------------------------
+        plan = [
+            {
+                "model": model,
+                "temperature": round(base_temp, 3),
+                "top_p": round(base_top_p, 3),
+                "max_tokens": int(base_tokens),
+                "extra": dict(extra),
+            },
+            {
+                "model": model,
+                "temperature": round(max(0.42, base_temp - 0.08), 3),
+                "top_p": round(min(0.97, base_top_p + 0.02), 3),
+                "max_tokens": int(base_tokens),
+                "extra": dict(extra),
+            },
+            {
+                "model": model,
+                "temperature": round(max(0.40, base_temp - 0.16), 3),
+                "top_p": round(min(0.98, base_top_p + 0.03), 3),
+                "max_tokens": int(min(base_tokens, 3000)),
+                "extra": dict(extra),
+            },
         ]
+        return plan
+
+@staticmethod
+def _repair_profile(violations: Set[str], *, nsfw_on: bool, phase: int) -> Dict[str, str]:
+    """
+    Escolhe um perfil de repair compatível com o problema real,
+    sem empurrar toda resposta para o mesmo estilo.
+    """
+    v = set(violations or [])
+
+    if "contradicao_cena" in v:
+        return {
+            "tone": "coerente, precisa e obediente à cena já ativa",
+            "focus": (
+                "- Preserve local, tempo, posição, continuidade e fatos já estabelecidos.\n"
+                "- Remova qualquer deslocamento, salto de ação ou detalhe que contradiga a cena.\n"
+                "- Reescreva apenas o necessário para ficar coerente."
+            ),
+        }
+
+    if "meta_fala" in v:
+        return {
+            "tone": "natural, íntima e totalmente imersa",
+            "focus": (
+                "- Remova qualquer traço de explicação, comentário sobre processo, regra ou instrução.\n"
+                "- Entregue apenas a fala/ação final em personagem.\n"
+                "- Mantenha subtexto e continuidade."
+            ),
+        }
+
+    if "vazio" in v:
+        return {
+            "tone": "viva, concreta e imediata",
+            "focus": (
+                "- Continue do ponto exato da cena.\n"
+                "- Entregue uma resposta curta a média, mas completa.\n"
+                "- Faça algo acontecer sem reiniciar nem resumir."
+            ),
+        }
+
+    if "estilo_mecanico" in v:
+        if nsfw_on and int(phase or 0) >= 2:
+            return {
+                "tone": "orgânica, sensorial e presente",
+                "focus": (
+                    "- Troque abstrações por ação imediata, sensação corporal e reação espontânea.\n"
+                    "- Evite fraseado decorativo, redundante ou automático.\n"
+                    "- Preserve a progressão natural, sem exagerar."
+                ),
+            }
+        return {
+            "tone": "orgânica, humana e presente",
+            "focus": (
+                "- Troque frases rígidas por fala natural e reação imediata.\n"
+                "- Evite soar automática, explicativa ou genérica.\n"
+                "- Preserve contenção quando a cena pedir contenção."
+            ),
+        }
+
+    return {
+        "tone": "coerente e natural",
+        "focus": (
+            "- Corrija apenas o mínimo necessário.\n"
+            "- Preserve personalidade, continuidade e ritmo."
+        ),
+    }
+
+    
+    @staticmethod
+    def _build_repair_system(
+        violations: Set[str],
+        *,
+        nsfw_on: bool,
+        phase: int,
+        decision_hint: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        profile = MaryService._repair_profile(violations, nsfw_on=nsfw_on, phase=phase)
+        repair_instr = _repair_instruction(violations)
+    
+        text = (
+            "Você está reescrevendo a última resposta da Mary.\n"
+            "Corrija apenas os problemas reais.\n"
+            "Preserve personalidade, continuidade, coerência e subtexto.\n\n"
+            f"TOM:\n- A resposta deve soar {profile['tone']}.\n\n"
+            "REGRAS FIXAS:\n"
+            "- Continue exatamente do ponto onde a cena estava.\n"
+            "- Não reinicie a cena.\n"
+            "- Não resuma.\n"
+            "- Não explique o processo.\n"
+            "- Não quebre a continuidade.\n"
+            "- Entregue apenas a nova resposta final.\n\n"
+            "FOCO DE CORREÇÃO:\n"
+            f"{profile['focus']}\n\n"
+            f"{repair_instr}"
+        )
+    
+        if isinstance(decision_hint, dict) and decision_hint:
+            text += (
+                "\n\n[DIREÇÃO DA MARY - MANTER]\n"
+                f"- Decisão: {decision_hint.get('decision')}\n"
+                f"- Objetivo: {decision_hint.get('narrative_goal')}\n"
+                f"- Limite: {decision_hint.get('advance_limit')}"
+            )
+    
+        return text
 
 
     # ======================================================
@@ -9381,13 +9525,13 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         user_text: str,
         phase: int,
         nsfw_on: bool,
-        nsfw_profile: str,  #  NOVO
+        nsfw_profile: str,
         timeline: str,
         allow_third_party_seduction: bool,
         diag: _Diag,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, str]:
-
+    
         data, used_model, _provider_meta = self._chat(
             model,
             messages,
@@ -9397,10 +9541,9 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             extra=extra,
         )
         used_model = used_model or model
-
-        #  pega finish_reason + usage (quando existirem)
+    
         finish_reason, usage = _extract_finish_reason_and_usage(data)
-
+    
         try:
             _ss_set(
                 "mary_last_raw_preview",
@@ -9415,53 +9558,39 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             )
         except Exception:
             pass
-
-        # --- extrai texto do payload ---
+    
         texto = self._extract_text(data) if data is not None else ""
         texto = _normalize_model_response(texto or "")
+    
         try:
             user_norm = _t_norm(user_text or "")
             texto_norm = _t_norm(texto or "")
-        
-            # pega palavras relevantes do user (sem stopwords)
-            user_tokens = [
-                w for w in user_norm.split()
-                if len(w) > 4
-            ]
-        
-            # conta quantas aparecem no início da resposta
+            user_tokens = [w for w in user_norm.split() if len(w) > 4]
             first_part = texto_norm[:200]
-        
             repeated = sum(1 for w in user_tokens if w in first_part)
-        
+    
             if repeated >= 3:
                 diag.violations = list(
                     dict.fromkeys((diag.violations or []) + ["eco_gatilho_imediato"])
                 )
-        
         except Exception:
             pass
-        
-
-        #  score estrutural mínimo para evitar resposta mecânica
+    
         try:
             style_score = float(_style_score(texto))
         except Exception:
             style_score = 1.0
-
+    
         try:
             diag.style_score = style_score
         except Exception:
             pass
-
-        #  Blindagem anti-truncamento / parêntese quebrado
-        # Aplica cedo para não "criar" violações por corte do provider
+    
         try:
             texto = _seal_broken_ending(texto)
         except Exception:
             pass
-
-        #  Se veio vazio, marca violação e devolve vazio para o fluxo decidir
+    
         if not texto:
             try:
                 diag.violations = list(
@@ -9470,10 +9599,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             except Exception:
                 pass
             return "", used_model
-
-        # ======================================================
-        #  Validações / violações (para repair)
-        # ======================================================
+    
         violations = _violations(
             texto=texto,
             ctx_lower=ctx_lower,
@@ -9484,57 +9610,59 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             timeline=str(timeline or ""),
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
-
-        # ======================================================
-        # Apenas três violações podem disparar repair
-        # ======================================================
+    
+        # comentário corrigido: são QUATRO grupos capazes de disparar repair
         viol_graves = {
             "vazio",
             "meta_fala",
             "contradicao_cena",
             "estilo_mecanico",
         }
-
-        violations_list = list(violations or [])
-        violations_set = set(violations_list)
-
-        # sem violação grave -> aceita resposta, exceto se estiver mecânica demais
-        if not (violations_set & viol_graves):
+    
+        violations = set(violations or [])
+    
+        # se não houver violação grave, só injeta estilo_mecanico quando realmente necessário
+        if not (violations & viol_graves):
             if style_score < 0.72:
+                violations.add("estilo_mecanico")
                 try:
                     diag.violations = list(
                         dict.fromkeys((diag.violations or []) + ["estilo_mecanico"])
                     )
                 except Exception:
                     pass
-        
-                violations = set(violations or [])
-                violations.add("estilo_mecanico")
             else:
                 try:
-                    if violations_list:
+                    if violations:
                         diag.violations = list(
-                            dict.fromkeys((diag.violations or []) + violations_list)
+                            dict.fromkeys((diag.violations or []) + list(violations))
                         )
                 except Exception:
                     pass
+    
                 texto = _trim_scene_finalization(texto)
+                try:
+                    texto = _seal_broken_ending(texto)
+                except Exception:
+                    pass
                 return texto, used_model
-        # ======================================================
-        # HYBRID: NSFW OFF - se for "na borda", pede classificação ao modelo
-        # (não altera prompt NSFW_ON; só reforça o bloqueio quando NSFW está OFF)
-        # ======================================================
+    
+        # ---------------------------------------------
+        # NSFW OFF: só classifica se for caso de borda
+        # ---------------------------------------------
         try:
-            if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in (violations or [])):
+            if (not bool(nsfw_on)) and ("nsfw_off_explicito" not in violations):
                 if _needs_llm_classification(texto, user_text=user_text, phase=int(phase or 0)):
                     classifier_model = used_model
                     sys_c = "Você é um classificador. Responda APENAS: SIM ou NAO."
                     usr_c = (
-                        "O texto abaixo descreve ato sexual explícito (ex.: penetração, sexo oral, "
-                        "masturbação explícita, órgãos genitais nomeados, ou descrição inequívoca de ato sexual)?\n\n"
+                        "O texto abaixo descreve ato sexual explícito "
+                        "(ex.: penetração, sexo oral, masturbação explícita, órgãos genitais nomeados, "
+                        "ou descrição inequívoca de ato sexual)?\n\n"
                         f"TEXTO:\n{texto}\n\n"
                         "Responda apenas SIM ou NAO."
                     )
+    
                     data_c, _m_c, _ = self._chat(
                         classifier_model,
                         [
@@ -9547,6 +9675,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         extra=None,
                     )
                     ans = (self._extract_text(data_c) or "").strip().upper()
+    
                     if ans.startswith("SIM"):
                         violations.add("nsfw_off_explicito")
                         try:
@@ -9559,123 +9688,86 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
                         except Exception:
                             pass
         except Exception:
-            # se classificador falhar, não derruba a resposta
             try:
                 diag.violations = (diag.violations or []) + ["nsfw_off_borderline_llm=ERR"]
             except Exception:
                 pass
-
-
+    
         if violations:
             try:
-                diag.violations = list(dict.fromkeys((diag.violations or []) + list(violations)))
+                diag.violations = list(
+                    dict.fromkeys((diag.violations or []) + list(violations))
+                )
             except Exception:
                 pass
-
-        #  Sem violações -> aplica corte de finalização e retorna
+    
         if not violations:
             texto = _trim_scene_finalization(texto)
+            try:
+                texto = _seal_broken_ending(texto)
+            except Exception:
+                pass
             return texto, used_model
-        # ======================================================
-        #  Repair (1 passada)
-        # ======================================================
+    
+        # ---------------------------------------------
+        # Repair: 1 passada, mas agora com perfil certo
+        # ---------------------------------------------
         try:
             diag.repairs += 1
         except Exception:
             pass
-
-        repair_instr = _repair_instruction(violations)
-
-        repair_system = (
-            "Você está reescrevendo a última resposta da Mary.\n"
-            "Corrija apenas os problemas reais.\n"
-            "Preserve a personalidade, continuidade, coerência e subtexto.\n"
-            "A resposta deve soar viva, presente e fisicamente concreta.\n\n"
-        
-            "REGRAS DE REESCRITA:\n"
-            "- Continue exatamente do ponto onde a cena estava.\n"
-            "- Faça a ação avançar de forma natural.\n"
-            "- Substitua abstrações por ações físicas e reações imediatas.\n"
-            "- Inclua sensação corporal, contato e resposta instintiva.\n"
-            "- Evite frases vagas, decorativas ou genéricas.\n"
-            "- Mantenha a voz natural, íntima e direta.\n"
-            "- Se a resposta estiver fria, aumente a presença física e emocional.\n\n"
-        
-            "EXECUÇÃO:\n"
-            "- O que já estava acontecendo deve continuar acontecendo.\n"
-            "- Não reinicie a cena.\n"
-            "- Não resuma.\n"
-            "- Não apenas descreva: faça acontecer.\n\n"
-        
-            "PROIBIDO:\n"
-            "- Explicar regras\n"
-            "- Falar sobre o processo\n"
-            "- Usar linguagem genérica\n"
-            "- Quebrar a continuidade da cena\n\n"
-        
-            "Entregue apenas a nova resposta final.\n\n"
-        
-            f"{repair_instr}"
-        )
-        
-        repair_system += "\n- A resposta deve parecer uma continuação viva da cena, não uma reformulação."
-
-        # ----------------------------------------------------------
-        #  Injeta direção do reasoning para o repair manter
-        # ----------------------------------------------------------
+    
         try:
             decision_hint = _ss_get("mary_reasoning_debug", {}) or {}
-
-            repair_system += f"""
-
-[DIREÇÃO DA MARY - MANTER]
-- Decisão: {decision_hint.get("decision")}
-- Objetivo: {decision_hint.get("narrative_goal")}
-- Limite: {decision_hint.get("advance_limit")}
-"""
         except Exception:
-            pass
-
+            decision_hint = {}
+    
+        repair_system = self._build_repair_system(
+            violations,
+            nsfw_on=bool(nsfw_on),
+            phase=int(phase or 0),
+            decision_hint=decision_hint,
+        )
+    
         repair_messages: List[Dict[str, str]] = []
-
-        # mantém o system original intacto
+    
         try:
             if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system":
                 repair_messages.append(messages[0])
         except Exception:
             pass
-
-        # injeta instrução de repair
+    
         repair_messages.append({"role": "system", "content": repair_system})
-
-        # preserva um contexto mínimo de memória já injetada
-        # pega até 6 mensagens relevantes (user/assistant), evitando system duplicado
+    
         try:
             memory_context = [
                 m for m in (messages[1:-1] if len(messages) > 2 else [])
                 if isinstance(m, dict) and m.get("role") in ("user", "assistant")
             ]
-
             if memory_context:
                 repair_messages.extend(memory_context[-6:])
         except Exception:
             pass
-
-        # contexto imediato
-        repair_messages.append({"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")})
+    
+        repair_messages.append(
+            {"role": "user", "content": _wrap_user_prompt_for_pov_guard(user_text or "")}
+        )
         repair_messages.append({"role": "assistant", "content": texto})
-
+    
+        # repair ligeiramente mais conservador que a geração original
+        repair_temp = max(0.42, float(temperature) - 0.06)
+        repair_top_p = min(0.96, float(top_p))
+    
         data2, used_model2, _provider_meta2 = self._chat(
             used_model,
             repair_messages,
-            temperature=float(temperature),
+            temperature=repair_temp,
             max_tokens=int(max_tokens),
-            top_p=min(0.97, float(top_p)),
+            top_p=repair_top_p,
             extra=extra,
         )
         used_model2 = used_model2 or used_model
-
-        # preview do repair (opcional)
+    
         try:
             fr2, usage2 = _extract_finish_reason_and_usage(data2)
             _ss_set(
@@ -9691,23 +9783,23 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             )
         except Exception:
             pass
+    
         texto2 = self._extract_text(data2) if data2 is not None else ""
-        texto2 = (texto2 or "").strip()
-
-        # sela truncamento do repair também
+        texto2 = _normalize_model_response(texto2 or "").strip()
+    
         try:
             texto2 = _seal_broken_ending(texto2)
         except Exception:
             pass
-
-        # se repair falhar, devolve o original (melhor que vazio)
+    
         if not texto2:
             texto = _trim_scene_finalization(texto)
-            texto = _seal_broken_ending(texto)
-            texto = _trim_scene_finalization(texto)
+            try:
+                texto = _seal_broken_ending(texto)
+            except Exception:
+                pass
             return texto, used_model
-
-        # validação final do repair
+    
         violations2 = _violations(
             texto=texto2,
             ctx_lower=ctx_lower,
@@ -9718,17 +9810,35 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
             timeline=str(timeline or ""),
             allow_third_party_seduction=bool(allow_third_party_seduction),
         )
-
         violations2 = set(violations2 or [])
-        
+    
+        try:
+            style_score2 = float(_style_score(texto2))
+        except Exception:
+            style_score2 = 1.0
+    
         if not (violations2 & viol_graves):
+            if style_score2 < 0.72:
+                # se o repair ainda ficou mecânico, devolve o original bom em vez de reescrever em loop
+                texto = _trim_scene_finalization(texto)
+                try:
+                    texto = _seal_broken_ending(texto)
+                except Exception:
+                    pass
+                return texto, used_model
+    
             texto2 = _trim_scene_finalization(texto2)
+            try:
+                texto2 = _seal_broken_ending(texto2)
+            except Exception:
+                pass
             return texto2, used_model2
-
-        # se o repair ainda violar, devolve o original aparado
+    
         texto = _trim_scene_finalization(texto)
-        texto = _seal_broken_ending(texto)
-        texto = _trim_scene_finalization(texto)
+        try:
+            texto = _seal_broken_ending(texto)
+        except Exception:
+            pass
         return texto, used_model
         
     @staticmethod
@@ -9954,22 +10064,34 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
         top_p: float = 0.95,
         extra: Optional[Dict[str, Any]] = None,
     ):
-        payload: Dict[str, Any] = {
+        base_payload: Dict[str, Any] = {
             "messages": messages,
             "temperature": float(temperature),
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
+    
         if isinstance(extra, dict) and extra:
-            payload.update(extra)
+            payload_with_extra = dict(base_payload)
+            payload_with_extra.update(extra)
+    
             try:
-                return service_router.route_chat_strict(model, payload)
-            except Exception:
-                # Provider rejeitou campos extras -> re-tenta 1x sem extras
-                payload = {
-                    "messages": messages,
-                    "temperature": float(temperature),
-                    "top_p": float(top_p),
-                    "max_tokens": int(max_tokens),
-                }
-        return service_router.route_chat_strict(model, payload)
+                return service_router.route_chat_strict(model, payload_with_extra)
+            except Exception as e:
+                try:
+                    _ss_set(
+                        "mary_last_extra_retry_debug",
+                        {
+                            "model": model,
+                            "error_type": type(e).__name__,
+                            "error": str(e)[:600],
+                            "extra_keys": list(extra.keys())[:20],
+                        },
+                    )
+                except Exception:
+                    pass
+    
+                # retry único e limpo, sem extras
+                return service_router.route_chat_strict(model, base_payload)
+    
+        return service_router.route_chat_strict(model, base_payload)
