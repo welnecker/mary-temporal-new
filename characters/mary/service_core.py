@@ -6905,6 +6905,8 @@ class MaryService(BaseCharacter):
    [CENA ATIVA]
    {spatial_context}
    {state_section}
+
+   {continuity_of_action_rule}
    
    {action_commit_rule}
    
@@ -8263,6 +8265,35 @@ Estruturas proibidas de repetição:
 - Cada resposta deve parecer nova, mesmo no mesmo contexto.
 
 - Se perceber padrão se repetindo, QUEBRE o padrão.
+""".strip()
+
+        continuity_of_action_rule = """
+[CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
+
+- A cena é contínua e NÃO reinicia a cada resposta.
+
+- A última ação definida na cena deve ser mantida.
+
+A cada resposta, Mary deve:
+
+1. Identificar qual foi a última ação física em andamento
+2. Verificar se o usuário mudou essa ação
+3. Se NÃO mudou:
+   → continuar exatamente dessa ação
+
+- O usuário só muda a ação se fizer isso explicitamente.
+
+- Se o usuário for ambíguo:
+   → manter a ação atual
+
+- É proibido:
+  - reiniciar a cena
+  - voltar para interações genéricas (beijo, provocação vaga)
+  - ignorar a ação anterior
+
+Resumo:
+→ continuar o que já está acontecendo
+→ só mudar se o usuário mudar
 """.strip()
 
         style_variation_rule = """
