@@ -9008,193 +9008,6 @@ Conflito não substitui a narrativa — apenas tensiona.
         except Exception as e:
             print(f"[DEBUG messages] falha ao imprimir: {e}")
 
-    def _finalize_model_text(self, texto: str) -> str:
-        texto = (texto or "").strip()
-        if not texto:
-            texto = self._fallback_text()
-    
-        try:
-            texto = _seal_broken_ending(texto)
-        except Exception:
-            pass
-    
-        texto = (texto or "").strip()
-        if not texto:
-            texto = self._fallback_text()
-    
-        return texto
-    
-    
-    def _resolve_effective_phase_for_generation(
-        self,
-        *,
-        intimacy_phase: int,
-        usuario_key: str,
-        timeline_final: str,
-        diag: Any,
-    ) -> Tuple[int, int, int]:
-        phase = int(intimacy_phase)
-    
-        prev_phase_key = f"_mary_prev_phase::{usuario_key}"
-        streak_key = f"_mary_phase_streak::{usuario_key}"
-    
-        prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
-    
-        if prev_phase == phase:
-            phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
-        else:
-            phase_streak = 1
-    
-        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
-        if _ss_has(pk):
-            stt = _ss_get(pk)
-            if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
-                prev_phase = phase
-                phase = 5
-                try:
-                    diag.intimacy_phase_pre = 5
-                except Exception:
-                    pass
-    
-                stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
-                _ss_set(pk, stt)
-    
-        try:
-            _ss_set(prev_phase_key, phase)
-            _ss_set(streak_key, phase_streak)
-        except Exception:
-            pass
-    
-        return phase, prev_phase, phase_streak
-    
-    
-    def _should_run_relationship_assessor(
-        self,
-        prompt: str,
-        texto: str,
-        *,
-        conflict_now: bool,
-        phase: int,
-        tp_arc: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        if conflict_now:
-            return False
-    
-        blob = _t_norm((prompt or "") + "\n" + (texto or ""))
-    
-        if int(phase or 0) >= 4:
-            return True
-    
-        if _third_party_signal_level(blob) >= 3:
-            return True
-    
-        if any(k in blob for k in (
-            "primeira vez",
-            "consumado",
-            "consumada",
-            "orgasmo",
-            "gozei",
-            "vou gozar",
-            "estou gozando",
-            "me entrego",
-            "cedo",
-            "não resisto",
-            "nao resisto",
-        )):
-            return True
-    
-        return False
-    
-    
-    def _enrich_relationship_state_from_text(
-        self,
-        rel_state: Dict[str, Any],
-        *,
-        texto: str,
-    ) -> Dict[str, Any]:
-        rs = dict(rel_state or {})
-        t2 = (texto or "").lower()
-    
-        rs.setdefault("mood", "intensa")
-        rs.setdefault("energy", "energetica")
-        rs.setdefault("attitude", "equilibrada")
-        rs.setdefault("_last_success_pattern", "")
-        rs.setdefault("self_awareness", 0.30)
-    
-        if any(k in t2 for k in [
-            "prendo", "prender",
-            "abraço apertado",
-            "beijo com urgência",
-            "aperto contra"
-        ]):
-            rs["_last_success_pattern"] = "dominancia_fisica"
-            rs["attitude"] = "dominante"
-            rs["energy"] = "energetica"
-    
-        if any(k in t2 for k in [
-            "tremo", "tremor", "arfar",
-            "ofegar", "respiração falha",
-            "voz rouca", "arquejo",
-            "contração", "aperto involuntário"
-        ]):
-            rs["_last_success_pattern"] = "prazer_corporal"
-            rs["mood"] = "intensa"
-    
-        if any(k in t2 for k in [
-            "de repente", "sem aviso",
-            "surpresa", "não esperava",
-            "nao esperava",
-            "mudo o ritmo", "pauso e volto"
-        ]):
-            rs["_last_success_pattern"] = "mudanca_ritmo"
-            rs["energy"] = "energetica"
-    
-        if any(k in t2 for k in [
-            "paro por um segundo",
-            "respiro fundo antes",
-            "hesito por um instante"
-        ]):
-            rs["mood"] = "melancolica"
-    
-        if _RE_SELF_AWARE_BEHAVIOR.search(t2):
-            rs["self_awareness"] = min(
-                1.0,
-                float(rs.get("self_awareness", 0.30)) + 0.05
-            )
-    
-        rs["_last_updated_ts"] = int(time.time())
-        return rs
-    
-    
-    def _maybe_apply_universitaria_transition(
-        self,
-        rel_state: Dict[str, Any],
-        *,
-        timeline_final: str,
-        prompt: str,
-        texto: str,
-    ) -> Dict[str, Any]:
-        rs = dict(rel_state or {})
-    
-        if timeline_final != "universitaria":
-            return rs
-    
-        txt_all = f"{prompt}\n{texto}".lower()
-    
-        transition = bool(
-            re.search(
-                r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
-                txt_all,
-                re.IGNORECASE,
-            )
-        )
-    
-        if transition and rs.get("virginity") == "virgem":
-            rs["virginity"] = "nao_virgem"
-            rs["consummated"] = True
-    
-        return rs
-
         # ==========================================================
         # Fase efetiva usada no decoding
         # ==========================================================
@@ -9596,6 +9409,194 @@ Conflito não substitui a narrativa — apenas tensiona.
         _ss_set("mary_last_diagnostics", diag.as_dict())
         return texto
 
+    def _finalize_model_text(self, texto: str) -> str:
+        texto = (texto or "").strip()
+        if not texto:
+            texto = self._fallback_text()
+    
+        try:
+            texto = _seal_broken_ending(texto)
+        except Exception:
+            pass
+    
+        texto = (texto or "").strip()
+        if not texto:
+            texto = self._fallback_text()
+    
+        return texto
+    
+    
+    def _resolve_effective_phase_for_generation(
+        self,
+        *,
+        intimacy_phase: int,
+        usuario_key: str,
+        timeline_final: str,
+        diag: Any,
+    ) -> Tuple[int, int, int]:
+        phase = int(intimacy_phase)
+    
+        prev_phase_key = f"_mary_prev_phase::{usuario_key}"
+        streak_key = f"_mary_phase_streak::{usuario_key}"
+    
+        prev_phase = int(_ss_get(prev_phase_key, phase) or phase)
+    
+        if prev_phase == phase:
+            phase_streak = int(_ss_get(streak_key, 0) or 0) + 1
+        else:
+            phase_streak = 1
+    
+        pk = f"mary_postclimax::{usuario_key}::{timeline_final}"
+        if _ss_has(pk):
+            stt = _ss_get(pk)
+            if isinstance(stt, dict) and int(stt.get("turns_left") or 0) > 0:
+                prev_phase = phase
+                phase = 5
+                try:
+                    diag.intimacy_phase_pre = 5
+                except Exception:
+                    pass
+    
+                stt["turns_left"] = max(0, int(stt.get("turns_left") or 0) - 1)
+                _ss_set(pk, stt)
+    
+        try:
+            _ss_set(prev_phase_key, phase)
+            _ss_set(streak_key, phase_streak)
+        except Exception:
+            pass
+    
+        return phase, prev_phase, phase_streak
+    
+    
+    def _should_run_relationship_assessor(
+        self,
+        prompt: str,
+        texto: str,
+        *,
+        conflict_now: bool,
+        phase: int,
+        tp_arc: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        if conflict_now:
+            return False
+    
+        blob = _t_norm((prompt or "") + "\n" + (texto or ""))
+    
+        if int(phase or 0) >= 4:
+            return True
+    
+        if _third_party_signal_level(blob) >= 3:
+            return True
+    
+        if any(k in blob for k in (
+            "primeira vez",
+            "consumado",
+            "consumada",
+            "orgasmo",
+            "gozei",
+            "vou gozar",
+            "estou gozando",
+            "me entrego",
+            "cedo",
+            "não resisto",
+            "nao resisto",
+        )):
+            return True
+    
+        return False
+    
+    
+    def _enrich_relationship_state_from_text(
+        self,
+        rel_state: Dict[str, Any],
+        *,
+        texto: str,
+    ) -> Dict[str, Any]:
+        rs = dict(rel_state or {})
+        t2 = (texto or "").lower()
+    
+        rs.setdefault("mood", "intensa")
+        rs.setdefault("energy", "energetica")
+        rs.setdefault("attitude", "equilibrada")
+        rs.setdefault("_last_success_pattern", "")
+        rs.setdefault("self_awareness", 0.30)
+    
+        if any(k in t2 for k in [
+            "prendo", "prender",
+            "abraço apertado",
+            "beijo com urgência",
+            "aperto contra"
+        ]):
+            rs["_last_success_pattern"] = "dominancia_fisica"
+            rs["attitude"] = "dominante"
+            rs["energy"] = "energetica"
+    
+        if any(k in t2 for k in [
+            "tremo", "tremor", "arfar",
+            "ofegar", "respiração falha",
+            "voz rouca", "arquejo",
+            "contração", "aperto involuntário"
+        ]):
+            rs["_last_success_pattern"] = "prazer_corporal"
+            rs["mood"] = "intensa"
+    
+        if any(k in t2 for k in [
+            "de repente", "sem aviso",
+            "surpresa", "não esperava",
+            "nao esperava",
+            "mudo o ritmo", "pauso e volto"
+        ]):
+            rs["_last_success_pattern"] = "mudanca_ritmo"
+            rs["energy"] = "energetica"
+    
+        if any(k in t2 for k in [
+            "paro por um segundo",
+            "respiro fundo antes",
+            "hesito por um instante"
+        ]):
+            rs["mood"] = "melancolica"
+    
+        if _RE_SELF_AWARE_BEHAVIOR.search(t2):
+            rs["self_awareness"] = min(
+                1.0,
+                float(rs.get("self_awareness", 0.30)) + 0.05
+            )
+    
+        rs["_last_updated_ts"] = int(time.time())
+        return rs
+    
+    
+    def _maybe_apply_universitaria_transition(
+        self,
+        rel_state: Dict[str, Any],
+        *,
+        timeline_final: str,
+        prompt: str,
+        texto: str,
+    ) -> Dict[str, Any]:
+        rs = dict(rel_state or {})
+    
+        if timeline_final != "universitaria":
+            return rs
+    
+        txt_all = f"{prompt}\n{texto}".lower()
+    
+        transition = bool(
+            re.search(
+                r"\b(consumar|consumado|deixei\s+de\s+ser\s+virgem|n[aã]o\s+sou\s+mais\s+virgem|tirou\s+minha\s+virgindade)\b",
+                txt_all,
+                re.IGNORECASE,
+            )
+        )
+    
+        if transition and rs.get("virginity") == "virgem":
+            rs["virginity"] = "nao_virgem"
+            rs["consummated"] = True
+    
+        return rs
+
+        
     # ======================================================
     # Planos previsíveis
     # ======================================================
