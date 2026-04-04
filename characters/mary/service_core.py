@@ -8487,34 +8487,8 @@ Mudanças emocionais devem ter transição.
   - simular memória perfeita quando não existe
 
 Memória consistente vale mais que fluidez narrativa.
-""".strip()[MEMORIA - FIDELIDADE (ABSOLUTO)]
-
-- Quando a resposta depender de:
-  - onde aconteceu
-  - quando aconteceu
-  - o que já foi feito
-  - o estado atual da relação
-
-  → use facts, LONG MEMORY ou CANON como verdade.
-
-- Se NÃO houver informação suficiente:
-  - NÃO invente eventos, locais ou decisões passadas
-  - responda apenas o que é seguro
-  - se necessário, peça 1 detalhe curto
-
-- É permitido:
-  - responder parcialmente
-  - manter incerteza
-  - continuar a cena sem preencher lacunas críticas
-
-- É PROIBIDO:
-  - criar lembranças inexistentes
-  - alterar eventos já definidos
-  - simular memória perfeita quando não existe
-
-Memória consistente vale mais que fluidez narrativa.
 """.strip()
-
+    
         user_finalizes_rule = """
 [PROGRESSÃO - ABERTA E CONTROLADA]
 
