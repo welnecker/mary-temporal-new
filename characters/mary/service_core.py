@@ -8488,7 +8488,8 @@ Mudanças emocionais devem ter transição.
 
 Memória consistente vale mais que fluidez narrativa.
 """.strip()
-    
+
+
         user_finalizes_rule = """
 [PROGRESSÃO - ABERTA E CONTROLADA]
 
@@ -9736,70 +9737,70 @@ Conflito não substitui a narrativa — apenas tensiona.
         ]
         return plan
 
-@staticmethod
-def _repair_profile(violations: Set[str], *, nsfw_on: bool, phase: int) -> Dict[str, str]:
-    """
-    Escolhe um perfil de repair compatível com o problema real,
-    sem empurrar toda resposta para o mesmo estilo.
-    """
-    v = set(violations or [])
+    @staticmethod
+    def _repair_profile(violations: Set[str], *, nsfw_on: bool, phase: int) -> Dict[str, str]:
+        """
+        Escolhe um perfil de repair compatível com o problema real,
+        sem empurrar toda resposta para o mesmo estilo.
+        """
+        v = set(violations or [])
 
-    if "contradicao_cena" in v:
-        return {
-            "tone": "coerente, precisa e obediente à cena já ativa",
-            "focus": (
-                "- Preserve local, tempo, posição, continuidade e fatos já estabelecidos.\n"
-                "- Remova qualquer deslocamento, salto de ação ou detalhe que contradiga a cena.\n"
-                "- Reescreva apenas o necessário para ficar coerente."
-            ),
-        }
-
-    if "meta_fala" in v:
-        return {
-            "tone": "natural, íntima e totalmente imersa",
-            "focus": (
-                "- Remova qualquer traço de explicação, comentário sobre processo, regra ou instrução.\n"
-                "- Entregue apenas a fala/ação final em personagem.\n"
-                "- Mantenha subtexto e continuidade."
-            ),
-        }
-
-    if "vazio" in v:
-        return {
-            "tone": "viva, concreta e imediata",
-            "focus": (
-                "- Continue do ponto exato da cena.\n"
-                "- Entregue uma resposta curta a média, mas completa.\n"
-                "- Faça algo acontecer sem reiniciar nem resumir."
-            ),
-        }
-
-    if "estilo_mecanico" in v:
-        if nsfw_on and int(phase or 0) >= 2:
+        if "contradicao_cena" in v:
             return {
-                "tone": "orgânica, sensorial e presente",
+                "tone": "coerente, precisa e obediente à cena já ativa",
                 "focus": (
-                    "- Troque abstrações por ação imediata, sensação corporal e reação espontânea.\n"
-                    "- Evite fraseado decorativo, redundante ou automático.\n"
-                    "- Preserve a progressão natural, sem exagerar."
+                    "- Preserve local, tempo, posição, continuidade e fatos já estabelecidos.\n"
+                    "- Remova qualquer deslocamento, salto de ação ou detalhe que contradiga a cena.\n"
+                    "- Reescreva apenas o necessário para ficar coerente."
                 ),
             }
+
+        if "meta_fala" in v:
+            return {
+                "tone": "natural, íntima e totalmente imersa",
+                "focus": (
+                    "- Remova qualquer traço de explicação, comentário sobre processo, regra ou instrução.\n"
+                    "- Entregue apenas a fala/ação final em personagem.\n"
+                    "- Mantenha subtexto e continuidade."
+                ),
+            }
+
+        if "vazio" in v:
+            return {
+                "tone": "viva, concreta e imediata",
+                "focus": (
+                    "- Continue do ponto exato da cena.\n"
+                    "- Entregue uma resposta curta a média, mas completa.\n"
+                    "- Faça algo acontecer sem reiniciar nem resumir."
+                ),
+            }
+
+        if "estilo_mecanico" in v:
+            if nsfw_on and int(phase or 0) >= 2:
+                return {
+                    "tone": "orgânica, sensorial e presente",
+                    "focus": (
+                        "- Troque abstrações por ação imediata, sensação corporal e reação espontânea.\n"
+                        "- Evite fraseado decorativo, redundante ou automático.\n"
+                        "- Preserve a progressão natural, sem exagerar."
+                    ),
+                }
+            return {
+                "tone": "orgânica, humana e presente",
+                "focus": (
+                    "- Troque frases rígidas por fala natural e reação imediata.\n"
+                    "- Evite soar automática, explicativa ou genérica.\n"
+                    "- Preserve contenção quando a cena pedir contenção."
+                ),
+            }
+
         return {
-            "tone": "orgânica, humana e presente",
+            "tone": "coerente e natural",
             "focus": (
-                "- Troque frases rígidas por fala natural e reação imediata.\n"
-                "- Evite soar automática, explicativa ou genérica.\n"
-                "- Preserve contenção quando a cena pedir contenção."
+                "- Corrija apenas o mínimo necessário.\n"
+                "- Preserve personalidade, continuidade e ritmo."
             ),
         }
-
-    return {
-        "tone": "coerente e natural",
-        "focus": (
-            "- Corrija apenas o mínimo necessário.\n"
-            "- Preserve personalidade, continuidade e ritmo."
-        ),
-    }
 
     
     @staticmethod
