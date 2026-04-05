@@ -2557,7 +2557,8 @@ def _render_sidebar() -> None:
         # ESTADO ATUAL
         # ==========================================================
         st.subheader("📄 Estado atual (facts → service_core)")
-
+        st.caption("Defina o presente da cena e a direção narrativa que Mary deve carregar no prompt.")
+        
         def _f(k: str) -> str:
             try:
                 cur = facts_sidebar
@@ -2570,16 +2571,16 @@ def _render_sidebar() -> None:
                 return str(cur).strip()
             except Exception:
                 return ""
-
+        
         _horarios_default = _f("state.horarios") or _f("state.horario")
-
+        
         st.session_state.setdefault("sb_state_local", _f("state.local"))
         st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
         st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
         st.session_state.setdefault("sb_state_horarios", _horarios_default)
         st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
-
-        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=False):
+        
+        with st.expander("Editar Estado Atual (aparece no prompt)", expanded=True):
             if st.session_state.get("_clear_state_form", False):
                 st.session_state["sb_state_local"] = ""
                 st.session_state["sb_state_roupa"] = ""
@@ -2587,74 +2588,151 @@ def _render_sidebar() -> None:
                 st.session_state["sb_state_horarios"] = ""
                 st.session_state["sb_state_assunto"] = ""
                 st.session_state["_clear_state_form"] = False
-
-            st.text_input("1) Local", key="sb_state_local")
-            st.text_input("2) Roupa", key="sb_state_roupa")
-            st.text_input("3) Cabelo", key="sb_state_cabelo")
-
-            st.markdown("**Opcionais**")
-            st.text_input("(+) Horários", key="sb_state_horarios")
-            st.text_input(
-                "(+) Assunto",
-                key="sb_state_assunto",
-                placeholder="Ex.: supermercado, Enzo, academia, ciúme",
-                help="Tema vivo da cena. Não vira ação obrigatória; só inclina o foco da Mary.",
-            )
-
-            c1, c2 = st.columns(2)
-
-            with c1:
-                if st.button("💾 Aplicar Estado", key="btn_apply_state"):
-                    novo_local = st.session_state.get("sb_state_local", "").strip()
-                    nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
-                    novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
-                    novo_horario = st.session_state.get("sb_state_horarios", "").strip()
-                    novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
-
-                    try:
-                        facts_apply = cached_get_facts(uk) or {}
-                        if not isinstance(facts_apply, dict):
-                            facts_apply = {}
-
-                        state_now = facts_apply.get("state")
-                        if not isinstance(state_now, dict):
-                            state_now = {}
-
-                        cena_now = facts_apply.get("cena")
-                        if not isinstance(cena_now, dict):
-                            cena_now = {}
-
-                        state_now["local"] = novo_local
-                        state_now["roupa"] = nova_roupa
-                        state_now["cabelo"] = novo_cabelo
-                        state_now["horarios"] = novo_horario
-                        state_now["assunto"] = novo_assunto
-
-                        set_fact(uk, "state", state_now, {"fonte": "sidebar_state"})
-
-                        if novo_local:
-                            cena_now["local"] = novo_local
-                            cena_now["tempo"] = "agora"
-                            cena_now["acao"] = "em andamento"
-                            cena_now["locked"] = True
-
-                            set_fact(uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
-                            set_fact(uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
-
-                        _invalidate_backend_cache()
-                        st.success("✅ Estado atual atualizado.")
-                        st.rerun()
-
-                    except Exception as e:
-                        st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
-
-            with c2:
-                st.button(
-                    "🧹 Limpar Estado",
-                    key="btn_clear_state",
-                    on_click=_clear_sidebar_state_fields,
-                    args=(uk,),
+        
+            col_ex1, col_ex2 = st.columns([1, 1])
+        
+            with col_ex1:
+                if st.button("✨ Preencher exemplo", key="btn_fill_state_example"):
+                    st.session_state["sb_state_local"] = "orla de Camburi"
+                    st.session_state["sb_state_roupa"] = "top esportivo preto, short justo, tênis claro"
+                    st.session_state["sb_state_cabelo"] = "rabo de cavalo alto, fios soltos pelo suor"
+                    st.session_state["sb_state_horarios"] = "manhã de domingo"
+                    st.session_state["sb_state_assunto"] = (
+                        "1-corrida no calçadão com Silvia\n"
+                        "2-encontro inesperado com Anthony\n"
+                        "3-conversa tensa no píer"
+                    )
+                    st.rerun()
+        
+            with col_ex2:
+                if st.button("🧹 Limpar campos", key="btn_clear_state_form_visual"):
+                    st.session_state["sb_state_local"] = ""
+                    st.session_state["sb_state_roupa"] = ""
+                    st.session_state["sb_state_cabelo"] = ""
+                    st.session_state["sb_state_horarios"] = ""
+                    st.session_state["sb_state_assunto"] = ""
+                    st.rerun()
+        
+            with st.form("form_estado_atual", clear_on_submit=False):
+                st.markdown("**Presente da cena**")
+        
+                col_a, col_b = st.columns(2)
+        
+                with col_a:
+                    st.text_input(
+                        "1) Local",
+                        key="sb_state_local",
+                        placeholder="Ex.: orla de Camburi, quarto do hotel, cozinha de casa",
+                        help="Lugar onde a cena está acontecendo agora.",
+                    )
+        
+                    st.text_area(
+                        "2) Roupa",
+                        key="sb_state_roupa",
+                        height=80,
+                        placeholder="Ex.: top esportivo preto colado ao corpo, short justo, tênis claro",
+                        help="Descreva roupa, textura, ajuste, acessórios ou detalhes visuais imediatos.",
+                    )
+        
+                with col_b:
+                    st.text_area(
+                        "3) Cabelo / aparência imediata",
+                        key="sb_state_cabelo",
+                        height=80,
+                        placeholder="Ex.: rabo de cavalo alto, alguns fios soltos, rosto levemente suado",
+                        help="Ajuda a manter a microcontinuidade visual da cena.",
+                    )
+        
+                    st.text_input(
+                        "4) Horário / tempo da cena",
+                        key="sb_state_horarios",
+                        placeholder="Ex.: manhã de domingo, fim da tarde, agora",
+                        help="Período do dia ou sensação temporal do momento atual.",
+                    )
+        
+                st.markdown("---")
+                st.markdown("**Direção narrativa**")
+        
+                st.text_area(
+                    "5) Assunto / sequência narrativa",
+                    key="sb_state_assunto",
+                    height=130,
+                    placeholder=(
+                        "Exemplo:\n"
+                        "1-corrida no calçadão com Silvia\n"
+                        "2-encontro inesperado com Anthony\n"
+                        "3-conversa tensa no píer"
+                    ),
+                    help=(
+                        "Pode ser um tema simples ou uma sequência de eventos. "
+                        "Use 1-, 2-, 3- para indicar etapas narrativas."
+                    ),
                 )
+        
+                st.caption(
+                    "Dica: o campo acima pode conter só um tema vivo da cena "
+                    "ou uma sequência numerada de eventos que Mary deve seguir com naturalidade."
+                )
+        
+                st.markdown("---")
+        
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submitted = st.form_submit_button("💾 Aplicar Estado", use_container_width=True)
+                with col_btn2:
+                    clear_saved = st.form_submit_button("🧽 Limpar Estado salvo", use_container_width=True)
+        
+            if submitted:
+                novo_local = st.session_state.get("sb_state_local", "").strip()
+                nova_roupa = st.session_state.get("sb_state_roupa", "").strip()
+                novo_cabelo = st.session_state.get("sb_state_cabelo", "").strip()
+                novo_horario = st.session_state.get("sb_state_horarios", "").strip()
+                novo_assunto = st.session_state.get("sb_state_assunto", "").strip()
+        
+                try:
+                    facts_apply = cached_get_facts(uk) or {}
+                    if not isinstance(facts_apply, dict):
+                        facts_apply = {}
+        
+                    state_now = facts_apply.get("state")
+                    if not isinstance(state_now, dict):
+                        state_now = {}
+        
+                    cena_now = facts_apply.get("cena")
+                    if not isinstance(cena_now, dict):
+                        cena_now = {}
+        
+                    state_now["local"] = novo_local
+                    state_now["roupa"] = nova_roupa
+                    state_now["cabelo"] = novo_cabelo
+                    state_now["horarios"] = novo_horario
+                    state_now["assunto"] = novo_assunto
+        
+                    set_fact(uk, "state", state_now, {"fonte": "sidebar_state"})
+        
+                    if novo_local:
+                        cena_now["local"] = novo_local
+                        cena_now["tempo"] = "agora"
+                        cena_now["acao"] = "em andamento"
+                        cena_now["locked"] = True
+        
+                        set_fact(uk, "cena", cena_now, {"fonte": "sidebar_state_sync"})
+                        set_fact(uk, "local_cena_atual", novo_local, {"fonte": "sidebar_state_sync"})
+        
+                    _invalidate_backend_cache()
+                    st.success("✅ Estado atual atualizado.")
+                    st.rerun()
+        
+                except Exception as e:
+                    st.error(f"Falha ao aplicar estado: {type(e).__name__}: {e}")
+        
+            if clear_saved:
+                try:
+                    _clear_sidebar_state_fields(uk)
+                    st.success("✅ Estado salvo removido.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Falha ao limpar estado salvo: {type(e).__name__}: {e}")
 
         st.markdown("---")
 
