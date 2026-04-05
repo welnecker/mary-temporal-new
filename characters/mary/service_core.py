@@ -9298,9 +9298,6 @@ Conflito não substitui a narrativa — apenas tensiona.
             anti_melodrama_rule=anti_melodrama_rule,
             priority_rule=priority_rule,
             style_priority_rule=style_priority_rule,
-            continuity_of_action_rule=continuity_of_action_rule,
-            action_commit_rule=action_commit_rule,
-            conversation_style_rule=conversation_style_rule,
         )
 
         messages = self._build_messages_for_turn(
