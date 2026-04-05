@@ -5931,6 +5931,229 @@ _RE_ACTION_COMMAND = re.compile(
     r")\b"
 )
 
+def _parse_assunto_steps(assunto: str) -> List[str]:
+    """
+    Converte state.assunto em uma sequência ordenada.
+    Ex:
+    '1-corrida no calçadão com Silvia 2-encontro inesperado com Anthony'
+    -> ['corrida no calçadão com Silvia', 'encontro inesperado com Anthony']
+    """
+    txt = str(assunto or "").strip()
+    if not txt:
+        return []
+
+    # separa por padrão "1-", "2-", etc.
+    parts = re.split(r"(?:^|\s)(\d+)\s*-\s*", txt)
+    if not parts:
+        return [txt]
+
+    steps: List[str] = []
+
+    # quando há numeração, o split gera blocos alternando índice/conteúdo
+    # exemplo: ['', '1', 'corrida', '2', 'encontro']
+    if len(parts) >= 3:
+        i = 1
+        while i + 1 < len(parts):
+            content = str(parts[i + 1] or "").strip(" -–—\n\t")
+            if content:
+                steps.append(content)
+            i += 2
+
+    if steps:
+        return steps
+
+    # fallback: sem numeração reconhecível
+    return [txt]
+
+
+def _get_current_assunto_step_index(facts: Dict[str, Any]) -> int:
+    try:
+        return max(0, int(_fact_str(facts, "assunto.step_index") or 0))
+    except Exception:
+        return 0
+
+
+def _set_current_assunto_step_index(usuario_key: str, idx: int) -> None:
+    try:
+        idx = max(0, int(idx))
+    except Exception:
+        idx = 0
+
+    set_fact_safe(
+        usuario_key,
+        "assunto.step_index",
+        idx,
+        {"fonte": "assunto_progression"},
+    )
+
+
+def _build_assunto_macro_block(facts: Dict[str, Any]) -> str:
+    assunto = _fact_str(facts, "state.assunto")
+    steps = _parse_assunto_steps(assunto)
+    if not steps:
+        return ""
+
+    idx = _get_current_assunto_step_index(facts)
+    total = len(steps)
+
+    if idx >= total:
+        idx = total - 1
+
+    lines = ["[ASSUNTO NARRATIVO EM SEQUÊNCIA]"]
+    lines.append("A sequência abaixo orienta o desenvolvimento do enredo.")
+    lines.append("Não é decoração: ela deve influenciar a progressão da cena.")
+    lines.append("")
+
+    for i, step in enumerate(steps, start=1):
+        marcador = " ← ETAPA ATUAL" if (i - 1) == idx else ""
+        lines.append(f"{i}. {step}{marcador}")
+
+    lines.append("")
+    lines.append("REGRAS:")
+    lines.append("- respeitar a ordem da sequência, sem saltos bruscos.")
+    lines.append("- se o usuário não introduzir outra direção, usar a etapa atual como trilho narrativo.")
+    lines.append("- o próximo evento pode ser preparado com naturalidade antes de acontecer.")
+    lines.append("- não considerar etapas futuras como já realizadas.")
+    return "\n".join(lines).strip()
+
+
+def _build_estado_micro_block(facts: Dict[str, Any]) -> str:
+    local = _fact_str(facts, "state.local")
+    roupa = _fact_str(facts, "state.roupa")
+    cabelo = _fact_str(facts, "state.cabelo")
+    horarios = _fact_str(facts, "state.horarios") or _fact_str(facts, "state.horario")
+    pendencias = _fact_str(facts, "state.pendencias")
+
+    if not any([local, roupa, cabelo, horarios, pendencias]):
+        return ""
+
+    lines = ["[MICROCONTINUIDADE DO AGORA]"]
+    lines.append("Os detalhes abaixo devem contaminar a resposta de modo concreto e imediato.")
+    lines.append("")
+
+    if local:
+        lines.append(f"- LOCAL MICROATIVO: {local}")
+    if horarios:
+        lines.append(f"- TEMPO MICROATIVO: {horarios}")
+    if roupa:
+        lines.append(f"- ROUPA / TEXTURA / AJUSTE: {roupa}")
+    if cabelo:
+        lines.append(f"- CABELO / APARÊNCIA IMEDIATA: {cabelo}")
+    if pendencias:
+        lines.append(f"- TENSÃO OU PENDÊNCIA IMEDIATA: {pendencias}")
+
+    lines.append("")
+    lines.append("REGRAS:")
+    lines.append("- usar esses elementos no corpo da resposta, não só como referência abstrata.")
+    lines.append("- manter continuidade física fina: roupa, cabelo, posição, sensação, momento do dia.")
+    lines.append("- não apagar esses detalhes de um turno para outro.")
+    return "\n".join(lines).strip()
+
+
+def _should_offer_pending_event(history: List[Dict[str, Any]], facts: Dict[str, Any]) -> bool:
+    """
+    Libera a preparação do próximo evento em 2-3 turnos, sem forçar.
+    """
+    try:
+        turns = len(history or [])
+    except Exception:
+        turns = 0
+
+    if turns < 2:
+        return False
+
+    try:
+        last_hint_turn = int(_fact_str(facts, "assunto.last_hint_turn") or -999)
+    except Exception:
+        last_hint_turn = -999
+
+    # evita insistir todo turno
+    if (turns - last_hint_turn) < 2:
+        return False
+
+    return True
+
+
+def _build_pending_event_block(
+    facts: Dict[str, Any],
+    history: List[Dict[str, Any]],
+    *,
+    return_flag: bool = False,
+):
+    assunto = _fact_str(facts, "state.assunto")
+    steps = _parse_assunto_steps(assunto)
+    idx = _get_current_assunto_step_index(facts)
+
+    if not steps or idx >= len(steps):
+        return ("", False) if return_flag else ""
+
+    # etapa atual = trilho; próxima etapa = evento pendente
+    next_idx = idx + 1
+    if next_idx >= len(steps):
+        return ("", False) if return_flag else ""
+
+    if not _should_offer_pending_event(history, facts):
+        return ("", False) if return_flag else ""
+
+    next_event = steps[next_idx].strip()
+    if not next_event:
+        return ("", False) if return_flag else ""
+
+    block = f"""
+[EVENTO PENDENTE / POSSÍVEL INTRODUÇÃO]
+Próximo desenvolvimento possível da sequência:
+- {next_event}
+
+REGRAS:
+- este evento ainda NÃO aconteceu.
+- ele pode ser insinuado, preparado ou introduzido com naturalidade.
+- se couber, a introdução deve acontecer em até 2 ou 3 interações.
+- nunca forçar.
+- se o usuário levar a cena para outro rumo, priorizar o rumo do usuário.
+""".strip()
+
+    return (block, True) if return_flag else block
+
+
+def _advance_assunto_if_needed(
+    *,
+    usuario_key: str,
+    facts: Dict[str, Any],
+    texto_resposta: str,
+) -> None:
+    """
+    Avança a etapa quando a resposta da Mary já executou/substancialmente realizou
+    a etapa atual do assunto.
+    """
+    assunto = _fact_str(facts, "state.assunto")
+    steps = _parse_assunto_steps(assunto)
+    if not steps:
+        return
+
+    idx = _get_current_assunto_step_index(facts)
+    if idx >= len(steps):
+        return
+
+    texto = _t_norm(texto_resposta or "")
+    if not texto:
+        return
+
+    current_step = _t_norm(steps[idx])
+
+    # comparação leve por sobreposição semântica simples
+    current_terms = [
+        t for t in re.findall(r"[\w\u00C0-\u017F']+", current_step, flags=re.UNICODE)
+        if len(t) >= 4
+    ]
+    if not current_terms:
+        return
+
+    hits = sum(1 for term in current_terms if term in texto)
+
+    # com 2 ou mais termos relevantes presentes, consideramos a etapa realizada
+    if hits >= min(2, len(current_terms)):
+        _set_current_assunto_step_index(usuario_key, idx + 1)
+
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
     if conflict_now:
         return False
@@ -6809,6 +7032,9 @@ class MaryService(BaseCharacter):
         user_name_block: str,
         spatial_context: str,
         state_section: str,
+        assunto_section: str,
+        estado_micro_section: str,
+        pending_event_section: str,
         canon_txt: str,
         persona_text: str,
         rel_block: str,
@@ -6951,9 +7177,11 @@ Resumo:
    [CENA ATIVA]
    {spatial_context}
    {state_section}
-
-   {continuity_of_action_rule}
+   {assunto_section}
+   {estado_micro_section}
+   {pending_event_section}
    
+   {continuity_of_action_rule}
    {action_commit_rule}
    
    [CANON]
@@ -8975,12 +9203,34 @@ Conflito não substitui a narrativa — apenas tensiona.
         state_section = ""
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-
+        
+        # NOVO: assunto narrativo
+        assunto_block = _build_assunto_macro_block(facts)
+        assunto_section = ""
+        if isinstance(assunto_block, str) and assunto_block.strip():
+            assunto_section = f"\n{assunto_block}\n"
+        
+        # NOVO: microcontinuidade
+        estado_micro_block = _build_estado_micro_block(facts)
+        estado_micro_section = ""
+        if isinstance(estado_micro_block, str) and estado_micro_block.strip():
+            estado_micro_section = f"\n{estado_micro_block}\n"
+        
+        # NOVO: evento pendente
+        pending_event_block, pending_event_used = _build_pending_event_block(
+            facts,
+            history,
+            return_flag=True,
+        )
+        pending_event_section = ""
+        if isinstance(pending_event_block, str) and pending_event_block.strip():
+            pending_event_section = f"\n{pending_event_block}\n"
+        
         user_name_block = _build_user_name_block(user_id, ctx_lower)
-
+        
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
         scene_locked = _scene_is_locked(facts)
-
+        
         spatial_context = _build_spatial_context(
             scene_loc,
             scene_time,
@@ -8997,6 +9247,9 @@ Conflito não substitui a narrativa — apenas tensiona.
             user_name_block=user_name_block,
             spatial_context=spatial_context,
             state_section=state_section,
+            assunto_section=assunto_section,
+            estado_micro_section=estado_micro_section,
+            pending_event_section=pending_event_section,
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
@@ -9039,6 +9292,9 @@ Conflito não substitui a narrativa — apenas tensiona.
             anti_melodrama_rule=anti_melodrama_rule,
             priority_rule=priority_rule,
             style_priority_rule=style_priority_rule,
+            continuity_of_action_rule=continuity_of_action_rule,
+            action_commit_rule=action_commit_rule,
+            conversation_style_rule=conversation_style_rule,
         )
 
         messages = self._build_messages_for_turn(
@@ -9117,6 +9373,58 @@ Conflito não substitui a narrativa — apenas tensiona.
                 # Texto final oficial do turno
                 # ----------------------------------------------------------
                 texto = self._finalize_model_text(texto)
+
+                # ----------------------------------------------------------
+                # Progressão do assunto narrativo
+                # ----------------------------------------------------------
+                try:
+                    _advance_assunto_if_needed(
+                        usuario_key=usuario_key,
+                        facts=facts,
+                        texto_resposta=texto,
+                    )
+                except Exception:
+                    pass
+                
+                # ----------------------------------------------------------
+                # Marca turno em que houve sugestão de evento pendente
+                # ----------------------------------------------------------
+                try:
+                    if pending_event_used:
+                        set_fact_safe(
+                            usuario_key,
+                            "assunto.last_hint_turn",
+                            len(history or []),
+                            {"fonte": "assunto_pending_event"},
+                        )
+                except Exception:
+                    passtexto = self._finalize_model_text(texto)
+                
+                # ----------------------------------------------------------
+                # Progressão do assunto narrativo
+                # ----------------------------------------------------------
+                try:
+                    _advance_assunto_if_needed(
+                        usuario_key=usuario_key,
+                        facts=facts,
+                        texto_resposta=texto,
+                    )
+                except Exception:
+                    pass
+                
+                # ----------------------------------------------------------
+                # Marca turno em que houve sugestão de evento pendente
+                # ----------------------------------------------------------
+                try:
+                    if pending_event_used:
+                        set_fact_safe(
+                            usuario_key,
+                            "assunto.last_hint_turn",
+                            len(history or []),
+                            {"fonte": "assunto_pending_event"},
+                        )
+                except Exception:
+                    pass
         
                 # ----------------------------------------------------------
                 # Relationship assessor
