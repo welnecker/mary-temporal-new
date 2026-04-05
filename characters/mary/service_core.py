@@ -9385,33 +9385,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                     )
                 except Exception:
                     pass
-                
-                # ----------------------------------------------------------
-                # Marca turno em que houve sugestão de evento pendente
-                # ----------------------------------------------------------
-                try:
-                    if pending_event_used:
-                        set_fact_safe(
-                            usuario_key,
-                            "assunto.last_hint_turn",
-                            len(history or []),
-                            {"fonte": "assunto_pending_event"},
-                        )
-                except Exception:
-                    passtexto = self._finalize_model_text(texto)
-                
-                # ----------------------------------------------------------
-                # Progressão do assunto narrativo
-                # ----------------------------------------------------------
-                try:
-                    _advance_assunto_if_needed(
-                        usuario_key=usuario_key,
-                        facts=facts,
-                        texto_resposta=texto,
-                    )
-                except Exception:
-                    pass
-                
+
                 # ----------------------------------------------------------
                 # Marca turno em que houve sugestão de evento pendente
                 # ----------------------------------------------------------
@@ -9542,46 +9516,46 @@ Conflito não substitui a narrativa — apenas tensiona.
                     },
                 )
         
-               # ----------------------------------------------------------
-               # Persistência oficial do turno
-               # ----------------------------------------------------------
-               save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-               _lock_scene(usuario_key)
+                               # ----------------------------------------------------------
+                # Persistência oficial do turno
+                # ----------------------------------------------------------
+                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
+                _lock_scene(usuario_key)
+
+                # 🔥 NOVO BLOCO — persistência de emoção
+                try:
+                    new_emotion = _infer_emotion_bucket(texto)
+
+                    if new_emotion:
+                        _save_emotion_state_to_facts(
+                            usuario_key,
+                            new_emotion,
+                            timeline_final,
+                        )
+                except Exception as e:
+                    try:
+                        _ss_set(
+                            "mary_emotion_error",
+                            {
+                                "type": type(e).__name__,
+                                "msg": str(e)[:500],
+                                "timeline": timeline_final,
+                            },
+                        )
+                    except Exception:
+                        pass
                
-               # 🔥 NOVO BLOCO — persistência de emoção
-               try:
-                   new_emotion = _infer_emotion_bucket(texto)
-               
-                   if new_emotion:
-                       _save_emotion_state_to_facts(
-                           usuario_key,
-                           new_emotion,
-                           timeline_final,
-                       )
-               except Exception as e:
-                   try:
-                       _ss_set(
-                           "mary_emotion_error",
-                           {
-                               "type": type(e).__name__,
-                               "msg": str(e)[:500],
-                               "timeline": timeline_final,
-                           },
-                       )
-                   except Exception:
-                       pass
-               
-               # ----------------------------------------------------------
-               # Intimacy progression
-               # ----------------------------------------------------------
-               try:
-                   current_facts = cached_get_facts(usuario_key)
-                   try:
-                       current_facts = _sync_intimacy_phase_facts(
-                           usuario_key,
-                           current_facts,
-                           timeline_final,
-                       )
+                # ----------------------------------------------------------
+                # Intimacy progression
+                # ----------------------------------------------------------
+                try:
+                    current_facts = cached_get_facts(usuario_key)
+                    try:
+                        current_facts = _sync_intimacy_phase_facts(
+                            usuario_key,
+                            current_facts,
+                            timeline_final,
+                        )
                     except Exception as e_sync:
                         try:
                             _ss_set(
@@ -9596,24 +9570,24 @@ Conflito não substitui a narrativa — apenas tensiona.
                             pass
                 except Exception:
                     current_facts = cached_get_facts(usuario_key)
-        
+
                 current_phase = self._get_intimacy_phase(current_facts)
-        
+
                 if phase != 5:
                     sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-        
+
                     k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
                     mary_active = bool((current_facts or {}).get(k_active, False))
                     mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-        
+
                     if sex_active:
                         if not mary_active:
                             mary_turns = 0
-        
+
                         mary_turns = min(4, mary_turns + 1)
                         target_phase = _mary_phase_from_turns(mary_turns)
                         desired_next = max(current_phase, target_phase)
-        
+
                         try:
                             set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
@@ -9636,7 +9610,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                             texto,
                             engine_meta=meta,
                         )
-        
+
                         try:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
@@ -9652,14 +9626,14 @@ Conflito não substitui a narrativa — apenas tensiona.
                                 )
                             except Exception:
                                 pass
-        
+
                     if desired_next != current_phase:
                         self._set_intimacy_phase(
                             usuario_key,
                             desired_next,
                             timeline_final,
                         )
-        
+
                         try:
                             _sync_intimacy_phase_facts(
                                 usuario_key,
