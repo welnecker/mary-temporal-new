@@ -9216,6 +9216,12 @@ Conflito não substitui a narrativa — apenas tensiona.
         if isinstance(estado_micro_block, str) and estado_micro_block.strip():
             estado_micro_section = f"\n{estado_micro_block}\n"
         
+        # NOVO: carregar histórico antes do evento pendente
+        try:
+            history = cached_get_history(usuario_key, limit=10) or []
+        except Exception:
+            history = []
+        
         # NOVO: evento pendente
         pending_event_block, pending_event_used = _build_pending_event_block(
             facts,
