@@ -33,11 +33,7 @@ class MaryServiceCumplice(MaryService):
         if timeline_final != "cumplice":
             timeline_final = "cumplice"
 
-        # TESTE TEMPORÁRIO DO FLUXO + MÓDULO
-        logging.warning("🧪 MARY CUMPLICE REPLY CHAMADO")
-        logging.warning("🧪 core_utils clamp no cumplice: %s", cu._clamp01(2))
-        logging.warning("🧪 core_utils norm no cumplice: %s", cu._norm_any("  Mary   Linda "))
-
+        raise RuntimeError("TESTE_CUMPLICE_REPLY")
         return super().reply(
             user=user,
             model=model,
