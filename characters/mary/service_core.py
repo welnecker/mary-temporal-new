@@ -1,10 +1,6 @@
 # characters/mary/service_core.py-service_core_PATCHED_v10c.py
 from __future__ import annotations
 
-from .modules import core_utils as cu
-from typing import Optional, Dict, Any
-from .reasoning_engine import build_internal_reasoning
-from core.reasoning_llm import build_llm_reasoning, merge_reasoning
 """
 MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
@@ -16,9 +12,15 @@ MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâ
  Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
+
+from .modules import core_utils as cu
+from typing import Optional, Dict, Any
+from .reasoning_engine import build_internal_reasoning
+from core.reasoning_llm import build_llm_reasoning, merge_reasoning
+
 import random
 import datetime
-import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
+import uuid
 import logging
 import re
 import hashlib
