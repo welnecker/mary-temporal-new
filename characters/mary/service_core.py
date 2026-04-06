@@ -1,5 +1,4 @@
 # characters/mary/service_core.py-service_core_PATCHED_v10c.py
-from .modules import core_utils as cu
 from __future__ import annotations
 from typing import Optional, Dict, Any
 from .reasoning_engine import build_internal_reasoning
