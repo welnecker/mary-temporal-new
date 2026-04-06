@@ -6532,10 +6532,10 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 
     out["phase"] = int(out.get("phase") or 0)
     out["mode"] = str(out.get("mode") or "return")
-    out["tension"] = _clamp01(out.get("tension", 0.0))
-    out["guilt"] = _clamp01(out.get("guilt", 0.0))
-    out["anchor"] = _clamp01(out.get("anchor", 0.85))
-    out["anchor_backup"] = _clamp01(out.get("anchor_backup", 0.85))
+    out["tension"] = cu._clamp01(out.get("tension", 0.0))
+    out["guilt"] = cu._clamp01(out.get("guilt", 0.0))
+    out["anchor"] = cu._clamp01(out.get("anchor", 0.85))
+    out["anchor_backup"] = cu._clamp01(out.get("anchor_backup", 0.85))
     out["last"] = out.get("last") if isinstance(out.get("last"), str) else ""
     out["last_anchor_mode"] = str(out.get("last_anchor_mode") or "init")
 
@@ -6598,10 +6598,10 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
         # sane defaults
         merged["phase"] = int(merged.get("phase") or 0)
         merged["mode"] = str(merged.get("mode") or "return")
-        merged["tension"] = _clamp01(merged.get("tension", 0.0))
-        merged["guilt"] = _clamp01(merged.get("guilt", 0.0))
-        merged["anchor"] = _clamp01(merged.get("anchor", 0.85))
-        merged["anchor_backup"] = _clamp01(merged.get("anchor_backup", 0.85))
+        merged["tension"] = cu._clamp01(merged.get("tension", 0.0))
+        merged["guilt"] = cu._clamp01(merged.get("guilt", 0.0))
+        merged["anchor"] = cu._clamp01(merged.get("anchor", 0.85))
+        merged["anchor_backup"] = cu._clamp01(merged.get("anchor_backup", 0.85))
         merged["last"] = str(merged.get("last") or "")
         merged["last_anchor_mode"] = str(merged.get("last_anchor_mode") or "init")
 
@@ -6680,10 +6680,10 @@ def _update_tp_arc_for_turn(
     arc.setdefault("last", "third_party_off")
     arc.setdefault("last_anchor_mode", "init")
 
-    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
-    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
+    arc["tension"] = cu._clamp01(float(arc.get("tension", 0.0) or 0.0))
+    arc["guilt"] = cu._clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
-    backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
+    backup = cu._clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
     third_party_on = bool(nsfw_on and allow_third_party_seduction)
     
     # Anchor reage diretamente ao estado atual dos toggles
@@ -6702,7 +6702,7 @@ def _update_tp_arc_for_turn(
         arc["last"] = "nsfw_on"
         arc["last_anchor_mode"] = "nsfw_on_fixed"
     
-    freedom = _clamp01(1.0 - float(arc["anchor"]))
+    freedom = cu._clamp01(1.0 - float(arc["anchor"]))
     # 2) limites coerentes com 3 níveis reais
     if arc["anchor"] >= 0.80:   # 0.85
         max_phase_allowed = 2
@@ -6734,8 +6734,8 @@ def _update_tp_arc_for_turn(
     if arc_event == "return":
         arc["mode"] = "return"
         arc["phase"] = max(0, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * 0.82)
-        arc["guilt"] = _clamp01(arc["guilt"] * 0.88)
+        arc["tension"] = cu._clamp01(arc["tension"] * 0.82)
+        arc["guilt"] = cu._clamp01(arc["guilt"] * 0.88)
 
     elif third_party_on and signal_level >= 1:
         arc["mode"] = "push"
@@ -6743,26 +6743,26 @@ def _update_tp_arc_for_turn(
 
         if signal_level == 1:
             target_phase = max(current_phase, 1)
-            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 0.60))
-            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 0.40))
+            arc["tension"] = cu._clamp01(arc["tension"] + (test_gain * 0.60))
+            arc["guilt"] = cu._clamp01(arc["guilt"] + (guilt_gain * 0.40))
 
         elif signal_level == 2:
             target_phase = max(current_phase + 1, 2)
-            arc["tension"] = _clamp01(arc["tension"] + test_gain)
-            arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
+            arc["tension"] = cu._clamp01(arc["tension"] + test_gain)
+            arc["guilt"] = cu._clamp01(arc["guilt"] + guilt_gain)
 
         elif signal_level >= 3:
             target_phase = max(current_phase + 1, 3)
-            arc["tension"] = _clamp01(arc["tension"] + (test_gain * 1.20))
-            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 1.15))
+            arc["tension"] = cu._clamp01(arc["tension"] + (test_gain * 1.20))
+            arc["guilt"] = cu._clamp01(arc["guilt"] + (guilt_gain * 1.15))
 
         arc["phase"] = min(target_phase, max_phase_allowed)
 
     else:
         arc["mode"] = "return"
         arc["phase"] = max(desired_phase, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
-        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
+        arc["tension"] = cu._clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
+        arc["guilt"] = cu._clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
 
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
@@ -6775,9 +6775,9 @@ def _render_tp_arc_rule(arc: Dict[str, Any], timeline: str) -> str:
     except Exception:
         phase = 0
 
-    tension = _clamp01(arc.get("tension", 0.0))
-    guilt = _clamp01(arc.get("guilt", 0.0))
-    anchor = _clamp01(arc.get("anchor", 0.85))
+    tension = cu._clamp01(arc.get("tension", 0.0))
+    guilt = cu._clamp01(arc.get("guilt", 0.0))
+    anchor = cu._clamp01(arc.get("anchor", 0.85))
     tl = (timeline or "").strip().lower() or "cumplice"
 
     if tension >= 0.80:
