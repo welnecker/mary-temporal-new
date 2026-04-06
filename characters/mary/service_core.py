@@ -7705,6 +7705,10 @@ Resumo:
 
         if not prompt:
             return ""
+         print("🧪 TESTE core_utils clamp:", cu._clamp01(2))
+         print("🧪 TESTE core_utils norm:", cu._norm_any("  Mary   Linda "))  
+
+     
 
         # 2) Chaves
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
