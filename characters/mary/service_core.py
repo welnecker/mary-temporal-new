@@ -6749,28 +6749,43 @@ Resumo:
         history_docs = cached_get_history(usuario_key, limit=40)
     
         # ==========================================================
-        # 1) CONTEXTO ESTRUTURAL - verdade do universo
+        # 1) CONTINUIDADE IMEDIATA (ÂNCORA REAL DA CENA)
+        # ==========================================================
+        history = cached_get_history(usuario_key, limit=6)
+        
+        last_turn = history[-1] if history else {}
+        
+        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
+        last_mary = str(last_turn.get("resposta_mary") or "").strip()
+        
+        messages.append({
+            "role": "system",
+            "content": (
+                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
+                "Continue a cena a partir do ponto exato onde parou.\n"
+                "Não recomeçar nem reexecutar ações já concluídas.\n"
+            )
+        })
+        
+        if last_user:
+            messages.append({
+                "role": "user",
+                "content": last_user
+            })
+        
+        if last_mary:
+            messages.append({
+                "role": "assistant",
+                "content": last_mary
+            })
+        
+        
+        # ==========================================================
+        # 2) CONTEXTO ESTRUTURAL - verdade do universo
         # ==========================================================
         _inject_now_context(messages, usuario_key, timeline_final)
-    
-        _inject_intro_as_context_once(
-            usuario_key,
-            timeline_final,
-            shared_key,
-            messages,
-        )
-    
-        mi._inject_canon_memories_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=12,
-            dedupe_bucket=dedupe_hashes,
-            cached_list_memories_page_fn=cached_list_memories_page,
-            normalize_timeline_fn=_normalize_timeline,
-            ss_set_fn=_ss_set,
-            ss_prefix=_SS_PREFIX,
-        )
+        
+        # 🔥 estado vivo primeiro
         mi._inject_active_state_memories_always(
             shared_key,
             timeline_final,
@@ -6782,7 +6797,29 @@ Resumo:
             ss_set_fn=_ss_set,
             ss_prefix=_SS_PREFIX,
         )
-
+        
+        # 🔥 depois canon
+        mi._inject_canon_memories_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=12,
+            dedupe_bucket=dedupe_hashes,
+            cached_list_memories_page_fn=cached_list_memories_page,
+            normalize_timeline_fn=_normalize_timeline,
+            ss_set_fn=_ss_set,
+            ss_prefix=_SS_PREFIX,
+        )
+        
+        # 🔥 intro como fallback
+        _inject_intro_as_context_once(
+            usuario_key,
+            timeline_final,
+            shared_key,
+            messages,
+        )
+        
+        # 🔥 memória auxiliar
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
@@ -6790,9 +6827,10 @@ Resumo:
             max_items=4,
             dedupe_bucket=dedupe_hashes,
         )
-    
+        
+        
         # ==========================================================
-        # 2) MEMÓRIAS AUXILIARES - apoio, nunca norte emocional
+        # 3) MEMÓRIAS AUXILIARES - apoio, nunca norte emocional
         # ==========================================================
         if _should_inject_summary(usuario_key, every_n=8):
             _inject_consolidated_summary(
@@ -6801,7 +6839,7 @@ Resumo:
                 messages,
                 dedupe_bucket=dedupe_hashes,
             )
-
+        
         if _should_inject_long_memory(prompt):
             _inject_long_memory_textsearch(
                 usuario_key,
@@ -6813,7 +6851,7 @@ Resumo:
                 dedupe_bucket=dedupe_hashes,
                 facts=facts,
             )
-
+        
             _inject_relevant_memories(
                 shared_key,
                 timeline_final,
@@ -6824,7 +6862,7 @@ Resumo:
                 facts=facts,
                 history=history_docs,
             )
-
+        
         if _should_inject_soft_context(
             prompt,
             facts=facts,
@@ -6841,7 +6879,7 @@ Resumo:
                 facts=facts,
                 history=history_docs,
             )
-
+        
         _inject_manual_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -6850,9 +6888,9 @@ Resumo:
             spec=mem_spec,
             facts=facts,
         )
-
+        
         tp_arc_state = tpa._get_tp_arc_state(facts or {}, timeline_final)
-
+        
         _inject_latent_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -6861,47 +6899,17 @@ Resumo:
             tp_arc=tp_arc_state,
             facts=facts,
         )
-    
-        # ==========================================================
-        # 3) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
-        # ==========================================================
-        history = cached_get_history(usuario_key, limit=6)
         
+        
+        # ==========================================================
+        # 4) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
+        # ==========================================================
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
             "reacao_interna_primeiro",
             "curta_direta",
         ])
-
-        # ==========================================================
-        # ÚLTIMO TURNO (ÂNCORA REAL DA CENA)
-        # ==========================================================
-        last_turn = history[-1] if history else {}
-        
-        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
-        last_mary = str(last_turn.get("resposta_mary") or "").strip()
-        
-        messages.append({
-            "role": "system",
-            "content": (
-                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
-                "O próximo texto deve continuar EXATAMENTE a partir do estado final deste momento.\n"
-                "Não recomeçar, não reexecutar, não reinterpretar.\n"
-            )
-        })
-        
-        if last_user:
-            messages.append({
-                "role": "user",
-                "content": last_user
-            })
-        
-        if last_mary:
-            messages.append({
-                "role": "assistant",
-                "content": last_mary
-            })
         
         messages.append({
             "role": "system",
@@ -6913,24 +6921,14 @@ Resumo:
         
                 "- A cena já está em andamento.\n"
                 "- Sempre partir do ponto exato onde a cena parou.\n"
-                "- Ações, descobertas e gestos já realizados são CONSUMADOS.\n"
-                "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
+                "- Ações já realizadas são CONSUMADAS.\n"
                 "- Reações devem avançar a cena, nunca recontá-la.\n"
         
-                "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
-                "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
-                "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
-                "- Se um objeto já foi guardado, escondido, pego, lido ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
-                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se o usuário pedir ou se houver novo motivo real.\n"
-                "- Não usar o mesmo objeto secreto como eixo do primeiro parágrafo em turnos consecutivos.\n"
-                "- Após uma descoberta, Mary deve reagir, decidir, disfarçar, responder ou agir; não reabrir a cena com o mesmo gesto físico.\n"
+                "- Evitar repetir ações, percepções ou gestos já feitos.\n"
+                "- O primeiro parágrafo deve nascer da consequência atual.\n"
         
                 f"- Estilo deste turno: {style_seed}.\n"
-                "- Variar abertura, ritmo ou foco naturalmente.\n"
-                "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
-                "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
-                "- Nem toda resposta precisa conter todos os elementos.\n"
-                "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
+                "- Variar abertura, ritmo e foco naturalmente.\n"
             )
         })
         
