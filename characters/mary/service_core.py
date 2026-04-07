@@ -6776,38 +6776,7 @@ Resumo:
         dedupe_hashes: set = set()
         history_docs = cached_get_history(usuario_key, limit=40)
     
-        # ==========================================================
-        # 1) CONTINUIDADE IMEDIATA (ÂNCORA REAL DA CENA)
-        # ==========================================================
-        history = cached_get_history(usuario_key, limit=6)
-        
-        last_turn = history[-1] if history else {}
-        
-        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
-        last_mary = str(last_turn.get("resposta_mary") or "").strip()
-        
-        messages.append({
-            "role": "system",
-            "content": (
-                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
-                "Continue a cena a partir do ponto exato onde parou.\n"
-                "Não recomeçar nem reexecutar ações já concluídas.\n"
-            )
-        })
-        
-        if last_user:
-            messages.append({
-                "role": "user",
-                "content": last_user
-            })
-        
-        if last_mary:
-            messages.append({
-                "role": "assistant",
-                "content": last_mary
-            })
-        
-        
+            
         # ==========================================================
         # 2) CONTEXTO ESTRUTURAL - verdade do universo
         # ==========================================================
@@ -6933,11 +6902,13 @@ Resumo:
             tp_arc=tp_arc_state,
             facts=facts,
         )
-        
-        
+               
+       
         # ==========================================================
         # 4) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
         # ==========================================================
+        history = cached_get_history(usuario_key, limit=6)
+        
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
@@ -6965,10 +6936,35 @@ Resumo:
                 "- Variar abertura, ritmo e foco naturalmente.\n"
             )
         })
-                       
-    
+        
+        last_turn = history[-1] if history else {}
+        
+        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
+        last_mary = str(last_turn.get("resposta_mary") or "").strip()
+        
+        messages.append({
+            "role": "system",
+            "content": (
+                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
+                "Continue a cena a partir do ponto exato onde parou.\n"
+                "Não recomeçar nem reexecutar ações já concluídas.\n"
+            )
+        })
+        
+        if last_user:
+            messages.append({
+                "role": "user",
+                "content": last_user
+            })
+        
+        if last_mary:
+            messages.append({
+                "role": "assistant",
+                "content": last_mary
+            })
+        
         # ==========================================================
-        # 4) PROMPT ATUAL
+        # 5) PROMPT ATUAL
         # ==========================================================
         messages.append({
             "role": "user",
