@@ -6486,6 +6486,34 @@ def _release_forced_retreat_if_allowed(
 
     return facts
 
+# ==========================================================
+# REGRAS DE CONTINUIDADE DE AÇÃO (ANTI-REPLAY)
+# ==========================================================
+def _render_action_state_block(facts: Dict[str, Any]) -> str:
+    if not isinstance(facts, dict):
+        facts = {}
+
+    cena = facts.get("cena", {}) if isinstance(facts.get("cena"), dict) else {}
+
+    local = str(cena.get("local") or "").strip()
+    acao = str(cena.get("acao") or "").strip()
+
+    return f"""
+[ESTADO ATUAL DA CENA - AÇÕES JÁ CONSUMADAS]
+
+- Local atual: {local}
+- Situação atual: {acao}
+
+REGRAS DE CONTINUIDADE:
+- A cena já está em andamento.
+- Não reexecutar ações já consumadas.
+- Não recriar preparação de gesto, aproximação, entrega de objeto, beijo ou mudança de posição já concluída.
+- Não reiniciar microações físicas.
+- Se os personagens já estão próximos, continuar dessa proximidade.
+- Se Mary já está no colo, no beijo, no toque ou em contato físico, continuar desse ponto.
+- O próximo texto deve partir da consequência do estado atual, não do início da ação.
+""".strip()
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -6784,8 +6812,14 @@ Resumo:
         # 2) CONTEXTO ESTRUTURAL - verdade do universo
         # ==========================================================
         _inject_now_context(messages, usuario_key, timeline_final)
+
+        #  NOVO BLOCO (AQUI!)
+        messages.append({
+            "role": "system",
+            "content": _render_action_state_block(facts or {}),
+        })
         
-        # 🔥 estado vivo primeiro
+        #  estado vivo primeiro
         mi._inject_active_state_memories_always(
             shared_key,
             timeline_final,
@@ -6798,7 +6832,7 @@ Resumo:
             ss_prefix=_SS_PREFIX,
         )
         
-        # 🔥 depois canon
+        #  depois canon
         mi._inject_canon_memories_always(
             shared_key,
             timeline_final,
@@ -6811,7 +6845,7 @@ Resumo:
             ss_prefix=_SS_PREFIX,
         )
         
-        # 🔥 intro como fallback
+        #  intro como fallback
         _inject_intro_as_context_once(
             usuario_key,
             timeline_final,
@@ -6819,7 +6853,7 @@ Resumo:
             messages,
         )
         
-        # 🔥 memória auxiliar
+        #  memória auxiliar
         _inject_long_memory_pins_always(
             shared_key,
             timeline_final,
