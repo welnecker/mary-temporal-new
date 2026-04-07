@@ -6965,18 +6965,7 @@ Resumo:
                 "- Variar abertura, ritmo e foco naturalmente.\n"
             )
         })
-        
-        for d in history[-6:]:
-            if not isinstance(d, dict):
-                continue
-        
-            u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
-            if u:
-                messages.append({
-                    "role": "user",
-                    "content": u,
-                })
-        
+                       
     
         # ==========================================================
         # 4) PROMPT ATUAL
