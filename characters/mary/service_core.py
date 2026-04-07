@@ -3173,7 +3173,7 @@ def _inject_shared_soft_context(
                 meta,
                 timeline,
                 normalize_timeline_fn=_normalize_timeline,
-            )
+            ):
             continue
 
         txt = str(m.get("text") or "").strip()
@@ -3643,7 +3643,7 @@ def _inject_manual_memory_if_any(
                 meta,
                 timeline,
                 normalize_timeline_fn=_normalize_timeline,
-            )
+            ):
             filtered.append(m)
 
     chosen = _select_memories(
@@ -3767,7 +3767,7 @@ def _inject_latent_memory_if_any(
             meta,
             timeline,
             normalize_timeline_fn=_normalize_timeline,
-        )
+        ):
             continue
 
         title, kind, txt = _memory_text_fields(mem)
