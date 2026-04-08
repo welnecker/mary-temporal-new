@@ -7014,7 +7014,8 @@ class TurnContext:
 
     user_explicit_scene_change: bool = False
     scene_parallel: bool = False
-    
+
+
     def _resolve_turn_policy(
         self,
         *,
@@ -7033,11 +7034,11 @@ class TurnContext:
         # ==========================================================
         nsfw_on = nsfw_enabled(usuario_key, nsfw_override=nsfw, timeline=timeline_final)
         diag.nsfw_on = bool(nsfw_on)
-    
+
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
-    
+
         # ==========================================================
         # Sync UI -> facts (debug persistido refletir sidebar)
         # ==========================================================
@@ -7057,20 +7058,20 @@ class TurnContext:
                 f"{_SS_PREFIX}third_party",
                 "mary::allow_third_party_seduction",
             )
-    
+
             ui_has_nsfw = any(k in ss for k in nsfw_keys)
             ui_has_tp = any(k in ss for k in tp_keys)
-    
+
             if ui_has_nsfw or ui_has_tp:
                 facts_now = cached_get_facts(usuario_key) or {}
                 mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
                 mary_now = dict(mary_now)
-    
+
                 if ui_has_nsfw:
                     mary_now["nsfw"] = bool(nsfw_on)
                     if timeline_final:
                         mary_now[f"nsfw::{timeline_final}"] = bool(nsfw_on)
-    
+
                 if ui_has_tp:
                     tp_on = bool(
                         third_party_enabled(
@@ -7081,124 +7082,101 @@ class TurnContext:
                     )
                     tp_on = bool(tp_on and nsfw_on)
                     mary_now["allow_third_party_seduction"] = tp_on
-    
+
                 old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
                 if mary_now != old_mary:
                     set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
                     facts = cached_get_facts(usuario_key) or {}
                     facts = _normalize_scene_local_facts(facts)
-    
+
         except Exception:
             pass
-    
+
         # ==========================================================
-        # Toggle final de terceiros
+        # Toggle de terceiros + profile
         # ==========================================================
-        if not nsfw_on:
-            allow_third_party_seduction_final = False
-        elif allow_third_party_seduction is None:
-            ui_toggle = bool(
-                _ss_get("mary_allow_third_party_seduction", False)
-                or _ss_get(f"{_SS_PREFIX}allow_third_party_seduction", False)
-                or _ss_get(f"{_SS_PREFIX}third_party", False)
-            )
-    
-            facts_mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-            facts_toggle = bool(facts_mary.get("allow_third_party_seduction", False))
-    
-            allow_third_party_seduction_final = bool(ui_toggle or facts_toggle)
-        else:
-            allow_third_party_seduction_final = bool(allow_third_party_seduction)
-    
-        _ss_set("mary_third_party_seduction", bool(allow_third_party_seduction_final))
-    
+        allow_third_party_seduction_final = third_party_enabled(
+            usuario_key,
+            third_party_override=allow_third_party_seduction,
+            timeline=timeline_final,
+        )
+
+        allow_third_party_seduction_final = bool(allow_third_party_seduction_final and nsfw_on)
+        diag.third_party_on = bool(allow_third_party_seduction_final)
+
+        enforce_third_party_consistency(
+            usuario_key,
+            timeline=timeline_final,
+            nsfw_on=nsfw_on,
+        )
+
         nsfw_profile = _nsfw_profile(
-            nsfw_on=bool(nsfw_on),
-            allow_third_party_seduction=bool(allow_third_party_seduction_final),
-        )
-        _ss_set("mary_nsfw_profile", nsfw_profile)
-
-        # ==========================================================
-        # MODO COMPORTAMENTAL (SAFE / NSFW_ONLY / NSFW_THIRD)
-        # ==========================================================
-        current_behavior_mode = tpa._resolve_nsfw_third_mode(
-            nsfw_on=bool(nsfw_on),
-            allow_third_party_seduction=bool(allow_third_party_seduction_final),
+            nsfw_on=nsfw_on,
+            allow_third_party_seduction=allow_third_party_seduction_final,
         )
 
-        previous_behavior_mode = str(
-            _ss_get(f"mary_last_behavior_mode::{usuario_key}", "")
-            or _ss_get("mary_last_behavior_mode", "")
-            or ""
-        ).strip().upper()
+        if nsfw_on and allow_third_party_seduction_final:
+            behavior_mode = "NSFW_THIRD"
+        elif nsfw_on:
+            behavior_mode = "NSFW_ONLY"
+        else:
+            behavior_mode = "SAFE"
 
-        facts = _handle_behavior_mode_transition(
-            usuario_key=usuario_key,
-            timeline_final=timeline_final,
-            previous_mode=previous_behavior_mode,
-            current_mode=current_behavior_mode,
-            facts=facts,
-        )
+        # ==========================================================
+        # Fase íntima
+        # ==========================================================
+        intimacy_phase = _get_intimacy_phase(facts or {}, timeline_final)
+        diag.phase_before = int(intimacy_phase)
 
-        facts = _release_forced_retreat_if_allowed(
-            usuario_key=usuario_key,
-            timeline_final=timeline_final,
-            facts=facts,
-        )
-
-        _ss_set(f"mary_last_behavior_mode::{usuario_key}", current_behavior_mode)
-        _ss_set("mary_last_behavior_mode", current_behavior_mode)
-
-        try:
-            diag.behavior_mode = current_behavior_mode
-        except Exception:
-            pass
-    
         # ==========================================================
-        # Consistência: NSFW OFF => terceiros OFF
+        # Arco third-party
         # ==========================================================
-        try:
-            enforce_third_party_consistency(
-                usuario_key,
-                timeline=timeline_final,
-                nsfw_on=bool(nsfw_on),
-            )
-        except Exception:
-            pass
-    
-        # ==========================================================
-        # Arco de terceiros (pré-resposta)
-        # ==========================================================
-        try:
-            tp_arc = tpa._get_tp_arc_state(facts or {}, timeline_final)
-        except Exception:
+        tp_arc = tpa._get_tp_arc_state(facts or {}, timeline_final)
+        if not isinstance(tp_arc, dict):
             tp_arc = {}
-    
-        # ==========================================================
-        # Intimidade / iniciativa / emoção / fidelidade
-        # ==========================================================
-        try:
-            facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
-        except Exception:
-            pass
-    
-        intimacy_phase = self._get_intimacy_phase(facts)
-        diag.intimacy_phase_pre = int(intimacy_phase)
-    
-        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
-        diag.initiative_window = bool(initiative)
 
-        emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
-        fidelity_mode = _fidelity_mode(timeline_final)
-            
-            
+        # ==========================================================
+        # Emoção atual
+        # ==========================================================
+        emotion_now = "neutro"
+        try:
+            emotion_now = str(
+                facts.get(f"emotion::{timeline_final}")
+                or facts.get("emotion")
+                or "neutro"
+            ).strip() or "neutro"
+        except Exception:
+            emotion_now = "neutro"
+
+        # ==========================================================
+        # Iniciativa base
+        # ==========================================================
+        initiative = bool(
+            _initiative_window(
+                rel_state,
+                nsfw_on,
+                conflict_now,
+                intimacy_phase,
+                prompt,
+            )
+        )
+
+        # ==========================================================
+        # Fidelity mode
+        # ==========================================================
+        fidelity_mode = "soft"
+        if not nsfw_on:
+            fidelity_mode = "strict"
+        elif allow_third_party_seduction_final:
+            fidelity_mode = "relaxed"
+
         return {
             "facts": facts,
             "nsfw_on": bool(nsfw_on),
             "allow_third_party_seduction_final": bool(allow_third_party_seduction_final),
-            "nsfw_profile": nsfw_profile,
-            "behavior_mode": str(current_behavior_mode),
-            "conflict_mode": conflict_mode,
+            "nsfw_profile": str(nsfw_profile),
+            "behavior_mode": str(behavior_mode),
+            "conflict_mode": str(conflict_mode),
             "conflict_now": bool(conflict_now),
             "tp_arc": tp_arc if isinstance(tp_arc, dict) else {},
             "intimacy_phase": int(intimacy_phase),
