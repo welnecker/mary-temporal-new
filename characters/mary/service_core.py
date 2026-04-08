@@ -1,5 +1,6 @@
 # characters/mary/service_core.py
 from __future__ import annotations
+from dataclasses import dataclass, field
 
 """
 MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -6972,6 +6973,47 @@ Resumo:
         })
     
         return messages
+
+@dataclass
+class TurnRequest:
+    user_id: str
+    model: str
+    prompt: str
+    timeline_final: str
+    usuario_key: str
+    shared_key: str
+    mem_spec: Optional[dict] = None
+    nsfw_override: Optional[bool] = None
+    allow_third_party_seduction_override: Optional[bool] = None
+
+
+@dataclass
+class TurnContext:
+    req: TurnRequest
+    diag: Any
+
+    facts: Dict[str, Any] = field(default_factory=dict)
+    facts0: Dict[str, Any] = field(default_factory=dict)
+
+    canon: Dict[str, Any] = field(default_factory=dict)
+    canon_txt: str = ""
+    persona_text: str = ""
+
+    rel_state: Dict[str, Any] = field(default_factory=dict)
+    dynamic_rel_state: Dict[str, Any] = field(default_factory=dict)
+
+    policy: Dict[str, Any] = field(default_factory=dict)
+    reasoning: Dict[str, Any] = field(default_factory=dict)
+    llm_reasoning: Dict[str, Any] = field(default_factory=dict)
+
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    long_memory_lines: List[str] = field(default_factory=list)
+
+    active_hook: Dict[str, Any] = field(default_factory=dict)
+    hook_state: Dict[str, Any] = field(default_factory=dict)
+
+    user_explicit_scene_change: bool = False
+    scene_parallel: bool = False
     
     def _resolve_turn_policy(
         self,
@@ -7165,97 +7207,112 @@ Resumo:
             "fidelity_mode": str(fidelity_mode or "soft"),
         }
 
-    def reply(
+USE_PROMPT_V2 = True
+
+class MaryService(BaseCharacter):
+
+    def _prepare_turn_request(
         self,
+        *,
         user: str,
         model: str,
-        *,
-        prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
-        nsfw: Optional[bool] = None,
-        allow_third_party_seduction: Optional[bool] = None,
-    ) -> str:
-        # 1) Prompt
+        prompt: Optional[str],
+        timeline: Optional[str],
+        nsfw: Optional[bool],
+        allow_third_party_seduction: Optional[bool],
+    ) -> TurnRequest:
         if prompt is None:
             prompt = str(_ss_get("chat_input", "") or "").strip()
         else:
             prompt = (prompt or "").strip()
-
-        #  Diretiva opcional de memória (não vai para o modelo)
+    
         mem_spec = None
         prompt, mem_spec = _extract_mem_directive(prompt)
-
-        # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
+    
         if (not prompt) and mem_spec:
             prompt = "Continue."
-
-        if not prompt:
-            return ""
-        print("🧪 TESTE core_utils clamp:", cu._clamp01(2))
-        print("🧪 TESTE core_utils norm:", cu._norm_any("  Mary   Linda "))  
-     
-        # 2) Chaves
+    
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
         timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
             str(_ss_get("mary_timeline", "cumplice") or "cumplice")
         )
-
+    
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id, timeline_final)
-
-        diag = _Diag(
-            ts=int(time.time()),
-            timeline=timeline_final,
-            model_requested=model,
-            violations=[],
+    
+        return TurnRequest(
+            user_id=user_id,
+            model=model,
+            prompt=prompt,
+            timeline_final=timeline_final,
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            mem_spec=mem_spec,
+            nsfw_override=nsfw,
+            allow_third_party_seduction_override=allow_third_party_seduction,
         )
-
-        # 3) Garantir mínimos
+    
+    
+    def _ensure_minimum_scene_state(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+    ) -> Dict[str, Any]:
         facts0 = cached_get_facts(usuario_key) or {}
         facts0 = _normalize_scene_local_facts(facts0)
-
+    
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
             facts0 = cached_get_facts(usuario_key) or {}
             facts0 = _normalize_scene_local_facts(facts0)
-
+    
         if "intimacy.phase" not in facts0:
             set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
             facts0 = cached_get_facts(usuario_key) or {}
             facts0 = _normalize_scene_local_facts(facts0)
-
+    
         try:
             facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
             facts0 = _normalize_scene_local_facts(facts0)
         except Exception:
             pass
-
-        # 4) Mudança explícita de local/tempo (comando do usuário)
+    
+        return facts0
+    
+    
+    def _apply_explicit_scene_change(
+        self,
+        *,
+        prompt: str,
+        usuario_key: str,
+        facts0: Dict[str, Any],
+        diag: Any,
+    ) -> Tuple[Dict[str, Any], bool]:
         _loc_change = _user_requested_location_change(prompt)
-
+    
         if isinstance(_loc_change, tuple) and len(_loc_change) == 2:
             mudou, novo_local = _loc_change
         else:
             mudou, novo_local = False, None
-
+    
         user_explicit_scene_change = bool(mudou and novo_local)
-
+    
         if mudou and novo_local:
             novo_local = str(novo_local).strip()
-        
+    
             _scene_state = _get_scene_state(facts0)
             if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
                 loc0, _t0, _a0 = _scene_state
             else:
                 loc0, _t0, _a0 = "", "", ""
-        
+    
             loc0n = (loc0 or "").strip().lower()
             loc1n = novo_local.lower()
-        
+    
             if loc1n and loc1n != loc0n:
-                # atualiza a cena principal primeiro
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-        
+    
                 try:
                     set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
                     set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
@@ -7265,336 +7322,225 @@ Resumo:
                     set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_sync"})
                 except Exception:
                     pass
-        
+    
                 facts0 = cached_get_facts(usuario_key) or {}
                 facts0 = _normalize_scene_local_facts(facts0)
-        
                 diag.scene_transition = {"from": loc0, "to": novo_local}
-        
-        # 5) Cena paralela (mantido por compatibilidade)
-        facts_pre = cached_get_facts(usuario_key)
+    
+        return facts0, user_explicit_scene_change
+    
+    
+    def _collect_long_memory_lines(
+        self,
+        *,
+        user_id: str,
+        shared_key: str,
+        canon_txt: str,
+        facts: Dict[str, Any],
+        prompt: str,
+    ) -> List[str]:
+        long_memory_lines: List[str] = []
+        seen_lm: set[str] = set()
+    
+        lm_keys: List[str] = []
+        try:
+            if shared_key:
+                lm_keys.append(str(shared_key).strip())
+        except Exception:
+            pass
+    
+        try:
+            global_shared_key = f"{user_id}::mary::shared"
+            if global_shared_key not in lm_keys:
+                lm_keys.append(global_shared_key)
+        except Exception:
+            pass
+    
+        canon_blob = _t_norm(canon_txt or "")
+        facts_now = facts if isinstance(facts, dict) else {}
+    
+        def _lm_conflicts_with_truth(mem_text: str) -> bool:
+            t = _t_norm(mem_text or "")
+            if not t:
+                return False
+    
+            scene_local = _t_norm(str(facts_now.get("cena.local") or facts_now.get("local_cena_atual") or ""))
+            state_local = _t_norm(str(facts_now.get("state.local") or ""))
+            scene_time = _t_norm(str(facts_now.get("cena.tempo") or ""))
+            state_topic = _t_norm(str(facts_now.get("state.assunto") or ""))
+    
+            for v in (scene_local, state_local, scene_time, state_topic):
+                if v and v in t:
+                    return True
+    
+            thematic_groups = (
+                ("mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "família", "familia"),
+                ("profissão", "profissao", "trabalha", "clínica", "clinica", "consultório", "consultorio", "instagram"),
+                ("idade", "altura", "peso", "olhos", "cabelos", "pele"),
+            )
+    
+            for group in thematic_groups:
+                if any(k in t for k in group) and any(k in canon_blob for k in group):
+                    return True
+    
+            return False
+    
+        for lm_key in lm_keys:
+            try:
+                pinned = list_long_memory(lm_key, limit=20) or []
+            except Exception:
+                pinned = []
+    
+            for m in pinned:
+                if not isinstance(m, dict):
+                    continue
+    
+                meta = m.get("meta") or {}
+                kind = str(meta.get("kind") or "").strip().lower()
+                txt = str(m.get("text") or "").strip()
+    
+                if kind != "pin" or not txt:
+                    continue
+    
+                norm = txt.lower()
+                if norm in seen_lm:
+                    continue
+                if _lm_conflicts_with_truth(txt):
+                    continue
+    
+                seen_lm.add(norm)
+                long_memory_lines.append(txt)
+    
+        for lm_key in lm_keys:
+            try:
+                found = search_long_memory_text(lm_key, prompt, limit=5) or []
+            except Exception:
+                found = []
+    
+            for m in found:
+                if not isinstance(m, dict):
+                    continue
+    
+                txt = str(m.get("text") or "").strip()
+                if not txt:
+                    continue
+    
+                norm = txt.lower()
+                if norm in seen_lm:
+                    continue
+                if _lm_conflicts_with_truth(txt):
+                    continue
+    
+                seen_lm.add(norm)
+                long_memory_lines.append(txt)
+    
+        return long_memory_lines
+    
+    
+    def _build_turn_context_v2(self, req: TurnRequest) -> TurnContext:
+        diag = _Diag(
+            ts=int(time.time()),
+            timeline=req.timeline_final,
+            model_requested=req.model,
+            violations=[],
+        )
+    
+        facts0 = self._ensure_minimum_scene_state(
+            usuario_key=req.usuario_key,
+            timeline_final=req.timeline_final,
+        )
+    
+        facts0, user_explicit_scene_change = self._apply_explicit_scene_change(
+            prompt=req.prompt,
+            usuario_key=req.usuario_key,
+            facts0=facts0,
+            diag=diag,
+        )
+    
+        facts_pre = cached_get_facts(req.usuario_key)
         scene_locked_pre = _scene_is_locked(facts_pre)
         scene_parallel = bool(
             scene_locked_pre
-            and _detect_scene_violation(prompt)
+            and _detect_scene_violation(req.prompt)
             and not user_explicit_scene_change
         )
-        _ = scene_parallel  # evita warning / mantém side-note de leitura
-
-        # 6) Contexto base
-        _persona = get_persona(timeline_final)
-        if isinstance(_persona, tuple) and len(_persona) >= 1:
-            persona_text = _persona[0] or ""
-        else:
-            persona_text = ""
-
-        facts = cached_get_facts(usuario_key) or {}
+    
+        _persona = get_persona(req.timeline_final)
+        persona_text = _persona[0] if isinstance(_persona, tuple) and len(_persona) >= 1 else ""
+    
+        facts = cached_get_facts(req.usuario_key) or {}
         facts = _normalize_scene_local_facts(facts)
-
-        canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
+    
+        canon = get_canon("mary", timeline=req.timeline_final, user_key=req.user_id) or {}
         canon_txt = canon_to_text(canon)
-
+    
         canon_rel_default = (
             canon.get("relationship_state")
             if isinstance(canon.get("relationship_state"), dict)
             else None
         )
-        
-        rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-        
+    
+        rel_state = _load_rel_state(facts, req.timeline_final, canon_rel_default)
         if not isinstance(rel_state, dict):
             rel_state = {}
-
-        # ==========================================================
-        # ESTADO RELACIONAL DINÂMICO
-        # ==========================================================
-        dynamic_rel_state = load_dynamic_relationship_state(facts, timeline_final)
+    
+        dynamic_rel_state = load_dynamic_relationship_state(facts, req.timeline_final)
         if not isinstance(dynamic_rel_state, dict):
             dynamic_rel_state = {}
-
-                
-        # ==========================================================
-        # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
-        # - pode alimentar ambas as Marys
-        # - nunca vence facts ativos
-        # - nunca vence canon da timeline atual
-        # - entra apenas se compatível com a Mary atual
-        # ==========================================================
-        long_memory_block = ""
+    
+        long_memory_lines = self._collect_long_memory_lines(
+            user_id=req.user_id,
+            shared_key=req.shared_key,
+            canon_txt=canon_txt,
+            facts=facts,
+            prompt=req.prompt,
+        )
+    
+        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, req.timeline_final, req.user_id)
         try:
-            long_memory_lines: List[str] = []
-            seen_lm: set[str] = set()
-
-            # usa a key compartilhada do app; fallback defensivo para a key global
-            lm_keys = []
-            try:
-                if shared_key:
-                    lm_keys.append(str(shared_key).strip())
-            except Exception:
-                pass
-
-            try:
-                global_shared_key = f"{user_id}::mary::shared"
-                if global_shared_key not in lm_keys:
-                    lm_keys.append(global_shared_key)
-            except Exception:
-                pass
-
-            canon_blob = _t_norm(canon_txt or "")
-            facts_now = facts if isinstance(facts, dict) else {}
-
-            def _lm_conflicts_with_truth(mem_text: str) -> bool:
-                t = _t_norm(mem_text or "")
-                if not t:
-                    return False
-
-                # facts vivos do turno atual
-                scene_local = _t_norm(str(facts_now.get("cena.local") or facts_now.get("local_cena_atual") or ""))
-                state_local = _t_norm(str(facts_now.get("state.local") or ""))
-                scene_time = _t_norm(str(facts_now.get("cena.tempo") or ""))
-                state_topic = _t_norm(str(facts_now.get("state.assunto") or ""))
-
-                # nunca deixar long memory disputar o presente
-                for v in (scene_local, state_local, scene_time, state_topic):
-                    if v and v in t:
-                        return True
-
-                # se canon da timeline atual já governa claramente o tema,
-                # long memory não precisa repetir nem disputar
-                thematic_groups = (
-                    ("mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "família", "familia"),
-                    ("profissão", "profissao", "trabalha", "clínica", "clinica", "consultório", "consultorio", "instagram"),
-                    ("idade", "altura", "peso", "olhos", "cabelos", "pele"),
-                )
-
-                for group in thematic_groups:
-                    if any(k in t for k in group) and any(k in canon_blob for k in group):
-                        return True
-
-                return False
-
-            # 1) pins compartilhados
-            for lm_key in lm_keys:
-                try:
-                    pinned = list_long_memory(lm_key, limit=20) or []
-                except Exception:
-                    pinned = []
-
-                for m in pinned:
-                    if not isinstance(m, dict):
-                        continue
-
-                    meta = m.get("meta") or {}
-                    kind = str(meta.get("kind") or "").strip().lower()
-                    txt = str(m.get("text") or "").strip()
-
-                    if kind != "pin" or not txt:
-                        continue
-
-                    norm = txt.lower()
-                    if norm in seen_lm:
-                        continue
-
-                    if _lm_conflicts_with_truth(txt):
-                        continue
-
-                    seen_lm.add(norm)
-                    long_memory_lines.append(txt)
-
-            # 2) memórias relevantes para o prompt atual
-            for lm_key in lm_keys:
-                try:
-                    found = search_long_memory_text(lm_key, prompt, limit=5) or []
-                except Exception:
-                    found = []
-
-                for m in found:
-                    if not isinstance(m, dict):
-                        continue
-
-                    txt = str(m.get("text") or "").strip()
-                    if not txt:
-                        continue
-
-                    norm = txt.lower()
-                    if norm in seen_lm:
-                        continue
-
-                    if _lm_conflicts_with_truth(txt):
-                        continue
-
-                    seen_lm.add(norm)
-                    long_memory_lines.append(txt)
-
-            if long_memory_lines:
-                long_memory_block = (
-                    "[LONG MEMORY COMPARTILHADA]\n"
-                    "- Estas memórias são persistentes e podem alimentar a Mary atual quando forem compatíveis.\n"
-                    "- Facts ativos e canon da timeline atual têm prioridade total.\n"
-                    "- Use apenas o que combinar com a Mary atual, sem contradizer o presente.\n"
-                    + "\n"
-                    + "\n".join(f"- {x}" for x in long_memory_lines)
-                ).strip()
-
-        except Exception:
-            long_memory_block = ""
-
-        # ==========================================================
-        # VIES OPERACIONAL POR TIMELINE
-        # ==========================================================
-        timeline_behavior_block = ""
-
-        if timeline_final == "cumplice":
-            timeline_behavior_block = """
-[TIMELINE CUMPLICE - VIES OPERACIONAL]
-- O vinculo com Janio ja existe e deve ser sentido na resposta.
-- A tensao nasce de intimidade consolidada, nao de descoberta inicial.
-- Mary pode soar mais segura, mais confortavel e mais intima.
-- Pequenos gestos, pausas e falas curtas devem carregar subtexto.
-- O toque e a aproximacao podem surgir com naturalidade.
-- Preferir quimica estabelecida, familiaridade corporal e provocacao madura.
-""".strip()
-
-        elif timeline_final == "universitaria":
-            timeline_behavior_block = """
-[TIMELINE UNIVERSITARIA - VIES OPERACIONAL]
-- O vinculo ainda se aprofunda.
-- A tensao nasce de descoberta, curiosidade, nervosismo e desejo crescente.
-- Mary pode hesitar mais, sentir mais novidade e oscilar entre coragem e recuo.
-- Preferir progressao gradual, com calor emocional e entrega crescente.
-""".strip()
-
-        # ==========================================================
-        #  CIÚME / FLERTE / SEGREDO - DEFAULTS SEGUROS
-        # ==========================================================
-        try:
-            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-
-            if "rel.jealousy_level" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-            if "rel.jealousy_mode" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-        except Exception:
-            seed = ""
-            cooldown_turns = 6
-            last_trigger_turn = None
-
-        #  Sincroniza REL com CANON(shared) e persiste
-        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-        try:
-            _save_rel_state(usuario_key, timeline_final, rel_state)
+            _save_rel_state(req.usuario_key, req.timeline_final, rel_state)
         except Exception:
             pass
-
-        #  BLOCO DE RELACIONAMENTO PARA O SYSTEM PROMPT
-        rel_block = rel_state_to_prompt_block(rel_state)
-
-        #  Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule
+    
         try:
             mary_fact = facts.get("mary") if isinstance(facts, dict) else None
             if not isinstance(mary_fact, dict):
                 mary_fact = {}
-
-            tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-
+    
+            tl_key = f"virginity::{(req.timeline_final or '').strip().lower()}"
             if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
                 changed = False
-
                 if mary_fact.get(tl_key) != "nao_virgem":
                     mary_fact[tl_key] = "nao_virgem"
                     changed = True
-
                 if mary_fact.get("virginity") != "nao_virgem":
                     mary_fact["virginity"] = "nao_virgem"
                     changed = True
-
                 if changed:
                     facts["mary"] = mary_fact
-                    set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
+                    set_fact_safe(req.usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
         except Exception:
             pass
-
-        # ==========================================================
-        # Política do turno (NSFW / terceiros / conflito / iniciativa)
-        # ==========================================================
+    
         policy = self._resolve_turn_policy(
-            usuario_key=usuario_key,
-            user_id=user_id,
-            timeline_final=timeline_final,
-            prompt=prompt,
+            usuario_key=req.usuario_key,
+            user_id=req.user_id,
+            timeline_final=req.timeline_final,
+            prompt=req.prompt,
             facts=facts,
             rel_state=rel_state,
-            nsfw=nsfw,
-            allow_third_party_seduction=allow_third_party_seduction,
+            nsfw=req.nsfw_override,
+            allow_third_party_seduction=req.allow_third_party_seduction_override,
             diag=diag,
         )
-
+    
         facts = policy["facts"]
-        nsfw_on = bool(policy["nsfw_on"])
-        allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
-        nsfw_profile = str(policy["nsfw_profile"])
-        behavior_mode = str(policy.get("behavior_mode") or "SAFE").strip().upper()
-        conflict_mode = str(policy["conflict_mode"])
-        conflict_now = bool(policy["conflict_now"])
-        tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
-        intimacy_phase = int(policy["intimacy_phase"])
-        initiative = bool(policy["initiative"])
-        emotion_now = str(policy["emotion_now"] or "neutro")
-        fidelity_mode = str(policy["fidelity_mode"] or "soft")
-
-        intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
-
-        # ==========================================================
-        # DECISION ENGINE - pressão moral / escolha real
-        # ==========================================================
-        prev_decision_state = _load_decision_state(facts, timeline_final)
-
-        decision_state = _resolve_decision_pressure_mode(
-            facts=facts,
-            rel_state=rel_state,
-            dynamic_rel_state=dynamic_rel_state,
-            tp_arc={},
-            prompt=prompt,
-            texto="",
-            prev_decision_state=prev_decision_state,
-        )
-
-        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
-
-        try:
-            _ss_set(
-                "mary_decision_debug",
-                {
-                    "timeline": timeline_final,
-                    "prev_decision_state": prev_decision_state,
-                    "decision_state": decision_state,
-                },
-            )
-        except Exception:
-            pass
-
-        # ==========================================================
-        # DECISION ENGINE -> modula iniciativa
-        # ==========================================================
-        decision_mode = str(decision_state.get("mode") or "observe").strip().lower()
-
-        if decision_mode == "recede":
-            initiative = False
-        elif decision_mode == "seek_help":
-            initiative = False
-        elif decision_mode == "advance":
-            initiative = True
-
-        # ==========================================================
-        #  REASONING ENGINE
-        # ==========================================================
+    
         try:
             reasoning = build_internal_reasoning(
-                user_text=prompt,
+                user_text=req.prompt,
                 facts=facts,
-                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                memories=long_memory_lines[-8:],
                 scene_state={
                     "local": facts.get("cena.local"),
                     "tempo": facts.get("cena.tempo"),
@@ -7604,16 +7550,13 @@ Resumo:
             )
         except Exception:
             reasoning = {}
-
-        # ==========================================================
-        #  LLM REASONING (refino semântico)
-        # ==========================================================
+    
         try:
             llm_reasoning = build_llm_reasoning(
                 model="x-ai/grok-4.1-fast",
-                user_text=prompt,
+                user_text=req.prompt,
                 facts=facts,
-                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                memories=long_memory_lines[-8:],
                 scene_state={
                     "local": facts.get("cena.local"),
                     "tempo": facts.get("cena.tempo"),
@@ -7624,86 +7567,296 @@ Resumo:
             )
         except Exception:
             llm_reasoning = {}
-
+    
         try:
             reasoning = merge_reasoning(reasoning, llm_reasoning)
         except Exception:
             pass
-
-        # ==========================================================
-        #  DEBUG + VERIFICAÇÃO SIMPLES (SIDEBAR)
-        # ==========================================================
+    
         try:
-            _ss_set(
-                "mary_llm_reasoning_status",
-                {
-                    "ok": bool(llm_reasoning),
-                    "source": "secondary_llm" if llm_reasoning else "local_only",
-                    "model": "x-ai/grok-4.1-fast" if llm_reasoning else "",
-                    "decision": reasoning.get("decision", ""),
-                    "goal": reasoning.get("narrative_goal", ""),
-                    "delivery": reasoning.get("delivery_mode", ""),
-                    "advance": reasoning.get("advance_limit", ""),
-                },
-            )
+            history = cached_get_history(req.usuario_key, limit=10) or []
         except Exception:
-            pass
-
-        # DEBUG bruto (mantém o que você já tinha)
-        _ss_set("mary_reasoning_debug", reasoning)
-        _ss_set("mary_reasoning_llm_debug", llm_reasoning)
-        # ==========================================================
-        # BLOCO RELACIONAL DINÂMICO
-        # ==========================================================
-        dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
-
-        # ==========================================================
-        # AUTONOMIA NARRATIVA DA MARY
-        # ==========================================================
+            history = []
+    
         try:
-            _bump_turn_counter(usuario_key)
-
+            _bump_turn_counter(req.usuario_key)
+    
             opportunities = collect_narrative_opportunities(
                 facts=facts,
                 rel=rel_state,
-                prompt=prompt,
-                timeline=timeline_final,
+                prompt=req.prompt,
+                timeline=req.timeline_final,
             )
-
+    
             active_hook = select_active_hook(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
+                usuario_key=req.usuario_key,
+                timeline=req.timeline_final,
                 opportunities=opportunities,
             )
-
+    
             hook_state = ensure_hook_state(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
+                usuario_key=req.usuario_key,
+                timeline=req.timeline_final,
                 active_hook=active_hook,
             )
-
-            autonomy_block = build_autonomy_block(
-                active_hook=active_hook,
-                hook_state=hook_state,
-                emotion_now=emotion_now,
-                initiative_open=initiative,
-            )
-
-            _ss_set(
-                "mary_hook_debug",
-                {
-                    "timeline": timeline_final,
-                    "active_hook": active_hook.get("id") if isinstance(active_hook, dict) else "",
-                    "hook_label": active_hook.get("label") if isinstance(active_hook, dict) else "",
-                    "hook_stage": hook_state.get("hook_stage") if isinstance(hook_state, dict) else "",
-                    "opportunities": opportunities[:5] if isinstance(opportunities, list) else [],
-                },
-            )
-
         except Exception:
             active_hook = {}
             hook_state = {}
-            autonomy_block = ""
+    
+        return TurnContext(
+            req=req,
+            diag=diag,
+            facts=facts,
+            facts0=facts0,
+            canon=canon,
+            canon_txt=canon_txt,
+            persona_text=persona_text,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            policy=policy,
+            reasoning=reasoning,
+            llm_reasoning=llm_reasoning,
+            history=history,
+            long_memory_lines=long_memory_lines,
+            active_hook=active_hook,
+            hook_state=hook_state,
+            user_explicit_scene_change=user_explicit_scene_change,
+            scene_parallel=scene_parallel,
+        )
+    
+    
+    def _build_core_system_base(self, ctx: TurnContext) -> str:
+        return f"""
+    {ctx.persona_text}
+    
+    [REGRAS CENTRAIS]
+    - Você é Mary e responde sempre em primeira pessoa.
+    - Respeite rigorosamente facts, canon, cena ativa e contexto recente.
+    - Não invente acontecimentos passados.
+    - Não descreva ações nem decisões do usuário que ele não declarou.
+    - Continue a situação atual sem teleporte narrativo.
+    - Avance apenas de forma orgânica e proporcional.
+    """.strip()
+    
+    
+    def _build_live_context_block(self, ctx: TurnContext) -> str:
+        facts = ctx.facts or {}
+        rel = ctx.rel_state or {}
+        hist = (ctx.history or [])[-6:]
+        memories = (ctx.long_memory_lines or [])[:5]
+    
+        estado = []
+        for label, key in [
+            ("Local", "state.local"),
+            ("Roupa", "state.roupa"),
+            ("Cabelo", "state.cabelo"),
+            ("Horário", "state.horario"),
+            ("Assunto", "state.assunto"),
+        ]:
+            val = str(facts.get(key, "") or "").strip()
+            if val:
+                estado.append(f"- {label}: {val}")
+    
+        dinamica = []
+        for label, key in [
+            ("Humor", "mood"),
+            ("Energia", "energy"),
+            ("Atitude", "attitude"),
+            ("Virginity", "virginity"),
+        ]:
+            val = str(rel.get(key, "") or "").strip()
+            if val:
+                dinamica.append(f"- {label}: {val}")
+    
+        if ctx.policy:
+            try:
+                dinamica.append(f"- Fase íntima: {int(ctx.policy.get('intimacy_phase', 0))}")
+            except Exception:
+                pass
+    
+        mem_lines = [f"- {m}" for m in memories if str(m).strip()]
+    
+        hist_lines = []
+        for m in hist:
+            role = str(m.get("role", "msg") or "msg").strip()
+            content = str(m.get("content", "") or "").strip()
+            if content:
+                hist_lines.append(f"- {role}: {content[:220]}")
+    
+        parts = []
+        if estado:
+            parts.append("[ESTADO ATUAL]\n" + "\n".join(estado))
+        if dinamica:
+            parts.append("[DINÂMICA RELACIONAL]\n" + "\n".join(dinamica))
+        if mem_lines:
+            parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
+        if hist_lines:
+            parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
+    
+        return "\n\n".join(parts).strip()
+    
+    
+    def _build_optional_rules(self, ctx: TurnContext) -> str:
+        rules: List[str] = []
+        policy = ctx.policy or {}
+        facts = ctx.facts or {}
+    
+        if not bool(policy.get("nsfw_on")):
+            rules.append("""
+    [NSFW OFF]
+    - Sem descrição sexual explícita.
+    - Preserve tensão, desejo e subtexto sem detalhamento gráfico.
+    """.strip())
+    
+        if bool(facts.get("cena.locked")):
+            rules.append("""
+    [CENA ATIVA]
+    - Não mudar local ou tempo sem comando claro do usuário.
+    """.strip())
+    
+        if str(policy.get("behavior_mode", "SAFE") or "SAFE").strip().upper() == "SAFE":
+            rules.append("""
+    [TERCEIROS]
+    - Não escalar intimidade com terceiros.
+    """.strip())
+    
+        if ctx.active_hook:
+            hook_label = str(ctx.active_hook.get("label", "") or "").strip()
+            if hook_label:
+                rules.append(f"""
+    [GANCHO NARRATIVO]
+    - Se houver espaço natural, puxe de forma orgânica: {hook_label}
+    """.strip())
+    
+        return "\n\n".join(rules).strip()
+    
+    
+    def _build_system_prompt_v2(self, ctx: TurnContext) -> str:
+        return "\n\n".join(
+            part for part in [
+                self._build_core_system_base(ctx),
+                self._build_live_context_block(ctx),
+                self._build_optional_rules(ctx),
+            ]
+            if part and part.strip()
+        ).strip()
+    
+    
+    def _build_messages_for_turn_v2(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        history: List[Dict[str, Any]],
+    ) -> List[Dict[str, str]]:
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system}
+        ]
+    
+        for msg in (history or [])[-6:]:
+            role = str(msg.get("role", "") or "").strip()
+            content = str(msg.get("content", "") or "").strip()
+            if role in {"user", "assistant"} and content:
+                messages.append({"role": role, "content": content})
+    
+        messages.append({"role": "user", "content": prompt})
+        return messages
+    
+    
+    def reply(
+        self,
+        user: str,
+        model: str,
+        *,
+        prompt: Optional[str] = None,
+        timeline: Optional[str] = None,
+        nsfw: Optional[bool] = None,
+        allow_third_party_seduction: Optional[bool] = None,
+    ) -> str:
+        req = self._prepare_turn_request(
+            user=user,
+            model=model,
+            prompt=prompt,
+            timeline=timeline,
+            nsfw=nsfw,
+            allow_third_party_seduction=allow_third_party_seduction,
+        )
+    
+        if not req.prompt:
+            return ""
+    
+        print("🧪 TESTE core_utils clamp:", cu._clamp01(2))
+        print("🧪 TESTE core_utils norm:", cu._norm_any("  Mary   Linda "))
+    
+        if USE_PROMPT_V2:
+            ctx = self._build_turn_context_v2(req)
+    
+            prompt = req.prompt
+            mem_spec = req.mem_spec
+            user_id = req.user_id
+            timeline_final = req.timeline_final
+            usuario_key = req.usuario_key
+            shared_key = req.shared_key
+            diag = ctx.diag
+    
+            facts0 = ctx.facts0
+            facts = ctx.facts
+            canon = ctx.canon
+            canon_txt = ctx.canon_txt
+            persona_text = ctx.persona_text
+            rel_state = ctx.rel_state
+            dynamic_rel_state = ctx.dynamic_rel_state
+            history = ctx.history
+            long_memory_lines = ctx.long_memory_lines
+    
+            policy = ctx.policy or {}
+            nsfw_on = bool(policy.get("nsfw_on"))
+            allow_third_party_seduction_final = bool(policy.get("allow_third_party_seduction_final"))
+            nsfw_profile = str(policy.get("nsfw_profile") or "SAFE")
+            behavior_mode = str(policy.get("behavior_mode") or "SAFE").strip().upper()
+            conflict_mode = str(policy.get("conflict_mode") or "off")
+            conflict_now = bool(policy.get("conflict_now"))
+            tp_arc = policy.get("tp_arc") if isinstance(policy.get("tp_arc"), dict) else {}
+            intimacy_phase = int(policy.get("intimacy_phase") or 0)
+            initiative = bool(policy.get("initiative"))
+            emotion_now = str(policy.get("emotion_now") or "neutro")
+            fidelity_mode = str(policy.get("fidelity_mode") or "soft")
+    
+            reasoning = ctx.reasoning or {}
+            llm_reasoning = ctx.llm_reasoning or {}
+            active_hook = ctx.active_hook or {}
+            hook_state = ctx.hook_state or {}
+    
+            user_explicit_scene_change = bool(ctx.user_explicit_scene_change)
+            scene_parallel = bool(ctx.scene_parallel)
+    
+            # compatibilidade com blocos antigos ainda usados abaixo
+            ctx_lower = _build_context_for_guard(usuario_key, prompt)
+    
+            try:
+                long_memory_block = (
+                    "[LONG MEMORY COMPARTILHADA]\n"
+                    + "\n".join(f"- {x}" for x in long_memory_lines)
+                ).strip() if long_memory_lines else ""
+            except Exception:
+                long_memory_block = ""
+    
+            rel_block = rel_state_to_prompt_block(rel_state)
+            dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
+    
+            try:
+                autonomy_block = build_autonomy_block(
+                    active_hook=active_hook,
+                    hook_state=hook_state,
+                    emotion_now=emotion_now,
+                    initiative_open=initiative,
+                )
+            except Exception:
+                autonomy_block = ""
+    
+        else:
+            # caminho antigo preservado abaixo
+            pass
 
         #  contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
@@ -8739,71 +8892,81 @@ Conflito não substitui a narrativa — apenas tensiona.
         # ==========================================================
         # System prompt e messages
         # ==========================================================
-        system = self._build_system_prompt(
-            timeline_final=timeline_final,
-            nsfw_profile=nsfw_profile,
-            user_name_block=user_name_block,
-            spatial_context=spatial_context,
-            state_section=state_section,
-            assunto_section=assunto_section,
-            estado_micro_section=estado_micro_section,
-            pending_event_section=pending_event_section,
-            canon_txt=canon_txt,
-            persona_text=persona_text,
-            rel_block=rel_block,
-            dynamic_rel_block=dynamic_rel_block,
-            long_memory_block=long_memory_block,
-            mary_identity_anchor=mary_identity_anchor,
-            timeline_behavior_block=timeline_behavior_block,
-            third_party_arc_rule=third_party_arc_rule,
-            behavior_block=behavior_block,
-            patterns_block=patterns_block,
-            janio_focus_rule=janio_focus_rule,
-            topic_rule=topic_rule,
-            emotional_persistence_rule=emotional_persistence_rule,
-            facts_present_rule=facts_present_rule,
-            virginity_rule=virginity_rule,
-            memory_fidelity_rule=memory_fidelity_rule,
-            user_finalizes_rule=user_finalizes_rule,
-            initiative_rule=initiative_rule,
-            initiative_escalation_rule=initiative_escalation_rule,
-            manipulation_block=manipulation_block,
-            conflict_block=conflict_block,
-            desvio_curto_rule=desvio_curto_rule,
-            betrayal_rule=betrayal_rule,
-            third_party_initiative_rule=third_party_initiative_rule,
-            intimacy_control_block=intimacy_control_block,
-            intimacy_phase_rule=intimacy_phase_rule,
-            nsfw_hard_block=nsfw_hard_block,
-            nsfw_block=nsfw_block,
-            language_rule=language_rule,
-            pov_rule=pov_rule,
-            user_authorship_rule=user_authorship_rule,
-            continuity_rule=continuity_rule,
-            phone_message_rule=phone_message_rule,
-            facts_integrity_rule=facts_integrity_rule,
-            decision_pressure_rule=decision_pressure_rule,
-            anti_pattern_rule=anti_pattern_rule,
-            style_variation_rule=style_variation_rule,
-            anti_rumination_rule=anti_rumination_rule,
-            prose_density_rule=prose_density_rule,
-            anti_melodrama_rule=anti_melodrama_rule,
-            priority_rule=priority_rule,
-            style_priority_rule=style_priority_rule,
-        )
-
-        messages = self._build_messages_for_turn(
-            system=system,
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline_final=timeline_final,
-            prompt=prompt,
-            mem_spec=mem_spec,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-            autonomy_block=autonomy_block,
-        )
+        if USE_PROMPT_V2:
+            system = self._build_system_prompt_v2(ctx)
+        
+            messages = self._build_messages_for_turn_v2(
+                system=system,
+                prompt=_wrap_user_prompt_for_pov_guard(prompt),
+                history=history,
+            )
+        else:
+            system = self._build_system_prompt(
+                timeline_final=timeline_final,
+                nsfw_profile=nsfw_profile,
+                user_name_block=user_name_block,
+                spatial_context=spatial_context,
+                state_section=state_section,
+                assunto_section=assunto_section,
+                estado_micro_section=estado_micro_section,
+                pending_event_section=pending_event_section,
+                canon_txt=canon_txt,
+                persona_text=persona_text,
+                rel_block=rel_block,
+                dynamic_rel_block=dynamic_rel_block,
+                long_memory_block=long_memory_block,
+                mary_identity_anchor=mary_identity_anchor,
+                timeline_behavior_block=timeline_behavior_block,
+                third_party_arc_rule=third_party_arc_rule,
+                behavior_block=behavior_block,
+                patterns_block=patterns_block,
+                janio_focus_rule=janio_focus_rule,
+                topic_rule=topic_rule,
+                emotional_persistence_rule=emotional_persistence_rule,
+                facts_present_rule=facts_present_rule,
+                virginity_rule=virginity_rule,
+                memory_fidelity_rule=memory_fidelity_rule,
+                user_finalizes_rule=user_finalizes_rule,
+                desvio_curto_rule=desvio_curto_rule,
+                betrayal_rule=betrayal_rule,
+                third_party_initiative_rule=third_party_initiative_rule,
+                initiative_rule=initiative_rule,
+                initiative_escalation_rule=initiative_escalation_rule,
+                continuity_rule=continuity_rule,
+                facts_integrity_rule=facts_integrity_rule,
+                priority_rule=priority_rule,
+                style_priority_rule=style_priority_rule,
+                anti_pattern_rule=anti_pattern_rule,
+                style_variation_rule=style_variation_rule,
+                anti_rumination_rule=anti_rumination_rule,
+                prose_density_rule=prose_density_rule,
+                anti_melodrama_rule=anti_melodrama_rule,
+                manipulation_block=manipulation_block,
+                intimacy_control_block=intimacy_control_block,
+                user_authorship_rule=user_authorship_rule,
+                pov_rule=pov_rule,
+                language_rule=language_rule,
+                conflict_block=conflict_block,
+                phone_message_rule=phone_message_rule,
+                nsfw_block=nsfw_block,
+                nsfw_hard_block=nsfw_hard_block,
+                intimacy_phase_rule=intimacy_phase_rule,
+                decision_pressure_rule=decision_pressure_rule,
+                reasoning_rules_txt=reasoning_rules_txt,
+            )
+        
+            messages = self._build_messages_for_turn(
+                system=system,
+                usuario_key=usuario_key,
+                shared_key=shared_key,
+                timeline_final=timeline_final,
+                prompt=prompt,
+                mem_spec=mem_spec,
+                facts=facts,
+                rel_state=rel_state,
+                tp_arc=tp_arc,
+                autonomy_block=autonomy_block,
+            )
         try:
             import json
         
