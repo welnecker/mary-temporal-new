@@ -7676,7 +7676,12 @@ class MaryService(BaseCharacter):
         # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
         # ==========================================================
         local = str(facts.get("state.local") or facts.get("cena.local") or "").strip()
-        horario = str(facts.get("state.horarios") or facts.get("state.horario") or facts.get("cena.tempo") or "").strip()
+        horario = str(
+            facts.get("state.horarios")
+            or facts.get("state.horario")
+            or facts.get("cena.tempo")
+            or ""
+        ).strip()
         roupa = str(facts.get("state.roupa") or "").strip()
         cabelo = str(facts.get("state.cabelo") or "").strip()
         assunto = str(facts.get("state.assunto") or "").strip()
@@ -7719,6 +7724,46 @@ class MaryService(BaseCharacter):
             continuity_lines.append(f"- Continuidade imediata: {continuidade_imediata}")
         if proximo_passo:
             continuity_lines.append(f"- Próximo passo plausível: {proximo_passo}")
+
+        # ==========================================================
+        # PRESENÇA FÍSICA / IDENTIDADE VISUAL
+        # ==========================================================
+        presenca_fisica_lines = [
+            "- Mary mantém uma presença física marcante e consistente.",
+            "- Seu corpo deve ser descrito com coerência visual ao longo da cena.",
+            "- Sua beleza é natural, perceptível e magnetizante, sem mudar arbitrariamente de forma ou estilo.",
+        ]
+
+        # ==========================================================
+        # CONSCIÊNCIA CORPORAL
+        # ==========================================================
+        consciencia_corporal_lines = [
+            "- Mary tem consciência do impacto da própria presença física.",
+            "- Seus gestos, postura, aproximação e olhar podem carregar intenção.",
+            "- Essa consciência aparece de forma sutil ou provocativa, conforme o contexto da cena.",
+        ]
+
+        # ==========================================================
+        # PROGRESSÃO DA INTIMIDADE
+        # ==========================================================
+        intimidade_lines = []
+        fase_intima = 0
+        try:
+            fase_intima = int(ctx.policy.get("intimacy_phase", 0)) if ctx.policy else 0
+        except Exception:
+            fase_intima = 0
+
+        intimidade_lines.append(f"- Fase atual da intimidade: {fase_intima}")
+        intimidade_lines.append("- A progressão deve ser gradual e coerente.")
+        intimidade_lines.append("- Não antecipar etapas sem construção narrativa.")
+        intimidade_lines.append("- Respeitar o ritmo emocional e físico da cena.")
+
+        if fase_intima < 2:
+            intimidade_lines.append("- Evitar avanço físico explícito ou finalização.")
+        elif fase_intima < 4:
+            intimidade_lines.append("- Permitir aproximação e intensificação progressiva, sem conclusão precoce.")
+        else:
+            intimidade_lines.append("- Permitir intensificação alta, mantendo coerência emocional e continuidade.")
 
         # ==========================================================
         # MEMÓRIAS RELEVANTES
@@ -7795,6 +7840,18 @@ class MaryService(BaseCharacter):
 
         if continuity_lines:
             parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
+
+        if janio_lines:
+            parts.append("[VÍNCULO PRINCIPAL]\n" + "\n".join(janio_lines))
+
+        if presenca_fisica_lines:
+            parts.append("[PRESENÇA FÍSICA]\n" + "\n".join(presenca_fisica_lines))
+
+        if consciencia_corporal_lines:
+            parts.append("[CONSCIÊNCIA CORPORAL]\n" + "\n".join(consciencia_corporal_lines))
+
+        if intimidade_lines:
+            parts.append("[PROGRESSÃO DA INTIMIDADE]\n" + "\n".join(intimidade_lines))
 
         if mem_lines:
             parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
