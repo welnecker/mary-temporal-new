@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import core.service_router as service_router
 
@@ -131,6 +131,26 @@ def _compact_scene_state(scene_state: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in compact.items() if v is not None and v != ""}
 
 
+def _compact_recent_turns(recent_turns: Optional[List[Dict[str, str]]], max_turns: int = 5) -> List[Dict[str, str]]:
+    turns = recent_turns if isinstance(recent_turns, list) else []
+    out: List[Dict[str, str]] = []
+
+    for t in turns[-max_turns:]:
+        if not isinstance(t, dict):
+            continue
+
+        user_msg = str(t.get("user") or "").strip()
+        mary_msg = str(t.get("mary") or "").strip()
+
+        if user_msg or mary_msg:
+            out.append({
+                "user": user_msg[:500],
+                "mary": mary_msg[:700],
+            })
+
+    return out
+
+
 def _normalize_llm_reasoning(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normaliza campos esperados para evitar surpresas no merge.
@@ -147,6 +167,9 @@ def _normalize_llm_reasoning(data: Dict[str, Any]) -> Dict[str, Any]:
         "memory_hint": "",
         "advance_bias": "",
         "delivery_bias": "",
+        "continuity_hint": "",
+        "object_focus": "",
+        "interlocutor_hint": "",
     }
 
     for k in fields:
@@ -180,6 +203,7 @@ def build_llm_reasoning(
     facts: Dict[str, Any],
     memories: List[str],
     scene_state: Dict[str, Any],
+    recent_turns: Optional[List[Dict[str, str]]] = None,
     base_reasoning: Dict[str, Any],
     max_memory_items: int = 5,
 ) -> Dict[str, Any]:
@@ -190,6 +214,7 @@ def build_llm_reasoning(
     - Não escreve a resposta final da Mary
     - Não faz roleplay
     - Não inventa fatos
+    - Não substitui a continuidade decidida pelo reasoning base
     - Só devolve um JSON curto de refinamento
     """
     model = str(model or "").strip()
@@ -202,6 +227,7 @@ def build_llm_reasoning(
 
     facts_compact = _compact_facts_for_reasoning(facts)
     scene_compact = _compact_scene_state(scene_state)
+    recent_turns_compact = _compact_recent_turns(recent_turns, max_turns=5)
     base_reasoning = base_reasoning if isinstance(base_reasoning, dict) else {}
 
     system = (
@@ -210,6 +236,8 @@ def build_llm_reasoning(
         "Você NÃO escreve a resposta final da personagem.\n"
         "Você NÃO faz roleplay.\n"
         "Você NÃO inventa fatos.\n"
+        "Você NÃO altera interlocutor, local, objeto ativo ou continuidade já decididos no reasoning base.\n"
+        "Você apenas refina tom, foco emocional, entrega e avanço.\n"
         "Responda APENAS com JSON válido."
     )
 
@@ -225,6 +253,9 @@ FACTS ESSENCIAIS:
 SCENE STATE:
 {json.dumps(scene_compact, ensure_ascii=False)}
 
+ÚLTIMAS 5 INTERAÇÕES:
+{json.dumps(recent_turns_compact, ensure_ascii=False)}
+
 MEMÓRIAS RELEVANTES:
 {json.dumps(mems, ensure_ascii=False)}
 
@@ -238,11 +269,18 @@ Retorne APENAS JSON válido com estas chaves:
 - memory_hint
 - advance_bias
 - delivery_bias
+- continuity_hint
+- object_focus
+- interlocutor_hint
 
 Regras obrigatórias:
 - respeite o reasoning base
 - respeite cena travada
 - não invente fatos
+- não troque interlocutor
+- não substitua objeto ativo
+- não mude o local da cena
+- não contradiga a continuidade_imediata
 - se houver conflito emocional, prefira contenção à aceleração
 - se houver risco alto, reduza avanço
 - seja curto e operacional
@@ -254,7 +292,7 @@ Regras obrigatórias:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        max_tokens=220,
+        max_tokens=260,
         temperature=0.2,
         top_p=0.9,
     )
@@ -275,6 +313,7 @@ def merge_reasoning(
     - base continua soberano nas regras duras
     - llm só refina intenção/entrega/tom/foco
     - não derruba campos importantes se vier vazio
+    - continuidade estrutural permanece no base
     """
     merged = dict(base or {})
     llm = llm if isinstance(llm, dict) else {}
@@ -306,10 +345,14 @@ def merge_reasoning(
         else:
             merged["advance_limit"] = advance_bias
 
+    # Guarda refinamentos sem substituir continuidade estrutural
     merged["llm_reasoning"] = {
         "tone": str(llm.get("tone") or "").strip(),
         "emotional_focus": str(llm.get("emotional_focus") or "").strip(),
         "memory_hint_refined": str(llm.get("memory_hint") or "").strip(),
+        "continuity_hint": str(llm.get("continuity_hint") or "").strip(),
+        "object_focus": str(llm.get("object_focus") or "").strip(),
+        "interlocutor_hint": str(llm.get("interlocutor_hint") or "").strip(),
     }
 
     return merged
