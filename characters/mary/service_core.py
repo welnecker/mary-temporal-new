@@ -6748,8 +6748,8 @@ Resumo:
    {nsfw_block}
    """.strip()
     
-    # 👇 MOSTRAR NA TELA
-    st.text_area("SYSTEM PROMPT", system, height=500)
+        # 👇 MOSTRAR NA TELA
+        st.text_area("SYSTEM PROMPT", system, height=500)
 
         system = (
             system.rstrip()
