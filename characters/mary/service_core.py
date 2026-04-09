@@ -7014,7 +7014,10 @@ class TurnContext:
 
     user_explicit_scene_change: bool = False
     scene_parallel: bool = False
+    
+USE_PROMPT_V2 = True
 
+class MaryService(BaseCharacter):
 
     def _resolve_turn_policy(
         self,
@@ -7185,10 +7188,6 @@ class TurnContext:
             "fidelity_mode": str(fidelity_mode or "soft"),
         }
 
-USE_PROMPT_V2 = True
-
-class MaryService(BaseCharacter):
-
     def _prepare_turn_request(
         self,
         *,
@@ -7203,21 +7202,21 @@ class MaryService(BaseCharacter):
             prompt = str(_ss_get("chat_input", "") or "").strip()
         else:
             prompt = (prompt or "").strip()
-    
+
         mem_spec = None
         prompt, mem_spec = _extract_mem_directive(prompt)
-    
+
         if (not prompt) and mem_spec:
             prompt = "Continue."
-    
+
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
         timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
             str(_ss_get("mary_timeline", "cumplice") or "cumplice")
         )
-    
+
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id, timeline_final)
-    
+
         return TurnRequest(
             user_id=user_id,
             model=model,
