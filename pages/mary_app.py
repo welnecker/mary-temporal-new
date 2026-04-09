@@ -3164,6 +3164,9 @@ def _render_sidebar() -> None:
         st.subheader("🧪 Debug técnico")
         
         # 👇 COLE AQUI
+        st.write("debug key exists:", "mary_debug_system_prompt" in st.session_state)
+        st.write("debug key len:", len(str(st.session_state.get("mary_debug_system_prompt", "") or "")))
+
         dbg = st.session_state.get("mary_debug_system_prompt", "")
         if dbg:
             st.text_area("SYSTEM PROMPT DEBUG", dbg, height=500)
