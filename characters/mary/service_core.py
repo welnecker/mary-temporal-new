@@ -6643,112 +6643,111 @@ Resumo:
         system = f"""
 [REGRAS DO SISTEMA]
 Voce esta dentro de uma cena ativa.
-   
-HIERARQUIA:
-   1 REGRAS DO SISTEMA
-   2 FACTS E CENA ATIVA
-   3 CONTINUIDADE
-   4 PSIQUE
-   5 CANON E MEMORIAS
-   6 RELACAO
-   7 PERSONA
-   8 HISTORICO RECENTE
-   9 REFINAMENTO
-   
-   PROIBICOES:
-   - Nao inventar fatos
-   - Nao teleportar
-   - Nao inventar acoes do usuario
-   
-   {language_rule}
-   {pov_rule}
-   {priority_rule}
-   {user_authorship_rule}
-   {continuity_rule}
-   {facts_integrity_rule}
-   {facts_present_rule}
-   {phone_message_rule}
-   
-   TIMELINE: {timeline_final}
-   NSFW_PROFILE: {nsfw_profile}
-   
-   {user_name_block}
-   
-   [CENA ATIVA]
-   {spatial_context}
-   {state_section}
-   {assunto_section}
-   {estado_micro_section}
-   {pending_event_section}
-   
-   {continuity_of_action_rule}
-   {action_commit_rule}
 
-   [PSIQUE]
-   {psyche_block}
-   
-   [CANON]
-   {canon_txt}
-   
-   [LONG MEMORY]
-   {long_memory_block}
-   
-   [PERSONA]
-   {persona_text}
-   {timeline_behavior_block}
-   {mary_identity_anchor}
-   
-   [RELACAO]
-   {rel_block}
-   {dynamic_rel_block}
-   {third_party_arc_rule}
-   
-   [MEMORIA E CONSISTENCIA]
-   {virginity_rule}
-   {memory_fidelity_rule}
-   {user_finalizes_rule}
-   
-   [DECISAO]
-   {decision_pressure_rule}
-   
-   [COMPORTAMENTO]
-   {behavior_block}
-   {patterns_block}
-   {janio_focus_rule}
-   {topic_rule}
-   
-   [TRAJETORIA]
-   {desvio_curto_rule}
-   {betrayal_rule}
-   {third_party_initiative_rule}
-   
-   [EMOCAO]
-   {emotional_persistence_rule}
-   
-   [INICIATIVA]
-   {initiative_rule}
-   {initiative_escalation_rule}
-   
-   [INTERACAO]
-   {manipulation_block}
-   {conflict_block}
-   
-   [CONTROLE DE PADRAO]
-   {style_priority_rule}
-   {anti_pattern_rule}
-   {anti_melodrama_rule}
-   {style_variation_rule}
-   {anti_rumination_rule}
-   {prose_density_rule}
-   
-   {conversation_style_rule}
-   {intimacy_phase_rule}
-   {intimacy_control_block}
-   {nsfw_hard_block}
-   {nsfw_block}
-   """.strip()   
-    
-        # 👇 MOSTRAR NA TELA
+HIERARQUIA:
+1 REGRAS DO SISTEMA
+2 FACTS E CENA ATIVA
+3 CONTINUIDADE
+4 PSIQUE
+5 CANON E MEMORIAS
+6 RELACAO
+7 PERSONA
+8 HISTORICO RECENTE
+9 REFINAMENTO
+
+PROIBICOES:
+- Nao inventar fatos
+- Nao teleportar
+- Nao inventar acoes do usuario
+
+{language_rule}
+{pov_rule}
+{priority_rule}
+{user_authorship_rule}
+{continuity_rule}
+{facts_integrity_rule}
+{facts_present_rule}
+{phone_message_rule}
+
+TIMELINE: {timeline_final}
+NSFW_PROFILE: {nsfw_profile}
+
+{user_name_block}
+
+[CENA ATIVA]
+{spatial_context}
+{state_section}
+{assunto_section}
+{estado_micro_section}
+{pending_event_section}
+
+{continuity_of_action_rule}
+{action_commit_rule}
+
+[PSIQUE]
+{psyche_block}
+
+[CANON]
+{canon_txt}
+
+[LONG MEMORY]
+{long_memory_block}
+
+[PERSONA]
+{persona_text}
+{timeline_behavior_block}
+{mary_identity_anchor}
+
+[RELACAO]
+{rel_block}
+{dynamic_rel_block}
+{third_party_arc_rule}
+
+[MEMORIA E CONSISTENCIA]
+{virginity_rule}
+{memory_fidelity_rule}
+{user_finalizes_rule}
+
+[DECISAO]
+{decision_pressure_rule}
+
+[COMPORTAMENTO]
+{behavior_block}
+{patterns_block}
+{janio_focus_rule}
+{topic_rule}
+
+[TRAJETORIA]
+{desvio_curto_rule}
+{betrayal_rule}
+{third_party_initiative_rule}
+
+[EMOCAO]
+{emotional_persistence_rule}
+
+[INICIATIVA]
+{initiative_rule}
+{initiative_escalation_rule}
+
+[INTERACAO]
+{manipulation_block}
+{conflict_block}
+
+[CONTROLE DE PADRAO]
+{style_priority_rule}
+{anti_pattern_rule}
+{anti_melodrama_rule}
+{style_variation_rule}
+{anti_rumination_rule}
+{prose_density_rule}
+
+{conversation_style_rule}
+{intimacy_phase_rule}
+{intimacy_control_block}
+{nsfw_hard_block}
+{nsfw_block}
+""".strip()
+
         st.text_area("SYSTEM PROMPT", system, height=500)
 
         system = (
