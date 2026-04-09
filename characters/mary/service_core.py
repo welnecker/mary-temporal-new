@@ -7670,6 +7670,7 @@ class MaryService(BaseCharacter):
         hist = (ctx.history or [])[-6:]
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
+        janio_lines = []
         llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
 
         # ==========================================================
