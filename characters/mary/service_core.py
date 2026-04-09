@@ -6748,7 +6748,8 @@ NSFW_PROFILE: {nsfw_profile}
 {nsfw_block}
 """.strip()
 
-        st.text_area("SYSTEM PROMPT", system, height=500)
+        st.warning("ENTROU EM _build_system_prompt")
+        st.code(system[:4000])
 
         system = (
             system.rstrip()
