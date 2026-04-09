@@ -7727,17 +7727,36 @@ class MaryService(BaseCharacter):
         cabelo = str(facts.get("state.cabelo") or "").strip()
         assunto = str(facts.get("state.assunto") or "").strip()
 
-        facts_lines = []
+        facts_lines = [
+            "[ESTADO FÍSICO ATUAL — OBRIGATÓRIO]",
+            "As informações abaixo descrevem a realidade presente da cena.",
+            "Mary está fisicamente neste estado agora.",
+            "A resposta DEVE respeitar e incorporar esses elementos de forma natural.",
+            "É proibido ignorar, substituir, contradizer ou trocar esses dados sem mudança explícita do usuário.",
+            "",
+        ]
+
         if local:
             facts_lines.append(f"- Local atual: {local}")
         if horario:
             facts_lines.append(f"- Momento atual: {horario}")
         if roupa:
-            facts_lines.append(f"- Roupa atual (fixa): {roupa}")
+            facts_lines.append(f"- Roupa atual: {roupa}")
         if cabelo:
-            facts_lines.append(f"- Cabelo atual (fixo): {cabelo}")
+            facts_lines.append(f"- Cabelo / aparência imediata: {cabelo}")
         if assunto:
             facts_lines.append(f"- Assunto ativo: {assunto}")
+
+        facts_lines.extend([
+            "",
+            "REGRAS DE USO DOS FACTS:",
+            "- O local deve influenciar a percepção do ambiente, da posição corporal e da lógica da cena.",
+            "- A roupa deve existir no corpo da Mary durante a resposta; não pode ser esquecida nem trocada.",
+            "- O cabelo/aparência deve permanecer coerente ao longo da cena.",
+            "- O horário/tempo deve influenciar clima, luz, urgência ou sensação de momento.",
+            "- O assunto ativo deve orientar o próximo movimento narrativo, sem teleportar a cena.",
+            "- Se a resposta ignorar esses facts, ela estará errada.",
+        ])
 
         # ==========================================================
         # CONTINUIDADE ESTRUTURAL (REASONING BASE)
@@ -7873,11 +7892,7 @@ class MaryService(BaseCharacter):
         parts = []
 
         if facts_lines:
-            parts.append(
-                "[ESTADO ATUAL - REGRAS RÍGIDAS]\n"
-                + "\n".join(facts_lines)
-                + "\n- Não alterar roupa, cabelo, local ou momento sem mudança explícita do usuário."
-            )
+            parts.append("\n".join(facts_lines).strip())
 
         if continuity_lines:
             parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
