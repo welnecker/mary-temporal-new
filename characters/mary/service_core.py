@@ -6577,6 +6577,7 @@ class MaryService(BaseCharacter):
         style_priority_rule: str,
         psyche_block: str,
     ) -> str:
+        st.error("BUILD SYSTEM PROMPT FOI CHAMADO")
     
         action_commit_rule = """
     [EXECUCAO DO ASSUNTO ATIVO]
