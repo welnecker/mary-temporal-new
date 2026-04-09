@@ -6748,9 +6748,7 @@ NSFW_PROFILE: {nsfw_profile}
 {nsfw_hard_block}
 {nsfw_block}
 """.strip()
-
-        _ss_set("mary_debug_system_prompt", system)
-
+        
         system = (
             system.rstrip()
             + "\n\n"
@@ -6758,6 +6756,8 @@ NSFW_PROFILE: {nsfw_profile}
             + "\n\n"
             + CONTROLLED_UNPREDICTABILITY
         ).strip()
+
+        _ss_set("mary_debug_system_prompt", system)
     
         return system
           
