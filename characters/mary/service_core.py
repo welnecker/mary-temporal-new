@@ -7671,55 +7671,27 @@ class MaryService(BaseCharacter):
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
         llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
-        reasoning = ctx.reasoning or {}
-    
-        estado = []
-        for label, key in [
-            ("Local", "state.local"),
-            ("Roupa", "state.roupa"),
-            ("Cabelo", "state.cabelo"),
-            ("Horário", "state.horario"),
-            ("Assunto", "state.assunto"),
-        ]:
-            val = str(facts.get(key, "") or "").strip()
-            if val:
-                estado.append(f"- {label}: {val}")
-    
-        dinamica = []
-        for label, key in [
-            ("Humor", "mood"),
-            ("Energia", "energy"),
-            ("Atitude", "attitude"),
-            ("Virginity", "virginity"),
-        ]:
-            val = str(rel.get(key, "") or "").strip()
-            if val:
-                dinamica.append(f"- {label}: {val}")
-    
-        if ctx.policy:
-            try:
-                dinamica.append(f"- Fase íntima: {int(ctx.policy.get('intimacy_phase', 0))}")
-            except Exception:
-                pass
-    
-        mem_lines = [f"- {m}" for m in memories if str(m).strip()]
-    
-        hist_lines = []
-        for m in hist:
-            role = str(m.get("role", "msg") or "msg").strip()
-            content = str(m.get("content", "") or "").strip()
-            if content:
-                hist_lines.append(f"- {role}: {content[:220]}")
-    
-        parts = []
-        if estado:
-            parts.append("[ESTADO ATUAL]\n" + "\n".join(estado))
-        if dinamica:
-            parts.append("[DINÂMICA RELACIONAL]\n" + "\n".join(dinamica))
-        if mem_lines:
-            parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
-        if hist_lines:
-            parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
+
+        # ==========================================================
+        # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
+        # ==========================================================
+        local = str(facts.get("state.local") or facts.get("cena.local") or "").strip()
+        horario = str(facts.get("state.horarios") or facts.get("state.horario") or facts.get("cena.tempo") or "").strip()
+        roupa = str(facts.get("state.roupa") or "").strip()
+        cabelo = str(facts.get("state.cabelo") or "").strip()
+        assunto = str(facts.get("state.assunto") or "").strip()
+
+        facts_lines = []
+        if local:
+            facts_lines.append(f"- Local atual: {local}")
+        if horario:
+            facts_lines.append(f"- Momento atual: {horario}")
+        if roupa:
+            facts_lines.append(f"- Roupa atual (fixa): {roupa}")
+        if cabelo:
+            facts_lines.append(f"- Cabelo atual (fixo): {cabelo}")
+        if assunto:
+            facts_lines.append(f"- Assunto ativo: {assunto}")
 
         # ==========================================================
         # CONTINUIDADE ESTRUTURAL (REASONING BASE)
@@ -7748,8 +7720,40 @@ class MaryService(BaseCharacter):
         if proximo_passo:
             continuity_lines.append(f"- Próximo passo plausível: {proximo_passo}")
 
-        if continuity_lines:
-            parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
+        # ==========================================================
+        # MEMÓRIAS RELEVANTES
+        # ==========================================================
+        mem_lines = [f"- {m}" for m in memories if str(m).strip()]
+
+        # ==========================================================
+        # DINÂMICA RELACIONAL
+        # ==========================================================
+        dinamica = []
+        for label, key in [
+            ("Humor", "mood"),
+            ("Energia", "energy"),
+            ("Atitude", "attitude"),
+            ("Virginity", "virginity"),
+        ]:
+            val = str(rel.get(key, "") or "").strip()
+            if val:
+                dinamica.append(f"- {label}: {val}")
+
+        if ctx.policy:
+            try:
+                dinamica.append(f"- Fase íntima: {int(ctx.policy.get('intimacy_phase', 0))}")
+            except Exception:
+                pass
+
+        # ==========================================================
+        # CONTEXTO RECENTE
+        # ==========================================================
+        hist_lines = []
+        for m in hist:
+            role = str(m.get("role", "msg") or "msg").strip()
+            content = str(m.get("content", "") or "").strip()
+            if content:
+                hist_lines.append(f"- {role}: {content[:220]}")
 
         # ==========================================================
         # REFINO SEMÂNTICO (LLM AUXILIAR)
@@ -7769,7 +7773,7 @@ class MaryService(BaseCharacter):
         if memory_hint_refined:
             llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
 
-        # estes 3 entram só como reforço suave, nunca como verdade soberana
+        # reforço suave, nunca soberano
         if continuity_hint:
             llm_lines.append(f"- Ajuste de continuidade: {continuity_hint}")
         if object_focus:
@@ -7777,9 +7781,33 @@ class MaryService(BaseCharacter):
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
 
+        # ==========================================================
+        # ORDEM FINAL DE PRIORIDADE
+        # ==========================================================
+        parts = []
+
+        if facts_lines:
+            parts.append(
+                "[ESTADO ATUAL - REGRAS RÍGIDAS]\n"
+                + "\n".join(facts_lines)
+                + "\n- Não alterar roupa, cabelo, local ou momento sem mudança explícita do usuário."
+            )
+
+        if continuity_lines:
+            parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
+
+        if mem_lines:
+            parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
+
+        if dinamica:
+            parts.append("[DINÂMICA RELACIONAL]\n" + "\n".join(dinamica))
+
+        if hist_lines:
+            parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
+
         if llm_lines:
             parts.append("[REFINO DE ENTREGA]\n" + "\n".join(llm_lines))
-    
+
         return "\n\n".join(parts).strip()
     
     
