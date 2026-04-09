@@ -7996,6 +7996,7 @@ class MaryService(BaseCharacter):
             fidelity_mode = str(policy.get("fidelity_mode") or "soft")
     
             reasoning = ctx.reasoning or {}
+            janio_lines = []
             llm_reasoning = ctx.llm_reasoning or {}
             active_hook = ctx.active_hook or {}
             hook_state = ctx.hook_state or {}
