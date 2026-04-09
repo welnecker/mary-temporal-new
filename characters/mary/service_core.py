@@ -9173,6 +9173,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                 tp_arc=tp_arc,
                 autonomy_block=autonomy_block,
             )
+        _ss_set("mary_debug_system_prompt", json.dumps(messages, ensure_ascii=False, indent=2))
         try:
             import json
         
