@@ -9173,9 +9173,12 @@ Conflito não substitui a narrativa — apenas tensiona.
                 tp_arc=tp_arc,
                 autonomy_block=autonomy_block,
             )
-        _ss_set("mary_debug_system_prompt", json.dumps(messages, ensure_ascii=False, indent=2))
+        
         try:
             import json
+            _ss_set("mary_debug_system_prompt", json.dumps(messages, ensure_ascii=False, indent=2))
+        except Exception:
+            _ss_set("mary_debug_system_prompt", str(messages))
         
             print("\n================ MESSAGES REAL DA MARY ================\n")
             print(json.dumps(messages, ensure_ascii=False, indent=2))
