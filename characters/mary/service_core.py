@@ -7512,7 +7512,44 @@ class MaryService(BaseCharacter):
         )
     
         facts = policy["facts"]
-    
+
+        # ==========================================================
+        # HISTÓRICO RECENTE PARA O REASONING
+        # ==========================================================
+        try:
+            history = cached_get_history(req.usuario_key, limit=10) or []
+        except Exception:
+            history = []
+
+        recent_turns: List[Dict[str, str]] = []
+        try:
+            for h in (history or [])[-5:]:
+                user_msg = str(
+                    h.get("mensagem_usuario")
+                    or h.get("user")
+                    or h.get("prompt")
+                    or h.get("content")
+                    or ""
+                ).strip()
+
+                mary_msg = str(
+                    h.get("resposta_mary")
+                    or h.get("assistant")
+                    or h.get("response")
+                    or ""
+                ).strip()
+
+                if user_msg or mary_msg:
+                    recent_turns.append({
+                        "user": user_msg,
+                        "mary": mary_msg,
+                    })
+        except Exception:
+            recent_turns = []
+
+        # ==========================================================
+        # REASONING ENGINE
+        # ==========================================================
         try:
             reasoning = build_internal_reasoning(
                 user_text=req.prompt,
@@ -7524,10 +7561,14 @@ class MaryService(BaseCharacter):
                     "acao": facts.get("cena.acao"),
                     "locked": facts.get("cena.locked"),
                 },
+                recent_turns=recent_turns,
             )
         except Exception:
             reasoning = {}
-    
+
+        # ==========================================================
+        # LLM REASONING (refino semântico)
+        # ==========================================================
         try:
             llm_reasoning = build_llm_reasoning(
                 model="x-ai/grok-4.1-fast",
@@ -7540,21 +7581,18 @@ class MaryService(BaseCharacter):
                     "acao": facts.get("cena.acao"),
                     "locked": facts.get("cena.locked"),
                 },
+                recent_turns=recent_turns,
                 base_reasoning=reasoning,
             )
         except Exception:
             llm_reasoning = {}
-    
+
         try:
             reasoning = merge_reasoning(reasoning, llm_reasoning)
         except Exception:
             pass
     
-        try:
-            history = cached_get_history(req.usuario_key, limit=10) or []
-        except Exception:
-            history = []
-    
+            
         try:
             _bump_turn_counter(req.usuario_key)
     
@@ -7631,6 +7669,9 @@ class MaryService(BaseCharacter):
         rel = ctx.rel_state or {}
         hist = (ctx.history or [])[-6:]
         memories = (ctx.long_memory_lines or [])[:5]
+        reasoning = ctx.reasoning or {}
+        llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
+        reasoning = ctx.reasoning or {}
     
         estado = []
         for label, key in [
@@ -7679,6 +7720,65 @@ class MaryService(BaseCharacter):
             parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
         if hist_lines:
             parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
+
+        # ==========================================================
+        # CONTINUIDADE ESTRUTURAL (REASONING BASE)
+        # ==========================================================
+        interlocutor = str(reasoning.get("interlocutor") or "").strip()
+        objeto_ativo = str(reasoning.get("objeto_ativo") or "").strip()
+        local_ativo = str(reasoning.get("local_ativo") or "").strip()
+        acao_em_andamento = str(reasoning.get("acao_em_andamento") or "").strip()
+        ultima_acao = str(reasoning.get("ultima_acao") or "").strip()
+        continuidade_imediata = str(reasoning.get("continuidade_imediata") or "").strip()
+        proximo_passo = str(reasoning.get("proximo_passo_plausivel") or "").strip()
+
+        continuity_lines = []
+        if local_ativo:
+            continuity_lines.append(f"- Local ativo: {local_ativo}")
+        if interlocutor:
+            continuity_lines.append(f"- Interlocutor atual: {interlocutor}")
+        if objeto_ativo:
+            continuity_lines.append(f"- Objeto ativo da cena: {objeto_ativo}")
+        if acao_em_andamento:
+            continuity_lines.append(f"- Ação em andamento: {acao_em_andamento}")
+        if ultima_acao:
+            continuity_lines.append(f"- Última ação relevante: {ultima_acao}")
+        if continuidade_imediata:
+            continuity_lines.append(f"- Continuidade imediata: {continuidade_imediata}")
+        if proximo_passo:
+            continuity_lines.append(f"- Próximo passo plausível: {proximo_passo}")
+
+        if continuity_lines:
+            parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
+
+        # ==========================================================
+        # REFINO SEMÂNTICO (LLM AUXILIAR)
+        # ==========================================================
+        tone = str(llm_reasoning.get("tone") or "").strip()
+        emotional_focus = str(llm_reasoning.get("emotional_focus") or "").strip()
+        memory_hint_refined = str(llm_reasoning.get("memory_hint_refined") or "").strip()
+        continuity_hint = str(llm_reasoning.get("continuity_hint") or "").strip()
+        object_focus = str(llm_reasoning.get("object_focus") or "").strip()
+        interlocutor_hint = str(llm_reasoning.get("interlocutor_hint") or "").strip()
+
+        llm_lines = []
+        if tone:
+            llm_lines.append(f"- Tom sugerido: {tone}")
+        if emotional_focus:
+            llm_lines.append(f"- Foco emocional: {emotional_focus}")
+        if memory_hint_refined:
+            llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
+
+        # estes 3 entram só como reforço suave, nunca como verdade soberana
+        if continuity_hint:
+            llm_lines.append(f"- Ajuste de continuidade: {continuity_hint}")
+        if object_focus:
+            llm_lines.append(f"- Foco de objeto: {object_focus}")
+        if interlocutor_hint:
+            llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
+
+        if llm_lines:
+            parts.append("[REFINO DE ENTREGA]\n" + "\n".join(llm_lines))
     
         return "\n\n".join(parts).strip()
     
