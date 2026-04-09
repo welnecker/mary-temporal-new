@@ -1,6 +1,7 @@
 # characters/mary/service_core.py
 from __future__ import annotations
 from dataclasses import dataclass, field
+from characters.mary.psyche import MaryPsyche
 
 """
 MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
@@ -6574,6 +6575,7 @@ class MaryService(BaseCharacter):
         mary_identity_anchor: str = "",
         priority_rule: str,
         style_priority_rule: str,
+        psyche_block: str,
     ) -> str:
     
         action_commit_rule = """
@@ -6643,12 +6645,15 @@ Resumo:
    Voce esta dentro de uma cena ativa.
    
    HIERARQUIA:
-   1 CENA ATIVA
-   2 REGRAS DO SISTEMA
-   3 CANON
-   4 PERSONA
-   5 MEMORIAS
-   6 HISTORICO
+   1 REGRAS DO SISTEMA
+   2 FACTS E CENA ATIVA
+   3 CONTINUIDADE
+   4 PSIQUE
+   5 CANON E MEMORIAS
+   6 RELACAO
+   7 PERSONA
+   8 HISTORICO RECENTE
+   9 REFINAMENTO
    
    PROIBICOES:
    - Nao inventar fatos
@@ -6678,6 +6683,9 @@ Resumo:
    
    {continuity_of_action_rule}
    {action_commit_rule}
+
+   [PSIQUE]
+   {psyche_block}
    
    [CANON]
    {canon_txt}
@@ -6909,6 +6917,26 @@ Resumo:
         # 4) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
         # ==========================================================
         history = cached_get_history(usuario_key, limit=6)
+
+        # ==========================================================
+        # 4.1 PSIQUE (INSERIR AQUI)
+        # ==========================================================
+        psyche_engine = MaryPsyche(timeline=timeline_final)
+        
+        psyche_state = psyche_engine.evaluate(
+            user_text=prompt,
+            global_rules={},  # você pode evoluir depois
+            facts=facts or {},
+            scene_state=scene_state or {},
+            continuity_state=continuity_state or {},
+            shared_memories=shared_memory_texts or [],
+            long_memories=long_memory_texts or [],
+            rel_state=rel_state or {},
+            persona_traits={},
+            recent_history=history or [],
+        )
+        
+        psyche_block = psyche_engine.render_prompt_block(psyche_state)
         
         style_seed = random.choice([
             "fala_primeiro",
@@ -9127,6 +9155,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                 intimacy_phase_rule=intimacy_phase_rule,
                 decision_pressure_rule=decision_pressure_rule,
                 reasoning_rules_txt=reasoning_rules_txt,
+                psyche_block=psyche_block,
             )
         
             messages = self._build_messages_for_turn(
