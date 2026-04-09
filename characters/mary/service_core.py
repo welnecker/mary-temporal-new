@@ -6749,8 +6749,7 @@ NSFW_PROFILE: {nsfw_profile}
 {nsfw_block}
 """.strip()
 
-        st.warning("ENTROU EM _build_system_prompt")
-        st.code(system[:4000])
+        _ss_set("mary_debug_system_prompt", system)
 
         system = (
             system.rstrip()
