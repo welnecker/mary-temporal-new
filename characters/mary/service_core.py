@@ -7702,6 +7702,15 @@ class MaryService(BaseCharacter):
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
         janio_lines = []
+        
+        try:
+            shared = cached_list_memories_page(ctx.req.shared_key, offset=0, limit=50) or []
+            for m in shared:
+                txt = str(m.get("text") or "").lower()
+                if "casado" in txt or "janio" in txt:
+                    janio_lines.append(str(m.get("text")))
+        except Exception:
+            pass
         llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
 
         # ==========================================================
@@ -7952,18 +7961,62 @@ class MaryService(BaseCharacter):
         system: str,
         prompt: str,
         history: List[Dict[str, Any]],
-    ) -> List[Dict[str, str]]:
+        shared_key: str,
+        usuario_key: str,
+        timeline_final: str,
+        facts: Dict[str, Any],
+    ):
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system}
         ]
     
+        dedupe_hashes: set = set()
+    
+        # 🔥 1. estado ativo (SHARED)
+        mi._inject_active_state_memories_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=8,
+            dedupe_bucket=dedupe_hashes,
+            cached_list_memories_page_fn=cached_list_memories_page,
+            normalize_timeline_fn=_normalize_timeline,
+            ss_set_fn=_ss_set,
+            ss_prefix=_SS_PREFIX,
+        )
+    
+        # 🔥 2. canon
+        mi._inject_canon_memories_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=10,
+            dedupe_bucket=dedupe_hashes,
+            cached_list_memories_page_fn=cached_list_memories_page,
+            normalize_timeline_fn=_normalize_timeline,
+            ss_set_fn=_ss_set,
+            ss_prefix=_SS_PREFIX,
+        )
+    
+        # 🔥 3. long memory (pins importantes)
+        _inject_long_memory_pins_always(
+            shared_key,
+            timeline_final,
+            messages,
+            max_items=4,
+            dedupe_bucket=dedupe_hashes,
+        )
+    
+        # 🔥 histórico curto
         for msg in (history or [])[-6:]:
             role = str(msg.get("role", "") or "").strip()
             content = str(msg.get("content", "") or "").strip()
             if role in {"user", "assistant"} and content:
                 messages.append({"role": role, "content": content})
     
+        # 🔥 prompt atual
         messages.append({"role": "user", "content": prompt})
+    
         return messages
     
     
@@ -9104,6 +9157,10 @@ Conflito não substitui a narrativa — apenas tensiona.
                 system=system,
                 prompt=_wrap_user_prompt_for_pov_guard(prompt),
                 history=history,
+                shared_key=shared_key,
+                usuario_key=usuario_key,
+                timeline_final=timeline_final,
+                facts=facts,
             )
         else:
             system = self._build_system_prompt(
