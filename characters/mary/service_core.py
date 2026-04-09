@@ -6641,10 +6641,10 @@ Resumo:
 """.strip()
     
         system = f"""
-   [REGRAS DO SISTEMA]
-   Voce esta dentro de uma cena ativa.
+[REGRAS DO SISTEMA]
+Voce esta dentro de uma cena ativa.
    
-   HIERARQUIA:
+HIERARQUIA:
    1 REGRAS DO SISTEMA
    2 FACTS E CENA ATIVA
    3 CONTINUIDADE
@@ -6746,7 +6746,7 @@ Resumo:
    {intimacy_control_block}
    {nsfw_hard_block}
    {nsfw_block}
-   """.strip()
+   """.strip()   
     
         # 👇 MOSTRAR NA TELA
         st.text_area("SYSTEM PROMPT", system, height=500)
