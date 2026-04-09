@@ -3162,6 +3162,11 @@ def _render_sidebar() -> None:
         # DEBUG TÉCNICO
         # ==========================================================
         st.subheader("🧪 Debug técnico")
+        
+        # 👇 COLE AQUI
+        dbg = st.session_state.get("mary_debug_system_prompt", "")
+        if dbg:
+            st.text_area("SYSTEM PROMPT DEBUG", dbg, height=500)
 
         if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
             res = _router_ping_once(
