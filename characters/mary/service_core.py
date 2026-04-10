@@ -6638,6 +6638,64 @@ def _normalize_reasoning_output(
 
     return r
 
+def _build_recent_turns_for_reasoning(
+    history: List[Dict[str, Any]],
+    *,
+    max_turns: int = 5,
+) -> List[Dict[str, str]]:
+    """
+    Normaliza histórico para o reasoning.
+    Só leva pares úteis de user/mary e ignora sujeira estrutural.
+    """
+    turns: List[Dict[str, str]] = []
+    if not isinstance(history, list):
+        return turns
+
+    for h in history[-max_turns:]:
+        if not isinstance(h, dict):
+            continue
+
+        user_msg = str(
+            h.get("mensagem_usuario")
+            or h.get("user")
+            or h.get("prompt")
+            or ""
+        ).strip()
+
+        mary_msg = str(
+            h.get("resposta_mary")
+            or h.get("assistant")
+            or h.get("response")
+            or ""
+        ).strip()
+
+        # fallback para formatos role/content
+        role = str(h.get("role") or "").strip().lower()
+        content = str(h.get("content") or "").strip()
+
+        if not user_msg and role == "user" and content:
+            user_msg = content
+
+        if not mary_msg and role == "assistant" and content:
+            mary_msg = content
+
+        # limpa entradas inúteis
+        if not user_msg and not mary_msg:
+            continue
+
+        # corta volume excessivo
+        if user_msg:
+            user_msg = user_msg[:1200].strip()
+        if mary_msg:
+            mary_msg = mary_msg[:1600].strip()
+
+        turns.append({
+            "user": user_msg,
+            "mary": mary_msg,
+        })
+
+    return turns
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -7674,31 +7732,36 @@ class MaryService(BaseCharacter):
         except Exception:
             history = []
 
-        recent_turns: List[Dict[str, str]] = []
         try:
-            for h in (history or [])[-5:]:
-                user_msg = str(
-                    h.get("mensagem_usuario")
-                    or h.get("user")
-                    or h.get("prompt")
-                    or h.get("content")
-                    or ""
-                ).strip()
-
-                mary_msg = str(
-                    h.get("resposta_mary")
-                    or h.get("assistant")
-                    or h.get("response")
-                    or ""
-                ).strip()
-
-                if user_msg or mary_msg:
-                    recent_turns.append({
-                        "user": user_msg,
-                        "mary": mary_msg,
-                    })
+            recent_turns = _build_recent_turns_for_reasoning(
+                history,
+                max_turns=5,
+            )
         except Exception:
             recent_turns = []
+
+        scene_state_for_reasoning = {
+            "local": (
+                (facts.get("cena") or {}).get("local")
+                if isinstance(facts.get("cena"), dict)
+                else facts.get("cena.local")
+            ),
+            "tempo": (
+                (facts.get("cena") or {}).get("tempo")
+                if isinstance(facts.get("cena"), dict)
+                else facts.get("cena.tempo")
+            ),
+            "acao": (
+                (facts.get("cena") or {}).get("acao")
+                if isinstance(facts.get("cena"), dict)
+                else facts.get("cena.acao")
+            ),
+            "locked": (
+                (facts.get("cena") or {}).get("locked")
+                if isinstance(facts.get("cena"), dict)
+                else facts.get("cena.locked")
+            ),
+        }
 
         # ==========================================================
         # REASONING ENGINE
@@ -7708,28 +7771,7 @@ class MaryService(BaseCharacter):
                 user_text=req.prompt,
                 facts=facts,
                 memories=long_memory_lines[-8:],
-                scene_state={
-                    "local": (
-                        (facts.get("cena") or {}).get("local")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.local")
-                    ),
-                    "tempo": (
-                        (facts.get("cena") or {}).get("tempo")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.tempo")
-                    ),
-                    "acao": (
-                        (facts.get("cena") or {}).get("acao")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.acao")
-                    ),
-                    "locked": (
-                        (facts.get("cena") or {}).get("locked")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.locked")
-                    ),
-                },
+                scene_state=scene_state_for_reasoning,
                 recent_turns=recent_turns,
             )
         except Exception:
@@ -7753,28 +7795,7 @@ class MaryService(BaseCharacter):
                 user_text=req.prompt,
                 facts=facts,
                 memories=long_memory_lines[-8:],
-                scene_state={
-                    "local": (
-                        (facts.get("cena") or {}).get("local")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.local")
-                    ),
-                    "tempo": (
-                        (facts.get("cena") or {}).get("tempo")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.tempo")
-                    ),
-                    "acao": (
-                        (facts.get("cena") or {}).get("acao")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.acao")
-                    ),
-                    "locked": (
-                        (facts.get("cena") or {}).get("locked")
-                        if isinstance(facts.get("cena"), dict)
-                        else facts.get("cena.locked")
-                    ),
-                },
+                scene_state=scene_state_for_reasoning,
                 recent_turns=recent_turns,
                 base_reasoning=reasoning,
             )
@@ -7794,24 +7815,41 @@ class MaryService(BaseCharacter):
             history=history,
             user_explicit_scene_change=user_explicit_scene_change,
         )
-    
-            
+
+        # ==========================================================
+        # DEBUG DO REASONING V2
+        # ==========================================================
+        try:
+            _ss_set(
+                "mary_debug_reasoning_v2",
+                {
+                    "prompt": req.prompt,
+                    "recent_turns": recent_turns,
+                    "scene_state_for_reasoning": scene_state_for_reasoning,
+                    "reasoning": reasoning,
+                    "llm_reasoning": llm_reasoning,
+                    "user_explicit_scene_change": user_explicit_scene_change,
+                },
+            )
+        except Exception:
+            pass
+
         try:
             _bump_turn_counter(req.usuario_key)
-    
+
             opportunities = collect_narrative_opportunities(
                 facts=facts,
                 rel=rel_state,
                 prompt=req.prompt,
                 timeline=req.timeline_final,
             )
-    
+
             active_hook = select_active_hook(
                 usuario_key=req.usuario_key,
                 timeline=req.timeline_final,
                 opportunities=opportunities,
             )
-    
+
             hook_state = ensure_hook_state(
                 usuario_key=req.usuario_key,
                 timeline=req.timeline_final,
@@ -7820,7 +7858,7 @@ class MaryService(BaseCharacter):
         except Exception:
             active_hook = {}
             hook_state = {}
-    
+
         return TurnContext(
             req=req,
             diag=diag,
