@@ -6789,6 +6789,8 @@ def _build_continuity_snapshot(
         or ""
     ).strip()
 
+    r = dict(reasoning or {})
+
     interlocutor = str(
         r.get("interlocutor")
         or r.get("interlocutor_hint")
