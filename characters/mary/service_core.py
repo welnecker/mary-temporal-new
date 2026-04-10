@@ -6356,6 +6356,71 @@ def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> 
     except Exception:
         pass
 
+def _maybe_advance_assunto_step(
+    *,
+    facts: Dict[str, Any],
+    reasoning: Dict[str, Any],
+    history: List[Dict[str, Any]],
+) -> None:
+    """
+    Avança automaticamente o step_index do assunto quando detecta gatilho narrativo.
+    """
+
+    assunto_obj = facts.get("assunto")
+    if not isinstance(assunto_obj, dict):
+        return
+
+    step_index = int(assunto_obj.get("step_index") or 1)
+
+    assunto_raw = str(facts.get("state.assunto") or "")
+    steps = re.split(r"\d+\-\s*", assunto_raw)
+    steps = [s.strip() for s in steps if s.strip()]
+
+    # não tem próximo passo
+    if step_index >= len(steps):
+        return
+
+    # -------------------------
+    # GATILHOS DE AVANÇO
+    # -------------------------
+
+    r = reasoning or {}
+    last_user = (history[-1]["content"] if history else "").lower()
+
+    gatilho = False
+
+    # 1. usuário mencionou próximo elemento
+    proximo_step = steps[step_index].lower()
+
+    if any(p in last_user for p in proximo_step.split()):
+        gatilho = True
+
+    # 2. reasoning detectou novo foco
+    interlocutor = str(r.get("interlocutor") or "").lower()
+    if interlocutor and interlocutor in proximo_step:
+        gatilho = True
+
+    # 3. mudança natural de cena (leve)
+    if ("olha" in last_user or "ali" in last_user) and step_index == 1:
+        gatilho = True
+
+    # -------------------------
+    # APLICA AVANÇO
+    # -------------------------
+
+    if gatilho:
+        assunto_obj["step_index"] = step_index + 1
+
+        # opcional: log debug
+        try:
+            st.session_state["mary_debug_assunto_advance"] = {
+                "old": step_index,
+                "new": step_index + 1,
+                "trigger": proximo_step
+            }
+        except Exception:
+            pass
+
 
 # ==========================================================
 # REANCORAGEM DA PERSONAGEM (evita prompt drift)
@@ -7985,6 +8050,32 @@ class MaryService(BaseCharacter):
         )
 
         # ==========================================================
+        # AVANÇO AUTOMÁTICO DO ASSUNTO (ANTES DO REFINO LLM)
+        # ==========================================================
+        try:
+            assunto_before = facts.get("assunto") if isinstance(facts.get("assunto"), dict) else {}
+            old_step = int(assunto_before.get("step_index") or 1)
+
+            _maybe_advance_assunto_step(
+                facts=facts,
+                reasoning=reasoning,
+                history=history,
+            )
+
+            assunto_after = facts.get("assunto") if isinstance(facts.get("assunto"), dict) else {}
+            new_step = int(assunto_after.get("step_index") or old_step)
+
+            if new_step != old_step:
+                set_fact_safe(
+                    req.usuario_key,
+                    "assunto",
+                    assunto_after,
+                    {"fonte": "auto_assunto_step"}
+                )
+        except Exception:
+            pass
+
+        # ==========================================================
         # LLM REASONING (refino semântico)
         # ==========================================================
         try:
@@ -8013,6 +8104,7 @@ class MaryService(BaseCharacter):
             history=history,
             user_explicit_scene_change=user_explicit_scene_change,
         )
+
         continuity_snapshot = _build_continuity_snapshot(
             reasoning,
             facts=facts,
