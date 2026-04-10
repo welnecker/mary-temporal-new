@@ -3172,9 +3172,18 @@ def _render_sidebar() -> None:
             len(str(st.session_state.get("mary_debug_system_prompt", "") or ""))
         )
 
-        dbg = st.session_state.get("mary_debug_system_prompt", "")
-        if dbg:
-            st.text_area("SYSTEM PROMPT DEBUG", dbg, height=500)
+        dbg_system = st.session_state.get("mary_debug_system_prompt", "")
+        if dbg_system:
+            st.text_area("SYSTEM PROMPT DEBUG", dbg_system, height=500)
+
+        # ======================================================
+        # DEBUG AVANÇO DE ASSUNTO
+        # ======================================================
+        dbg_assunto = st.session_state.get("mary_debug_assunto_advance")
+
+        if dbg_assunto:
+            st.markdown("### 🔄 Avanço automático de assunto")
+            st.json(dbg_assunto)
 
         # ======================================================
         # DEBUG REASONING V2
