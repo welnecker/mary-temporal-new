@@ -7701,32 +7701,52 @@ class MaryService(BaseCharacter):
         hist = (ctx.history or [])[-6:]
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
-        janio_lines = []
-        
-        try:
-            shared = cached_list_memories_page(ctx.req.shared_key, offset=0, limit=50) or []
-            for m in shared:
-                txt = str(m.get("text") or "").lower()
-                if "casado" in txt or "janio" in txt:
-                    janio_lines.append(str(m.get("text")))
-        except Exception:
-            pass
         llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
-
+    
         # ==========================================================
         # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
         # ==========================================================
-        local = str(facts.get("state.local") or facts.get("cena.local") or "").strip()
+        state_obj = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+        cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+        intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
+    
+        local = str(
+            state_obj.get("local")
+            or facts.get("state.local")
+            or cena_obj.get("local")
+            or facts.get("cena.local")
+            or facts.get("local_cena_atual")
+            or ""
+        ).strip()
+    
         horario = str(
-            facts.get("state.horarios")
+            state_obj.get("horarios")
+            or state_obj.get("horario")
+            or facts.get("state.horarios")
             or facts.get("state.horario")
+            or cena_obj.get("tempo")
             or facts.get("cena.tempo")
             or ""
         ).strip()
-        roupa = str(facts.get("state.roupa") or "").strip()
-        cabelo = str(facts.get("state.cabelo") or "").strip()
-        assunto = str(facts.get("state.assunto") or "").strip()
-
+    
+        roupa = str(
+            state_obj.get("roupa")
+            or facts.get("state.roupa")
+            or ""
+        ).strip()
+    
+        cabelo = str(
+            state_obj.get("cabelo")
+            or facts.get("state.cabelo")
+            or ""
+        ).strip()
+    
+        assunto = str(
+            state_obj.get("assunto")
+            or facts.get("state.assunto")
+            or ""
+        ).strip()
+    
         facts_lines = [
             "[ESTADO FÍSICO ATUAL — OBRIGATÓRIO]",
             "As informações abaixo descrevem a realidade presente da cena.",
@@ -7735,7 +7755,7 @@ class MaryService(BaseCharacter):
             "É proibido ignorar, substituir, contradizer ou trocar esses dados sem mudança explícita do usuário.",
             "",
         ]
-
+    
         if local:
             facts_lines.append(f"- Local atual: {local}")
         if horario:
@@ -7746,7 +7766,7 @@ class MaryService(BaseCharacter):
             facts_lines.append(f"- Cabelo / aparência imediata: {cabelo}")
         if assunto:
             facts_lines.append(f"- Assunto ativo: {assunto}")
-
+    
         facts_lines.extend([
             "",
             "REGRAS DE USO DOS FACTS:",
@@ -7756,10 +7776,15 @@ class MaryService(BaseCharacter):
             "- O horário/tempo deve influenciar clima, luz, urgência ou sensação de momento.",
             "- O assunto ativo deve orientar o próximo movimento narrativo, sem teleportar a cena.",
             "- Se a resposta ignorar esses facts, ela estará errada.",
+            "",
+            "[REGRA DE CONTINUIDADE ESPACIAL — CRÍTICA]",
+            "- A cena está fixa no local descrito acima, salvo mudança explícita do usuário.",
+            "- Se houver conflito entre facts e continuidade inferida, os facts vencem.",
+            "- Não tratar continuidade inferida como verdade soberana.",
         ])
-
+    
         # ==========================================================
-        # CONTINUIDADE ESTRUTURAL (REASONING BASE)
+        # CONTINUIDADE ESTRUTURAL (SUBORDINADA AOS FACTS)
         # ==========================================================
         interlocutor = str(reasoning.get("interlocutor") or "").strip()
         objeto_ativo = str(reasoning.get("objeto_ativo") or "").strip()
@@ -7768,8 +7793,28 @@ class MaryService(BaseCharacter):
         ultima_acao = str(reasoning.get("ultima_acao") or "").strip()
         continuidade_imediata = str(reasoning.get("continuidade_imediata") or "").strip()
         proximo_passo = str(reasoning.get("proximo_passo_plausivel") or "").strip()
-
-        continuity_lines = []
+    
+        # saneamento mínimo de campos quebrados/inúteis
+        invalid_tokens = {"se", "muda", "sim", "não", "nao", "ok", "true", "false", "none", "null"}
+    
+        if interlocutor.lower() in invalid_tokens:
+            interlocutor = ""
+    
+        if objeto_ativo.lower() in invalid_tokens:
+            objeto_ativo = ""
+    
+        if local_ativo.lower() in invalid_tokens:
+            local_ativo = ""
+    
+        # facts vencem continuidade
+        if local:
+            local_ativo = local
+    
+        continuity_lines = [
+            "Use este bloco apenas se NÃO contradizer os facts atuais.",
+            "Se houver conflito entre continuidade e facts, os facts vencem.",
+        ]
+    
         if local_ativo:
             continuity_lines.append(f"- Local ativo: {local_ativo}")
         if interlocutor:
@@ -7784,7 +7829,7 @@ class MaryService(BaseCharacter):
             continuity_lines.append(f"- Continuidade imediata: {continuidade_imediata}")
         if proximo_passo:
             continuity_lines.append(f"- Próximo passo plausível: {proximo_passo}")
-
+    
         # ==========================================================
         # PRESENÇA FÍSICA / IDENTIDADE VISUAL
         # ==========================================================
@@ -7793,7 +7838,7 @@ class MaryService(BaseCharacter):
             "- Seu corpo deve ser descrito com coerência visual ao longo da cena.",
             "- Sua beleza é natural, perceptível e magnetizante, sem mudar arbitrariamente de forma ou estilo.",
         ]
-
+    
         # ==========================================================
         # CONSCIÊNCIA CORPORAL
         # ==========================================================
@@ -7802,34 +7847,40 @@ class MaryService(BaseCharacter):
             "- Seus gestos, postura, aproximação e olhar podem carregar intenção.",
             "- Essa consciência aparece de forma sutil ou provocativa, conforme o contexto da cena.",
         ]
-
+    
         # ==========================================================
         # PROGRESSÃO DA INTIMIDADE
+        # facts vencem policy, se houver valor explícito
         # ==========================================================
-        intimidade_lines = []
         fase_intima = 0
         try:
-            fase_intima = int(ctx.policy.get("intimacy_phase", 0)) if ctx.policy else 0
+            fase_intima = int(
+                intimacy_obj.get(f"phase::{ctx.req.timeline_final}")
+                or intimacy_obj.get("phase")
+                or ctx.policy.get("intimacy_phase", 0)
+            )
         except Exception:
             fase_intima = 0
-
-        intimidade_lines.append(f"- Fase atual da intimidade: {fase_intima}")
-        intimidade_lines.append("- A progressão deve ser gradual e coerente.")
-        intimidade_lines.append("- Não antecipar etapas sem construção narrativa.")
-        intimidade_lines.append("- Respeitar o ritmo emocional e físico da cena.")
-
+    
+        intimidade_lines = [
+            f"- Fase atual da intimidade: {fase_intima}",
+            "- A progressão deve ser gradual e coerente.",
+            "- Não antecipar etapas sem construção narrativa.",
+            "- Respeitar o ritmo emocional e físico da cena.",
+        ]
+    
         if fase_intima < 2:
             intimidade_lines.append("- Evitar avanço físico explícito ou finalização.")
         elif fase_intima < 4:
             intimidade_lines.append("- Permitir aproximação e intensificação progressiva, sem conclusão precoce.")
         else:
             intimidade_lines.append("- Permitir intensificação alta, mantendo coerência emocional e continuidade.")
-
+    
         # ==========================================================
-        # MEMÓRIAS RELEVANTES
+        # MEMÓRIAS RELEVANTES (LONG MEMORY)
         # ==========================================================
         mem_lines = [f"- {m}" for m in memories if str(m).strip()]
-
+    
         # ==========================================================
         # DINÂMICA RELACIONAL
         # ==========================================================
@@ -7843,13 +7894,9 @@ class MaryService(BaseCharacter):
             val = str(rel.get(key, "") or "").strip()
             if val:
                 dinamica.append(f"- {label}: {val}")
-
-        if ctx.policy:
-            try:
-                dinamica.append(f"- Fase íntima: {int(ctx.policy.get('intimacy_phase', 0))}")
-            except Exception:
-                pass
-
+    
+        dinamica.append(f"- Fase íntima: {fase_intima}")
+    
         # ==========================================================
         # CONTEXTO RECENTE
         # ==========================================================
@@ -7859,9 +7906,10 @@ class MaryService(BaseCharacter):
             content = str(m.get("content", "") or "").strip()
             if content:
                 hist_lines.append(f"- {role}: {content[:220]}")
-
+    
         # ==========================================================
         # REFINO SEMÂNTICO (LLM AUXILIAR)
+        # também subordinado aos facts
         # ==========================================================
         tone = str(llm_reasoning.get("tone") or "").strip()
         emotional_focus = str(llm_reasoning.get("emotional_focus") or "").strip()
@@ -7869,58 +7917,58 @@ class MaryService(BaseCharacter):
         continuity_hint = str(llm_reasoning.get("continuity_hint") or "").strip()
         object_focus = str(llm_reasoning.get("object_focus") or "").strip()
         interlocutor_hint = str(llm_reasoning.get("interlocutor_hint") or "").strip()
-
-        llm_lines = []
+    
+        if interlocutor_hint.lower() in invalid_tokens:
+            interlocutor_hint = ""
+    
+        llm_lines = [
+            "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
+        ]
         if tone:
             llm_lines.append(f"- Tom sugerido: {tone}")
         if emotional_focus:
             llm_lines.append(f"- Foco emocional: {emotional_focus}")
         if memory_hint_refined:
             llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
-
-        # reforço suave, nunca soberano
         if continuity_hint:
             llm_lines.append(f"- Ajuste de continuidade: {continuity_hint}")
-        if object_focus:
+        if object_focus and object_focus.lower() not in invalid_tokens:
             llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
-
+    
         # ==========================================================
         # ORDEM FINAL DE PRIORIDADE
         # ==========================================================
         parts = []
-
+    
         if facts_lines:
             parts.append("\n".join(facts_lines).strip())
-
-        if continuity_lines:
-            parts.append("[CONTINUIDADE IMEDIATA]\n" + "\n".join(continuity_lines))
-
-        if janio_lines:
-            parts.append("[VÍNCULO PRINCIPAL]\n" + "\n".join(janio_lines))
-
+    
+        if continuity_lines and len(continuity_lines) > 2:
+            parts.append("[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n" + "\n".join(continuity_lines))
+    
         if presenca_fisica_lines:
             parts.append("[PRESENÇA FÍSICA]\n" + "\n".join(presenca_fisica_lines))
-
+    
         if consciencia_corporal_lines:
             parts.append("[CONSCIÊNCIA CORPORAL]\n" + "\n".join(consciencia_corporal_lines))
-
+    
         if intimidade_lines:
             parts.append("[PROGRESSÃO DA INTIMIDADE]\n" + "\n".join(intimidade_lines))
-
+    
         if mem_lines:
             parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
-
+    
         if dinamica:
             parts.append("[DINÂMICA RELACIONAL]\n" + "\n".join(dinamica))
-
+    
         if hist_lines:
             parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
-
-        if llm_lines:
+    
+        if llm_lines and len(llm_lines) > 1:
             parts.append("[REFINO DE ENTREGA]\n" + "\n".join(llm_lines))
-
+    
         return "\n\n".join(parts).strip()
     
     
