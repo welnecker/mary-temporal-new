@@ -6764,6 +6764,70 @@ def _build_recent_turns_for_reasoning(
 
     return turns
 
+def _build_continuity_snapshot(
+    reasoning: Dict[str, Any],
+    *,
+    facts: Dict[str, Any],
+    max_len: int = 140,
+) -> Dict[str, str]:
+    """
+    Converte o reasoning em continuidade curta e operacional.
+    Evita mini narrativa literária dentro do prompt.
+    """
+    r = dict(reasoning or {})
+    facts = facts or {}
+
+    state_obj = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+    cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+
+    local = str(
+        state_obj.get("local")
+        or facts.get("state.local")
+        or cena_obj.get("local")
+        or facts.get("cena.local")
+        or facts.get("local_cena_atual")
+        or ""
+    ).strip()
+
+    interlocutor = str(r.get("interlocutor") or "").strip()
+    objeto = str(r.get("objeto_ativo") or "").strip()
+    acao = str(r.get("acao_em_andamento") or "").strip()
+    ultima = str(r.get("ultima_acao") or "").strip()
+    proximo = str(r.get("proximo_passo_plausivel") or "").strip()
+
+    def _clean(s: str, limit: int = max_len) -> str:
+        s = str(s or "").strip()
+        if not s:
+            return ""
+        s = re.sub(r"\s+", " ", s).strip()
+        s = s[:limit].strip(" ,;:-")
+        return s
+
+    # remove narrativa longa
+    ultima = _clean(ultima, 120)
+    proximo = _clean(proximo, 120)
+
+    # neutraliza lixo comum
+    banned = {"minhas", "muda", "se", "voce", "você", "isso", "aquilo"}
+    if interlocutor.lower() in banned:
+        interlocutor = ""
+    if objeto.lower() in banned:
+        objeto = ""
+    if acao.lower() in banned:
+        acao = ""
+
+    # remove “continuidade_imediata” literária do reasoning final
+    snapshot = {
+        "local": _clean(local, 80),
+        "interlocutor": _clean(interlocutor, 40),
+        "objeto": _clean(objeto, 40),
+        "acao": _clean(acao, 40),
+        "ultima_acao": ultima,
+        "proximo_passo": proximo,
+    }
+
+    return snapshot
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -7308,6 +7372,7 @@ class TurnContext:
     req: TurnRequest
     diag: Any
 
+   
     facts: Dict[str, Any] = field(default_factory=dict)
     facts0: Dict[str, Any] = field(default_factory=dict)
 
@@ -7321,6 +7386,7 @@ class TurnContext:
     policy: Dict[str, Any] = field(default_factory=dict)
     reasoning: Dict[str, Any] = field(default_factory=dict)
     llm_reasoning: Dict[str, Any] = field(default_factory=dict)
+    continuity_snapshot: Dict[str, Any] = field(default_factory=dict)
 
     history: List[Dict[str, Any]] = field(default_factory=list)
     long_memory_lines: List[str] = field(default_factory=list)
@@ -7920,6 +7986,10 @@ class MaryService(BaseCharacter):
             history=history,
             user_explicit_scene_change=user_explicit_scene_change,
         )
+        continuity_snapshot = _build_continuity_snapshot(
+            reasoning,
+            facts=facts,
+        )
 
         # ==========================================================
         # DEBUG DO REASONING V2
@@ -7977,6 +8047,7 @@ class MaryService(BaseCharacter):
             policy=policy,
             reasoning=reasoning,
             llm_reasoning=llm_reasoning,
+            continuity_snapshot=continuity_snapshot,
             history=history,
             long_memory_lines=long_memory_lines,
             active_hook=active_hook,
@@ -8091,6 +8162,8 @@ class MaryService(BaseCharacter):
             "- O horário/tempo deve influenciar clima, luz, urgência ou sensação de momento.",
             "- O assunto ativo deve orientar o próximo movimento narrativo, sem teleportar a cena.",
             "- Se a resposta ignorar esses facts, ela estará errada.",
+            "- Não re-descrever calor, suor, vento, luz ou ambiente se isso já estiver estabelecido.",
+            "- Se houver interação direta, priorize fala antes de nova descrição do cenário.",
             "",
             "[REGRA DE CONTINUIDADE ESPACIAL — CRÍTICA]",
             "- A cena está fixa no local descrito acima, salvo mudança explícita do usuário.",
@@ -8101,29 +8174,14 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # CONTINUIDADE ESTRUTURAL (SUBORDINADA AOS FACTS)
         # ==========================================================
-        interlocutor = str(reasoning.get("interlocutor") or "").strip()
-        objeto_ativo = str(reasoning.get("objeto_ativo") or "").strip()
-        local_ativo = str(reasoning.get("local_ativo") or "").strip()
-        acao_em_andamento = str(reasoning.get("acao_em_andamento") or "").strip()
-        ultima_acao = str(reasoning.get("ultima_acao") or "").strip()
-        continuidade_imediata = str(reasoning.get("continuidade_imediata") or "").strip()
-        proximo_passo = str(reasoning.get("proximo_passo_plausivel") or "").strip()
+        snap = ctx.continuity_snapshot or {}
     
-        # saneamento mínimo de campos quebrados/inúteis
-        invalid_tokens = {"se", "muda", "sim", "não", "nao", "ok", "true", "false", "none", "null"}
-    
-        if interlocutor.lower() in invalid_tokens:
-            interlocutor = ""
-    
-        if objeto_ativo.lower() in invalid_tokens:
-            objeto_ativo = ""
-    
-        if local_ativo.lower() in invalid_tokens:
-            local_ativo = ""
-    
-        # facts vencem continuidade
-        if local:
-            local_ativo = local
+        local_ativo = str(snap.get("local") or "").strip()
+        interlocutor = str(snap.get("interlocutor") or "").strip()
+        objeto_ativo = str(snap.get("objeto") or "").strip()
+        acao_em_andamento = str(snap.get("acao") or "").strip()
+        ultima_acao = str(snap.get("ultima_acao") or "").strip()
+        proximo_passo = str(snap.get("proximo_passo") or "").strip()
     
         continuity_lines = [
             "Use este bloco apenas se NÃO contradizer os facts atuais.",
@@ -8133,15 +8191,13 @@ class MaryService(BaseCharacter):
         if local_ativo:
             continuity_lines.append(f"- Local ativo: {local_ativo}")
         if interlocutor:
-            continuity_lines.append(f"- Interlocutor atual: {interlocutor}")
+            continuity_lines.append(f"- Foco de interlocução atual: {interlocutor}")
         if objeto_ativo and objeto_ativo.lower() not in {"banco", "carro"}:
-            continuity_lines.append(f"- Objeto ativo da cena: {objeto_ativo}")
+            continuity_lines.append(f"- Objeto em uso: {objeto_ativo}")
         if acao_em_andamento:
             continuity_lines.append(f"- Ação em andamento: {acao_em_andamento}")
         if ultima_acao:
             continuity_lines.append(f"- Última ação relevante: {ultima_acao}")
-        if continuidade_imediata:
-            continuity_lines.append(f"- Continuidade imediata: {continuidade_imediata}")
         if proximo_passo:
             continuity_lines.append(f"- Próximo passo plausível: {proximo_passo}")
     
@@ -8242,11 +8298,9 @@ class MaryService(BaseCharacter):
         if tone:
             llm_lines.append(f"- Tom sugerido: {tone}")
         if emotional_focus:
-            llm_lines.append(f"- Foco emocional: {emotional_focus}")
+            llm_lines.append(f"- Clima emocional: {str(emotional_focus)[:60]}")
         if memory_hint_refined:
-            llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
-        if continuity_hint:
-            llm_lines.append(f"- Ajuste de continuidade: {continuity_hint}")
+            llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")        
         if object_focus and object_focus.lower() not in invalid_tokens:
             llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
