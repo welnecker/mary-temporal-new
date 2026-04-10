@@ -3158,7 +3158,7 @@ def _render_sidebar() -> None:
 
         st.markdown("---")
 
-                # ==========================================================
+        # ==========================================================
         # DEBUG TÉCNICO
         # ==========================================================
         st.subheader("🧪 Debug técnico")
@@ -3205,9 +3205,11 @@ def _render_sidebar() -> None:
                     st.markdown("**LLM reasoning (refino)**")
                     st.json(dbg_reasoning.get("llm_reasoning") or {})
 
+                    st.markdown("**Continuity snapshot**")
+                    st.json(dbg_reasoning.get("continuity_snapshot") or {})
+
                 except Exception as e:
                     st.error(f"Erro ao renderizar debug reasoning: {e}")
-                    
 
         if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
             res = _router_ping_once(
