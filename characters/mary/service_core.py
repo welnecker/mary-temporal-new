@@ -8123,8 +8123,7 @@ class MaryService(BaseCharacter):
         intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
     
         local = str(
-            r.get("local_ativo")
-            or state_obj.get("local")
+            state_obj.get("local")
             or facts.get("state.local")
             or cena_obj.get("local")
             or facts.get("cena.local")
@@ -8202,19 +8201,19 @@ class MaryService(BaseCharacter):
         # CONTINUIDADE ESTRUTURAL (SUBORDINADA AOS FACTS)
         # ==========================================================
         snap = ctx.continuity_snapshot or {}
-    
+        
         local_ativo = str(snap.get("local") or "").strip()
         interlocutor = str(snap.get("interlocutor") or "").strip()
         objeto_ativo = str(snap.get("objeto") or "").strip()
         acao_em_andamento = str(snap.get("acao") or "").strip()
         ultima_acao = str(snap.get("ultima_acao") or "").strip()
         proximo_passo = str(snap.get("proximo_passo") or "").strip()
-    
+        
         continuity_lines = [
             "Use este bloco apenas se NÃO contradizer os facts atuais.",
             "Se houver conflito entre continuidade e facts, os facts vencem.",
         ]
-    
+        
         if local_ativo:
             continuity_lines.append(f"- Local ativo: {local_ativo}")
         if interlocutor:
@@ -8320,15 +8319,15 @@ class MaryService(BaseCharacter):
             interlocutor_hint = ""
     
         llm_lines = [
-            "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
+    "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
         ]
         if tone:
             llm_lines.append(f"- Tom sugerido: {tone}")
         if emotional_focus:
             llm_lines.append(f"- Clima emocional: {str(emotional_focus)[:60]}")
         if memory_hint_refined:
-            llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")        
-        if object_focus and object_focus.lower() not in invalid_tokens:
+            llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
+        if object_focus and object_focus.lower() not in {"banco", "carro"}:
             llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
