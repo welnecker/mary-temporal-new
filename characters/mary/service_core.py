@@ -8113,7 +8113,15 @@ class MaryService(BaseCharacter):
         hist = (ctx.history or [])[-6:]
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
-        llm_reasoning = ctx.llm_reasoning or {}
+        janio_lines = []
+        llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
+
+        invalid_tokens = {
+            "se", "muda", "sim", "não", "nao", "ok", "true", "false",
+            "none", "null", "ele", "ela", "isso", "aquilo", "ali", "aqui",
+            "minhas", "meus", "minha", "meu", "seus", "suas", "seu", "sua",
+            "o", "a", "os", "as", "um", "uma"
+        }
     
         # ==========================================================
         # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
