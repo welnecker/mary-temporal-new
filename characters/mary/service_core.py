@@ -6621,7 +6621,7 @@ def _normalize_reasoning_output(
         local_ativo = str(r.get("local_ativo") or "").strip()
         if (
             not local_ativo
-            or local_ativo.lower() in invalid_tokens
+            or local_ativo.lower() in INVALID_TOKENS
             or len(local_ativo) <= 2
         ):
             r.pop("local_ativo", None)
