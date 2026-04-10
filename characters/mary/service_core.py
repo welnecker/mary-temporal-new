@@ -6530,6 +6530,7 @@ def _normalize_reasoning_output(
     - local antigo sobrescrever facts atuais
     - objeto/ação velhos sobreviverem após mudança explícita de cena
     - continuidade imediata virar um segundo prompt dentro do prompt
+    - manter 'Você' apenas como fallback válido, nunca acima de nome próprio
     """
     r = dict(reasoning or {})
     facts = facts or {}
@@ -6553,20 +6554,13 @@ def _normalize_reasoning_output(
         "o", "a", "os", "as", "um", "uma"
     }
 
+    allowed_names = {"Anthony", "Janio", "Silvia"}
+
     # ------------------------------------------------------
-    # 1) interlocutor: saneia e tenta inferir melhor
+    # 1) interlocutor: nome próprio vence; "Você" é fallback
     # ------------------------------------------------------
     interlocutor = str(r.get("interlocutor") or "").strip()
 
-    if (
-        not interlocutor
-        or interlocutor.lower() in invalid_tokens
-        or len(interlocutor) <= 2
-        or not re.match(r"^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+$", interlocutor)
-    ):
-        interlocutor = ""
-
-    # tenta inferir do prompt atual
     prompt_names = re.findall(
         r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b",
         str(prompt or "")
@@ -6578,31 +6572,39 @@ def _normalize_reasoning_output(
         }
     ]
 
-    if not interlocutor and prompt_names:
-        interlocutor = prompt_names[0]
+    hist_blob = " ".join(
+        str(h.get("user") or h.get("mensagem_usuario") or h.get("content") or "")
+        + " "
+        + str(h.get("mary") or h.get("resposta_mary") or "")
+        for h in (history or [])[-4:]
+    )
 
-    # fallback pelo histórico recente
-    if not interlocutor:
-        hist_blob = " ".join(
-            str(h.get("user") or h.get("mensagem_usuario") or h.get("content") or "")
-            + " "
-            + str(h.get("mary") or h.get("resposta_mary") or "")
-            for h in (history or [])[-4:]
-        )
+    hist_names = re.findall(
+        r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b",
+        hist_blob
+    )
+    hist_names = [
+        n for n in hist_names
+        if n.lower() not in {
+            "eu", "me", "mary", "minhas", "meus", "minha", "meu"
+        }
+    ]
 
-        hist_names = re.findall(
-            r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b",
-            hist_blob
-        )
-        hist_names = [
-            n for n in hist_names
-            if n.lower() not in {
-                "eu", "me", "mary", "minhas", "meus", "minha", "meu"
-            }
-        ]
+    explicit_names = [n for n in (prompt_names + hist_names) if n in allowed_names]
 
-        if hist_names:
-            interlocutor = hist_names[-1]
+    if explicit_names:
+        interlocutor = explicit_names[0]
+
+    elif interlocutor in {"Você", "Voce", "você", "voce"}:
+        interlocutor = "Você"
+
+    elif (
+        not interlocutor
+        or interlocutor.lower() in invalid_tokens
+        or len(interlocutor) <= 2
+        or not re.match(r"^[A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç]+$", interlocutor)
+    ):
+        interlocutor = ""
 
     if interlocutor:
         r["interlocutor"] = interlocutor
@@ -6624,7 +6626,7 @@ def _normalize_reasoning_output(
             r.pop("local_ativo", None)
 
     # ------------------------------------------------------
-    # 3) objeto ativo: remove objetos muito pegajosos ou lixo
+    # 3) objeto ativo: remove objetos pegajosos ou lixo
     # ------------------------------------------------------
     objeto_ativo = str(r.get("objeto_ativo") or "").strip()
     sticky_objects = {"banco", "carro"}
@@ -6639,7 +6641,7 @@ def _normalize_reasoning_output(
 
     # ------------------------------------------------------
     # 4) se o usuário mudou a cena explicitamente,
-    #    zera a continuidade velha
+    #    zera continuidade velha
     # ------------------------------------------------------
     if user_explicit_scene_change:
         r["local_ativo"] = current_local or str(r.get("local_ativo") or "").strip()
@@ -6656,15 +6658,19 @@ def _normalize_reasoning_output(
     # ------------------------------------------------------
     continuidade_imediata = str(r.get("continuidade_imediata") or "").strip()
     if continuidade_imediata:
-        continuidade_imediata = continuidade_imediata[:500].strip()
+        continuidade_imediata = continuidade_imediata[:260].strip()
 
-        if current_local and _t_norm(current_local) not in _t_norm(continuidade_imediata):
-            if user_explicit_scene_change:
-                r.pop("continuidade_imediata", None)
+        bad_cont_tokens = {"minhas", "muda", "se"}
+        if any(tok in _t_norm(continuidade_imediata).split() for tok in bad_cont_tokens):
+            r.pop("continuidade_imediata", None)
+        else:
+            if current_local and _t_norm(current_local) not in _t_norm(continuidade_imediata):
+                if user_explicit_scene_change:
+                    r.pop("continuidade_imediata", None)
+                else:
+                    r["continuidade_imediata"] = continuidade_imediata
             else:
                 r["continuidade_imediata"] = continuidade_imediata
-        else:
-            r["continuidade_imediata"] = continuidade_imediata
 
     # ------------------------------------------------------
     # 6) ação em andamento: saneamento
@@ -6680,11 +6686,23 @@ def _normalize_reasoning_output(
     # 7) próximo passo plausível: evita reabrir cena velha
     # ------------------------------------------------------
     proximo_passo = str(r.get("proximo_passo_plausivel") or "").strip()
-    if user_explicit_scene_change and proximo_passo:
-        if any(x in _t_norm(proximo_passo) for x in ["orla", "pier", "banco", "sorveteria"]):
+    if proximo_passo:
+        proximo_passo = proximo_passo[:220].strip()
+
+        bad_step_tokens = {"minhas", "se", "muda"}
+        if any(tok in _t_norm(proximo_passo).split() for tok in bad_step_tokens):
+            r["proximo_passo_plausivel"] = (
+                "responder ao interlocutor atual sem quebrar facts nem continuidade"
+            )
+        elif user_explicit_scene_change and any(
+            x in _t_norm(proximo_passo)
+            for x in ["orla", "pier", "banco", "sorveteria"]
+        ):
             r["proximo_passo_plausivel"] = (
                 "reagir ao ambiente atual e ao convite sem reabrir a cena anterior"
             )
+        else:
+            r["proximo_passo_plausivel"] = proximo_passo
 
     return r
 
