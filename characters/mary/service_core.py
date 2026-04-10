@@ -88,6 +88,13 @@ import core.service_router as service_router
 
 logger = logging.getLogger(__name__)
 
+INVALID_TOKENS = {
+    "se", "muda", "sim", "não", "nao", "ok", "true", "false",
+    "none", "null", "ele", "ela", "isso", "aquilo", "ali", "aqui",
+    "minhas", "meus", "minha", "meu", "seus", "suas", "seu", "sua",
+    "o", "a", "os", "as", "um", "uma"
+}
+
 # ==========================================================
 # TERMOS CONFIGURÁVEIS / DOMÍNIO NARRATIVO
 # ==========================================================
@@ -6547,13 +6554,7 @@ def _normalize_reasoning_output(
         or ""
     ).strip()
 
-    invalid_tokens = {
-        "se", "muda", "sim", "não", "nao", "ok", "true", "false",
-        "none", "null", "ele", "ela", "isso", "aquilo", "ali", "aqui",
-        "minhas", "meus", "minha", "meu", "seus", "suas", "seu", "sua",
-        "o", "a", "os", "as", "um", "uma"
-    }
-
+    
     allowed_names = {"Anthony", "Janio", "Silvia"}
 
     # ------------------------------------------------------
@@ -6600,7 +6601,7 @@ def _normalize_reasoning_output(
 
     elif (
         not interlocutor
-        or interlocutor.lower() in invalid_tokens
+        or interlocutor.lower() in INVALID_TOKENS
         or len(interlocutor) <= 2
         or not re.match(r"^[A-ZÁÉÍÓÚÂÊÔÃÕÇa-záéíóúâêôãõç]+$", interlocutor)
     ):
@@ -6633,7 +6634,7 @@ def _normalize_reasoning_output(
 
     if (
         not objeto_ativo
-        or objeto_ativo.lower() in invalid_tokens
+        or objeto_ativo.lower() in INVALID_TOKENS
         or len(objeto_ativo) <= 2
         or objeto_ativo.lower() in sticky_objects
     ):
@@ -6678,7 +6679,7 @@ def _normalize_reasoning_output(
     acao_em_andamento = str(r.get("acao_em_andamento") or "").strip()
     if (
         not acao_em_andamento
-        or acao_em_andamento.lower() in invalid_tokens
+        or acao_em_andamento.lower() in INVALID_TOKENS
     ):
         r.pop("acao_em_andamento", None)
 
@@ -8115,14 +8116,7 @@ class MaryService(BaseCharacter):
         reasoning = ctx.reasoning or {}
         janio_lines = []
         llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
-
-        invalid_tokens = {
-            "se", "muda", "sim", "não", "nao", "ok", "true", "false",
-            "none", "null", "ele", "ela", "isso", "aquilo", "ali", "aqui",
-            "minhas", "meus", "minha", "meu", "seus", "suas", "seu", "sua",
-            "o", "a", "os", "as", "um", "uma"
-        }
-    
+            
         # ==========================================================
         # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
         # ==========================================================
@@ -8323,7 +8317,7 @@ class MaryService(BaseCharacter):
         object_focus = str(llm_reasoning.get("object_focus") or "").strip()
         interlocutor_hint = str(llm_reasoning.get("interlocutor_hint") or "").strip()
     
-        if interlocutor_hint.lower() in invalid_tokens:
+        if interlocutor_hint.lower() in INVALID_TOKENS:
             interlocutor_hint = ""
     
         llm_lines = [
