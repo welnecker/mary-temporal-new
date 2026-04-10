@@ -6526,9 +6526,10 @@ def _normalize_reasoning_output(
 ) -> Dict[str, Any]:
     """
     Corrige o reasoning bruto para não deixar:
-    - interlocutor inválido (ex: 'Se', 'Muda')
+    - interlocutor inválido (ex: 'Se', 'Muda', 'Minhas')
     - local antigo sobrescrever facts atuais
     - objeto/ação velhos sobreviverem após mudança explícita de cena
+    - continuidade imediata virar um segundo prompt dentro do prompt
     """
     r = dict(reasoning or {})
     facts = facts or {}
@@ -6546,19 +6547,36 @@ def _normalize_reasoning_output(
     ).strip()
 
     invalid_tokens = {
-        "se", "muda", "sim", "não", "nao", "ok", "true", "false", "none", "null",
-        "ele", "ela", "isso", "aquilo", "alí", "ali", "aqui"
+        "se", "muda", "sim", "não", "nao", "ok", "true", "false",
+        "none", "null", "ele", "ela", "isso", "aquilo", "ali", "aqui",
+        "minhas", "meus", "minha", "meu", "seus", "suas", "seu", "sua",
+        "o", "a", "os", "as", "um", "uma"
     }
 
     # ------------------------------------------------------
-    # 1) interlocutor: sanitiza e tenta inferir do prompt
+    # 1) interlocutor: saneia e tenta inferir melhor
     # ------------------------------------------------------
     interlocutor = str(r.get("interlocutor") or "").strip()
-    if interlocutor.lower() in invalid_tokens or len(interlocutor) <= 2:
+
+    if (
+        not interlocutor
+        or interlocutor.lower() in invalid_tokens
+        or len(interlocutor) <= 2
+        or not re.match(r"^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+$", interlocutor)
+    ):
         interlocutor = ""
 
-    prompt_names = re.findall(r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b", str(prompt or ""))
-    prompt_names = [n for n in prompt_names if n.lower() not in {"eu", "me", "mary"}]
+    # tenta inferir do prompt atual
+    prompt_names = re.findall(
+        r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b",
+        str(prompt or "")
+    )
+    prompt_names = [
+        n for n in prompt_names
+        if n.lower() not in {
+            "eu", "me", "mary", "minhas", "meus", "minha", "meu"
+        }
+    ]
 
     if not interlocutor and prompt_names:
         interlocutor = prompt_names[0]
@@ -6571,8 +6589,18 @@ def _normalize_reasoning_output(
             + str(h.get("mary") or h.get("resposta_mary") or "")
             for h in (history or [])[-4:]
         )
-        hist_names = re.findall(r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b", hist_blob)
-        hist_names = [n for n in hist_names if n.lower() not in {"eu", "me", "mary"}]
+
+        hist_names = re.findall(
+            r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b",
+            hist_blob
+        )
+        hist_names = [
+            n for n in hist_names
+            if n.lower() not in {
+                "eu", "me", "mary", "minhas", "meus", "minha", "meu"
+            }
+        ]
+
         if hist_names:
             interlocutor = hist_names[-1]
 
@@ -6588,14 +6616,25 @@ def _normalize_reasoning_output(
         r["local_ativo"] = current_local
     else:
         local_ativo = str(r.get("local_ativo") or "").strip()
-        if local_ativo.lower() in invalid_tokens:
+        if (
+            not local_ativo
+            or local_ativo.lower() in invalid_tokens
+            or len(local_ativo) <= 2
+        ):
             r.pop("local_ativo", None)
 
     # ------------------------------------------------------
-    # 3) objeto ativo: saneia lixo
+    # 3) objeto ativo: remove objetos muito pegajosos ou lixo
     # ------------------------------------------------------
     objeto_ativo = str(r.get("objeto_ativo") or "").strip()
-    if objeto_ativo.lower() in invalid_tokens or len(objeto_ativo) <= 2:
+    sticky_objects = {"banco", "carro"}
+
+    if (
+        not objeto_ativo
+        or objeto_ativo.lower() in invalid_tokens
+        or len(objeto_ativo) <= 2
+        or objeto_ativo.lower() in sticky_objects
+    ):
         r.pop("objeto_ativo", None)
 
     # ------------------------------------------------------
@@ -6608,33 +6647,44 @@ def _normalize_reasoning_output(
         r.pop("objeto_ativo", None)
         r.pop("continuidade_imediata", None)
         r.pop("ultima_acao", None)
-        r["proximo_passo_plausivel"] = "reagir ao novo local e à mudança de cena sem recontar a cena anterior"
+        r["proximo_passo_plausivel"] = (
+            "reagir ao novo local e à mudança de cena sem recontar a cena anterior"
+        )
 
     # ------------------------------------------------------
-    # 5) evita continuidade velha virar soberana
+    # 5) continuidade imediata: encurta e impede conflito com facts
     # ------------------------------------------------------
     continuidade_imediata = str(r.get("continuidade_imediata") or "").strip()
     if continuidade_imediata:
-        # se a continuidade menciona local antigo e facts já mudaram, remove
+        continuidade_imediata = continuidade_imediata[:500].strip()
+
         if current_local and _t_norm(current_local) not in _t_norm(continuidade_imediata):
-            # só mantém se não houver mudança explícita
             if user_explicit_scene_change:
                 r.pop("continuidade_imediata", None)
+            else:
+                r["continuidade_imediata"] = continuidade_imediata
+        else:
+            r["continuidade_imediata"] = continuidade_imediata
 
     # ------------------------------------------------------
     # 6) ação em andamento: saneamento
     # ------------------------------------------------------
     acao_em_andamento = str(r.get("acao_em_andamento") or "").strip()
-    if acao_em_andamento.lower() in invalid_tokens:
+    if (
+        not acao_em_andamento
+        or acao_em_andamento.lower() in invalid_tokens
+    ):
         r.pop("acao_em_andamento", None)
 
     # ------------------------------------------------------
-    # 7) próximo passo plausível: não deixar repetir cena velha
+    # 7) próximo passo plausível: evita reabrir cena velha
     # ------------------------------------------------------
     proximo_passo = str(r.get("proximo_passo_plausivel") or "").strip()
     if user_explicit_scene_change and proximo_passo:
         if any(x in _t_norm(proximo_passo) for x in ["orla", "pier", "banco", "sorveteria"]):
-            r["proximo_passo_plausivel"] = "reagir ao ambiente atual e ao convite sem reabrir a cena anterior"
+            r["proximo_passo_plausivel"] = (
+                "reagir ao ambiente atual e ao convite sem reabrir a cena anterior"
+            )
 
     return r
 
@@ -8029,7 +8079,7 @@ class MaryService(BaseCharacter):
             continuity_lines.append(f"- Local ativo: {local_ativo}")
         if interlocutor:
             continuity_lines.append(f"- Interlocutor atual: {interlocutor}")
-        if objeto_ativo:
+        if objeto_ativo and objeto_ativo.lower() not in {"banco", "carro"}:
             continuity_lines.append(f"- Objeto ativo da cena: {objeto_ativo}")
         if acao_em_andamento:
             continuity_lines.append(f"- Ação em andamento: {acao_em_andamento}")
