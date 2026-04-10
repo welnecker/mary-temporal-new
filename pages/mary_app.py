@@ -3158,18 +3158,56 @@ def _render_sidebar() -> None:
 
         st.markdown("---")
 
-        # ==========================================================
+                # ==========================================================
         # DEBUG TÉCNICO
         # ==========================================================
         st.subheader("🧪 Debug técnico")
         
-        # 👇 COLE AQUI
+        # ======================================================
+        # DEBUG SYSTEM PROMPT
+        # ======================================================
         st.write("debug key exists:", "mary_debug_system_prompt" in st.session_state)
-        st.write("debug key len:", len(str(st.session_state.get("mary_debug_system_prompt", "") or "")))
+        st.write(
+            "debug key len:",
+            len(str(st.session_state.get("mary_debug_system_prompt", "") or ""))
+        )
 
         dbg = st.session_state.get("mary_debug_system_prompt", "")
         if dbg:
             st.text_area("SYSTEM PROMPT DEBUG", dbg, height=500)
+
+        # ======================================================
+        # DEBUG REASONING V2
+        # ======================================================
+        st.write("reasoning key exists:", "mary_debug_reasoning_v2" in st.session_state)
+
+        dbg_reasoning = st.session_state.get("mary_debug_reasoning_v2")
+
+        if dbg_reasoning:
+            with st.expander("🧠 Reasoning V2 normalizado", expanded=False):
+
+                try:
+                    st.markdown("**Prompt atual**")
+                    st.code(str(dbg_reasoning.get("prompt") or "")[:500])
+
+                    st.markdown("**Mudança explícita de cena**")
+                    st.write(dbg_reasoning.get("user_explicit_scene_change"))
+
+                    st.markdown("**Scene state usado no reasoning**")
+                    st.json(dbg_reasoning.get("scene_state_for_reasoning") or {})
+
+                    st.markdown("**Recent turns usados**")
+                    st.json(dbg_reasoning.get("recent_turns") or [])
+
+                    st.markdown("**Reasoning final (após normalização)**")
+                    st.json(dbg_reasoning.get("reasoning") or {})
+
+                    st.markdown("**LLM reasoning (refino)**")
+                    st.json(dbg_reasoning.get("llm_reasoning") or {})
+
+                except Exception as e:
+                    st.error(f"Erro ao renderizar debug reasoning: {e}")
+                    
 
         if st.button("🛰️ Ping agora (router)", key="btn_ping_router_now"):
             res = _router_ping_once(
