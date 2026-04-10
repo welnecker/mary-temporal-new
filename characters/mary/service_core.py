@@ -6789,12 +6789,36 @@ def _build_continuity_snapshot(
         or ""
     ).strip()
 
-    interlocutor = str(r.get("interlocutor") or "").strip()
-    objeto = str(r.get("objeto_ativo") or "").strip()
-    acao = str(r.get("acao_em_andamento") or "").strip()
-    ultima = str(r.get("ultima_acao") or "").strip()
-    proximo = str(r.get("proximo_passo_plausivel") or "").strip()
-
+    interlocutor = str(
+        r.get("interlocutor")
+        or r.get("interlocutor_hint")
+        or (r.get("llm_reasoning") or {}).get("interlocutor_hint")
+        or ""
+    ).strip()
+    
+    objeto = str(
+        r.get("objeto_ativo")
+        or r.get("object_focus")
+        or (r.get("llm_reasoning") or {}).get("object_focus")
+        or ""
+    ).strip()
+    
+    acao = str(
+        r.get("acao_em_andamento")
+        or ""
+    ).strip()
+    
+    ultima = str(
+        r.get("ultima_acao")
+        or ""
+    ).strip()
+    
+    proximo = str(
+        r.get("proximo_passo_plausivel")
+        or r.get("continuity_hint")
+        or (r.get("llm_reasoning") or {}).get("continuity_hint")
+        or ""
+    ).strip()
     def _clean(s: str, limit: int = max_len) -> str:
         s = str(s or "").strip()
         if not s:
@@ -8097,7 +8121,8 @@ class MaryService(BaseCharacter):
         intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
     
         local = str(
-            state_obj.get("local")
+            r.get("local_ativo")
+            or state_obj.get("local")
             or facts.get("state.local")
             or cena_obj.get("local")
             or facts.get("cena.local")
