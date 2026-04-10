@@ -6516,6 +6516,128 @@ REGRAS DE CONTINUIDADE:
 - O próximo texto deve partir da consequência do estado atual, não do início da ação.
 """.strip()
 
+def _normalize_reasoning_output(
+    reasoning: Dict[str, Any],
+    *,
+    facts: Dict[str, Any],
+    prompt: str,
+    history: List[Dict[str, Any]],
+    user_explicit_scene_change: bool,
+) -> Dict[str, Any]:
+    """
+    Corrige o reasoning bruto para não deixar:
+    - interlocutor inválido (ex: 'Se', 'Muda')
+    - local antigo sobrescrever facts atuais
+    - objeto/ação velhos sobreviverem após mudança explícita de cena
+    """
+    r = dict(reasoning or {})
+    facts = facts or {}
+
+    state_obj = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+    cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+
+    current_local = str(
+        state_obj.get("local")
+        or facts.get("state.local")
+        or cena_obj.get("local")
+        or facts.get("cena.local")
+        or facts.get("local_cena_atual")
+        or ""
+    ).strip()
+
+    invalid_tokens = {
+        "se", "muda", "sim", "não", "nao", "ok", "true", "false", "none", "null",
+        "ele", "ela", "isso", "aquilo", "alí", "ali", "aqui"
+    }
+
+    # ------------------------------------------------------
+    # 1) interlocutor: sanitiza e tenta inferir do prompt
+    # ------------------------------------------------------
+    interlocutor = str(r.get("interlocutor") or "").strip()
+    if interlocutor.lower() in invalid_tokens or len(interlocutor) <= 2:
+        interlocutor = ""
+
+    prompt_names = re.findall(r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b", str(prompt or ""))
+    prompt_names = [n for n in prompt_names if n.lower() not in {"eu", "me", "mary"}]
+
+    if not interlocutor and prompt_names:
+        interlocutor = prompt_names[0]
+
+    # fallback pelo histórico recente
+    if not interlocutor:
+        hist_blob = " ".join(
+            str(h.get("user") or h.get("mensagem_usuario") or h.get("content") or "")
+            + " "
+            + str(h.get("mary") or h.get("resposta_mary") or "")
+            for h in (history or [])[-4:]
+        )
+        hist_names = re.findall(r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+\b", hist_blob)
+        hist_names = [n for n in hist_names if n.lower() not in {"eu", "me", "mary"}]
+        if hist_names:
+            interlocutor = hist_names[-1]
+
+    if interlocutor:
+        r["interlocutor"] = interlocutor
+    else:
+        r.pop("interlocutor", None)
+
+    # ------------------------------------------------------
+    # 2) local: facts vencem sempre
+    # ------------------------------------------------------
+    if current_local:
+        r["local_ativo"] = current_local
+    else:
+        local_ativo = str(r.get("local_ativo") or "").strip()
+        if local_ativo.lower() in invalid_tokens:
+            r.pop("local_ativo", None)
+
+    # ------------------------------------------------------
+    # 3) objeto ativo: saneia lixo
+    # ------------------------------------------------------
+    objeto_ativo = str(r.get("objeto_ativo") or "").strip()
+    if objeto_ativo.lower() in invalid_tokens or len(objeto_ativo) <= 2:
+        r.pop("objeto_ativo", None)
+
+    # ------------------------------------------------------
+    # 4) se o usuário mudou a cena explicitamente,
+    #    zera a continuidade velha
+    # ------------------------------------------------------
+    if user_explicit_scene_change:
+        r["local_ativo"] = current_local or str(r.get("local_ativo") or "").strip()
+        r["acao_em_andamento"] = "transição"
+        r.pop("objeto_ativo", None)
+        r.pop("continuidade_imediata", None)
+        r.pop("ultima_acao", None)
+        r["proximo_passo_plausivel"] = "reagir ao novo local e à mudança de cena sem recontar a cena anterior"
+
+    # ------------------------------------------------------
+    # 5) evita continuidade velha virar soberana
+    # ------------------------------------------------------
+    continuidade_imediata = str(r.get("continuidade_imediata") or "").strip()
+    if continuidade_imediata:
+        # se a continuidade menciona local antigo e facts já mudaram, remove
+        if current_local and _t_norm(current_local) not in _t_norm(continuidade_imediata):
+            # só mantém se não houver mudança explícita
+            if user_explicit_scene_change:
+                r.pop("continuidade_imediata", None)
+
+    # ------------------------------------------------------
+    # 6) ação em andamento: saneamento
+    # ------------------------------------------------------
+    acao_em_andamento = str(r.get("acao_em_andamento") or "").strip()
+    if acao_em_andamento.lower() in invalid_tokens:
+        r.pop("acao_em_andamento", None)
+
+    # ------------------------------------------------------
+    # 7) próximo passo plausível: não deixar repetir cena velha
+    # ------------------------------------------------------
+    proximo_passo = str(r.get("proximo_passo_plausivel") or "").strip()
+    if user_explicit_scene_change and proximo_passo:
+        if any(x in _t_norm(proximo_passo) for x in ["orla", "pier", "banco", "sorveteria"]):
+            r["proximo_passo_plausivel"] = "reagir ao ambiente atual e ao convite sem reabrir a cena anterior"
+
+    return r
+
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
@@ -7587,15 +7709,40 @@ class MaryService(BaseCharacter):
                 facts=facts,
                 memories=long_memory_lines[-8:],
                 scene_state={
-                    "local": facts.get("cena.local"),
-                    "tempo": facts.get("cena.tempo"),
-                    "acao": facts.get("cena.acao"),
-                    "locked": facts.get("cena.locked"),
+                    "local": (
+                        (facts.get("cena") or {}).get("local")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.local")
+                    ),
+                    "tempo": (
+                        (facts.get("cena") or {}).get("tempo")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.tempo")
+                    ),
+                    "acao": (
+                        (facts.get("cena") or {}).get("acao")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.acao")
+                    ),
+                    "locked": (
+                        (facts.get("cena") or {}).get("locked")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.locked")
+                    ),
                 },
                 recent_turns=recent_turns,
             )
         except Exception:
             reasoning = {}
+
+        # normaliza o bruto antes do llm_reasoning
+        reasoning = _normalize_reasoning_output(
+            reasoning,
+            facts=facts,
+            prompt=req.prompt,
+            history=history,
+            user_explicit_scene_change=user_explicit_scene_change,
+        )
 
         # ==========================================================
         # LLM REASONING (refino semântico)
@@ -7607,10 +7754,26 @@ class MaryService(BaseCharacter):
                 facts=facts,
                 memories=long_memory_lines[-8:],
                 scene_state={
-                    "local": facts.get("cena.local"),
-                    "tempo": facts.get("cena.tempo"),
-                    "acao": facts.get("cena.acao"),
-                    "locked": facts.get("cena.locked"),
+                    "local": (
+                        (facts.get("cena") or {}).get("local")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.local")
+                    ),
+                    "tempo": (
+                        (facts.get("cena") or {}).get("tempo")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.tempo")
+                    ),
+                    "acao": (
+                        (facts.get("cena") or {}).get("acao")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.acao")
+                    ),
+                    "locked": (
+                        (facts.get("cena") or {}).get("locked")
+                        if isinstance(facts.get("cena"), dict)
+                        else facts.get("cena.locked")
+                    ),
                 },
                 recent_turns=recent_turns,
                 base_reasoning=reasoning,
@@ -7622,6 +7785,15 @@ class MaryService(BaseCharacter):
             reasoning = merge_reasoning(reasoning, llm_reasoning)
         except Exception:
             pass
+
+        # normaliza de novo após o merge
+        reasoning = _normalize_reasoning_output(
+            reasoning,
+            facts=facts,
+            prompt=req.prompt,
+            history=history,
+            user_explicit_scene_change=user_explicit_scene_change,
+        )
     
             
         try:
@@ -7701,7 +7873,7 @@ class MaryService(BaseCharacter):
         hist = (ctx.history or [])[-6:]
         memories = (ctx.long_memory_lines or [])[:5]
         reasoning = ctx.reasoning or {}
-        llm_reasoning = (reasoning.get("llm_reasoning") or {}) if isinstance(reasoning, dict) else {}
+        llm_reasoning = ctx.llm_reasoning or {}
     
         # ==========================================================
         # FACTS RÍGIDOS DO PRESENTE (VERDADE SOBERANA)
@@ -7946,7 +8118,10 @@ class MaryService(BaseCharacter):
             parts.append("\n".join(facts_lines).strip())
     
         if continuity_lines and len(continuity_lines) > 2:
-            parts.append("[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n" + "\n".join(continuity_lines))
+            parts.append(
+                "[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n"
+                + "\n".join(continuity_lines)
+            )
     
         if presenca_fisica_lines:
             parts.append("[PRESENÇA FÍSICA]\n" + "\n".join(presenca_fisica_lines))
