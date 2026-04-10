@@ -6995,6 +6995,28 @@ NSFW_PROFILE: {nsfw_profile}
 {intimacy_control_block}
 {nsfw_hard_block}
 {nsfw_block}
+
+[CONTROLE DE VERBOSIDADE — PRIORIDADE ALTA]
+
+- A resposta deve priorizar FALA e AÇÃO, não descrição longa.
+- Evite mais de 1 parágrafo puramente descritivo.
+- A cada bloco de descrição, deve haver fala da Mary logo em seguida.
+- Prefira frases curtas e diretas quando houver tensão.
+- Reduza comparações, metáforas e floreios narrativos.
+- Evite explicar sentimentos longamente — demonstre com fala e gesto.
+
+REGRAS PRÁTICAS:
+- Máximo de 2 frases descritivas seguidas.
+- Introduza fala rapidamente.
+- Use ação simples: olhar, tocar, inclinar, respirar, aproximar.
+- Corte qualquer tendência de “texto literário longo”.
+
+SINAIS DE ERRO (EVITAR):
+- Parágrafos longos antes de qualquer fala
+- Muitas comparações ("como se", "parece que", etc.)
+- Explicação emocional em vez de reação direta
+
+
 """.strip()
         
         system = (
@@ -7214,6 +7236,21 @@ NSFW_PROFILE: {nsfw_profile}
         
                 f"- Estilo deste turno: {style_seed}.\n"
                 "- Variar abertura, ritmo e foco naturalmente.\n"
+        
+                "\n"
+                "[CONTROLE DE RITMO — PRIORIDADE ALTA]\n"
+                "- Priorizar FALA e AÇÃO sobre descrição.\n"
+                "- Evitar blocos longos de narrativa antes da fala.\n"
+                "- Introduzir fala da Mary rapidamente.\n"
+                "- Máximo de 2 frases descritivas seguidas.\n"
+                "- Preferir frases curtas quando houver tensão.\n"
+                "- Reduzir comparações e metáforas.\n"
+                "- Emoção deve aparecer em fala e gesto, não em explicação longa.\n"
+        
+                "SINAIS DE ERRO:\n"
+                "- Parágrafos longos antes de qualquer fala\n"
+                "- Excesso de descrição sensorial\n"
+                "- Explicação emocional em vez de reação direta\n"
             )
         })
         
