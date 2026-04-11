@@ -966,6 +966,26 @@ def _garantir_estado_inicial() -> None:
     if "mary_rel_meta_last" not in st.session_state:
         st.session_state["mary_rel_meta_last"] = None
 
+        # Debug técnico do service
+    if "mary_debug_on" not in st.session_state:
+        st.session_state["mary_debug_on"] = False
+    if "mary_debug_log" not in st.session_state:
+        st.session_state["mary_debug_log"] = []
+    if "mary_debug_system_prompt" not in st.session_state:
+        st.session_state["mary_debug_system_prompt"] = ""
+    if "mary_debug_messages" not in st.session_state:
+        st.session_state["mary_debug_messages"] = ""
+    if "mary_debug_facts_used" not in st.session_state:
+        st.session_state["mary_debug_facts_used"] = {}
+    if "mary_debug_rel_state_used" not in st.session_state:
+        st.session_state["mary_debug_rel_state_used"] = {}
+    if "mary_debug_tp_arc_used" not in st.session_state:
+        st.session_state["mary_debug_tp_arc_used"] = {}
+    if "mary_debug_timeline_used" not in st.session_state:
+        st.session_state["mary_debug_timeline_used"] = ""
+    if "mary_debug_user_prompt" not in st.session_state:
+        st.session_state["mary_debug_user_prompt"] = ""
+
     # modelos disponíveis
     try:
         modelos = service_router.list_models() or []
@@ -3202,7 +3222,8 @@ def _render_sidebar() -> None:
                 st.error("❌ Falha no ping.")
                 err = ping.get("error")
                 st.code(err if isinstance(err, str) and err.strip() else str(ping))
-
+                
+            st.checkbox("Ativar debug técnico do service", key="mary_debug_on")   
         with st.expander("🧨 Último erro (service)", expanded=False):
             st.markdown("**Modelo/Provider capturados (última call):**")
             st.write(
@@ -3217,6 +3238,24 @@ def _render_sidebar() -> None:
             st.json(st.session_state.get("mary_last_raw_resp") or {})
             st.markdown("**Último erro registrado:**")
             st.json(st.session_state.get("mary_last_error") or {})
+
+                with st.expander("🧠 Prompt final usado", expanded=False):
+            st.code(st.session_state.get("mary_debug_system_prompt") or "")
+
+        with st.expander("📦 Messages enviados ao modelo", expanded=False):
+            st.code(st.session_state.get("mary_debug_messages") or "")
+
+        with st.expander("📄 Facts / estado usados no turno", expanded=False):
+            st.json({
+                "timeline": st.session_state.get("mary_debug_timeline_used"),
+                "prompt": st.session_state.get("mary_debug_user_prompt"),
+                "facts": st.session_state.get("mary_debug_facts_used"),
+                "rel_state": st.session_state.get("mary_debug_rel_state_used"),
+                "tp_arc": st.session_state.get("mary_debug_tp_arc_used"),
+            })
+
+        with st.expander("🪵 Log técnico do turno", expanded=False):
+            st.json(st.session_state.get("mary_debug_log") or [])
 
         with st.expander("🧪 Debug imports (service_router)", expanded=False):
             try:
