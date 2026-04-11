@@ -193,6 +193,56 @@ def _normalize_llm_reasoning(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(v, str) and v.strip():
             out["advance_bias"] = v.strip()
 
+    # -----------------------------
+    # SANITIZAÇÃO FORTE
+    # -----------------------------
+    invalid_object_focus = {
+        "agua", "garrafa", "garrafinha", "copo",
+        "barulho", "som", "vento", "luz", "calor", "clima",
+        "evento", "hotel", "orla"
+    }
+
+    invalid_tones = {
+        "calmo e amigável",
+        "calmo",
+        "amigável",
+        "amigavel",
+        "neutro",
+        "educado",
+        "social",
+        "cordial"
+    }
+
+    invalid_emotional_focus = {
+        "estável e confiante",
+        "estavel e confiante",
+        "estável",
+        "estavel",
+        "neutro",
+        "leve demais"
+    }
+
+    obj = str(out.get("object_focus") or "").strip().lower()
+    if obj in invalid_object_focus:
+        out["object_focus"] = ""
+
+    tone = str(out.get("tone") or "").strip().lower()
+    if tone in invalid_tones:
+        out["tone"] = "reação à tensão da cena"
+
+    emo = str(out.get("emotional_focus") or "").strip().lower()
+    if emo in invalid_emotional_focus:
+        out["emotional_focus"] = "reação viva ao contexto"
+
+    cont = str(out.get("continuity_hint") or "").strip()
+    if cont:
+        cont = cont[:120].strip()
+        bad_tokens = {"dou", "ajusto", "seguro", "olho", "barulho", "garrafa", "água", "agua"}
+        if any(tok in cont.lower().split() for tok in bad_tokens):
+            out["continuity_hint"] = ""
+        else:
+            out["continuity_hint"] = cont
+
     return out
 
 
@@ -237,6 +287,9 @@ def build_llm_reasoning(
         "Você NÃO faz roleplay.\n"
         "Você NÃO inventa fatos.\n"
         "Você NÃO altera interlocutor, local, objeto ativo ou continuidade já decididos no reasoning base.\n"
+        "Você NÃO cria novos objetos simbólicos, abstratos ou consumíveis.\n"
+        "Você NÃO transforma sensação, clima, som, vento, luz, barulho ou emoção em objeto.\n"
+        "Você NÃO escolhe tom neutro, educado ou socialmente morno quando houver tensão, constrangimento, flerte interrompido ou surpresa.\n"
         "Você apenas refina tom, foco emocional, entrega e avanço.\n"
         "Responda APENAS com JSON válido."
     )
@@ -284,6 +337,14 @@ Regras obrigatórias:
 - se houver conflito emocional, prefira contenção à aceleração
 - se houver risco alto, reduza avanço
 - seja curto e operacional
+
+Regras adicionais críticas:
+- tone NÃO pode ser neutro, educado ou burocrático se houver tensão social, flerte interrompido, constrangimento ou surpresa.
+- emotional_focus deve refletir a carga real da cena, não suavizá-la artificialmente.
+- object_focus deve ser vazio se não houver objeto físico concreto, útil e ainda presente.
+- nunca use como object_focus: agua, garrafa, garrafinha, copo, barulho, som, vento, luz, calor, clima, evento, hotel, orla.
+- continuity_hint não deve virar mini-narração nem repetir gestos.
+- interlocutor_hint deve apenas repetir o interlocutor já ativo, nunca criar outro.
 """.strip()
 
     raw = service_router.chat(
@@ -346,13 +407,20 @@ def merge_reasoning(
             merged["advance_limit"] = advance_bias
 
     # Guarda refinamentos sem substituir continuidade estrutural
+    tone = str(llm.get("tone") or "").strip()
+    emotional_focus = str(llm.get("emotional_focus") or "").strip()
+    memory_hint = str(llm.get("memory_hint") or "").strip()
+    continuity_hint = str(llm.get("continuity_hint") or "").strip()
+    object_focus = str(llm.get("object_focus") or "").strip()
+    interlocutor_hint = str(llm.get("interlocutor_hint") or "").strip()
+
     merged["llm_reasoning"] = {
-        "tone": str(llm.get("tone") or "").strip(),
-        "emotional_focus": str(llm.get("emotional_focus") or "").strip(),
-        "memory_hint_refined": str(llm.get("memory_hint") or "").strip(),
-        "continuity_hint": str(llm.get("continuity_hint") or "").strip(),
-        "object_focus": str(llm.get("object_focus") or "").strip(),
-        "interlocutor_hint": str(llm.get("interlocutor_hint") or "").strip(),
+        "tone": tone,
+        "emotional_focus": emotional_focus,
+        "memory_hint_refined": memory_hint,
+        "continuity_hint": continuity_hint,
+        "object_focus": object_focus,
+        "interlocutor_hint": interlocutor_hint,
     }
 
     return merged
