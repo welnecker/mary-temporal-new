@@ -1,9 +1,6 @@
 
 from __future__ import annotations
 
-st.write("SERVICE CLASS:", service.__class__)
-st.write("SERVICE FILE:", service.__class__.__module__)
-
 import time
 import re
 import traceback
@@ -3415,6 +3412,8 @@ def _render_chat_and_input() -> None:
 
     try:
         svc = _get_service()
+        st.write("SERVICE CLASS:", svc.__class__)
+        st.write("SERVICE MODULE:", svc.__class__.__module__)
 
         resposta = _call_service_reply_safe(
             svc=svc,
