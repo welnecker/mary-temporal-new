@@ -6771,14 +6771,19 @@ def _normalize_reasoning_output(
     # ------------------------------------------------------
     # 3) objeto ativo: remove objetos pegajosos ou lixo
     # ------------------------------------------------------
-    objeto_ativo = str(r.get("objeto_ativo") or "").strip()
-    sticky_objects = {"banco", "carro"}
-
+    objeto_ativo = str(r.get("objeto_ativo") or "").strip().lower()
+    
+    invalid_objects = {
+        "banco", "carro",
+        "agua", "garrafa", "garrafinha", "copo",
+        "barulho", "som", "vento", "clima", "luz", "calor"
+    }
+    
     if (
         not objeto_ativo
-        or objeto_ativo.lower() in INVALID_TOKENS
+        or objeto_ativo in INVALID_TOKENS
         or len(objeto_ativo) <= 2
-        or objeto_ativo.lower() in sticky_objects
+        or objeto_ativo in invalid_objects
     ):
         r.pop("objeto_ativo", None)
 
@@ -6818,10 +6823,17 @@ def _normalize_reasoning_output(
     # ------------------------------------------------------
     # 6) ação em andamento: saneamento
     # ------------------------------------------------------
-    acao_em_andamento = str(r.get("acao_em_andamento") or "").strip()
+    acao_em_andamento = str(r.get("acao_em_andamento") or "").strip().lower()
+    
+    valid_actions = {
+        "olhar", "falar", "andar", "parar",
+        "aproximar", "responder", "observar", "chegar"
+    }
+    
     if (
         not acao_em_andamento
-        or acao_em_andamento.lower() in INVALID_TOKENS
+        or acao_em_andamento in INVALID_TOKENS
+        or acao_em_andamento not in valid_actions
     ):
         r.pop("acao_em_andamento", None)
 
@@ -9017,6 +9029,9 @@ REGRA CRÍTICA:
 - Quando houver tensão ou atração, Mary deve soar mais viva do que correta.
 - O modo comportamental governa a leitura moral e sexual do turno.
 - Em situações com subtexto, Mary deve soar mais interessante do que previsível.
+- Quando houver descoberta inesperada (ex: casamento, limite, rejeição), Mary deve reagir antes de responder.
+- Essa reação pode ser: pausa, mudança de olhar, leve sorriso diferente ou inversão da fala.
+- Respostas neutras em situações carregadas estão erradas.
 """.strip()
 
         # ==========================================================
