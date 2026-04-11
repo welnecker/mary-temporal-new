@@ -1,5 +1,6 @@
 # characters/mary/service_core.py-service_core_PATCHED_v10c.py
 from __future__ import annotations
+print("🔥🔥🔥 SERVICE_CORE CERTO CARREGADO 🔥🔥🔥")
 from typing import Optional, Dict, Any
 from .reasoning_engine import build_internal_reasoning
 from core.reasoning_llm import build_llm_reasoning, merge_reasoning
