@@ -10965,7 +10965,112 @@ Conflito não substitui a narrativa — apenas tensiona.
         resp = service_router.route_chat_strict(model, base_payload)
         out = _validate_router_response(resp)
         _capture_success_debug(resp, out, "base_payload_only")
-        return out
-
+        return outdef _chat(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        *,
+        top_p: float = 0.95,
+        extra: Optional[Dict[str, Any]] = None,
+    ):
+        base_payload: Dict[str, Any] = {
+            "messages": messages,
+            "temperature": float(temperature),
+            "top_p": float(top_p),
+            "max_tokens": int(max_tokens),
+        }
+    
+        try:
+            if _debug_enabled():
+                _debug_set("mary_last_used_model", model)
+                _debug_set("mary_last_used_provider", None)
+                _debug_append("chat:request", {
+                    "model": model,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                    "messages_count": len(messages or []),
+                    "extra_keys": list((extra or {}).keys()) if isinstance(extra, dict) else [],
+                })
+        except Exception:
+            pass
+    
+        def _validate_router_response(resp: Any):
+            if resp is None:
+                raise RuntimeError(f"route_chat_strict retornou None (model={model})")
+    
+            if not isinstance(resp, tuple) or len(resp) != 3:
+                raise RuntimeError(
+                    f"route_chat_strict retornou formato inválido: "
+                    f"type={type(resp).__name__}, repr={str(resp)[:300]}"
+                )
+    
+            data, used_model, provider_meta = resp
+    
+            if data is None:
+                raise RuntimeError(
+                    f"route_chat_strict retornou tuple com data=None "
+                    f"(model={model}, used_model={used_model})"
+                )
+    
+            return data, used_model, provider_meta
+    
+        def _capture_success_debug(resp: Any, out: Any, mode: str) -> None:
+            try:
+                if _debug_enabled():
+                    _debug_set("mary_last_raw_resp", {
+                        "mode": mode,
+                        "resp_type": type(resp).__name__,
+                        "preview": str(resp)[:2000],
+                    })
+            except Exception:
+                pass
+    
+            try:
+                if _debug_enabled() and isinstance(out, tuple) and len(out) == 3:
+                    _data, _used_model, _provider_meta = out
+                    _debug_set("mary_last_used_model", _used_model or model)
+                    _debug_set(
+                        "mary_last_used_provider",
+                        str(_provider_meta)[:300] if _provider_meta is not None else None
+                    )
+            except Exception:
+                pass
+    
+        if isinstance(extra, dict) and extra:
+            payload_with_extra = dict(base_payload)
+            payload_with_extra.update(extra)
+    
+            try:
+                resp = service_router.route_chat_strict(model, payload_with_extra)
+                out = _validate_router_response(resp)
+                _capture_success_debug(resp, out, "with_extra")
+                return out
+    
+            except Exception as e:
+                try:
+                    _ss_set(
+                        "mary_last_extra_retry_debug",
+                        {
+                            "model": model,
+                            "error_type": type(e).__name__,
+                            "error": str(e)[:600],
+                            "extra_keys": list(extra.keys())[:20],
+                        },
+                    )
+                except Exception:
+                    pass
+    
+                _debug_capture_error(e)
+    
+                resp = service_router.route_chat_strict(model, base_payload)
+                out = _validate_router_response(resp)
+                _capture_success_debug(resp, out, "base_payload_retry")
+                return out
+    
         resp = service_router.route_chat_strict(model, base_payload)
-        return _validate_router_response(resp)
+        out = _validate_router_response(resp)
+        _capture_success_debug(resp, out, "base_payload_only")
+        return out
