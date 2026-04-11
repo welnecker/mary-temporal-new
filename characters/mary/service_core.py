@@ -8641,26 +8641,31 @@ class MaryService(BaseCharacter):
         continuity_hint = str(llm_reasoning.get("continuity_hint") or "").strip()
         object_focus = str(llm_reasoning.get("object_focus") or "").strip()
         interlocutor_hint = str(llm_reasoning.get("interlocutor_hint") or "").strip()
-    
+
         if interlocutor_hint.lower() in INVALID_TOKENS:
             interlocutor_hint = ""
-            
-            llm_lines = [
+
+        llm_lines = [
             "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
-                ]
+        ]
+
         if tone:
-            llm_lines.append("- Tom sugerido: reagir ao contexto atual, não suavizar artificialmente a cena")
-        
+            llm_lines.append(
+                "- Tom sugerido: reagir ao contexto atual, não suavizar artificialmente a cena"
+            )
+
         if emotional_focus:
-            llm_lines.append("- Clima emocional: deve refletir a carga real da cena (surpresa, tensão, recuo, constrangimento ou curiosidade)")
-        
+            llm_lines.append(
+                "- Clima emocional: deve refletir a carga real da cena (surpresa, tensão, recuo, constrangimento ou curiosidade)"
+            )
+
         if memory_hint_refined:
             llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
-        
+
         # NÃO passar foco de objeto para o modelo por enquanto
         # isso está grudando garrafa, cabelo e outros tiques físicos
         object_focus = ""
-        
+
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
 
@@ -8673,7 +8678,7 @@ class MaryService(BaseCharacter):
             "- Objetos consumíveis (água, bebida, comida) não devem persistir após uso.",
             "- Após consumir, a ação ligada ao objeto deve ser considerada encerrada.",
             "- Não repetir cabelo, garrafa, postura ou ajuste corporal como tique automático.",
-        ]       
+        ]
 
         reaction_lines = [
             "- Quando houver despedida, recuo, surpresa ou constrangimento, Mary deve reagir antes de explicar.",
@@ -8681,15 +8686,15 @@ class MaryService(BaseCharacter):
             "- Se não houver decisão visível no turno, a resposta está errada.",
             "- Não continuar gesto físico como se fosse continuidade narrativa.",
         ]
-    
+
         # ==========================================================
         # ORDEM FINAL DE PRIORIDADE
         # ==========================================================
         parts = []
-    
+
         if facts_lines:
             parts.append("\n".join(facts_lines).strip())
-    
+
         if continuity_lines and len(continuity_lines) > 2:
             parts.append(
                 "[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n"
@@ -8707,30 +8712,29 @@ class MaryService(BaseCharacter):
                 "[PRIORIDADE DE RESPOSTA]\n"
                 + "\n".join(response_priority_lines)
             )
-    
+
         if presenca_fisica_lines:
             parts.append("[PRESENÇA FÍSICA]\n" + "\n".join(presenca_fisica_lines))
-    
+
         if consciencia_corporal_lines:
             parts.append("[CONSCIÊNCIA CORPORAL]\n" + "\n".join(consciencia_corporal_lines))
-    
+
         if intimidade_lines:
             parts.append("[PROGRESSÃO DA INTIMIDADE]\n" + "\n".join(intimidade_lines))
-    
+
         if mem_lines:
             parts.append("[MEMÓRIAS RELEVANTES]\n" + "\n".join(mem_lines))
-    
+
         if dinamica:
             parts.append("[DINÂMICA RELACIONAL]\n" + "\n".join(dinamica))
-    
+
         if hist_lines:
             parts.append("[CONTEXTO RECENTE]\n" + "\n".join(hist_lines))
-    
+
         if llm_lines and len(llm_lines) > 1:
             parts.append("[REFINO DE ENTREGA]\n" + "\n".join(llm_lines))
-    
+
         return "\n\n".join(parts).strip()
-    
     
     def _build_optional_rules(self, ctx: TurnContext) -> str:
         rules: List[str] = []
