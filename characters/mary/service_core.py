@@ -8604,6 +8604,17 @@ class MaryService(BaseCharacter):
                 llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
+
+        response_priority_lines = [
+            "- Se houver fala direta na cena, Mary deve iniciar pela fala.",
+            "- Não iniciar automaticamente com descrição.",
+            "- Descrição só deve aparecer quando realmente agregar.",
+            "- Evitar repetir gestos físicos já usados no turno anterior.",
+            "- Em interação direta, fala vem antes de ambientação.",
+            "- Objetos consumíveis (água, bebida, comida) não devem persistir após uso.",
+            "- Após consumir, a ação ligada ao objeto deve ser considerada encerrada.",
+            "- Não repetir cabelo, garrafa, postura ou ajuste corporal como tique automático.",
+        ]        
     
         # ==========================================================
         # ORDEM FINAL DE PRIORIDADE
@@ -8617,6 +8628,12 @@ class MaryService(BaseCharacter):
             parts.append(
                 "[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n"
                 + "\n".join(continuity_lines)
+            )
+
+        if response_priority_lines:
+            parts.append(
+                "[PRIORIDADE DE RESPOSTA]\n"
+                + "\n".join(response_priority_lines)
             )
     
         if presenca_fisica_lines:
