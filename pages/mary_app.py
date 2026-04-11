@@ -3239,7 +3239,7 @@ def _render_sidebar() -> None:
             st.markdown("**Último erro registrado:**")
             st.json(st.session_state.get("mary_last_error") or {})
 
-                with st.expander("🧠 Prompt final usado", expanded=False):
+        with st.expander("🧠 Prompt final usado", expanded=False):
             st.code(st.session_state.get("mary_debug_system_prompt") or "")
 
         with st.expander("📦 Messages enviados ao modelo", expanded=False):
