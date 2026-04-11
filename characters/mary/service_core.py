@@ -7335,9 +7335,11 @@ Resumo:
         tp_arc: Dict[str, Any],
         autonomy_block: str = "",
     ) -> List[Dict[str, str]]:
-    
+
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system}
+        ]
+
         try:
             if _debug_enabled():
                 _debug_set("mary_debug_timeline_used", timeline_final)
@@ -7352,7 +7354,7 @@ Resumo:
                 })
         except Exception:
             pass
-        ]
+
         if autonomy_block:
             messages.append({
                 "role": "system",
@@ -7577,9 +7579,7 @@ Resumo:
                 _debug_set("mary_debug_messages", str(messages))
             except Exception:
                 pass
-
-        return messages
-     
+           
         return messages
     
     def _resolve_turn_policy(
