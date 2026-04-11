@@ -6842,19 +6842,22 @@ def _normalize_reasoning_output(
     # ------------------------------------------------------
     proximo_passo = str(r.get("proximo_passo_plausivel") or "").strip()
     if proximo_passo:
-        proximo_passo = proximo_passo[:220].strip()
-
-        bad_step_tokens = {"minhas", "se", "muda"}
+        proximo_passo = proximo_passo[:140].strip()
+    
+        bad_step_tokens = {
+            "minhas", "se", "muda",
+            "tomar", "segurar", "ajustar", "olhar",
+            "garrafa", "agua", "água", "cabelo", "rabo"
+        }
+    
         if any(tok in _t_norm(proximo_passo).split() for tok in bad_step_tokens):
-            r["proximo_passo_plausivel"] = (
-                "responder ao interlocutor atual sem quebrar facts nem continuidade"
-            )
+            r["proximo_passo_plausivel"] = ""
         elif user_explicit_scene_change and any(
             x in _t_norm(proximo_passo)
             for x in ["orla", "pier", "banco", "sorveteria"]
         ):
             r["proximo_passo_plausivel"] = (
-                "reagir ao ambiente atual e ao convite sem reabrir a cena anterior"
+                "reagir ao ambiente atual sem reabrir a cena anterior"
             )
         else:
             r["proximo_passo_plausivel"] = proximo_passo
@@ -6953,10 +6956,10 @@ def _build_continuity_snapshot(
         or ""
     ).strip()
     
+    # NÃO usar object_focus aqui
+    # isso está convertendo tiques físicos em "continuidade"
     objeto = str(
         r.get("objeto_ativo")
-        or r.get("object_focus")
-        or (r.get("llm_reasoning") or {}).get("object_focus")
         or ""
     ).strip()
     
@@ -6970,12 +6973,59 @@ def _build_continuity_snapshot(
         or ""
     ).strip()
     
-    proximo = str(
+    raw_next = str(
         r.get("proximo_passo_plausivel")
         or r.get("continuity_hint")
         or (r.get("llm_reasoning") or {}).get("continuity_hint")
         or ""
     ).strip()
+    
+    proximo = ""
+    invalid_next_tokens = {
+        "tomar", "segurar", "ajustar", "olhar", "cabelo", "rabo", "garrafa", "agua", "água"
+    }
+    
+    if raw_next and len(raw_next) <= 120:
+        if not any(tok in raw_next.lower() for tok in invalid_next_tokens):
+            proximo = raw_nextinterlocutor = str(
+        r.get("interlocutor")
+        or r.get("interlocutor_hint")
+        or (r.get("llm_reasoning") or {}).get("interlocutor_hint")
+        or ""
+    ).strip()
+    
+    # NÃO usar object_focus aqui
+    # isso está convertendo tiques físicos em "continuidade"
+    objeto = str(
+        r.get("objeto_ativo")
+        or ""
+    ).strip()
+    
+    acao = str(
+        r.get("acao_em_andamento")
+        or ""
+    ).strip()
+    
+    ultima = str(
+        r.get("ultima_acao")
+        or ""
+    ).strip()
+    
+    raw_next = str(
+        r.get("proximo_passo_plausivel")
+        or r.get("continuity_hint")
+        or (r.get("llm_reasoning") or {}).get("continuity_hint")
+        or ""
+    ).strip()
+    
+    proximo = ""
+    invalid_next_tokens = {
+        "tomar", "segurar", "ajustar", "olhar", "cabelo", "rabo", "garrafa", "agua", "água"
+    }
+    
+    if raw_next and len(raw_next) <= 120:
+        if not any(tok in raw_next.lower() for tok in invalid_next_tokens):
+            proximo = raw_next
     def _clean(s: str, limit: int = max_len) -> str:
         s = str(s or "").strip()
         if not s:
@@ -6990,9 +7040,11 @@ def _build_continuity_snapshot(
 
     # neutraliza lixo comum
     banned = {"minhas", "muda", "se", "voce", "você", "isso", "aquilo"}
+    invalid_objects = {"rabo cavalo", "rabo de cavalo", "cabelo", "garrafa", "garrafinha", "agua", "água", "barulho", "som"}
+    
     if interlocutor.lower() in banned:
         interlocutor = ""
-    if objeto.lower() in banned:
+    if objeto.lower() in banned or objeto.lower() in invalid_objects:
         objeto = ""
     if acao.lower() in banned:
         acao = ""
@@ -8592,28 +8644,23 @@ class MaryService(BaseCharacter):
     
         if interlocutor_hint.lower() in INVALID_TOKENS:
             interlocutor_hint = ""
-    
-        llm_lines = [
-    "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
-        ]
-        if tone:
-            llm_lines.append(f"- Tom sugerido: {tone}")
+            
+                llm_lines = [
+            "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
+                ]
+                if tone:
+            llm_lines.append("- Tom sugerido: reagir ao contexto atual, não suavizar artificialmente a cena")
+        
         if emotional_focus:
-            llm_lines.append(f"- Clima emocional: {str(emotional_focus)[:60]}")
+            llm_lines.append("- Clima emocional: deve refletir a carga real da cena (surpresa, tensão, recuo, constrangimento ou curiosidade)")
+        
         if memory_hint_refined:
             llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
-        if object_focus:
-            obj = object_focus.lower().strip()
         
-            objetos_invalidos = {
-                "banco", "carro",
-                "hotel", "evento",
-                "lugar", "coisa", "isso", "ali"
-            }
+        # NÃO passar foco de objeto para o modelo por enquanto
+        # isso está grudando garrafa, cabelo e outros tiques físicos
+        object_focus = ""
         
-            # só aceita objeto se fizer sentido no contexto físico imediato
-            if obj not in objetos_invalidos and len(obj) > 2:
-                llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
 
@@ -8626,7 +8673,14 @@ class MaryService(BaseCharacter):
             "- Objetos consumíveis (água, bebida, comida) não devem persistir após uso.",
             "- Após consumir, a ação ligada ao objeto deve ser considerada encerrada.",
             "- Não repetir cabelo, garrafa, postura ou ajuste corporal como tique automático.",
-        ]        
+        ]       
+
+        reaction_lines = [
+            "- Quando houver despedida, recuo, surpresa ou constrangimento, Mary deve reagir antes de explicar.",
+            "- A resposta deve escolher uma direção clara: manter, recuar, provocar, encerrar ou puxar de volta.",
+            "- Se não houver decisão visível no turno, a resposta está errada.",
+            "- Não continuar gesto físico como se fosse continuidade narrativa.",
+        ]
     
         # ==========================================================
         # ORDEM FINAL DE PRIORIDADE
@@ -8640,6 +8694,12 @@ class MaryService(BaseCharacter):
             parts.append(
                 "[CONTINUIDADE IMEDIATA — SUBORDINADA AOS FACTS]\n"
                 + "\n".join(continuity_lines)
+            )
+
+        if reaction_lines:
+            parts.append(
+                "[REAÇÃO E DECISÃO DO TURNO]\n"
+                + "\n".join(reaction_lines)
             )
 
         if response_priority_lines:
