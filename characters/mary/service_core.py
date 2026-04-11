@@ -8362,7 +8362,7 @@ class MaryService(BaseCharacter):
             facts_lines.append(f"- Roupa atual: {roupa}")
         if cabelo:
             facts_lines.append(f"- Cabelo / aparência imediata: {cabelo}")
-        if assunto_ativo::
+        if assunto_ativo:
             facts_lines.append(f"- Assunto ativo: {assunto_ativo}")
     
         facts_lines.extend([
