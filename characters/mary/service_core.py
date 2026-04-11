@@ -6363,63 +6363,140 @@ def _maybe_advance_assunto_step(
     history: List[Dict[str, Any]],
 ) -> None:
     """
-    Avança automaticamente o step_index do assunto quando detecta gatilho narrativo.
+    Avança automaticamente o step_index do assunto quando houver
+    gatilho narrativo claro e suficiente para trocar de etapa.
+
+    Regras:
+    - nunca avança se não houver próximo passo
+    - não avança só porque o próximo tema foi citado de passagem
+    - exige foco narrativo mais consistente
     """
 
     assunto_obj = facts.get("assunto")
     if not isinstance(assunto_obj, dict):
         return
 
-    step_index = int(assunto_obj.get("step_index") or 1)
+    assunto_raw = str(facts.get("state.assunto") or "").strip()
+    if not assunto_raw:
+        return
 
-    assunto_raw = str(facts.get("state.assunto") or "")
+    try:
+        step_index = int(assunto_obj.get("step_index") or 1)
+    except Exception:
+        step_index = 1
+
     steps = re.split(r"\d+\-\s*", assunto_raw)
     steps = [s.strip() for s in steps if s.strip()]
+
+    if not steps:
+        return
+
+    # protege faixa
+    if step_index < 1:
+        step_index = 1
 
     # não tem próximo passo
     if step_index >= len(steps):
         return
 
-    # -------------------------
-    # GATILHOS DE AVANÇO
-    # -------------------------
+    r = reasoning if isinstance(reasoning, dict) else {}
 
-    r = reasoning or {}
-    last_user = (history[-1]["content"] if history else "").lower()
+    last_user = ""
+    if history and isinstance(history[-1], dict):
+        last_user = str(
+            history[-1].get("content")
+            or history[-1].get("user")
+            or history[-1].get("mensagem_usuario")
+            or ""
+        ).lower().strip()
+
+    proximo_step = steps[step_index].strip()
+    proximo_step_lower = proximo_step.lower()
+
+    # quebra o próximo passo em palavras úteis
+    step_terms = re.findall(r"[\wÀ-ÿ]+", proximo_step_lower)
+    step_terms = [t for t in step_terms if len(t) >= 4]
+
+    interlocutor = str(r.get("interlocutor") or "").lower().strip()
+    local_ativo = str(r.get("local_ativo") or "").lower().strip()
+    acao_em_andamento = str(r.get("acao_em_andamento") or "").lower().strip()
+    proximo_passo = str(r.get("proximo_passo_plausivel") or "").lower().strip()
 
     gatilho = False
+    motivo = ""
 
-    # 1. usuário mencionou próximo elemento
-    proximo_step = steps[step_index].lower()
-
-    if any(p in last_user for p in proximo_step.split()):
+    # --------------------------------------------------
+    # REGRA 1: interlocutor do reasoning bate com próximo passo
+    # --------------------------------------------------
+    if interlocutor and interlocutor in proximo_step_lower:
         gatilho = True
+        motivo = f"interlocutor:{interlocutor}"
 
-    # 2. reasoning detectou novo foco
-    interlocutor = str(r.get("interlocutor") or "").lower()
-    if interlocutor and interlocutor in proximo_step:
-        gatilho = True
+    # --------------------------------------------------
+    # REGRA 2: usuário citou claramente o próximo passo
+    # exige pelo menos 2 termos relevantes do próximo passo
+    # --------------------------------------------------
+    elif step_terms:
+        hits = sum(1 for t in step_terms if t in last_user)
+        if hits >= 2:
+            gatilho = True
+            motivo = f"user_terms:{hits}"
 
-    # 3. mudança natural de cena (leve)
-    if ("olha" in last_user or "ali" in last_user) and step_index == 1:
-        gatilho = True
+    # --------------------------------------------------
+    # REGRA 3: reasoning já aponta o próximo passo de forma consistente
+    # --------------------------------------------------
+    elif proximo_passo:
+        hits_reasoning = sum(1 for t in step_terms if t in proximo_passo)
+        if hits_reasoning >= 2:
+            gatilho = True
+            motivo = f"reasoning_terms:{hits_reasoning}"
 
-    # -------------------------
+    # --------------------------------------------------
+    # BLOQUEIOS DE SEGURANÇA
+    # --------------------------------------------------
+    # não trocar de etapa se a ação ainda está fortemente ancorada
+    # na etapa atual (ex.: treino/corrida ainda em andamento)
+    assunto_atual = steps[step_index - 1].lower() if step_index - 1 < len(steps) else ""
+
+    current_terms = re.findall(r"[\wÀ-ÿ]+", assunto_atual)
+    current_terms = [t for t in current_terms if len(t) >= 4]
+
+    # se o reasoning ainda aponta muito para o passo atual, bloqueia
+    ancora_atual = 0
+    for t in current_terms:
+        if t and (
+            t in acao_em_andamento
+            or t in local_ativo
+            or t in last_user
+        ):
+            ancora_atual += 1
+
+    if ancora_atual >= 2:
+        gatilho = False
+        motivo = f"bloqueado_por_etapa_atual:{ancora_atual}"
+
+    # --------------------------------------------------
     # APLICA AVANÇO
-    # -------------------------
-
+    # --------------------------------------------------
     if gatilho:
         assunto_obj["step_index"] = step_index + 1
 
-        # opcional: log debug
-        try:
-            st.session_state["mary_debug_assunto_advance"] = {
-                "old": step_index,
-                "new": step_index + 1,
-                "trigger": proximo_step
-            }
-        except Exception:
-            pass
+    # debug sempre, para você enxergar por que avançou ou não
+    try:
+        st.session_state["mary_debug_assunto_advance"] = {
+            "old": step_index,
+            "new": (step_index + 1) if gatilho else step_index,
+            "gatilho": gatilho,
+            "motivo": motivo,
+            "assunto_atual": steps[step_index - 1] if 0 <= step_index - 1 < len(steps) else "",
+            "proximo_step": proximo_step,
+            "interlocutor": interlocutor,
+            "acao_em_andamento": acao_em_andamento,
+            "local_ativo": local_ativo,
+            "last_user": last_user[:200],
+        }
+    except Exception:
+        pass
 
 
 # ==========================================================
@@ -8247,11 +8324,26 @@ class MaryService(BaseCharacter):
             or ""
         ).strip()
     
-        assunto = str(
+        assunto_raw = str(
             state_obj.get("assunto")
             or facts.get("state.assunto")
             or ""
         ).strip()
+
+        assunto_obj = facts.get("assunto") if isinstance(facts.get("assunto"), dict) else {}
+        step_index = int(assunto_obj.get("step_index") or 1)
+
+        # quebra "1- Corrida com Silvia 2- Encontro com Anthony"
+        steps = re.split(r"\d+\-\s*", assunto_raw)
+        steps = [s.strip() for s in steps if s.strip()]
+
+        assunto_ativo = ""
+        if steps:
+            if step_index < 1:
+                step_index = 1
+            if step_index > len(steps):
+                step_index = len(steps)
+            assunto_ativo = steps[step_index - 1]
     
         facts_lines = [
             "[ESTADO FÍSICO ATUAL — OBRIGATÓRIO]",
@@ -8270,8 +8362,8 @@ class MaryService(BaseCharacter):
             facts_lines.append(f"- Roupa atual: {roupa}")
         if cabelo:
             facts_lines.append(f"- Cabelo / aparência imediata: {cabelo}")
-        if assunto:
-            facts_lines.append(f"- Assunto ativo: {assunto}")
+        if assunto_ativo::
+            facts_lines.append(f"- Assunto ativo: {assunto_ativo}")
     
         facts_lines.extend([
             "",
@@ -8421,8 +8513,18 @@ class MaryService(BaseCharacter):
             llm_lines.append(f"- Clima emocional: {str(emotional_focus)[:60]}")
         if memory_hint_refined:
             llm_lines.append(f"- Memória útil deste turno: {memory_hint_refined}")
-        if object_focus and object_focus.lower() not in {"banco", "carro"}:
-            llm_lines.append(f"- Foco de objeto: {object_focus}")
+        if object_focus:
+            obj = object_focus.lower().strip()
+        
+            objetos_invalidos = {
+                "banco", "carro",
+                "hotel", "evento",
+                "lugar", "coisa", "isso", "ali"
+            }
+        
+            # só aceita objeto se fizer sentido no contexto físico imediato
+            if obj not in objetos_invalidos and len(obj) > 2:
+                llm_lines.append(f"- Foco de objeto: {object_focus}")
         if interlocutor_hint:
             llm_lines.append(f"- Foco de interlocução: {interlocutor_hint}")
     
