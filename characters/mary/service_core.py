@@ -8645,10 +8645,10 @@ class MaryService(BaseCharacter):
         if interlocutor_hint.lower() in INVALID_TOKENS:
             interlocutor_hint = ""
             
-                llm_lines = [
+            llm_lines = [
             "- Este bloco é auxiliar e nunca pode contradizer facts ou cena atual."
                 ]
-                if tone:
+        if tone:
             llm_lines.append("- Tom sugerido: reagir ao contexto atual, não suavizar artificialmente a cena")
         
         if emotional_focus:
