@@ -1,6 +1,9 @@
 
 from __future__ import annotations
 
+st.write("SERVICE CLASS:", service.__class__)
+st.write("SERVICE FILE:", service.__class__.__module__)
+
 import time
 import re
 import traceback
