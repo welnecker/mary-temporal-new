@@ -5775,26 +5775,25 @@ def _build_assunto_macro_block(facts: Dict[str, Any]) -> str:
         return ""
 
     idx = _get_current_assunto_step_index(facts)
-    total = len(steps)
 
-    if idx >= total:
-        idx = total - 1
+    # protege faixa
+    if idx < 0:
+        idx = 0
+    if idx >= len(steps):
+        idx = len(steps) - 1
 
-    lines = ["[ASSUNTO NARRATIVO EM SEQUÊNCIA]"]
-    lines.append("A sequência abaixo orienta o desenvolvimento do enredo.")
-    lines.append("Não é decoração: ela deve influenciar a progressão da cena.")
+    step_atual = steps[idx].strip()
+
+    lines = ["[ASSUNTO NARRATIVO ATUAL]"]
+    lines.append("Use apenas a etapa atual como trilho narrativo do momento presente.")
+    lines.append("Não considerar etapas futuras como já realizadas.")
     lines.append("")
-
-    for i, step in enumerate(steps, start=1):
-        marcador = " ← ETAPA ATUAL" if (i - 1) == idx else ""
-        lines.append(f"{i}. {step}{marcador}")
-
+    lines.append(f"Etapa atual: {step_atual}")
     lines.append("")
     lines.append("REGRAS:")
-    lines.append("- respeitar a ordem da sequência, sem saltos bruscos.")
-    lines.append("- se o usuário não introduzir outra direção, usar a etapa atual como trilho narrativo.")
-    lines.append("- o próximo evento pode ser preparado com naturalidade antes de acontecer.")
-    lines.append("- não considerar etapas futuras como já realizadas.")
+    lines.append("- manter foco na etapa atual.")
+    lines.append("- não antecipar etapas futuras.")
+    lines.append("- só avançar quando houver gatilho narrativo claro.")
     return "\n".join(lines).strip()
 
 
@@ -6366,38 +6365,56 @@ def _maybe_advance_assunto_step(
     Avança automaticamente o step_index do assunto quando houver
     gatilho narrativo claro e suficiente para trocar de etapa.
 
-    Regras:
-    - nunca avança se não houver próximo passo
-    - não avança só porque o próximo tema foi citado de passagem
-    - exige foco narrativo mais consistente
+    BASE 0:
+    - 0 = primeira etapa
+    - 1 = segunda etapa
+    - 2 = terceira etapa
     """
 
     assunto_obj = facts.get("assunto")
     if not isinstance(assunto_obj, dict):
         return
 
-    assunto_raw = str(facts.get("state.assunto") or "").strip()
+    assunto_raw = str(
+        (facts.get("state") or {}).get("assunto")
+        if isinstance(facts.get("state"), dict)
+        else facts.get("state.assunto") or ""
+    ).strip()
+
     if not assunto_raw:
         return
 
-    try:
-        step_index = int(assunto_obj.get("step_index") or 1)
-    except Exception:
-        step_index = 1
-
     steps = re.split(r"\d+\-\s*", assunto_raw)
     steps = [s.strip() for s in steps if s.strip()]
-
     if not steps:
         return
 
-    # protege faixa
-    if step_index < 1:
-        step_index = 1
+    try:
+        step_index = int(assunto_obj.get("step_index") or 0)
+    except Exception:
+        step_index = 0
 
-    # não tem próximo passo
-    if step_index >= len(steps):
+    # protege faixa
+    if step_index < 0:
+        step_index = 0
+
+    # já está na última etapa
+    if step_index >= len(steps) - 1:
+        try:
+            st.session_state["mary_debug_assunto_advance"] = {
+                "old": step_index,
+                "new": step_index,
+                "gatilho": False,
+                "motivo": "ja_na_ultima_etapa",
+                "assunto_atual": steps[step_index] if step_index < len(steps) else "",
+                "proximo_step": "",
+            }
+        except Exception:
+            pass
         return
+
+    assunto_atual = steps[step_index].strip()
+    proximo_step = steps[step_index + 1].strip()
 
     r = reasoning if isinstance(reasoning, dict) else {}
 
@@ -6410,42 +6427,32 @@ def _maybe_advance_assunto_step(
             or ""
         ).lower().strip()
 
-    proximo_step = steps[step_index].strip()
-    proximo_step_lower = proximo_step.lower()
-
-    # quebra o próximo passo em palavras úteis
-    step_terms = re.findall(r"[\wÀ-ÿ]+", proximo_step_lower)
-    step_terms = [t for t in step_terms if len(t) >= 4]
-
     interlocutor = str(r.get("interlocutor") or "").lower().strip()
     local_ativo = str(r.get("local_ativo") or "").lower().strip()
     acao_em_andamento = str(r.get("acao_em_andamento") or "").lower().strip()
     proximo_passo = str(r.get("proximo_passo_plausivel") or "").lower().strip()
 
+    proximo_step_lower = proximo_step.lower()
+    step_terms = re.findall(r"[\wÀ-ÿ]+", proximo_step_lower)
+    step_terms = [t for t in step_terms if len(t) >= 4]
+
     gatilho = False
     motivo = ""
 
-    # --------------------------------------------------
-    # REGRA 1: interlocutor do reasoning bate com próximo passo
-    # --------------------------------------------------
+    # 1) interlocutor do reasoning bate com a próxima etapa
     if interlocutor and interlocutor in proximo_step_lower:
         gatilho = True
         motivo = f"interlocutor:{interlocutor}"
 
-    # --------------------------------------------------
-    # REGRA 2: usuário citou claramente o próximo passo
-    # exige pelo menos 2 termos relevantes do próximo passo
-    # --------------------------------------------------
+    # 2) usuário citou claramente a próxima etapa
     elif step_terms:
-        hits = sum(1 for t in step_terms if t in last_user)
-        if hits >= 2:
+        hits_user = sum(1 for t in step_terms if t in last_user)
+        if hits_user >= 2:
             gatilho = True
-            motivo = f"user_terms:{hits}"
+            motivo = f"user_terms:{hits_user}"
 
-    # --------------------------------------------------
-    # REGRA 3: reasoning já aponta o próximo passo de forma consistente
-    # --------------------------------------------------
-    elif proximo_passo:
+    # 3) reasoning já aponta claramente para a próxima etapa
+    if not gatilho and proximo_passo:
         hits_reasoning = sum(1 for t in step_terms if t in proximo_passo)
         if hits_reasoning >= 2:
             gatilho = True
@@ -6454,14 +6461,9 @@ def _maybe_advance_assunto_step(
     # --------------------------------------------------
     # BLOQUEIOS DE SEGURANÇA
     # --------------------------------------------------
-    # não trocar de etapa se a ação ainda está fortemente ancorada
-    # na etapa atual (ex.: treino/corrida ainda em andamento)
-    assunto_atual = steps[step_index - 1].lower() if step_index - 1 < len(steps) else ""
-
-    current_terms = re.findall(r"[\wÀ-ÿ]+", assunto_atual)
+    current_terms = re.findall(r"[\wÀ-ÿ]+", assunto_atual.lower())
     current_terms = [t for t in current_terms if len(t) >= 4]
 
-    # se o reasoning ainda aponta muito para o passo atual, bloqueia
     ancora_atual = 0
     for t in current_terms:
         if t and (
@@ -6481,14 +6483,13 @@ def _maybe_advance_assunto_step(
     if gatilho:
         assunto_obj["step_index"] = step_index + 1
 
-    # debug sempre, para você enxergar por que avançou ou não
     try:
         st.session_state["mary_debug_assunto_advance"] = {
             "old": step_index,
             "new": (step_index + 1) if gatilho else step_index,
             "gatilho": gatilho,
             "motivo": motivo,
-            "assunto_atual": steps[step_index - 1] if 0 <= step_index - 1 < len(steps) else "",
+            "assunto_atual": assunto_atual,
             "proximo_step": proximo_step,
             "interlocutor": interlocutor,
             "acao_em_andamento": acao_em_andamento,
@@ -6497,7 +6498,6 @@ def _maybe_advance_assunto_step(
         }
     except Exception:
         pass
-
 
 # ==========================================================
 # REANCORAGEM DA PERSONAGEM (evita prompt drift)
@@ -8339,11 +8339,11 @@ class MaryService(BaseCharacter):
 
         assunto_ativo = ""
         if steps:
-            if step_index < 1:
-                step_index = 1
-            if step_index > len(steps):
-                step_index = len(steps)
-            assunto_ativo = steps[step_index - 1]
+            if step_index < 0:
+                step_index = 0
+            if step_index >= len(steps):
+                step_index = len(steps) - 1
+            assunto_ativo = steps[step_index]
     
         facts_lines = [
             "[ESTADO FÍSICO ATUAL — OBRIGATÓRIO]",
