@@ -83,6 +83,51 @@ from .decision_engine import (
 logger = logging.getLogger(__name__)
 
 # ==========================================================
+# DEBUG HELPERS (telemetria segura)
+# ==========================================================
+def _debug_enabled() -> bool:
+    try:
+        return bool(_ss_get("mary_debug_on", False))
+    except Exception:
+        return False
+
+
+def _debug_set(key: str, value: Any) -> None:
+    try:
+        _ss_set(key, value)
+    except Exception:
+        pass
+
+
+def _debug_append(label: str, payload: Any) -> None:
+    try:
+        if not _debug_enabled():
+            return
+        logs = _ss_get("mary_debug_log", [])
+        if not isinstance(logs, list):
+            logs = []
+        logs.append({
+            "ts": time.time(),
+            "label": str(label),
+            "payload": payload,
+        })
+        _ss_set("mary_debug_log", logs[-80:])
+    except Exception:
+        pass
+
+
+def _debug_capture_error(exc: Exception) -> None:
+    try:
+        import traceback as _tb
+        _debug_set("mary_last_error", {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": _tb.format_exc(),
+        })
+    except Exception:
+        pass
+
+# ==========================================================
 # TERMOS CONFIGURÁVEIS / DOMÍNIO NARRATIVO
 # ==========================================================
 
@@ -482,6 +527,13 @@ def _strip_internal_thought(texto: str) -> str:
         return ""
 
     original = str(texto).strip()
+
+    try:
+        if _debug_enabled():
+            _debug_set("mary_last_extracted_text_preview", original[:2000])
+    except Exception:
+        pass
+
     cleaned = _RE_THINK_BLOCK.sub("", original).strip()
 
     if not cleaned:
@@ -511,7 +563,15 @@ def _normalize_model_response(texto: str) -> str:
     t = re.sub(r"\n{3,}", "\n\n", t)
     t = re.sub(r"[ \t]+", " ", t)
 
-    return t.strip()
+    t = t.strip()
+
+    try:
+        if _debug_enabled():
+            _debug_set("mary_last_clean_text_preview", t[:2000])
+    except Exception:
+        pass
+
+    return t
 
 # ==========================================================
 # SESSION STATE (safe wrappers)
@@ -7252,6 +7312,12 @@ Resumo:
             + "\n\n"
             + CONTROLLED_UNPREDICTABILITY
         ).strip()
+
+        try:
+            if _debug_enabled():
+                _debug_set("mary_debug_system_prompt", system)
+        except Exception:
+            pass
     
         return system
           
@@ -7272,6 +7338,20 @@ Resumo:
     
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system}
+        try:
+            if _debug_enabled():
+                _debug_set("mary_debug_timeline_used", timeline_final)
+                _debug_set("mary_debug_user_prompt", prompt)
+                _debug_set("mary_debug_facts_used", facts if isinstance(facts, dict) else {})
+                _debug_set("mary_debug_rel_state_used", rel_state if isinstance(rel_state, dict) else {})
+                _debug_set("mary_debug_tp_arc_used", tp_arc if isinstance(tp_arc, dict) else {})
+                _debug_append("build_messages_for_turn:start", {
+                    "timeline": timeline_final,
+                    "prompt_len": len(prompt or ""),
+                    "facts_keys": list((facts or {}).keys())[:40] if isinstance(facts, dict) else [],
+                })
+        except Exception:
+            pass
         ]
         if autonomy_block:
             messages.append({
@@ -7480,7 +7560,26 @@ Resumo:
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
         })
-    
+     
+        try:
+            if _debug_enabled():
+                import json
+                _debug_set(
+                    "mary_debug_messages",
+                    json.dumps(messages, ensure_ascii=False, indent=2)
+                )
+                _debug_append("build_messages_for_turn:end", {
+                    "messages_count": len(messages),
+                    "has_system": bool(messages and messages[0].get("role") == "system"),
+                })
+        except Exception:
+            try:
+                _debug_set("mary_debug_messages", str(messages))
+            except Exception:
+                pass
+
+        return messages
+     
         return messages
     
     def _resolve_turn_policy(
@@ -10774,35 +10873,74 @@ Conflito não substitui a narrativa — apenas tensiona.
             "top_p": float(top_p),
             "max_tokens": int(max_tokens),
         }
-
+    
+        try:
+            if _debug_enabled():
+                _debug_set("mary_last_used_model", model)
+                _debug_set("mary_last_used_provider", None)
+                _debug_append("chat:request", {
+                    "model": model,
+                    "temperature": float(temperature),
+                    "top_p": float(top_p),
+                    "max_tokens": int(max_tokens),
+                    "messages_count": len(messages or []),
+                    "extra_keys": list((extra or {}).keys()) if isinstance(extra, dict) else [],
+                })
+        except Exception:
+            pass
+    
         def _validate_router_response(resp: Any):
             if resp is None:
                 raise RuntimeError(f"route_chat_strict retornou None (model={model})")
-
+    
             if not isinstance(resp, tuple) or len(resp) != 3:
                 raise RuntimeError(
                     f"route_chat_strict retornou formato inválido: "
                     f"type={type(resp).__name__}, repr={str(resp)[:300]}"
                 )
-
+    
             data, used_model, provider_meta = resp
-
+    
             if data is None:
                 raise RuntimeError(
                     f"route_chat_strict retornou tuple com data=None "
                     f"(model={model}, used_model={used_model})"
                 )
-
+    
             return data, used_model, provider_meta
-
+    
+        def _capture_success_debug(resp: Any, out: Any, mode: str) -> None:
+            try:
+                if _debug_enabled():
+                    _debug_set("mary_last_raw_resp", {
+                        "mode": mode,
+                        "resp_type": type(resp).__name__,
+                        "preview": str(resp)[:2000],
+                    })
+            except Exception:
+                pass
+    
+            try:
+                if _debug_enabled() and isinstance(out, tuple) and len(out) == 3:
+                    _data, _used_model, _provider_meta = out
+                    _debug_set("mary_last_used_model", _used_model or model)
+                    _debug_set(
+                        "mary_last_used_provider",
+                        str(_provider_meta)[:300] if _provider_meta is not None else None
+                    )
+            except Exception:
+                pass
+    
         if isinstance(extra, dict) and extra:
             payload_with_extra = dict(base_payload)
             payload_with_extra.update(extra)
-
+    
             try:
                 resp = service_router.route_chat_strict(model, payload_with_extra)
-                return _validate_router_response(resp)
-
+                out = _validate_router_response(resp)
+                _capture_success_debug(resp, out, "with_extra")
+                return out
+    
             except Exception as e:
                 try:
                     _ss_set(
@@ -10816,9 +10954,18 @@ Conflito não substitui a narrativa — apenas tensiona.
                     )
                 except Exception:
                     pass
-
+    
+                _debug_capture_error(e)
+    
                 resp = service_router.route_chat_strict(model, base_payload)
-                return _validate_router_response(resp)
+                out = _validate_router_response(resp)
+                _capture_success_debug(resp, out, "base_payload_retry")
+                return out
+    
+        resp = service_router.route_chat_strict(model, base_payload)
+        out = _validate_router_response(resp)
+        _capture_success_debug(resp, out, "base_payload_only")
+        return out
 
         resp = service_router.route_chat_strict(model, base_payload)
         return _validate_router_response(resp)
