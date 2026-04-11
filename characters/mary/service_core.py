@@ -7134,11 +7134,11 @@ class MaryService(BaseCharacter):
         continuity_rule: str,
         phone_message_rule: str,
         facts_integrity_rule: str,
+        priority_rule: str,
+        style_priority_rule: str,
         long_memory_block: str = "",
         timeline_behavior_block: str = "",
         mary_identity_anchor: str = "",
-        priority_rule: str,
-        style_priority_rule: str,
     ) -> str:
     
         action_commit_rule = """
