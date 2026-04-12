@@ -971,6 +971,8 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_debug_on"] = False
     if "mary_debug_log" not in st.session_state:
         st.session_state["mary_debug_log"] = []
+
+    # Inputs internos do pipeline
     if "mary_debug_system_prompt" not in st.session_state:
         st.session_state["mary_debug_system_prompt"] = ""
     if "mary_debug_messages" not in st.session_state:
@@ -986,6 +988,26 @@ def _garantir_estado_inicial() -> None:
     if "mary_debug_user_prompt" not in st.session_state:
         st.session_state["mary_debug_user_prompt"] = ""
 
+    # Flags de execução do build
+    if "DEBUG_ENTROU_BUILD_MESSAGES" not in st.session_state:
+        st.session_state["DEBUG_ENTROU_BUILD_MESSAGES"] = None
+    if "DEBUG_BUILD_MESSAGES_SYSTEM_LEN" not in st.session_state:
+        st.session_state["DEBUG_BUILD_MESSAGES_SYSTEM_LEN"] = None
+    if "DEBUG_BUILD_MESSAGES_HISTORY_LEN" not in st.session_state:
+        st.session_state["DEBUG_BUILD_MESSAGES_HISTORY_LEN"] = None
+
+    # Reasoning / decisão / autonomia
+    if "mary_reasoning_debug" not in st.session_state:
+        st.session_state["mary_reasoning_debug"] = {}
+    if "mary_reasoning_llm_debug" not in st.session_state:
+        st.session_state["mary_reasoning_llm_debug"] = {}
+    if "mary_llm_reasoning_status" not in st.session_state:
+        st.session_state["mary_llm_reasoning_status"] = {}
+    if "mary_decision_debug" not in st.session_state:
+        st.session_state["mary_decision_debug"] = {}
+    if "mary_hook_debug" not in st.session_state:
+        st.session_state["mary_hook_debug"] = {}
+
     # Debug bruto da resposta (sidebar)
     if "mary_last_used_model" not in st.session_state:
         st.session_state["mary_last_used_model"] = None
@@ -999,6 +1021,8 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_last_extracted_text_preview"] = ""
     if "mary_last_clean_text_preview" not in st.session_state:
         st.session_state["mary_last_clean_text_preview"] = ""
+    if "mary_last_chat_params" not in st.session_state:
+        st.session_state["mary_last_chat_params"] = {}
     if "mary_last_error" not in st.session_state:
         st.session_state["mary_last_error"] = {}
 
@@ -3241,7 +3265,7 @@ def _render_sidebar() -> None:
                 err = ping.get("error")
                 st.code(err if isinstance(err, str) and err.strip() else str(ping))
                 
-            st.checkbox("Ativar debug técnico do service", key="mary_debug_on")   
+        st.checkbox("Ativar debug técnico do service", key="mary_debug_on")   
         with st.expander("🧨 Último erro (service)", expanded=False):
             st.markdown("**Modelo/Provider capturados (última call):**")
             st.write(
