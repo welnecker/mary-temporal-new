@@ -597,6 +597,20 @@ def _ss_keys() -> List[str]:
         return [k for k in st.session_state.keys() if isinstance(k, str)]
     return []
 
+# ==========================================================
+# DEBUG ERROR CAPTURE
+# ==========================================================
+def _debug_capture_error(exc: Exception) -> None:
+    try:
+        import traceback as _tb
+        _ss_set("mary_last_error", {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": _tb.format_exc(),
+        })
+    except Exception:
+        pass
+
 
 # ==========================================================
 # CONTROLE DE PROGRESSÃO ÍNTIMA (FASES)
@@ -9424,6 +9438,7 @@ Conflito não substitui a narrativa — apenas tensiona.
             print(json.dumps(messages, ensure_ascii=False, indent=2))
             print("\n=======================================================\n")
         except Exception as e:
+            _debug_capture_error(e)
             print(f"[DEBUG messages] falha ao imprimir: {e}")
 
         # ==========================================================
@@ -9568,6 +9583,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                             )
         
                     except Exception as e:
+                        _debug_capture_error(e)
                         meta = meta or {}
                         try:
                             _ss_set(
@@ -9624,7 +9640,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                     },
                 )
         
-                               # ----------------------------------------------------------
+                # ----------------------------------------------------------
                 # Persistência oficial do turno
                 # ----------------------------------------------------------
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
@@ -9641,6 +9657,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                             timeline_final,
                         )
                 except Exception as e:
+                    _debug_capture_error(e)
                     try:
                         _ss_set(
                             "mary_emotion_error",
@@ -9856,6 +9873,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                 return texto
         
             except Exception as e:
+                _debug_capture_error(e)
                 last_err = e
         
         if last_err:
@@ -10948,6 +10966,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                 return out
     
             except Exception as e:
+                _debug_capture_error(e)
                 try:
                     _ss_set(
                         "mary_last_extra_retry_debug",
