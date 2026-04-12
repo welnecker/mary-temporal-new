@@ -734,13 +734,19 @@ def _advance_intimacy_phase_from_user(
     return _set_intimacy_phase(usuario_key, timeline, new_phase)
 
 
-def _render_intimacy_phase_rule(phase: int) -> str:
-    if phase <= 0:
+    if phase == 4:
         return """
-[FASE ÍNTIMA ATUAL: TENSÃO]
-- Permitir apenas aproximação, olhar, toque inicial e construção de clima.
-- Não avançar para ações intensas.
-- A resposta deve sugerir possibilidade, não resolução.
+[FASE ÍNTIMA ATUAL: CLÍMAX]
+- Mary está no auge da resposta física.
+- Esta resposta deve culminar o momento.
+- O orgasmo deve ser perceptível no corpo, na fala ou nos dois.
+- A verbalização deve ser clara e adulta quando o pico já estiver consumado.
+- Não prolongar o clímax por vários movimentos novos.
+- Não reiniciar excitação.
+- Após consumar, preparar transição imediata para aftercare.
+
+Regra central:
+→ fase 4 é culminação, não permanência.
 """.strip()
 
     if phase == 1:
@@ -776,8 +782,10 @@ def _render_intimacy_phase_rule(phase: int) -> str:
 
     return """
 [FASE ÍNTIMA ATUAL: AFTERCARE]
-- A intensidade principal passou.
-- A resposta deve desacelerar e estabilizar a cena.
+- O clímax já aconteceu.
+- A resposta deve desacelerar.
+- Priorizar respiração, calor residual, toque leve, corpo mole ou estabilização.
+- Não retomar escalada intensa sem novo gatilho claro.
 """.strip()
 
 # ==========================================================
@@ -835,80 +843,80 @@ def _long_key(user_id: str) -> str:
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
 
-REGRAS:
+- Manter proximidade física leve (olhar, gesto, aproximação).
+- Sustentar tensão sem esfriar a cena.
+- Fala sempre acompanhada de ação ou reação.
 
-- Manter proximidade física ativa (olhar, gesto, movimento, hesitação).
-- Não descrever ato sexual.
-- Manter tensão presente, sem esfriar a cena.
-- Não transformar a cena em romance.
-- A fala nunca deve vir solta: sempre acompanhada de ação, gesto ou reação.
-
-OBJETIVO:
-A cena continua carregada e física, mas sem descrição explícita.
+Regra:
+→ presença contínua, sem explicitar.
 """.strip()
 
 
 NSFW_TOGGLE_STYLE = """
 [NSFW_ON - MICROPROGRESSÃO]
 
-REGRAS OBRIGATÓRIAS:
+REGRAS:
 
-1. TODA RESPOSTA TEM AÇÃO
-- Sempre mostrar o corpo de Mary em movimento.
-- Não responder só com fala ou pensamento.
+1. AÇÃO CONTÍNUA
+- Toda resposta deve mostrar o corpo de Mary em movimento.
+- Fala nunca vem isolada: sempre acompanhada de ação ou reação.
 
 2. CONTINUIDADE IMEDIATA
 - Começar exatamente do último ponto da cena.
-- Não reiniciar, não resumir.
+- Não reiniciar nem resumir.
 
 3. MICROPROGRESSÃO
-- Cada resposta deve avançar a cena um passo.
-- Esse avanço deve ser pequeno, mas visível:
-  - ajustar posição
-  - aumentar ou diminuir pressão
-  - mudar ponto de contato
-  - reagir fisicamente ao usuário
+- Cada resposta deve avançar a cena um passo visível e pequeno:
+  - ajuste de posição
+  - mudança de contato
+  - variação de pressão
+  - reação física ao usuário
 
-4. MOSTRAR CONTATO
-- Sempre deixar claro:
+4. CONTATO CONCRETO
+- Deixar claro:
   - onde a mão está
-  - como os corpos estão próximos
+  - como os corpos estão posicionados
   - o que está tocando o quê
 
-5. FALA COM AÇÃO
-- Se Mary fala, o corpo continua agindo.
-- Nunca deixar diálogo isolado.
-
-6. PROIBIDO ESTAGNAR
+5. EVOLUÇÃO CONTROLADA
 - Não repetir a mesma ação em turnos seguidos.
-- Não ficar apenas reagindo sem avançar.
+- Não estagnar.
+- Não pular etapas.
 
-7. PROIBIDO PULAR ETAPA
-- Não saltar direto para momentos finais da cena.
-- A progressão deve ser contínua e construída.
-
-8. SEM TEXTO GENÉRICO
-- Evitar:
+6. PRECISÃO FÍSICA
+- Evitar descrições genéricas:
   - "meu corpo reage"
   - "um arrepio percorre"
   - "a tensão aumenta"
 - Substituir por ação concreta.
 
+7. COERÊNCIA EMOCIONAL (NOVO - CRÍTICO)
+- O avanço só ocorre se for coerente com:
+  - emoção atual
+  - vínculo ativo
+  - contexto da cena
+- Em caso de conflito:
+  - reduzir intensidade
+  - hesitar
+  - redirecionar
+  - ou recuar
+
 OBJETIVO:
-A cada resposta, o usuário deve perceber que a cena mudou fisicamente.
+A cada resposta, a cena deve mudar fisicamente de forma perceptível e coerente.
 """.strip()
 
 
 NARRATIVE_SPACE = """
 [A CENA CONTINUA VIVA]
 
-Mary pode:
-- observar o ambiente
-- hesitar
-- demonstrar emoção antes de agir
-- reagir com o corpo antes de falar
+Mary:
+- observa
+- hesita
+- reage com o corpo
+- pode agir antes ou junto da fala
 
-A resposta deve manter sensação de momento em andamento.
+Regra:
+→ a cena está sempre em andamento.
 """.strip()
 
 
@@ -4619,7 +4627,7 @@ def _compute_next_phase(
 
     - Nunca salta mais de 1 fase.
     - Pode regredir 1 fase se houver desaceleração real.
-    - Não força clímax.
+    - Não força clímax sem sinal coerente.
     """
 
     try:
@@ -4643,7 +4651,12 @@ def _compute_next_phase(
     # ----------------------------------------------------------
     # 2) Avanço natural
     # ----------------------------------------------------------
-    if _should_advance_phase(p, ut, at, engine_meta=engine_meta):
+    if _should_advance_phase(
+        p,
+        ut,
+        at,
+        engine_meta=engine_meta,
+    ):
         next_p = p + 1
         return min(next_p, int(MAX_INTIMACY_PHASE))
 
@@ -4889,6 +4902,61 @@ def _validate_orgasm_verbalization(text: str, violations: List[str]) -> bool:
 
     return False
 
+def _did_mary_orgasm(texto: str, phase: int) -> bool:
+    """
+    Confirma orgasmo consumado da Mary.
+    """
+    if int(phase or 0) < 4:
+        return False
+
+    t = _t_norm(texto or "")
+    if not t:
+        return False
+
+    if _has_mary_orgasm_declaration(t):
+        return True
+
+    return _orgasm_signal_score(t) >= 4
+
+
+def _already_committed_orgasm(facts: Dict[str, Any], timeline: str) -> bool:
+    tl = _normalize_timeline(timeline)
+    return bool(
+        facts.get(f"mary.orgasm::{tl}")
+        or facts.get("mary.orgasm")
+    )
+
+
+def _commit_mary_orgasm(
+    *,
+    usuario_key: str,
+    timeline: str,
+    texto: str,
+    phase: int,
+) -> bool:
+    """
+    Se Mary realmente chegou ao clímax, persiste esse estado e empurra para aftercare.
+    """
+    if not _did_mary_orgasm(texto, phase):
+        return False
+
+    facts_now = cached_get_facts(usuario_key) or {}
+    if _already_committed_orgasm(facts_now, timeline):
+        return False
+
+    tl = _normalize_timeline(timeline)
+
+    try:
+        set_fact_safe(usuario_key, f"mary.orgasm::{tl}", True, {"fonte": "orgasm_commit"})
+        set_fact_safe(usuario_key, "mary.orgasm", True, {"fonte": "orgasm_commit"})
+        set_fact_safe(usuario_key, f"intimacy.phase::{tl}", 5, {"fonte": "orgasm_commit"})
+        set_fact_safe(usuario_key, "intimacy.phase", 5, {"fonte": "orgasm_commit"})
+        set_fact_safe(usuario_key, "fase_intima", "aftercare", {"fonte": "orgasm_commit"})
+    except Exception:
+        return False
+
+    return True
+
 # ---------------------------------------------------------
 # HYBRID (heurística + LLM) - classificação "na borda"
 # ---------------------------------------------------------
@@ -5069,7 +5137,6 @@ def _cap_next_phase(current_phase: int) -> int:
         p = 0
     return max(0, min(MAX_INTIMACY_PHASE, p + 1))
 
-
 def _should_advance_phase(
     current_phase: int,
     user_text: str,
@@ -5079,13 +5146,13 @@ def _should_advance_phase(
     **_kw: Any,
 ) -> bool:
     """
-    Nova progressão real:
+    Progressão íntima guiada por conteúdo real.
 
     0 -> 1 : excitação física visível
     1 -> 2 : ação sexual ativa
     2 -> 3 : pré-clímax / perda de controle
-    3 -> 4 : corpo em clímax físico
-    4 -> 5 : desaceleração / aftercare
+    3 -> 4 : clímax físico coerente
+    4 -> 5 : aftercare / desaceleração
     """
 
     try:
@@ -5093,7 +5160,9 @@ def _should_advance_phase(
     except Exception:
         p = 0
 
-    lvl = _intimacy_level(user_text, texto)
+    ut = _t_norm(user_text or "")
+    at = _t_norm(texto or "")
+    lvl = _intimacy_level(ut, at)
 
     if p <= 0:
         return lvl >= 1
@@ -5105,7 +5174,19 @@ def _should_advance_phase(
         return lvl >= 3
 
     if p == 3:
-        return lvl >= 4
+        # fase 4 só com sinal de clímax realmente forte
+        # evita subir só por intensidade alta genérica
+        if lvl < 4:
+            return False
+
+        # se já há declaração explícita ou forte sinal corporal, sobe
+        if _has_mary_orgasm_declaration(at):
+            return True
+
+        if _orgasm_signal_score(at) >= 3:
+            return True
+
+        return False
 
     if p == 4:
         return _user_signals_aftercare(user_text)
@@ -9700,65 +9781,50 @@ Conflito não substitui a narrativa — apenas tensiona.
 
                 if phase != 5:
                     sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-
+                
                     k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
                     mary_active = bool((current_facts or {}).get(k_active, False))
                     mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-
-                    if sex_active:
-                        if not mary_active:
-                            mary_turns = 0
-
-                        mary_turns = min(4, mary_turns + 1)
-                        target_phase = _mary_phase_from_turns(mary_turns)
-                        desired_next = max(current_phase, target_phase)
-
-                        try:
+                
+                    # MOTOR PRINCIPAL = SEMÂNTICO / POR CONTEÚDO
+                    desired_next = _compute_next_phase(
+                        current_phase,
+                        prompt,
+                        texto,
+                        engine_meta=meta,
+                    )
+                
+                    # mary_turns fica só como telemetria / apoio
+                    try:
+                        if sex_active:
+                            if not mary_active:
+                                mary_turns = 0
+                            mary_turns = min(4, mary_turns + 1)
                             set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
-                        except Exception as e_org:
-                            try:
-                                _ss_set(
-                                    "mary_orgasm_turns_error",
-                                    {
-                                        "type": type(e_org).__name__,
-                                        "msg": str(e_org)[:500],
-                                        "timeline": timeline_final,
-                                    },
-                                )
-                            except Exception:
-                                pass
-                    else:
-                        desired_next = _compute_next_phase(
-                            current_phase,
-                            prompt,
-                            texto,
-                            engine_meta=meta,
-                        )
-
-                        try:
+                        else:
                             set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
                             set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
-                        except Exception as e_org2:
-                            try:
-                                _ss_set(
-                                    "mary_orgasm_turns_error",
-                                    {
-                                        "type": type(e_org2).__name__,
-                                        "msg": str(e_org2)[:500],
-                                        "timeline": timeline_final,
-                                    },
-                                )
-                            except Exception:
-                                pass
-
+                    except Exception as e_org:
+                        try:
+                            _ss_set(
+                                "mary_orgasm_turns_error",
+                                {
+                                    "type": type(e_org).__name__,
+                                    "msg": str(e_org)[:500],
+                                    "timeline": timeline_final,
+                                },
+                            )
+                        except Exception:
+                            pass
+                
                     if desired_next != current_phase:
                         self._set_intimacy_phase(
                             usuario_key,
                             desired_next,
                             timeline_final,
                         )
-
+                
                         try:
                             _sync_intimacy_phase_facts(
                                 usuario_key,
@@ -9836,18 +9902,18 @@ Conflito não substitui a narrativa — apenas tensiona.
                         texto,
                         tp_arc=tp_arc,
                     )
-        
+                
                     dynamic_rel_state = apply_relationship_shift(
                         dynamic_rel_state,
                         rel_delta,
                     )
-        
+                
                     save_dynamic_relationship_state(
                         usuario_key,
                         timeline_final,
                         dynamic_rel_state,
                     )
-        
+                
                     _ss_set(
                         "mary_dynamic_rel_debug",
                         {
@@ -9868,7 +9934,34 @@ Conflito não substitui a narrativa — apenas tensiona.
                         )
                     except Exception:
                         pass
-        
+                
+                # ----------------------------------------------------------
+                # ORGASM COMMIT - antes de retornar o texto
+                # ----------------------------------------------------------
+                try:
+                    current_facts_after = cached_get_facts(usuario_key) or {}
+                    current_phase_after = self._get_intimacy_phase(current_facts_after)
+                
+                    orgasm_committed = _commit_mary_orgasm(
+                        usuario_key=usuario_key,
+                        timeline=timeline_final,
+                        texto=texto,
+                        phase=current_phase_after,
+                    )
+                
+                    if orgasm_committed:
+                        _ss_set(
+                            "mary_last_orgasm_commit",
+                            {
+                                "timeline": timeline_final,
+                                "phase_before": current_phase_after,
+                                "committed": True,
+                                "text_preview": texto[:300],
+                            },
+                        )
+                except Exception:
+                    pass
+                
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
         
