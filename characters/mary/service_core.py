@@ -8430,7 +8430,7 @@ Resumo:
 
         nsfw_hard_block = ""
         if nsfw_on:
-        nsfw_hard_block = """
+         nsfw_hard_block = """
 [NSFW - INTENSIDADE ALTA]
 
 - aplicar apenas em fases altas (3 ou 4)
@@ -9258,7 +9258,7 @@ REGRA CENTRAL:
 
         if intimacy_phase >= 4 and nsfw_on:
          
-        orgasm_verbalization_rule = """
+         orgasm_verbalization_rule = """
 [VERBALIZAÇÃO DO CLÍMAX]
 
 REGRAS:
@@ -9293,7 +9293,7 @@ REGRA:
 → linguagem acompanha a cena, não força a cena
 """.strip()
      
-            intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
+        intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO - ABSOLUTA]
