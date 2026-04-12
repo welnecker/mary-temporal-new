@@ -7395,6 +7395,7 @@ Resumo:
    {conversation_style_rule}
    {intimacy_phase_rule}
    {intimacy_control_block}
+   {orgasm_verbalization_rule}
    {nsfw_hard_block}
    {nsfw_block}
    """.strip()
@@ -9235,63 +9236,72 @@ REGRA:
   - submissão a terceiros contra coerência emocional
 """.strip()
 
+        # ==========================================================
+        # INTIMIDADE / NSFW
+        # ==========================================================
+        
+        # SEMPRE inicializar
+        orgasm_verbalization_rule = ""
+        
         intimacy_control_block = """
-[CONTROLE DE PROGRESSÃO ÍNTIMA]
-
-REGRAS:
-- avanço máximo: 1 fase por resposta
-- avanço exige:
-  - continuidade
-  - coerência emocional
-  - estímulo contextual
-
-- não pular fases
-- não acelerar artificialmente
-- não iniciar clímax fora de contexto
-
-- se a cena desacelerar:
-  → pode manter ou regredir levemente
-
-REGRA CENTRAL:
-→ progressão gradual e contínua
-""".strip()
-
+        [CONTROLE DE PROGRESSÃO ÍNTIMA]
+        
+        REGRAS:
+        - avanço máximo: 1 fase por resposta
+        - avanço exige:
+          - continuidade
+          - coerência emocional
+          - estímulo contextual
+        
+        - não pular fases
+        - não acelerar artificialmente
+        - não iniciar clímax fora de contexto
+        
+        - se a cena desacelerar:
+          → pode manter ou regredir levemente
+        
+        REGRA CENTRAL:
+        → progressão gradual e contínua
+        """.strip()
+        
+        # CLÍMAX (condicional)
         if intimacy_phase >= 4 and nsfw_on:
-         
-         orgasm_verbalization_rule = """
-[VERBALIZAÇÃO DO CLÍMAX]
-
-REGRAS:
-- quando Mary atinge o clímax:
-  - deve ser perceptível
-  - pode ser físico, verbal ou ambos
-
-- evitar:
-  - clímax silencioso
-  - clímax implícito demais
-  - clímax genérico
-
-- permitir:
-  - reação corporal clara
-  - respiração, tensão, liberação
-  - fala coerente com intensidade
-
-REGRA:
-→ clímax deve ser vivido, não sugerido
-""".strip()
+            orgasm_verbalization_rule = """
+        [VERBALIZAÇÃO DO CLÍMAX]
+        
+        REGRAS:
+        - quando Mary atinge o clímax:
+          - deve ser perceptível
+          - pode ser físico, verbal ou ambos
+        
+        - evitar:
+          - clímax silencioso
+          - clímax implícito demais
+          - clímax genérico
+        
+        - permitir:
+          - reação corporal clara
+          - respiração, tensão, liberação
+          - fala coerente com intensidade
+        
+        REGRA:
+        → clímax deve ser vivido, não sugerido
+        """.strip()
+        
+        # NSFW (sempre existe)
         nsfw_block = """
-[NSFW - TOM]
-
-- linguagem pode ser adulta
-- descrever sensações físicas
-- usar vocabulário direto quando coerente
-
-- não forçar intensidade
-- não antecipar clímax
-
-REGRA:
-→ linguagem acompanha a cena, não força a cena
-""".strip()
+        [NSFW - TOM]
+        
+        - linguagem pode ser adulta
+        - descrever sensações físicas
+        - usar vocabulário direto quando coerente
+        
+        - não forçar intensidade
+        - não antecipar clímax
+        
+        REGRA:
+        → linguagem acompanha a cena, não força a cena
+        """.strip()
      
         intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
 
