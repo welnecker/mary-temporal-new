@@ -9407,7 +9407,117 @@ Conflito não substitui a narrativa — apenas tensiona.
             scene_action,
             locked=scene_locked,
         )
-
+             
+        # ==========================================================
+        # DEFAULTS DEFENSIVOS DOS BLOCOS DO PROMPT
+        # ==========================================================
+        user_name_block = locals().get("user_name_block", "") or ""
+        spatial_context = locals().get("spatial_context", "") or ""
+        state_section = locals().get("state_section", "") or ""
+        assunto_section = locals().get("assunto_section", "") or ""
+        estado_micro_section = locals().get("estado_micro_section", "") or ""
+        pending_event_section = locals().get("pending_event_section", "") or ""
+        
+        canon_txt = locals().get("canon_txt", "") or ""
+        persona_text = locals().get("persona_text", "") or ""
+        rel_block = locals().get("rel_block", "") or ""
+        dynamic_rel_block = locals().get("dynamic_rel_block", "") or ""
+        long_memory_block = locals().get("long_memory_block", "") or ""
+        mary_identity_anchor = locals().get("mary_identity_anchor", "") or ""
+        timeline_behavior_block = locals().get("timeline_behavior_block", "") or ""
+        third_party_arc_rule = locals().get("third_party_arc_rule", "") or ""
+        behavior_block = locals().get("behavior_block", "") or ""
+        patterns_block = locals().get("patterns_block", "") or ""
+        janio_focus_rule = locals().get("janio_focus_rule", "") or ""
+        topic_rule = locals().get("topic_rule", "") or ""
+        emotional_persistence_rule = locals().get("emotional_persistence_rule", "") or ""
+        facts_present_rule = locals().get("facts_present_rule", "") or ""
+        virginity_rule = locals().get("virginity_rule", "") or ""
+        memory_fidelity_rule = locals().get("memory_fidelity_rule", "") or ""
+        user_finalizes_rule = locals().get("user_finalizes_rule", "") or ""
+        initiative_rule = locals().get("initiative_rule", "") or ""
+        initiative_escalation_rule = locals().get("initiative_escalation_rule", "") or ""
+        manipulation_block = locals().get("manipulation_block", "") or ""
+        conflict_block = locals().get("conflict_block", "") or ""
+        desvio_curto_rule = locals().get("desvio_curto_rule", "") or ""
+        betrayal_rule = locals().get("betrayal_rule", "") or ""
+        third_party_initiative_rule = locals().get("third_party_initiative_rule", "") or ""
+        intimacy_control_block = locals().get("intimacy_control_block", "") or ""
+        intimacy_phase_rule = locals().get("intimacy_phase_rule", "") or ""
+        nsfw_hard_block = locals().get("nsfw_hard_block", "") or ""
+        nsfw_block = locals().get("nsfw_block", "") or ""
+        language_rule = locals().get("language_rule", "") or ""
+        pov_rule = locals().get("pov_rule", "") or ""
+        user_authorship_rule = locals().get("user_authorship_rule", "") or ""
+        continuity_rule = locals().get("continuity_rule", "") or ""
+        phone_message_rule = locals().get("phone_message_rule", "") or ""
+        facts_integrity_rule = locals().get("facts_integrity_rule", "") or ""
+        decision_pressure_rule = locals().get("decision_pressure_rule", "") or ""
+        anti_pattern_rule = locals().get("anti_pattern_rule", "") or ""
+        style_variation_rule = locals().get("style_variation_rule", "") or ""
+        anti_rumination_rule = locals().get("anti_rumination_rule", "") or ""
+        prose_density_rule = locals().get("prose_density_rule", "") or ""
+        anti_melodrama_rule = locals().get("anti_melodrama_rule", "") or ""
+        priority_rule = locals().get("priority_rule", "") or ""
+        style_priority_rule = locals().get("style_priority_rule", "") or ""
+        try:
+            _missing_prompt_blocks = [
+                name for name in [
+                    "user_name_block",
+                    "spatial_context",
+                    "state_section",
+                    "assunto_section",
+                    "estado_micro_section",
+                    "pending_event_section",
+                    "canon_txt",
+                    "persona_text",
+                    "rel_block",
+                    "dynamic_rel_block",
+                    "long_memory_block",
+                    "mary_identity_anchor",
+                    "timeline_behavior_block",
+                    "third_party_arc_rule",
+                    "behavior_block",
+                    "patterns_block",
+                    "janio_focus_rule",
+                    "topic_rule",
+                    "emotional_persistence_rule",
+                    "facts_present_rule",
+                    "virginity_rule",
+                    "memory_fidelity_rule",
+                    "user_finalizes_rule",
+                    "initiative_rule",
+                    "initiative_escalation_rule",
+                    "manipulation_block",
+                    "conflict_block",
+                    "desvio_curto_rule",
+                    "betrayal_rule",
+                    "third_party_initiative_rule",
+                    "intimacy_control_block",
+                    "intimacy_phase_rule",
+                    "nsfw_hard_block",
+                    "nsfw_block",
+                    "language_rule",
+                    "pov_rule",
+                    "user_authorship_rule",
+                    "continuity_rule",
+                    "phone_message_rule",
+                    "facts_integrity_rule",
+                    "decision_pressure_rule",
+                    "anti_pattern_rule",
+                    "style_variation_rule",
+                    "anti_rumination_rule",
+                    "prose_density_rule",
+                    "anti_melodrama_rule",
+                    "priority_rule",
+                    "style_priority_rule",
+                ]
+                if not locals().get(name, "")
+            ]
+            _ss_set("mary_missing_prompt_blocks", _missing_prompt_blocks)
+        except Exception:
+            pass
+     
         # ==========================================================
         # System prompt e messages
         # ==========================================================
