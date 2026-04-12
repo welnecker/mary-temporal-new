@@ -966,7 +966,7 @@ def _garantir_estado_inicial() -> None:
     if "mary_rel_meta_last" not in st.session_state:
         st.session_state["mary_rel_meta_last"] = None
 
-        # Debug técnico do service
+    # Debug técnico do service
     if "mary_debug_on" not in st.session_state:
         st.session_state["mary_debug_on"] = False
     if "mary_debug_log" not in st.session_state:
@@ -985,6 +985,22 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_debug_timeline_used"] = ""
     if "mary_debug_user_prompt" not in st.session_state:
         st.session_state["mary_debug_user_prompt"] = ""
+
+    # Debug bruto da resposta (sidebar)
+    if "mary_last_used_model" not in st.session_state:
+        st.session_state["mary_last_used_model"] = None
+    if "mary_last_used_provider" not in st.session_state:
+        st.session_state["mary_last_used_provider"] = None
+    if "mary_last_raw_resp" not in st.session_state:
+        st.session_state["mary_last_raw_resp"] = {}
+    if "mary_last_resp_type" not in st.session_state:
+        st.session_state["mary_last_resp_type"] = None
+    if "mary_last_extracted_text_preview" not in st.session_state:
+        st.session_state["mary_last_extracted_text_preview"] = ""
+    if "mary_last_clean_text_preview" not in st.session_state:
+        st.session_state["mary_last_clean_text_preview"] = ""
+    if "mary_last_error" not in st.session_state:
+        st.session_state["mary_last_error"] = {}
 
     # modelos disponíveis
     try:
@@ -1973,8 +1989,10 @@ def _call_service_reply_safe(
     except Exception:
         st.session_state["mary_last_raw_resp"] = {"raw_type": type(resp).__name__}
 
+    st.session_state["mary_last_resp_type"] = type(resp).__name__
+
     txt = _extract_router_text(resp) or ""
-    st.session_state["mary_last_extracted_text_preview"] = txt[:600]
+    st.session_state["mary_last_extracted_text_preview"] = txt[:2000]
 
     try:
         prov, used_model = _extract_router_used_model_provider(resp)
@@ -1988,7 +2006,7 @@ def _call_service_reply_safe(
         _capture_used_model_provider_from_service(svc)
 
     clean = _strip_persona_echo_if_any(txt) or ""
-    st.session_state["mary_last_clean_text_preview"] = clean[:600]
+    st.session_state["mary_last_clean_text_preview"] = clean[:2000]
 
     return clean
 
@@ -3230,12 +3248,16 @@ def _render_sidebar() -> None:
                 "Usado:",
                 f"{st.session_state.get('mary_last_used_provider') or '—'} / {st.session_state.get('mary_last_used_model') or '—'}",
             )
+        
             st.markdown("**Preview extracted (antes do strip):**")
             st.code(st.session_state.get("mary_last_extracted_text_preview") or "")
+        
             st.markdown("**Preview clean (depois do strip):**")
             st.code(st.session_state.get("mary_last_clean_text_preview") or "")
+        
             st.markdown("**RAW summary:**")
             st.json(st.session_state.get("mary_last_raw_resp") or {})
+        
             st.markdown("**Último erro registrado:**")
             st.json(st.session_state.get("mary_last_error") or {})
 
