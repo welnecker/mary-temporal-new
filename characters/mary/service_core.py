@@ -7364,6 +7364,14 @@ Resumo:
     
         dedupe_hashes: set = set()
         history_docs = cached_get_history(usuario_key, limit=40)
+
+        try:
+            if _debug_enabled():
+                _debug_set("DEBUG_ENTROU_BUILD_MESSAGES", True)
+                _debug_set("DEBUG_BUILD_MESSAGES_SYSTEM_LEN", len(system or ""))
+                _debug_set("DEBUG_BUILD_MESSAGES_HISTORY_LEN", len(history_docs or []))
+        except Exception:
+            pass
     
         # ==========================================================
         # 1) CONTEXTO ESTRUTURAL - verdade do universo
