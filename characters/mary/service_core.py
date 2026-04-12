@@ -9646,15 +9646,15 @@ Conflito não substitui a narrativa — apenas tensiona.
                 save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
                 _lock_scene(usuario_key)
 
-                # 🔥 NOVO BLOCO — persistência de emoção
+                # NOVO BLOCO — persistência de emoção
                 try:
                     new_emotion = _infer_emotion_bucket(texto)
 
                     if new_emotion:
                         _save_emotion_state_to_facts(
-                            usuario_key,
-                            new_emotion,
-                            timeline_final,
+                            usuario_key=usuario_key,
+                            timeline=timeline_final,
+                            emotion=new_emotion,
                         )
                 except Exception as e:
                     _debug_capture_error(e)
