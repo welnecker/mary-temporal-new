@@ -10899,6 +10899,19 @@ Conflito não substitui a narrativa — apenas tensiona.
         }
     
         try:
+            _ss_set("mary_last_chat_params", {
+                "model": model,
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+                "max_tokens": int(max_tokens),
+                "has_extra": bool(isinstance(extra, dict) and extra),
+                "extra_keys": list((extra or {}).keys()) if isinstance(extra, dict) else [],
+                "messages_count": len(messages or []),
+            })
+        except Exception:
+            pass
+    
+        try:
             if _debug_enabled():
                 _debug_set("mary_last_used_model", model)
                 _debug_set("mary_last_used_provider", None)
@@ -10935,6 +10948,11 @@ Conflito não substitui a narrativa — apenas tensiona.
     
         def _capture_success_debug(resp: Any, out: Any, mode: str) -> None:
             try:
+                _ss_set("mary_last_resp_type", type(resp).__name__)
+            except Exception:
+                pass
+    
+            try:
                 if _debug_enabled():
                     _debug_set("mary_last_raw_resp", {
                         "mode": mode,
@@ -10945,7 +10963,7 @@ Conflito não substitui a narrativa — apenas tensiona.
                 pass
     
             try:
-                if _debug_enabled() and isinstance(out, tuple) and len(out) == 3:
+                if isinstance(out, tuple) and len(out) == 3:
                     _data, _used_model, _provider_meta = out
                     _debug_set("mary_last_used_model", _used_model or model)
                     _debug_set(
@@ -10967,6 +10985,7 @@ Conflito não substitui a narrativa — apenas tensiona.
     
             except Exception as e:
                 _debug_capture_error(e)
+    
                 try:
                     _ss_set(
                         "mary_last_extra_retry_debug",
@@ -10979,8 +10998,6 @@ Conflito não substitui a narrativa — apenas tensiona.
                     )
                 except Exception:
                     pass
-    
-                _debug_capture_error(e)
     
                 resp = service_router.route_chat_strict(model, base_payload)
                 out = _validate_router_response(resp)
