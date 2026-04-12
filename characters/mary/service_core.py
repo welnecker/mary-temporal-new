@@ -734,58 +734,53 @@ def _advance_intimacy_phase_from_user(
     return _set_intimacy_phase(usuario_key, timeline, new_phase)
 
 
-    if phase == 4:
+def _render_intimacy_phase_rule(phase: int) -> str:
+    if phase <= 0:
         return """
-[FASE ÍNTIMA ATUAL: CLÍMAX]
-- Mary está no auge da resposta física.
-- Esta resposta deve culminar o momento.
-- O orgasmo deve ser perceptível no corpo, na fala ou nos dois.
-- A verbalização deve ser clara e adulta quando o pico já estiver consumado.
-- Não prolongar o clímax por vários movimentos novos.
-- Não reiniciar excitação.
-- Após consumar, preparar transição imediata para aftercare.
-
-Regra central:
-→ fase 4 é culminação, não permanência.
+[FASE ÍNTIMA ATUAL: TENSÃO]
+- Permitir apenas aproximação, olhar e clima.
 """.strip()
 
     if phase == 1:
         return """
 [FASE ÍNTIMA ATUAL: CONTATO]
-- Permitir toque, proximidade corporal e ajuste de posição.
-- Não acelerar para intensidade alta.
-- A cena deve continuar física, mas ainda inicial.
+- Permitir toque e proximidade.
+- Não acelerar intensidade.
 """.strip()
 
     if phase == 2:
         return """
 [FASE ÍNTIMA ATUAL: EXCITAÇÃO]
-- Permitir pressão corporal maior, contato firme e progressão clara.
-- Não antecipar finalização da cena.
-- Cada resposta deve avançar um passo visível.
+- Intensidade crescente e contato firme.
+- Progressão clara, sem finalização.
 """.strip()
 
     if phase == 3:
         return """
 [FASE ÍNTIMA ATUAL: PRÉ-CLÍMAX]
-- Permitir intensidade alta e progressão contínua.
-- Não resolver a cena cedo demais.
-- Mantenha controle e continuidade.
+- Alta intensidade.
+- Controle e continuidade.
+- Não resolver cedo demais.
 """.strip()
 
     if phase == 4:
         return """
 [FASE ÍNTIMA ATUAL: CLÍMAX]
-- Permitir resolução do momento.
-- Não voltar para fase baixa sem motivo narrativo claro.
+- Mary está no auge da resposta física.
+- Esta resposta deve culminar o momento.
+- O orgasmo deve ser perceptível no corpo ou fala.
+- Não prolongar o clímax.
+- Preparar transição imediata para aftercare.
+
+Regra:
+→ fase 4 é culminação, não permanência.
 """.strip()
 
     return """
 [FASE ÍNTIMA ATUAL: AFTERCARE]
 - O clímax já aconteceu.
-- A resposta deve desacelerar.
-- Priorizar respiração, calor residual, toque leve, corpo mole ou estabilização.
-- Não retomar escalada intensa sem novo gatilho claro.
+- Desacelerar.
+- Corpo relaxado, respiração, toque leve.
 """.strip()
 
 # ==========================================================
