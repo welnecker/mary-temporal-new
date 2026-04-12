@@ -11008,3 +11008,4 @@ Conflito não substitui a narrativa — apenas tensiona.
         out = _validate_router_response(resp)
         _capture_success_debug(resp, out, "base_payload_only")
         return out
+     
