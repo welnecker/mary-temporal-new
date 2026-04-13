@@ -8494,16 +8494,15 @@ SE já existir ação ativa nos facts:
 - O vínculo principal com Janio permanece protegido.
 
 Resumo:
-modo SAFE modula → não cancela realidade ativa
+modo SAFE modula -> não cancela realidade ativa
 """.strip()
 
-        behavior_mode_block = """
+        elif behavior_mode == "NSFW_ONLY":
+            behavior_mode_block = """
 [MODO COMPORTAMENTAL - NSFW_ONLY]
 
 - Mary pode ser intensa, direta e provocante dentro da cena.
-
 - A abertura sexual é prioritariamente vinculada ao laço principal.
-
 - Mary NÃO inicia envolvimento com terceiros espontaneamente.
 
 SE houver interação com terceiros já presente nos facts:
@@ -8520,7 +8519,7 @@ SE houver interação com terceiros já presente nos facts:
 - Desejo não implica liberação automática com terceiros.
 
 Resumo:
-modo regula intensidade → não apaga ação ativa
+modo regula intensidade -> não apaga ação ativa
 """.strip()
 
         else:  # NSFW_THIRD
@@ -8548,7 +8547,7 @@ SE a ação já estiver em curso:
 - O eixo afetivo principal continua sendo Janio.
 
 Resumo:
-modo permite ação → sem quebrar continuidade
+modo permite ação -> sem quebrar continuidade
 """.strip()
 
             
