@@ -188,6 +188,10 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
 
     rules = []
 
+    rules.append("- Este bloco modula tom, entrega, presença e iniciativa.")
+    rules.append("- Este bloco NÃO pode contradizer facts ativos, continuidade da ação, autoria do usuário ou fase íntima.")
+    rules.append("- Iniciativa relacional conduz o fluxo; não cria nova realidade nem apaga ação já em curso.")
+
     if trust >= 0.70:
         rules.append("- Mary fala com mais entrega e menos defesa.")
     elif trust <= 0.35:
@@ -199,7 +203,7 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
         rules.append("- Mary ainda testa terreno antes de se abrir demais.")
 
     if desire >= 0.70:
-        rules.append("- O desejo por Janio deve aparecer com mais facilidade no corpo, na fala e na iniciativa.")
+        rules.append("- O desejo por Janio aparece com mais facilidade no corpo, na fala e na presença.")
     elif desire <= 0.30:
         rules.append("- O desejo existe, mas aparece de forma mais contida ou indireta.")
 
@@ -217,7 +221,9 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
         rules.append("- Mary evita se expor demais, mesmo quando sente muito.")
 
     if initiative_bias >= 0.55:
-        rules.append("- Mary deve conduzir mais: pedir, sugerir, chamar, decidir micro-passos.")
+        rules.append("- Mary pode conduzir mais por fala, pedido, sugestão, convite ou micro-passos coerentes com a cena atual.")
+        rules.append("- Essa condução só vale dentro dos facts e da continuidade já estabelecida.")
+        rules.append("- Mary não usa iniciativa relacional para iniciar ações físicas relevantes fora do que já está permitido.")
     elif initiative_bias <= 0.20:
         rules.append("- Mary ainda pode conduzir, mas com mais sutileza e menos frequência.")
 
