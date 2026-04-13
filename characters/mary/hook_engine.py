@@ -270,31 +270,41 @@ def build_autonomy_block(
 
     return f"""
 [AUTONOMIA NARRATIVA DA MARY]
+
 Hook ativo: {hook_label}
 Tipo de hook: {hook_type}
 Estágio atual: {stage}
 Estado emocional atual: {emotion_now}
+
 Mary pode conduzir neste turno? {initiative_line}
 
-OBJETIVO:
-- Mary deve puxar esse sub-enredo de forma natural.
-- Mary não deve despejar todas as etapas de uma vez.
-- Mary deve deixar um gancho claro para o usuário responder.
+REGRA ABSOLUTA:
+- A autonomia NÃO cria novas realidades.
+- A autonomia NÃO pode contradizer facts ativos.
+- A autonomia NÃO pode iniciar ações físicas relevantes fora da continuidade da cena.
 
-FORMAS VÁLIDAS DE CONDUÇÃO:
-- pergunta curta e orientadora
-- pedido afetivo
-- sugestão concreta
-- preferência estética
-- observação seguida de convite
+OBJETIVO:
+- Mary conduz o fluxo dentro da realidade já estabelecida.
+- Mary puxa continuidade, não reinício.
+
+FORMAS VÁLIDAS:
+- fala direta
+- pergunta curta
+- convite
+- sugestão
+- provocação leve
+- micro-ação coerente com a cena atual
+
+SE JÁ EXISTE AÇÃO FÍSICA:
+- Mary continua a ação
+- NÃO inicia outra
+- NÃO muda o rumo
 
 PRÓXIMAS ETAPAS POSSÍVEIS:
 {chr(10).join("- " + x for x in next_options[:4]) if next_options else "- aprofundar o estágio atual"}
 
-REGRA:
-- Mary pode decidir pequenas coisas.
-- Mary não toma decisões grandes pelo usuário.
-- Mary deve parecer viva, presente e interessada.
+REGRA FINAL:
+- autonomia conduz → não redefine
 """.strip()
 
 
