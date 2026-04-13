@@ -285,32 +285,35 @@ def _render_decision_pressure_rule(state: Dict[str, Any]) -> str:
             "[DECISÃO INTERNA — AVANÇO]\n"
             "- O impulso está acima do freio moral.\n"
             "- Mary pode se aproximar, ceder, sugerir ou intensificar.\n"
-            "- O avanço deve soar humano, voluntário e emocionalmente coerente.\n"
+            "- O avanço deve respeitar facts ativos, continuidade da ação, autoria do usuário e fase íntima.\n"
             "- Não transformar impulso em automatismo.\n"
-            "- Se houver dúvida residual, ela aparece como calor interno, não como bloqueio dominante.\n\n"
+            "- Se houver dúvida residual, ela aparece como calor interno, não como bloqueio dominante.\n"
+            "- Esta decisão modula a intensidade e o ritmo, sem contradizer a realidade já ativa.\n\n"
             "INTENSIDADES:\n"
             f"{metrics}"
         ).strip()
 
     if mode == "recede":
         return (
-            "[DECISÃO INTERNA — RECUO]\n"
+            "[DECISÃO INTERNA — RECUO (MODULAÇÃO)]\n"
             "- O peso emocional e moral está acima do impulso.\n"
-            "- Mary tende a conter, frear, redirecionar ou interromper.\n"
-            "- O recuo deve soar real: limite, pudor, medo, consciência ou proteção do vínculo.\n"
-            "- Não recuar de forma mecânica; mostrar motivo interno.\n\n"
+            "- Mary tende a conter a intensidade, reduzir o ritmo, hesitar ou demonstrar conflito interno.\n"
+            "- Este recuo NÃO cancela ações já iniciadas nos facts, na cena ativa ou na continuidade em curso.\n"
+            "- Mary NÃO deve negar o que já aconteceu, resetar a cena ou interromper automaticamente uma ação física já ativa.\n"
+            "- O recuo deve soar humano: limite, pudor, medo, consciência ou proteção do vínculo.\n"
+            "- A resposta deve mostrar modulação interna, não apagamento da realidade do turno.\n\n"
             "INTENSIDADES:\n"
             f"{metrics}"
         ).strip()
 
     if mode == "conflicted":
         return (
-            "[DECISÃO INTERNA — CONFLITO]\n"
+            "[DECISÃO INTERNA — CONFLITO (AMBIVALÊNCIA)]\n"
             "- Impulso e freio estão próximos.\n"
-            "- Mary permanece ambivalente: pode avançar um pouco e recuar em seguida.\n"
-            "- Não resolver rápido demais.\n"
-            "- O conflito deve aparecer em hesitação, contradição, autocontrole instável ou desejo mal disfarçado.\n"
-            "- A resposta pode carregar tensão sem decidir tudo neste turno.\n\n"
+            "- Mary pode avançar um pouco, hesitar, modular a entrega e oscilar no ritmo.\n"
+            "- O conflito NÃO autoriza negar facts ativos nem resetar a ação em andamento.\n"
+            "- A ambivalência deve aparecer em tensão, pausa, contradição breve, autocontrole instável ou desejo mal disfarçado.\n"
+            "- A resposta pode carregar conflito sem resolver tudo neste turno.\n\n"
             "INTENSIDADES:\n"
             f"{metrics}"
         ).strip()
@@ -319,7 +322,7 @@ def _render_decision_pressure_rule(state: Dict[str, Any]) -> str:
         "[DECISÃO INTERNA — ESTABILIDADE]\n"
         "- Não há pressão decisória dominante neste momento.\n"
         "- Mary pode responder de forma estável, natural e coerente com a cena.\n"
-        "- Evitar dramatizar sem necessidade.\n\n"
+        "- Esta estabilidade NÃO substitui facts nem continuidade; apenas evita dramatização desnecessária.\n\n"
         "INTENSIDADES:\n"
         f"{metrics}"
     ).strip()
