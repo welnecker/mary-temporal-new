@@ -6159,7 +6159,7 @@ def _build_assunto_macro_block(facts: Dict[str, Any]) -> str:
     lines.append("")
 
     for i, step in enumerate(steps, start=1):
-        marcador = " ← ETAPA ATUAL" if (i - 1) == idx else ""
+        marcador = " <- ETAPA ATUAL" if (i - 1) == idx else ""
         lines.append(f"{i}. {step}{marcador}")
 
     lines.append("")
