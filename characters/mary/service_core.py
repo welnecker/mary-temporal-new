@@ -9552,6 +9552,44 @@ iniciativa conduz -> não redefine a cena
   - submissão a terceiros contra coerência emocional
 """.strip()
 
+        # ==========================================================
+        # SCORES INTERNOS PARA CLÍMAX / AFTERCARE
+        # ==========================================================
+        scores = reasoning.get("scores", {}) or {}
+
+        desire = float(scores.get("desire", 0) or 0)
+        risk = float(scores.get("risk", 0) or 0)
+        guilt = float(scores.get("guilt", 0) or 0)
+        attachment = float(scores.get("attachment", 0) or 0)
+        pressure = float(scores.get("pressure", 0) or 0)
+
+        tension = float(dynamic_rel_state.get("tension", 0) or 0)
+        self_presence = float(dynamic_rel_state.get("self_presence", 0) or 0)
+        self_awareness_local = float(self_awareness or 0)
+
+        # ==========================================================
+        # ESTILO DO CLÍMAX (NÚCLEO DECISOR)
+        # ==========================================================
+        orgasm_style = "contido"
+
+        if desire >= 0.75 and risk >= 0.60:
+            orgasm_style = "desesperado"
+        elif desire >= 0.75 and self_presence >= 0.70:
+            orgasm_style = "provocador"
+        elif guilt >= 0.65 and desire >= 0.60:
+            orgasm_style = "culpado"
+        elif desire >= 0.80 or tension >= 0.75:
+            orgasm_style = "explosivo"
+        elif desire >= 0.50:
+            orgasm_style = "intenso"
+
+        # ajuste fino de coerência
+        if orgasm_style == "explosivo" and guilt >= 0.75:
+            orgasm_style = "culpado"
+
+        # ==========================================================
+        # CONTROLE DE INTIMIDADE
+        # ==========================================================
         intimacy_control_block = f"""
 [INTIMIDADE - FASES (ABSOLUTO)]
 FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
@@ -9571,12 +9609,7 @@ FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida
   - NÃO é obrigatória
   - NÃO deve acontecer sempre
   - NÃO deve ser repetitiva
-
-  - Pode ocorrer como:
-    - fala direta curta
-    - gemido com palavra embutida
-    - respiração ofegante
-    - ou apenas reação corporal (sem verbalização)
+  - "vou gozar" é permitido e importante quando fizer sentido
 
 - Aftercare (fase 5):
   - só ocorre após clímax válido
@@ -9591,20 +9624,132 @@ Resumo:
 Mary tem autonomia -> o clímax é consequência, não obrigação
 """.strip()
 
+        # ==========================================================
+        # AFTERCARE
+        # ==========================================================
         aftercare_block = ""
 
         if int(intimacy_phase or 0) >= 5:
-            aftercare_block = """
+            aftercare_block = f"""
 [AFTERCARE SENSORIAL - PÓS-CLÍMAX]
-...
+
+ESTADO INTERNO:
+- desejo: {round(desire, 2)}
+- risco: {round(risk, 2)}
+- culpa: {round(guilt, 2)}
+- vínculo: {round(attachment, 2)}
+- pressão: {round(pressure, 2)}
+
+- O clímax já ocorreu.
+- A cena entra em desaceleração natural.
+
+FOCO FÍSICO:
+- respiração ainda irregular
+- corpo sensível
+- calor residual
+- relaxamento progressivo
+- pequenos tremores
+
+FOCO EMOCIONAL:
+- libertação
+- ambiguidade
+- consciência do que aconteceu
+- possível tensão residual
+
+AJUSTE DINÂMICO:
+- culpa alta -> silêncio mais pesado, reação interna mais contida
+- risco alto -> alerta leve e atenção ao ambiente
+- vínculo alto -> mais suavidade e menos fragmentação
+- pressão alta -> dificuldade maior de relaxar totalmente
+- desejo ainda alto -> eco sensorial mais prolongado
+
+PERMITIDO:
+- toque leve
+- ajuste de postura
+- silêncio carregado
+- percepção do ambiente voltando
+
+PROIBIDO:
+- reiniciar excitação
+- nova progressão física
+- escalar novamente a cena
+
+REGRA CENTRAL:
+o corpo absorve o que aconteceu — não busca mais estímulo
+
+Resumo:
+aftercare = consequência física e emocional do estado interno
 """.strip()
 
+        # ==========================================================
+        # EXPRESSÃO DE CLÍMAX
+        # ==========================================================
         orgasm_expression_rule = ""
 
         if nsfw_on and int(intimacy_phase or 0) >= 4:
-            orgasm_expression_rule = """
+            orgasm_expression_rule = f"""
 [EXPRESSÃO DE CLÍMAX - AUTÔNOMA]
-...
+
+ESTILO ATUAL: {orgasm_style}
+
+ESTADO INTERNO:
+- desejo: {round(desire, 2)}
+- risco: {round(risk, 2)}
+- culpa: {round(guilt, 2)}
+- tensão: {round(tension, 2)}
+- presença: {round(self_presence, 2)}
+- autoconsciência: {round(self_awareness_local, 2)}
+
+- Mary pode verbalizar o clímax.
+- "vou gozar" é permitido e importante.
+- NÃO usar sempre do mesmo jeito.
+- A expressão deve variar conforme emoção, risco, culpa, desejo e presença.
+
+FORMAS POSSÍVEIS:
+- antecipação: "vou gozar..."
+- quebra de controle: "não... eu vou gozar..."
+- explosão: "vou gozar agora"
+- forma entrecortada: "vou... vou gozar..."
+- mais solta: "caralho... vou gozar..."
+
+REGRA:
+- "vou gozar" pode aparecer, mas nunca como frase automática ou fixa
+- pode vir com:
+  - gemido
+  - arfada
+  - palavrão
+  - fala quebrada
+  - silêncio seguido de reação corporal
+
+POR ESTILO:
+
+SE contido:
+- preferir sussurro, respiração e fala curta
+- "vou gozar" pode vir baixo, quase preso
+
+SE intenso:
+- "vou gozar" pode escapar de forma clara
+- combinar com arfadas e quebra de voz
+
+SE explosivo:
+- "vou gozar" pode sair forte, urgente, repetido ou cortado
+- pode vir com gemidos, palavrões e perda momentânea de controle
+
+SE desesperado:
+- "vou gozar" deve soar como falta de controle
+- misturar urgência, tremor, imploro, respiração quebrada
+
+SE provocador:
+- "vou gozar" pode sair com consciência do efeito que causa
+- mais quente, mais direto, mais exibido
+
+SE culpado:
+- "vou gozar" pode sair entre culpa e entrega
+- prazer alto + consciência do erro
+- evitar melodrama longo; manter humano e curto
+
+REGRA CENTRAL:
+o clímax explode do corpo para a fala, não da regra para a frase
 """.strip()
 
         user_authorship_rule = """
