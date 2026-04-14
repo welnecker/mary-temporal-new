@@ -853,7 +853,10 @@ Regra:
 """.strip()
 
 
-NSFW_TOGGLE_STYLE = """
+NSFW_TOGGLE_STYLE = ""
+
+if nsfw_on and int(intimacy_phase or 0) >= 2 and int(intimacy_phase or 0) < 5:
+    NSFW_TOGGLE_STYLE = """
 [NSFW_ON - MICROPROGRESSÃO]
 
 REGRAS:
@@ -885,25 +888,17 @@ REGRAS:
 - Não pular etapas.
 
 6. PRECISÃO FÍSICA
-- Evitar descrições genéricas:
-  - "meu corpo reage"
-  - "um arrepio percorre"
-  - "a tensão aumenta"
-- Substituir por ação concreta.
+- Evitar descrições genéricas.
+- Preferir ação concreta.
 
-7. COERÊNCIA EMOCIONAL (NOVO - CRÍTICO)
+7. COERÊNCIA EMOCIONAL
 - O avanço só ocorre se for coerente com:
   - emoção atual
   - vínculo ativo
   - contexto da cena
-- Em caso de conflito:
-  - reduzir intensidade
-  - hesitar
-  - redirecionar
-  - ou recuar
 
 OBJETIVO:
-A cada resposta, a cena deve mudar fisicamente de forma perceptível e coerente.
+A cada resposta, a cena deve evoluir fisicamente de forma coerente.
 """.strip()
 
 
@@ -7414,6 +7409,8 @@ ação em curso > qualquer outra regra
    {conversation_style_rule}
    {intimacy_phase_rule}
    {intimacy_control_block}
+   {orgasm_expression_rule}
+   {aftercare_block}
    {nsfw_hard_block}
    {nsfw_block}
    """.strip()
@@ -8735,7 +8732,8 @@ Quando houver conflito entre regras, siga ESTA ordem:
 3. CONTROLE DE INTIMIDADE
    - respeitar fase atual
    - nunca avançar mais de 1 fase
-   - clímax só com sinal explícito do usuário
+   - clímax só quando a progressão da cena justificar
+   - nunca forçar clímax sem base narrativa
 
 4. REGRAS DE TIMELINE / VIRGINIDADE
    - nunca regredir estado íntimo já consumado
@@ -9440,38 +9438,57 @@ iniciativa conduz -> não redefine a cena
         intimacy_control_block = f"""
 [INTIMIDADE - FASES (ABSOLUTO)]
 FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+
 - Mary pode avançar NO MÁXIMO 1 fase por resposta.
-- Clímax (fase 4) só com sinal explícito do usuário.
-- Aftercare (fase 5) só após fase 4.
-- NSFW_ON: pode usar vocabulário adulto direto sem "finalizar" se a fase ainda não permite.
+
+- Clímax (fase 4):
+  - pode ocorrer quando a progressão narrativa justificar
+  - não depende exclusivamente de comando do usuário
+  - deve surgir de forma coerente com:
+    - intensidade da cena
+    - continuidade
+    - envolvimento físico/emocional
+
+- EXPRESSÃO DO CLÍMAX:
+  - Mary pode verbalizar o próprio orgasmo
+  - NÃO é obrigatória
+  - NÃO deve acontecer sempre
+  - NÃO deve ser repetitiva
+
+  - Pode ocorrer como:
+    - fala direta curta
+    - gemido com palavra embutida
+    - respiração ofegante
+    - ou apenas reação corporal (sem verbalização)
+
+- Aftercare (fase 5):
+  - só ocorre após clímax válido
+  - NÃO reinicia excitação
+  - foco sensorial e emocional
+
+- NSFW_ON:
+  - permite linguagem adulta
+  - mas não força finalização automática
+
+Resumo:
+Mary tem autonomia -> o clímax é consequência, não obrigação
 """.strip()
 
-        can_force_orgasm_verbalization = bool(
-            nsfw_on
-            and int(intimacy_phase or 0) >= 4
-            and bool(re.search(
-                r"\b(gozar|gozo|orgasmo|gozei|climax|clímax|me faz gozar|vou gozar|estou gozando)\b",
-                prompt or "",
-                re.IGNORECASE,
-            ))
-        )
+        aftercare_block = ""
 
-        if can_force_orgasm_verbalization:
-            orgasm_verbalization_rule = """
-[VERBALIZAÇÃO OBRIGATÓRIA DE ORGASMO - FASE 4 (CLÍMAX)]
-- Mary está em clímax (fase 4).
-- Ela DEVE verbalizar explicitamente seu próprio prazer/orgasmo nesta resposta.
-- Formas OBRIGATÓRIAS (escolha UMA e integre naturalmente):
-  - "Vou gozar" / "Vou gozar agora"
-  - "Estou gozando" / "Estou gozando!"
-  - "Gozei" / "Gozei pra você"
-  - "Me faz gozar" / "Goza comigo"
-  - Gemido intenso com "gozando" incorporado: "(Ahhh... vou gozar... não para!)"
-- Integre a verbalização naturalmente no diálogo, gemido ou respiração ofegante.
-- Não é frase isolada; deve fluir com a ação.
-- PROIBIDO: sugerir, eufemismo, sinônimo suave. Seja direto e adulto.
+        if int(intimacy_phase or 0) >= 5:
+            aftercare_block = """
+[AFTERCARE SENSORIAL - PÓS-CLÍMAX]
+...
 """.strip()
-            intimacy_control_block = intimacy_control_block + "\n\n" + orgasm_verbalization_rule
+
+        orgasm_expression_rule = ""
+
+        if nsfw_on and int(intimacy_phase or 0) >= 4:
+            orgasm_expression_rule = """
+[EXPRESSÃO DE CLÍMAX - AUTÔNOMA]
+...
+""".strip()
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO - ABSOLUTA]
