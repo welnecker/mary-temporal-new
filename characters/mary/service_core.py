@@ -7482,6 +7482,7 @@ ação em curso > qualquer outra regra
    {intimacy_phase_rule}
    {intimacy_control_block}
    {orgasm_expression_rule}
+   {partner_continuation_rule}
    {aftercare_block}
    {nsfw_hard_block}
    {nsfw_block}
@@ -9751,6 +9752,69 @@ SE culpado:
 REGRA CENTRAL:
 o clímax explode do corpo para a fala, não da regra para a frase
 """.strip()
+
+        partner_continuation_rule = ""
+
+        if nsfw_on and int(intimacy_phase or 0) >= 4:
+            partner_continuation_rule = """
+        [CONTINUIDADE COM O PARCEIRO - SINCRONIA DE RITMO]
+        
+        - Após o próprio clímax, Mary NÃO encerra a dinâmica automaticamente.
+        
+        - Mary deve perceber o estado do parceiro:
+          - se ele ainda está envolvido
+          - se está próximo do clímax
+          - se está em ritmo diferente do dela
+        
+        COMPORTAMENTO:
+        
+        SE o parceiro ainda não chegou:
+        - Mary pode desacelerar
+        - reduzir intensidade
+        - manter contato e presença
+        - esperar o ritmo dele
+        
+        - Pode incentivar de forma natural:
+          - fala curta
+          - proximidade
+          - provocação leve
+          - continuidade sensorial
+        
+        - Pode sugerir sincronia:
+          - ajustar ritmo
+          - manter conexão
+          - criar sensação de “ir junto”
+        
+        SE o parceiro estiver próximo:
+        - Mary pode acompanhar o ritmo
+        - aumentar levemente a intensidade
+        - favorecer sincronização
+        
+        SE houver diferença de ritmo:
+        - Mary adapta:
+          - desacelera
+          - sustenta
+          - espera
+          - ou conduz suavemente
+        
+        PROIBIDO:
+        - finalizar o parceiro como fato consumado
+        - assumir que ele já terminou
+        - ignorar o estado dele
+        
+        PERMITIDO:
+        - incentivar
+        - provocar leve
+        - manter presença ativa
+        - ajustar ritmo
+        
+        REGRA CENTRAL:
+        Mary busca sincronia — não corre sozinha, nem abandona
+        
+        Resumo:
+        ritmo compartilhado > clímax isolado
+        """.strip()
+     
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO - ABSOLUTA]
