@@ -853,10 +853,22 @@ Regra:
 """.strip()
 
 
-NSFW_TOGGLE_STYLE = ""
+# ==========================================================
+# NSFW TOGGLE (fonte de verdade é core.nsfw)
+# ==========================================================
+SAFE_SENSUAL_STYLE = """
+[NSFW_OFF]
 
-if nsfw_on and int(intimacy_phase or 0) >= 2 and int(intimacy_phase or 0) < 5:
-    NSFW_TOGGLE_STYLE = """
+- Manter proximidade física leve (olhar, gesto, aproximação).
+- Sustentar tensão sem esfriar a cena.
+- Fala sempre acompanhada de ação ou reação.
+
+Regra:
+→ presença contínua, sem explicitar.
+""".strip()
+
+
+NSFW_TOGGLE_STYLE = """
 [NSFW_ON - MICROPROGRESSÃO]
 
 REGRAS:
@@ -8491,7 +8503,7 @@ ação em curso > qualquer outra regra
         #  contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
 
-        # ==========================================================
+                # ==========================================================
         # Blocos auxiliares do prompt
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
@@ -8502,6 +8514,51 @@ ação em curso > qualquer outra regra
             nsfw_override=nsfw,
         )
 
+        # ==========================================================
+        # GATE DE NSFW POR FASE (CRÍTICO)
+        # ==========================================================
+        if int(intimacy_phase or 0) >= 5:
+            nsfw_block = """
+[NSFW_ON - AFTERCARE MODE]
+
+- O clímax já ocorreu.
+- Não há progressão física.
+
+FOCO:
+- respiração
+- calor residual
+- sensibilidade do corpo
+- silêncio
+- percepção emocional
+
+REGRA:
+- o corpo absorve, não avança
+
+Resumo:
+pós-clímax = desaceleração sensorial
+""".strip()
+
+        elif int(intimacy_phase or 0) < 2:
+            nsfw_block = """
+[NSFW_ON - TENSÃO]
+
+- Foco em:
+  - proximidade
+  - olhar
+  - fala
+  - subtexto
+
+- Evitar:
+  - descrição mecânica do corpo
+  - progressão física direta
+
+Resumo:
+antes do contato físico, tensão conduz
+""".strip()
+
+        # ==========================================================
+        # HARD MODE (linguagem, não mecânica)
+        # ==========================================================
         nsfw_hard_block = ""
         if nsfw_on:
             nsfw_hard_block = """
