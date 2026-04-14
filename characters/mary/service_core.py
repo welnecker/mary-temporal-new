@@ -1234,6 +1234,7 @@ def _get_nsfw_style_block(
 ) -> str:
     """
     Retorna o bloco de estilo NSFW (ON/OFF) para o system prompt.
+    Agora sensível à fase de intimidade.
     """
 
     enabled = nsfw_enabled(
@@ -1245,7 +1246,64 @@ def _get_nsfw_style_block(
     if not enabled:
         return SAFE_SENSUAL_STYLE
 
-    return NSFW_TOGGLE_STYLE
+    # ==========================================================
+    # NOVO: leitura da fase atual
+    # ==========================================================
+    try:
+        facts = get_facts(usuario_key) or {}
+        intimacy_phase = int(facts.get("intimacy.phase") or facts.get("intimacy_phase") or 0)
+    except Exception:
+        intimacy_phase = 0
+
+    # ==========================================================
+    # AFTERCARE (fase 5) → NÃO pode ter microprogressão
+    # ==========================================================
+    if intimacy_phase >= 5:
+        return """
+[NSFW_ON - AFTERCARE MODE]
+
+- O clímax já ocorreu.
+- Não há progressão física.
+
+FOCO:
+- respiração
+- calor residual
+- sensibilidade do corpo
+- silêncio
+- percepção emocional
+
+REGRA:
+- o corpo absorve, não avança
+
+Resumo:
+pós-clímax = desaceleração sensorial
+""".strip()
+
+    # ==========================================================
+    # PROGRESSÃO NORMAL (fase 2–4)
+    # ==========================================================
+    if intimacy_phase >= 2:
+        return NSFW_TOGGLE_STYLE
+
+    # ==========================================================
+    # FASE BAIXA (0–1) → SEM MECÂNICA FÍSICA FORTE
+    # ==========================================================
+    return """
+[NSFW_ON - TENSÃO]
+
+- Foco em:
+  - proximidade
+  - olhar
+  - fala
+  - subtexto
+
+- Evitar:
+  - descrição mecânica do corpo
+  - progressão física direta
+
+Resumo:
+antes do contato físico, tensão conduz
+""".strip()
 
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
