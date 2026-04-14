@@ -7298,7 +7298,8 @@ class MaryService(BaseCharacter):
         betrayal_rule: str,
         third_party_initiative_rule: str,
         intimacy_control_block: str,
-        orgasm_expression_rule: str,   
+        orgasm_expression_rule: str, 
+        partner_continuation_rule: str,
         aftercare_block: str,
         intimacy_phase_rule: str,
         nsfw_hard_block: str,
@@ -9754,7 +9755,7 @@ o clímax explode do corpo para a fala, não da regra para a frase
 """.strip()
 
         partner_continuation_rule = ""
-
+       
         if nsfw_on and int(intimacy_phase or 0) >= 4:
             partner_continuation_rule = """
         [CONTINUIDADE COM O PARCEIRO - SINCRONIA DE RITMO]
@@ -9956,7 +9957,8 @@ Conflito não substitui a narrativa — apenas tensiona.
             betrayal_rule=betrayal_rule,
             third_party_initiative_rule=third_party_initiative_rule,
             intimacy_control_block=intimacy_control_block,
-            orgasm_expression_rule=orgasm_expression_rule,  
+            orgasm_expression_rule=orgasm_expression_rule,
+            partner_continuation_rule=partner_continuation_rule,
             aftercare_block=aftercare_block,
             intimacy_phase_rule=intimacy_phase_rule,
             nsfw_hard_block=nsfw_hard_block,
