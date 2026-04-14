@@ -287,19 +287,7 @@ def _apply_dark_ui() -> None:
         /* ==========================================================
            DESKTOP: chat_input fixo
            ========================================================== */
-        @media (min-width: 769px) {
-            div[data-testid="stChatInput"] {
-                position: fixed !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-                z-index: 9999 !important;
-                background: rgba(11,11,11,0.88) !important;
-                backdrop-filter: blur(10px) !important;
-                border-top: 1px solid rgba(255,255,255,0.10) !important;
-                padding: 10px 0 !important;
-                width: 100% !important;
-            }
+        
 
             div[data-testid="stChatInput"] > div {
                 width: 100% !important;
@@ -353,19 +341,7 @@ def _apply_dark_ui() -> None:
            MOBILE / CHROMEBOOK / TOUCH:
            remove o fixed para não travar a rolagem
            ========================================================== */
-        @media (max-width: 768px) {
-            div[data-testid="stChatInput"] {
-                position: static !important;
-                left: auto !important;
-                right: auto !important;
-                bottom: auto !important;
-                z-index: auto !important;
-                width: 100% !important;
-                background: transparent !important;
-                backdrop-filter: none !important;
-                border-top: none !important;
-                padding: 0 !important;
-            }
+        
 
             div[data-testid="stChatInput"] > div {
                 width: 100% !important;
