@@ -217,18 +217,26 @@ def _apply_dark_ui() -> None:
     st.markdown(
         """
         <style>
-        html, body, #root, .stApp { background: #0b0b0b !important; }
+        html, body, #root, .stApp {
+            background: #0b0b0b !important;
+        }
+
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"],
-        [data-testid="stMainBlockContainer"] { background: #0b0b0b !important; }
+        [data-testid="stMainBlockContainer"] {
+            background: #0b0b0b !important;
+        }
 
-        footer { visibility: hidden !important; height: 0 !important; }
+        footer {
+            visibility: hidden !important;
+            height: 0 !important;
+        }
 
-        /* espaço no fim para não esconder mensagens atrás do input fixo */
+        /* container principal */
         .block-container {
             max-width: 980px !important;
             padding-top: 1rem !important;
-            padding-bottom: 9rem !important;
+            padding-bottom: 2rem !important;
         }
 
         /* Card header */
@@ -241,22 +249,35 @@ def _apply_dark_ui() -> None:
             box-shadow: 0 12px 28px rgba(0,0,0,0.55);
             backdrop-filter: blur(6px);
         }
-        .rp-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
-        .rp-sub { font-size: 13px; margin-top: 6px; color: rgba(255,255,255,0.65); }
+
+        .rp-title {
+            font-size: 22px;
+            font-weight: 800;
+            margin: 0;
+            color: #fff;
+        }
+
+        .rp-sub {
+            font-size: 13px;
+            margin-top: 6px;
+            color: rgba(255,255,255,0.65);
+        }
 
         /* Chat bubbles */
-        div[data-testid="stChatMessage"] > div{
+        div[data-testid="stChatMessage"] > div {
             background: rgba(15,15,15,0.92) !important;
             border: 1px solid rgba(255,255,255,0.08) !important;
             border-radius: 16px !important;
             padding: 14px 14px 10px 14px !important;
             box-shadow: 0 10px 26px rgba(0,0,0,0.55) !important;
         }
-        div[data-testid="stChatMessage"][aria-label="user"] > div{
+
+        div[data-testid="stChatMessage"][aria-label="user"] > div {
             background: rgba(24,24,24,0.95) !important;
             border: 1px solid rgba(255,255,255,0.12) !important;
         }
-        div[data-testid="stChatMessage"] p{
+
+        div[data-testid="stChatMessage"] p {
             margin: 0 0 0.95rem 0 !important;
             line-height: 1.55 !important;
             font-size: 1.02rem !important;
@@ -264,96 +285,136 @@ def _apply_dark_ui() -> None:
         }
 
         /* ==========================================================
-           INPUT FIXO — RESPONSIVO (FIX DEFINITIVO)
+           DESKTOP: chat_input fixo
            ========================================================== */
-        div[data-testid="stChatInput"]{
-          position: fixed !important;
-          left: 0 !important;
-          right: 0 !important;
-          bottom: 0 !important;
-          z-index: 9999 !important;
-          background: rgba(11,11,11,0.88) !important;
-          backdrop-filter: blur(10px) !important;
-          border-top: 1px solid rgba(255,255,255,0.10) !important;
-          padding: 10px 0 !important;
-          width: 100% !important;
-        }
+        @media (min-width: 769px) {
+            div[data-testid="stChatInput"] {
+                position: fixed !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                z-index: 9999 !important;
+                background: rgba(11,11,11,0.88) !important;
+                backdrop-filter: blur(10px) !important;
+                border-top: 1px solid rgba(255,255,255,0.10) !important;
+                padding: 10px 0 !important;
+                width: 100% !important;
+            }
 
-        /* container interno centralizado, mas sem encolher */
-        div[data-testid="stChatInput"] > div{
-          width: 100% !important;
-          max-width: 980px !important;
-          margin: 0 auto !important;
-          padding: 0 1rem !important;
-          box-sizing: border-box !important;
-        }
+            div[data-testid="stChatInput"] > div {
+                width: 100% !important;
+                max-width: 980px !important;
+                margin: 0 auto !important;
+                padding: 0 1rem !important;
+                box-sizing: border-box !important;
+            }
 
-        /* o FORM era quem estava encolhendo */
-        div[data-testid="stChatInput"] form{
-          width: 100% !important;
-          display: flex !important;
-          gap: 10px !important;
-          align-items: flex-end !important;
-          box-sizing: border-box !important;
-        }
+            div[data-testid="stChatInput"] form {
+                width: 100% !important;
+                display: flex !important;
+                gap: 10px !important;
+                align-items: flex-end !important;
+                box-sizing: border-box !important;
+            }
 
-        /* ✅ só o wrapper do textarea expande */
-        div[data-testid="stChatInput"] form > div:first-child{
-          flex: 1 1 auto !important;
-          width: 100% !important;
-          min-width: 0 !important;  /* crítico em flex */
-        }
+            div[data-testid="stChatInput"] form > div:first-child {
+                flex: 1 1 auto !important;
+                width: 100% !important;
+                min-width: 0 !important;
+            }
 
-        /* ✅ wrapper do botão NÃO expande */
-        div[data-testid="stChatInput"] form > div:last-child{
-          flex: 0 0 auto !important;
-          width: auto !important;
-          min-width: 0 !important;
-        }
+            div[data-testid="stChatInput"] form > div:last-child {
+                flex: 0 0 auto !important;
+                width: auto !important;
+                min-width: 0 !important;
+            }
 
-        /* textarea ocupa tudo */
-        div[data-testid="stChatInput"] textarea{
-          width: 100% !important;
-          min-height: 96px !important;
-          max-height: 240px !important;
-          border-radius: 14px !important;
-          background: #101010 !important;
-          color: #f2f2f2 !important;
-          border: 1px solid rgba(255,255,255,0.14) !important;
-          box-sizing: border-box !important;
-        }
+            div[data-testid="stChatInput"] textarea {
+                width: 100% !important;
+                min-height: 96px !important;
+                max-height: 240px !important;
+                border-radius: 14px !important;
+                background: #101010 !important;
+                color: #f2f2f2 !important;
+                border: 1px solid rgba(255,255,255,0.14) !important;
+                box-sizing: border-box !important;
+            }
 
-        /* botão não rouba largura do textarea */
-        div[data-testid="stChatInput"] button{
-          flex: 0 0 auto !important;
+            div[data-testid="stChatInput"] button {
+                flex: 0 0 auto !important;
+            }
+
+            .block-container {
+                padding-bottom: 9rem !important;
+            }
         }
 
         /* ==========================================================
-           FIX MOBILE: botão "Manage app" (Streamlit Cloud) sobrepondo input
+           MOBILE / CHROMEBOOK / TOUCH:
+           remove o fixed para não travar a rolagem
            ========================================================== */
         @media (max-width: 768px) {
-
-            /* Sobe a barra inteira do chat_input (libera o canto inferior direito) */
             div[data-testid="stChatInput"] {
-                bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
+                position: static !important;
+                left: auto !important;
+                right: auto !important;
+                bottom: auto !important;
+                z-index: auto !important;
+                width: 100% !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                border-top: none !important;
+                padding: 0 !important;
             }
 
-            /* Garante espaço extra no final para as mensagens não ficarem “atrás” da barra */
-            .block-container {
-                padding-bottom: 13rem !important;
+            div[data-testid="stChatInput"] > div {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
             }
 
-            /* Evita digitação sob overlays no canto direito */
+            div[data-testid="stChatInput"] form {
+                width: 100% !important;
+                display: flex !important;
+                gap: 8px !important;
+                align-items: flex-end !important;
+                box-sizing: border-box !important;
+            }
+
+            div[data-testid="stChatInput"] form > div:first-child {
+                flex: 1 1 auto !important;
+                width: 100% !important;
+                min-width: 0 !important;
+            }
+
+            div[data-testid="stChatInput"] form > div:last-child {
+                flex: 0 0 auto !important;
+                width: auto !important;
+                min-width: 0 !important;
+            }
+
             div[data-testid="stChatInput"] textarea {
-                padding-right: 96px !important;
+                width: 100% !important;
+                min-height: 88px !important;
+                max-height: 220px !important;
+                border-radius: 14px !important;
+                background: #101010 !important;
+                color: #f2f2f2 !important;
+                border: 1px solid rgba(255,255,255,0.14) !important;
+                box-sizing: border-box !important;
+                padding-right: 1rem !important;
+            }
+
+            .block-container {
+                padding-bottom: 2rem !important;
             }
         }
-
         </style>
         """,
         unsafe_allow_html=True,
     )
-
 
 def _apply_dark_ui_once() -> None:
     _apply_dark_ui()
