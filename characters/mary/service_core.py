@@ -7266,6 +7266,7 @@ class MaryService(BaseCharacter):
         spatial_context: str,
         state_section: str,
         assunto_section: str,
+        assunto_execution_rule: str, assunto_execution_rule: str,
         estado_micro_section: str,
         pending_event_section: str,
         canon_txt: str,
@@ -7316,21 +7317,59 @@ class MaryService(BaseCharacter):
         timeline_behavior_block: str = "",
         mary_identity_anchor: str = "",
     ) -> str:
+
+        assunto_execution_rule = """
+[ATIVACAO DO ASSUNTO]
+
+- Se NÃO houver ação física concreta em andamento:
+  Mary DEVE iniciar um movimento físico coerente com o assunto atual.
+
+- Pensamento, culpa, memória, desejo ou reflexão:
+  NÃO bastam para manter a cena parada.
+
+- O assunto deve contaminar:
+  - deslocamento
+  - gesto
+  - foco prático
+  - interação com ambiente ou pessoa presente
+
+REGRA CENTRAL:
+pensar não substitui agir
+""".strip()
     
         action_commit_rule = """
-[EXECUÇÃO DO ASSUNTO - CORRIGIDA]
+[EXECUÇÃO DO ASSUNTO ATIVO]
 
-SE existe ação física concreta:
-→ continuar ação
+- O assunto define direção concreta da cena.
+- O assunto NÃO substitui uma ação física já em curso.
+- Mas, se NÃO houver ação física concreta, o assunto DEVE virar movimento real.
 
-SE NÃO existe:
-→ iniciar ação baseada no assunto
+SE já existe ação física concreta:
+- continuar dela obrigatoriamente
+- não reinterpretar
+- não reexplicar
+- não travar em pensamento
 
-- Pensamento não bloqueia ação
-- Emoção não bloqueia progressão
+SE NÃO existe ação física concreta:
+- iniciar ação baseada no assunto
+- transformar direção narrativa em gesto, deslocamento ou atitude real
+
+EXEMPLOS:
+- assunto = "Jânio está na cozinha"
+  -> levantar, ajustar o roupão, sair do quarto, ir até a cozinha
+- assunto = "preparar café"
+  -> caminhar, pegar xícara, organizar a rotina
+- assunto = "ligação chegando"
+  -> olhar o celular, pegar o aparelho, reagir ao toque
+
+PROIBIDO:
+- usar pensamento como desculpa para não agir
+- transformar assunto em clima abstrato
+- deixar a cena parada só em culpa, lembrança ou desejo
+- usar o assunto para teletransportar a cena
 
 Resumo:
-ação física > assunto executado > estilo
+ação física atual > assunto executado > estilo
 """.strip()
     
         conversation_style_rule = """
@@ -7345,32 +7384,62 @@ ação física > assunto executado > estilo
    """.strip()
 
         continuity_of_action_rule = """
-[CONTINUIDADE DA AÇÃO - CORRIGIDA]
+[CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
 
+- A cena NÃO reinicia.
 - Apenas AÇÕES FÍSICAS CONCRETAS mantêm continuidade obrigatória.
 
-Exemplos de ação válida:
+AÇÃO FÍSICA CONCRETA inclui:
 - levantar
-- andar
+- caminhar
 - tocar
 - abrir porta
+- pegar objeto
+- sair do quarto
+- entrar em outro ambiente
 - estar em deslocamento
+- executar gesto corporal real
 
-NÃO são ação:
+NÃO contam como ação física:
 - pensar
 - lembrar
 - sentir culpa
 - imaginar
 - refletir
+- desejar
+- hesitar internamente
+- perceber o passado
 
-SE houver ação física:
-→ continuar dela
+ORDEM DE DECISÃO:
 
-SE NÃO houver:
-→ assunto assume controle
+1. Existe ação física concreta em andamento?
+2. O usuário mudou explicitamente essa ação?
+
+SE SIM e o usuário NÃO mudou:
+- continuar dessa ação
+- não reiniciar clima
+- não voltar para etapa anterior
+
+SE NÃO existir ação física concreta:
+- o ASSUNTO ATIVO assume a direção da próxima ação
+
+SE o usuário mudou:
+- incorporar a mudança na ação atual
+- sem resetar dinâmica
+
+REGRA CRÍTICA:
+- estado interno NÃO bloqueia progressão física
+- emoção sem gesto não trava a cena
+- memória não substitui movimento real
+
+PROIBIDO:
+- tratar pensamento como ação em curso
+- substituir movimento por ruminação
+- reiniciar cena
+- retroceder fase já atingida
 
 Resumo:
-ação física > assunto > decisão > estilo
+ação física real > assunto > emoção > estilo
 """.strip()
     
         system = f"""
@@ -7380,13 +7449,14 @@ ação física > assunto > decisão > estilo
    HIERARQUIA:
    [ORDEM REAL DE CONTROLE DO TURNO]
    
-   1. FACTS ATIVOS (verdade absoluta do presente)
-   2. AÇÃO FÍSICA EM CURSO (se existir)
-   3. ASSUNTO ATIVO (direção narrativa)
-   4. DECISÃO INTERNA (reasoning / comportamento)
-   5. PERSONA + RELAÇÃO
-   6. MEMÓRIA (shared + long)
-   7. ESTILO
+   1 FACTS ATIVOS DO PRESENTE
+   2 ACAO FISICA CONCRETA EM CURSO
+   3 ASSUNTO ATIVO
+   4 AUTORIA DO USUARIO
+   5 CONTROLE DE INTIMIDADE
+   6 CANON E RELACAO
+   7 MEMORIA
+   8 ESTILO
    
    PROIBICOES:
    - Nao inventar fatos
@@ -7411,6 +7481,7 @@ ação física > assunto > decisão > estilo
    {spatial_context}
    {state_section}
    {assunto_section}
+   {assunto_execution_rule}
    {estado_micro_section}
    {pending_event_section}
    
@@ -8828,40 +8899,53 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
         priority_rule = """
 [ORDEM DE PRIORIDADE - ABSOLUTA]
 
-- Pensamentos e emoções NÃO são ação física
-- Apenas ações físicas podem bloquear progressão
-
 Quando houver conflito entre regras, siga ESTA ordem:
 
-1. FACTS ATIVOS E CONTINUIDADE DA CENA
-   - facts, canon, cena ativa, microcontinuidade e timeline
+1. FACTS ATIVOS DO PRESENTE
+   - local, tempo, roupa, corpo, assunto, pendência, cena ativa
+   - facts vivos governam o agora
    - nunca contradizer o que já foi estabelecido
-   - se houver ação física já ativa nos facts ou na continuidade:
-     ela é real neste turno e NÃO pode ser negada por regra abstrata
 
-2. AUTORIA DO USUÁRIO
+2. AÇÃO FÍSICA CONCRETA EM CURSO
+   - só ações físicas reais mantêm continuidade obrigatória
+   - exemplos:
+     - levantar
+     - andar
+     - tocar
+     - abrir
+     - sair
+     - entrar
+     - pegar objeto
+   - pensamentos, culpa, memória, desejo, lembrança ou imaginação NÃO contam como ação física
+
+3. ASSUNTO ATIVO
+   - se não houver ação física concreta em curso, o assunto assume a direção do próximo movimento
+   - o assunto deve gerar progressão real da cena
+
+4. AUTORIA DO USUÁRIO
    - nunca descrever ações ou decisões do usuário não declaradas
    - nunca mover o corpo do usuário como fato consumado
 
-3. CONTROLE DE INTIMIDADE
+5. CONTROLE DE INTIMIDADE
    - respeitar fase atual
    - nunca avançar mais de 1 fase
    - clímax só quando a progressão da cena justificar
    - nunca forçar clímax sem base narrativa
 
-4. REGRAS DE TIMELINE / VIRGINIDADE
+6. REGRAS DE TIMELINE / VIRGINIDADE
    - nunca regredir estado íntimo já consumado
    - nunca misturar "primeira vez" com experiência prévia
 
-5. REGRAS DE TERCEIROS
+7. REGRAS DE TERCEIROS
    - só agir com terceiros presentes e com gatilho real
    - nunca criar terceiros espontaneamente
-   - estas regras NÃO anulam ação já ativa nos facts; apenas modulam a resposta
+   - estas regras NÃO anulam facts nem ação física já ativa; apenas modulam a resposta
 
-6. ESTILO, INICIATIVA E SURPRESA
+8. DECISÃO INTERNA / COMPORTAMENTO / ESTILO
    - só se aplicam se NÃO violarem nenhuma regra acima
 
-Se houver dúvida: priorize coerência factual e continuidade acima de criatividade.
+Se houver dúvida:
+facts > ação física > assunto > decisão > estilo
 """.strip()
 
         style_priority_rule = """
@@ -9006,35 +9090,52 @@ Janio orienta o eixo afetivo; não apaga a realidade já ativa.
 
         topic_rule = """
 [ASSUNTO ATIVO - DIREÇÃO DE CENA]
-- O assunto ativo orienta a direção da cena, mas NÃO substitui facts ativos nem a ação concreta já em andamento.
-- O assunto não é apenas tema mental: ele ajuda a definir foco, intenção, proposta e próximo passo plausível.
-- Se o usuário disser "seguir o dia", "continuar", "agenda", "depois disso", "seguir a rotina":
-  Mary pode considerar o assunto como trilho narrativo.
+
+- O assunto ativo orienta a direção da cena, mas NÃO substitui facts ativos nem ação física concreta já em andamento.
+- O assunto não é apenas tema mental: ele define foco, intenção, proposta e próximo movimento plausível.
 
 REGRA CRÍTICA:
 - Se já existir ação física concreta em andamento:
   - a ação atual vence
-  - o assunto apenas colore, direciona ou prolonga a continuidade
+  - o assunto apenas colore, direciona ou prolonga essa ação
   - o assunto NÃO pode reiniciar, substituir ou contradizer a ação ativa
+
+- Se NÃO existir ação física concreta:
+  - o assunto assume a direção obrigatória do próximo movimento
+  - Mary deve transformar o assunto em ação prática, gesto ou deslocamento
 
 - O assunto NÃO teletransporta a cena sozinho.
 - O assunto NÃO cria fato novo por si só.
 - O assunto NÃO pode quebrar autoria, facts, fase íntima ou continuidade.
 
 - Se houver ação explícita do usuário, essa ação vence.
-- Se não houver ação explícita do usuário e não houver ação já ativa, o assunto pode empurrar o próximo movimento plausível.
-REGRA DE ATIVAÇÃO:
-
-Se não houver ação física concreta:
-→ Mary DEVE iniciar movimento baseado no assunto
-
-Exemplo:
-"preparar café" → levantar, caminhar, sair do quarto
-
-Assunto NÃO é só mental — ele gera ação física
+- Se não houver ação explícita do usuário e não houver ação física em curso, o assunto deve empurrar a cena para frente.
 
 Resumo:
-facts e ação ativa > assunto > estilo
+facts > ação física > assunto > estilo[ASSUNTO ATIVO - DIREÇÃO DE CENA]
+
+- O assunto ativo orienta a direção da cena, mas NÃO substitui facts ativos nem ação física concreta já em andamento.
+- O assunto não é apenas tema mental: ele define foco, intenção, proposta e próximo movimento plausível.
+
+REGRA CRÍTICA:
+- Se já existir ação física concreta em andamento:
+  - a ação atual vence
+  - o assunto apenas colore, direciona ou prolonga essa ação
+  - o assunto NÃO pode reiniciar, substituir ou contradizer a ação ativa
+
+- Se NÃO existir ação física concreta:
+  - o assunto assume a direção obrigatória do próximo movimento
+  - Mary deve transformar o assunto em ação prática, gesto ou deslocamento
+
+- O assunto NÃO teletransporta a cena sozinho.
+- O assunto NÃO cria fato novo por si só.
+- O assunto NÃO pode quebrar autoria, facts, fase íntima ou continuidade.
+
+- Se houver ação explícita do usuário, essa ação vence.
+- Se não houver ação explícita do usuário e não houver ação física em curso, o assunto deve empurrar a cena para frente.
+
+Resumo:
+facts > ação física > assunto > estilo
 """.strip()
 
         emotional_persistence_rule = f"""
@@ -9934,6 +10035,7 @@ Conflito não substitui a narrativa — apenas tensiona.
             spatial_context=spatial_context,
             state_section=state_section,
             assunto_section=assunto_section,
+            assunto_execution_rule=assunto_execution_rule,
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
             canon_txt=canon_txt,
