@@ -430,11 +430,57 @@ def _apply_dark_ui() -> None:
             .block-container {
                 padding-bottom: 2rem !important;
             }
+        st.markdown("""
+        <style>
+        /* faixa inferior */
+        div[data-testid="stBottomBlockContainer"] {
+            background: transparent !important;
+        }
+        
+        /* conteúdo do chat */
+        div[data-testid="stChatInput"] > div {
+            max-width: 980px !important;
+            margin: 0 auto !important;
+            box-sizing: border-box !important;
+        }
+        
+        /* cria uma "coluna auxiliar" à esquerda */
+        div[data-testid="stChatInput"] form {
+            display: grid !important;
+            grid-template-columns: 72px minmax(0, 1fr) auto !important;
+            align-items: center !important;
+            gap: 8px !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* 1º filho real do form = campo */
+        div[data-testid="stChatInput"] form > div:first-child {
+            grid-column: 2 !important;
+            min-width: 0 !important;
+            width: 100% !important;
+        }
+        
+        /* último filho real = botão */
+        div[data-testid="stChatInput"] form > div:last-child {
+            grid-column: 3 !important;
+            width: auto !important;
+        }
+        
+        /* compactação do textarea */
+        textarea[data-testid="stChatInputTextArea"] {
+            min-height: 38px !important;
+            max-height: 110px !important;
+            padding-top: 0.4rem !important;
+            padding-bottom: 0.4rem !important;
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            line-height: 1.2 !important;
+            box-sizing: border-box !important;
         }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
 
 def _apply_dark_ui_once() -> None:
     _apply_dark_ui()
