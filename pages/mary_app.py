@@ -314,8 +314,7 @@ def _apply_dark_ui() -> None:
                 width: 100% !important;
                 max-width: 980px !important;
                 margin: 0 auto !important;
-                padding-left: 1rem !important;
-                padding-right: 1rem !important;
+                padding: 0 1rem !important;
                 box-sizing: border-box !important;
                 min-height: auto !important;
             }
@@ -326,7 +325,7 @@ def _apply_dark_ui() -> None:
                 gap: 8px !important;
                 align-items: center !important;
                 box-sizing: border-box !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
                 min-height: auto !important;
             }
