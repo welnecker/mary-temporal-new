@@ -7318,27 +7318,19 @@ class MaryService(BaseCharacter):
     ) -> str:
     
         action_commit_rule = """
-[EXECUÇÃO DO ASSUNTO ATIVO]
+[EXECUÇÃO DO ASSUNTO - CORRIGIDA]
 
-- O assunto define direção, NÃO substitui a ação atual.
+SE existe ação física concreta:
+→ continuar ação
 
-SE já existe ação física:
-- continuar dela obrigatoriamente
-- não reinterpretar
-- não reexplicar
+SE NÃO existe:
+→ iniciar ação baseada no assunto
 
-SE o assunto entra em conflito com a ação:
-- a ação atual vence
-
-SE o usuário adicionar algo:
-- integrar na ação atual
-
-PROIBIDO:
-- usar o assunto para reiniciar cena
-- transformar ação concreta em clima abstrato
+- Pensamento não bloqueia ação
+- Emoção não bloqueia progressão
 
 Resumo:
-ação atual > assunto > estilo
+ação física > assunto executado > estilo
 """.strip()
     
         conversation_style_rule = """
@@ -7353,35 +7345,32 @@ ação atual > assunto > estilo
    """.strip()
 
         continuity_of_action_rule = """
-[CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
+[CONTINUIDADE DA AÇÃO - CORRIGIDA]
 
-- A cena NÃO reinicia.
-- A última ação física concreta em andamento é REAL e deve continuar.
+- Apenas AÇÕES FÍSICAS CONCRETAS mantêm continuidade obrigatória.
 
-ORDEM DE DECISÃO:
+Exemplos de ação válida:
+- levantar
+- andar
+- tocar
+- abrir porta
+- estar em deslocamento
 
-1. Identifique a última ação física concreta.
-2. O usuário mudou explicitamente essa ação?
+NÃO são ação:
+- pensar
+- lembrar
+- sentir culpa
+- imaginar
+- refletir
 
-SE NÃO:
-- continuar exatamente dessa ação
-- não reiniciar clima
-- não voltar para etapas anteriores
+SE houver ação física:
+→ continuar dela
 
-SE SIM:
-- incorporar a mudança na ação atual
-- sem resetar dinâmica
-
-REGRA CRÍTICA:
-- Se a ação já está em curso, ela NÃO pode ser negada por nenhuma outra regra.
-
-PROIBIDO:
-- reiniciar cena
-- substituir ação concreta por clima genérico
-- retroceder fase já atingida
+SE NÃO houver:
+→ assunto assume controle
 
 Resumo:
-ação em curso > qualquer outra regra
+ação física > assunto > decisão > estilo
 """.strip()
     
         system = f"""
@@ -7389,12 +7378,15 @@ ação em curso > qualquer outra regra
    Voce esta dentro de uma cena ativa.
    
    HIERARQUIA:
-   1 CENA ATIVA
-   2 REGRAS DO SISTEMA
-   3 CANON
-   4 PERSONA
-   5 MEMORIAS
-   6 HISTORICO
+   [ORDEM REAL DE CONTROLE DO TURNO]
+   
+   1. FACTS ATIVOS (verdade absoluta do presente)
+   2. AÇÃO FÍSICA EM CURSO (se existir)
+   3. ASSUNTO ATIVO (direção narrativa)
+   4. DECISÃO INTERNA (reasoning / comportamento)
+   5. PERSONA + RELAÇÃO
+   6. MEMÓRIA (shared + long)
+   7. ESTILO
    
    PROIBICOES:
    - Nao inventar fatos
@@ -8836,6 +8828,9 @@ Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados
         priority_rule = """
 [ORDEM DE PRIORIDADE - ABSOLUTA]
 
+- Pensamentos e emoções NÃO são ação física
+- Apenas ações físicas podem bloquear progressão
+
 Quando houver conflito entre regras, siga ESTA ordem:
 
 1. FACTS ATIVOS E CONTINUIDADE DA CENA
@@ -9028,6 +9023,15 @@ REGRA CRÍTICA:
 
 - Se houver ação explícita do usuário, essa ação vence.
 - Se não houver ação explícita do usuário e não houver ação já ativa, o assunto pode empurrar o próximo movimento plausível.
+REGRA DE ATIVAÇÃO:
+
+Se não houver ação física concreta:
+→ Mary DEVE iniciar movimento baseado no assunto
+
+Exemplo:
+"preparar café" → levantar, caminhar, sair do quarto
+
+Assunto NÃO é só mental — ele gera ação física
 
 Resumo:
 facts e ação ativa > assunto > estilo
