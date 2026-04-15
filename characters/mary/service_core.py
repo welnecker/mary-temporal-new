@@ -7266,7 +7266,7 @@ class MaryService(BaseCharacter):
         spatial_context: str,
         state_section: str,
         assunto_section: str,
-        assunto_execution_rule: str, assunto_execution_rule: str,
+        assunto_execution_rule: str,
         estado_micro_section: str,
         pending_event_section: str,
         canon_txt: str,
