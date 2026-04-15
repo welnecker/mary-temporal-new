@@ -282,16 +282,16 @@ def _apply_dark_ui() -> None:
 
         @media (min-width: 769px) {
             div[data-testid="stChatInput"] {
-                position: fixed !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-                z-index: 9999 !important;
+                position: static !important;
+                left: auto !important;
+                right: auto !important;
+                bottom: auto !important;
+                z-index: auto !important;
                 width: 100% !important;
-                background: rgba(11,11,11,0.88) !important;
-                backdrop-filter: blur(10px) !important;
-                border-top: 1px solid rgba(255,255,255,0.10) !important;
-                padding: 0.2rem 0 !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                border-top: none !important;
+                padding: 0 !important;
                 min-height: auto !important;
             }
 
@@ -349,7 +349,7 @@ def _apply_dark_ui() -> None:
             }
 
             .block-container {
-                padding-bottom: 7rem !important;
+                padding-bottom: 2rem !important;
             }
         }
 
