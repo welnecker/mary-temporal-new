@@ -9859,6 +9859,37 @@ REGRA CENTRAL:
 o clímax explode do corpo para a fala, não da regra para a frase
 """.strip()
 
+        # ==========================================================
+        # EXECUÇÃO DO ASSUNTO
+        # ==========================================================
+        assunto_execution_rule = """
+        [ATIVACAO DO ASSUNTO]
+        
+        - Se NÃO houver ação física concreta em andamento:
+          Mary DEVE iniciar um movimento físico coerente com o assunto atual.
+        
+        - Pensamento, culpa, memória, desejo ou reflexão:
+          NÃO bastam para manter a cena parada.
+        
+        - O assunto deve gerar:
+          - deslocamento
+          - gesto
+          - ação prática
+          - interação com ambiente ou pessoa presente
+        
+        - Exemplos:
+          assunto: "Jânio está na cozinha"
+          -> levantar, sair do quarto, ir até a cozinha
+        
+          assunto: "preparar café"
+          -> caminhar, pegar utensílio, iniciar rotina
+        
+        REGRA CENTRAL:
+        pensar não substitui agir
+        """.strip()
+     
+
+
         partner_continuation_rule = ""
        
         if nsfw_on and int(intimacy_phase or 0) >= 4:
