@@ -314,7 +314,8 @@ def _apply_dark_ui() -> None:
                 width: 100% !important;
                 max-width: 980px !important;
                 margin: 0 auto !important;
-                padding: 0 1rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
                 box-sizing: border-box !important;
                 min-height: auto !important;
             }
