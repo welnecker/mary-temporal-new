@@ -238,7 +238,28 @@ def _apply_dark_ui() -> None:
             padding-bottom: 2rem !important;
         }
 
-        /* mensagens */
+        div[data-testid="stBottomBlockContainer"] {
+            background: transparent !important;
+            padding-top: 0.15rem !important;
+            padding-bottom: 0.15rem !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        div[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] {
+            max-width: 980px !important;
+            margin: 0 auto !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            box-sizing: border-box !important;
+        }
+
+        div[data-testid="stBottomBlockContainer"] [data-testid="stElementContainer"] {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
         div[data-testid="stChatMessage"] > div {
             background: rgba(15,15,15,0.92) !important;
             border: 1px solid rgba(255,255,255,0.08) !important;
@@ -259,34 +280,6 @@ def _apply_dark_ui() -> None:
             color: #f2f2f2 !important;
         }
 
-        /* ==========================================================
-           FAIXA INFERIOR: centralizar de verdade
-           ========================================================== */
-        div[data-testid="stBottomBlockContainer"] {
-            background: transparent !important;
-            padding-top: 0.2rem !important;
-            padding-bottom: 0.2rem !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
-        }
-
-        /* o bloco vertical de baixo */
-        div[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] {
-            max-width: 980px !important;
-            margin: 0 auto !important;
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
-            box-sizing: border-box !important;
-        }
-
-        /* cada container interno da faixa inferior */
-        div[data-testid="stBottomBlockContainer"] [data-testid="stElementContainer"] {
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        /* desktop */
         @media (min-width: 769px) {
             div[data-testid="stChatInput"] {
                 position: fixed !important;
@@ -294,14 +287,14 @@ def _apply_dark_ui() -> None:
                 right: 0 !important;
                 bottom: 0 !important;
                 z-index: 9999 !important;
+                width: 100% !important;
                 background: rgba(11,11,11,0.88) !important;
                 backdrop-filter: blur(10px) !important;
                 border-top: 1px solid rgba(255,255,255,0.10) !important;
                 padding: 0.2rem 0 !important;
-                width: 100% !important;
+                min-height: auto !important;
             }
 
-            /* centraliza o conteúdo do input */
             div[data-testid="stChatInput"] > div {
                 width: 100% !important;
                 max-width: 980px !important;
@@ -309,25 +302,29 @@ def _apply_dark_ui() -> None:
                 padding-left: 1rem !important;
                 padding-right: 1rem !important;
                 box-sizing: border-box !important;
+                min-height: auto !important;
             }
 
             div[data-testid="stChatInput"] form {
-                width: 100% !important;
-                display: flex !important;
-                gap: 8px !important;
+                display: grid !important;
+                grid-template-columns: 56px minmax(0, 1fr) auto !important;
                 align-items: center !important;
-                margin: 0 auto !important;
+                gap: 8px !important;
+                width: 100% !important;
+                margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
             }
 
             div[data-testid="stChatInput"] form > div:first-child {
-                flex: 1 1 auto !important;
+                grid-column: 2 !important;
                 min-width: 0 !important;
+                width: 100% !important;
             }
 
             div[data-testid="stChatInput"] form > div:last-child {
-                flex: 0 0 auto !important;
+                grid-column: 3 !important;
+                width: auto !important;
             }
 
             textarea[data-testid="stChatInputTextArea"] {
@@ -356,7 +353,6 @@ def _apply_dark_ui() -> None:
             }
         }
 
-        /* mobile / chromebook */
         @media (max-width: 768px) {
             div[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] {
                 max-width: 980px !important;
@@ -388,22 +384,25 @@ def _apply_dark_ui() -> None:
             }
 
             div[data-testid="stChatInput"] form {
-                width: 100% !important;
-                display: flex !important;
-                gap: 8px !important;
+                display: grid !important;
+                grid-template-columns: 32px minmax(0, 1fr) auto !important;
                 align-items: center !important;
-                margin: 0 auto !important;
+                gap: 8px !important;
+                width: 100% !important;
+                margin: 0 !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
             }
 
             div[data-testid="stChatInput"] form > div:first-child {
-                flex: 1 1 auto !important;
+                grid-column: 2 !important;
                 min-width: 0 !important;
+                width: 100% !important;
             }
 
             div[data-testid="stChatInput"] form > div:last-child {
-                flex: 0 0 auto !important;
+                grid-column: 3 !important;
+                width: auto !important;
             }
 
             textarea[data-testid="stChatInputTextArea"] {
@@ -430,57 +429,11 @@ def _apply_dark_ui() -> None:
             .block-container {
                 padding-bottom: 2rem !important;
             }
-        st.markdown("""
-        <style>
-        /* faixa inferior */
-        div[data-testid="stBottomBlockContainer"] {
-            background: transparent !important;
-        }
-        
-        /* conteúdo do chat */
-        div[data-testid="stChatInput"] > div {
-            max-width: 980px !important;
-            margin: 0 auto !important;
-            box-sizing: border-box !important;
-        }
-        
-        /* cria uma "coluna auxiliar" à esquerda */
-        div[data-testid="stChatInput"] form {
-            display: grid !important;
-            grid-template-columns: 72px minmax(0, 1fr) auto !important;
-            align-items: center !important;
-            gap: 8px !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-        
-        /* 1º filho real do form = campo */
-        div[data-testid="stChatInput"] form > div:first-child {
-            grid-column: 2 !important;
-            min-width: 0 !important;
-            width: 100% !important;
-        }
-        
-        /* último filho real = botão */
-        div[data-testid="stChatInput"] form > div:last-child {
-            grid-column: 3 !important;
-            width: auto !important;
-        }
-        
-        /* compactação do textarea */
-        textarea[data-testid="stChatInputTextArea"] {
-            min-height: 38px !important;
-            max-height: 110px !important;
-            padding-top: 0.4rem !important;
-            padding-bottom: 0.4rem !important;
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
-            line-height: 1.2 !important;
-            box-sizing: border-box !important;
         }
         </style>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 def _apply_dark_ui_once() -> None:
     _apply_dark_ui()
