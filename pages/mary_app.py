@@ -307,7 +307,7 @@ def _apply_dark_ui() -> None:
 
             div[data-testid="stChatInput"] form {
                 display: grid !important;
-                grid-template-columns: 56px minmax(0, 1fr) auto !important;
+                grid-template-columns: 72px minmax(0, 1fr) auto !important;
                 align-items: center !important;
                 gap: 8px !important;
                 width: 100% !important;
