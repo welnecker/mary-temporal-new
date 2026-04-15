@@ -7729,7 +7729,7 @@ ação física real > assunto > emoção > estilo
         # ==========================================================
         # 3) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
         # ==========================================================
-        history = cached_get_history(usuario_key, limit=6)
+        history = cached_get_history(usuario_key, limit=6) or []
         
         style_seed = random.choice([
             "fala_primeiro",
@@ -7739,74 +7739,86 @@ ação física real > assunto > emoção > estilo
         ])
 
         # ==========================================================
-        # ÚLTIMO TURNO (ÂNCORA REAL DA CENA)
+        # ÚLTIMO TURNO - MICROÂNCORA, NÃO COMANDO ABSOLUTO
         # ==========================================================
         last_turn = history[-1] if history else {}
         
-        last_user = str(last_turn.get("mensagem_usuario") or "").strip()
+        last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
         last_mary = str(last_turn.get("resposta_mary") or "").strip()
-        
+
         messages.append({
             "role": "system",
             "content": (
-                "[ÚLTIMO EVENTO - CONTINUIDADE IMEDIATA]\n"
-                "O próximo texto deve continuar EXATAMENTE a partir do estado final deste momento.\n"
-                "Não recomeçar, não reexecutar, não reinterpretar.\n"
+                "[ÚLTIMO TURNO - REFERÊNCIA DE MICROCONTINUIDADE]\n"
+                "Use o último turno apenas como apoio de transição imediata.\n"
+                "FACTS ativos, CENA atual e ASSUNTO vigente têm prioridade absoluta se houver conflito.\n"
+                "Não recomeçar, não repetir ações já consumadas e não reabrir o mesmo gesto físico como abertura.\n"
+                "Continue da consequência prática atual, e não automaticamente do gesto final do último turno.\n"
             )
         })
-        
-        if last_user:
+
+        if last_user or last_mary:
             messages.append({
-                "role": "user",
-                "content": last_user
+                "role": "system",
+                "content": (
+                    "[RESUMO DO ÚLTIMO TURNO]\n"
+                    f"Última fala do usuário: {last_user[:500]}\n"
+                    f"Última resposta de Mary: {last_mary[:700]}\n"
+                )
             })
-        
-        if last_mary:
-            messages.append({
-                "role": "assistant",
-                "content": last_mary
-            })
-        
+
         messages.append({
             "role": "system",
             "content": (
                 "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
                 "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
-                "- Interações recentes definem apenas contexto imediato e clima vivo.\n"
+                "- Interações recentes definem apenas transição e clima imediato.\n"
                 "- Memórias e histórico são apoio; não definem abertura, cadência ou estrutura.\n"
-        
+
                 "- A cena já está em andamento.\n"
-                "- Sempre partir do ponto exato onde a cena parou.\n"
+                "- Sempre partir do ponto exato da consequência atual.\n"
                 "- Ações, descobertas e gestos já realizados são CONSUMADOS.\n"
                 "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
                 "- Reações devem avançar a cena, nunca recontá-la.\n"
-        
+
                 "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
                 "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
                 "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
                 "- Se um objeto já foi guardado, escondido, pego, lido ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
-                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se o usuário pedir ou se houver novo motivo real.\n"
+                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se houver novo motivo real.\n"
                 "- Não usar o mesmo objeto secreto como eixo do primeiro parágrafo em turnos consecutivos.\n"
                 "- Após uma descoberta, Mary deve reagir, decidir, disfarçar, responder ou agir; não reabrir a cena com o mesmo gesto físico.\n"
-        
+
                 f"- Estilo deste turno: {style_seed}.\n"
-                "- Variar abertura, ritmo ou foco naturalmente.\n"
+                "- Variar abertura, ritmo e foco naturalmente.\n"
                 "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
                 "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
                 "- Nem toda resposta precisa conter todos os elementos.\n"
                 "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
             )
         })
-        
-        for d in history[-6:]:
+
+        # Histórico recente complementar:
+        # usa pares anteriores e evita duplicar o último turno já resumido acima
+        recent_pairs = history[-4:-1] if len(history) > 1 else []
+
+        for d in recent_pairs:
             if not isinstance(d, dict):
                 continue
-        
+
             u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
+            a = str(d.get("resposta_mary") or "").strip()
+
             if u:
                 messages.append({
                     "role": "user",
                     "content": u,
+                })
+
+            if a:
+                messages.append({
+                    "role": "assistant",
+                    "content": a,
                 })
         
     
