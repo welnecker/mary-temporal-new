@@ -232,46 +232,13 @@ def _apply_dark_ui() -> None:
             height: 0 !important;
         }
 
-        /* container principal */
         .block-container {
             max-width: 980px !important;
             padding-top: 1rem !important;
             padding-bottom: 2rem !important;
         }
 
-        /* faixa inferior do Streamlit */
-        div[data-testid="stBottomBlockContainer"] {
-            padding-top: 0.15rem !important;
-            padding-bottom: 0.15rem !important;
-            min-height: auto !important;
-            background: transparent !important;
-        }
-
-        /* Card header */
-        .rp-card {
-            background: rgba(18,18,18,0.92);
-            border: 1px solid rgba(255,255,255,0.10);
-            border-radius: 16px;
-            padding: 16px;
-            margin: 0 0 12px 0;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.55);
-            backdrop-filter: blur(6px);
-        }
-
-        .rp-title {
-            font-size: 22px;
-            font-weight: 800;
-            margin: 0;
-            color: #fff;
-        }
-
-        .rp-sub {
-            font-size: 13px;
-            margin-top: 6px;
-            color: rgba(255,255,255,0.65);
-        }
-
-        /* Chat bubbles */
+        /* mensagens */
         div[data-testid="stChatMessage"] > div {
             background: rgba(15,15,15,0.92) !important;
             border: 1px solid rgba(255,255,255,0.08) !important;
@@ -293,8 +260,33 @@ def _apply_dark_ui() -> None:
         }
 
         /* ==========================================================
-           DESKTOP: chat_input fixo
+           FAIXA INFERIOR: centralizar de verdade
            ========================================================== */
+        div[data-testid="stBottomBlockContainer"] {
+            background: transparent !important;
+            padding-top: 0.2rem !important;
+            padding-bottom: 0.2rem !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* o bloco vertical de baixo */
+        div[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] {
+            max-width: 980px !important;
+            margin: 0 auto !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            box-sizing: border-box !important;
+        }
+
+        /* cada container interno da faixa inferior */
+        div[data-testid="stBottomBlockContainer"] [data-testid="stElementContainer"] {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* desktop */
         @media (min-width: 769px) {
             div[data-testid="stChatInput"] {
                 position: fixed !important;
@@ -302,21 +294,21 @@ def _apply_dark_ui() -> None:
                 right: 0 !important;
                 bottom: 0 !important;
                 z-index: 9999 !important;
-                width: 100% !important;
                 background: rgba(11,11,11,0.88) !important;
                 backdrop-filter: blur(10px) !important;
                 border-top: 1px solid rgba(255,255,255,0.10) !important;
                 padding: 0.2rem 0 !important;
-                min-height: auto !important;
+                width: 100% !important;
             }
 
+            /* centraliza o conteúdo do input */
             div[data-testid="stChatInput"] > div {
                 width: 100% !important;
                 max-width: 980px !important;
                 margin: 0 auto !important;
-                padding: 0 1rem !important;
+                padding-left: 1rem !important;
+                padding-right: 1rem !important;
                 box-sizing: border-box !important;
-                min-height: auto !important;
             }
 
             div[data-testid="stChatInput"] form {
@@ -324,44 +316,39 @@ def _apply_dark_ui() -> None:
                 display: flex !important;
                 gap: 8px !important;
                 align-items: center !important;
-                box-sizing: border-box !important;
                 margin: 0 auto !important;
                 padding: 0 !important;
-                min-height: auto !important;
+                box-sizing: border-box !important;
             }
 
             div[data-testid="stChatInput"] form > div:first-child {
                 flex: 1 1 auto !important;
-                width: 100% !important;
                 min-width: 0 !important;
             }
 
             div[data-testid="stChatInput"] form > div:last-child {
                 flex: 0 0 auto !important;
-                width: auto !important;
-                min-width: 0 !important;
             }
 
             textarea[data-testid="stChatInputTextArea"] {
                 width: 100% !important;
                 min-height: 40px !important;
                 max-height: 120px !important;
+                line-height: 1.2 !important;
+                padding-top: 0.45rem !important;
+                padding-bottom: 0.45rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
                 border-radius: 14px !important;
                 background: #101010 !important;
                 color: #f2f2f2 !important;
                 border: 1px solid rgba(255,255,255,0.14) !important;
                 box-sizing: border-box !important;
-                line-height: 1.2 !important;
-                padding-top: 0.45rem !important;
-                padding-bottom: 0.45rem !important;
             }
 
             button[data-testid="stChatInputSubmitButton"] {
-                flex: 0 0 auto !important;
                 height: 40px !important;
                 min-height: 40px !important;
-                padding-top: 0 !important;
-                padding-bottom: 0 !important;
             }
 
             .block-container {
@@ -369,10 +356,16 @@ def _apply_dark_ui() -> None:
             }
         }
 
-        /* ==========================================================
-           MOBILE / CHROMEBOOK / TOUCH
-           ========================================================== */
+        /* mobile / chromebook */
         @media (max-width: 768px) {
+            div[data-testid="stBottomBlockContainer"] [data-testid="stVerticalBlock"] {
+                max-width: 980px !important;
+                margin: 0 auto !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
+                box-sizing: border-box !important;
+            }
+
             div[data-testid="stChatInput"] {
                 position: static !important;
                 left: auto !important;
@@ -384,16 +377,14 @@ def _apply_dark_ui() -> None:
                 backdrop-filter: none !important;
                 border-top: none !important;
                 padding: 0 !important;
-                min-height: auto !important;
             }
 
             div[data-testid="stChatInput"] > div {
                 width: 100% !important;
                 max-width: 100% !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
                 box-sizing: border-box !important;
-                min-height: auto !important;
             }
 
             div[data-testid="stChatInput"] form {
@@ -401,44 +392,39 @@ def _apply_dark_ui() -> None:
                 display: flex !important;
                 gap: 8px !important;
                 align-items: center !important;
-                box-sizing: border-box !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
                 padding: 0 !important;
-                min-height: auto !important;
+                box-sizing: border-box !important;
             }
 
             div[data-testid="stChatInput"] form > div:first-child {
                 flex: 1 1 auto !important;
-                width: 100% !important;
                 min-width: 0 !important;
             }
 
             div[data-testid="stChatInput"] form > div:last-child {
                 flex: 0 0 auto !important;
-                width: auto !important;
-                min-width: 0 !important;
             }
 
             textarea[data-testid="stChatInputTextArea"] {
                 width: 100% !important;
                 min-height: 38px !important;
                 max-height: 110px !important;
+                line-height: 1.2 !important;
+                padding-top: 0.4rem !important;
+                padding-bottom: 0.4rem !important;
+                padding-left: 0.75rem !important;
+                padding-right: 0.75rem !important;
                 border-radius: 14px !important;
                 background: #101010 !important;
                 color: #f2f2f2 !important;
                 border: 1px solid rgba(255,255,255,0.14) !important;
                 box-sizing: border-box !important;
-                line-height: 1.2 !important;
-                padding-top: 0.4rem !important;
-                padding-bottom: 0.4rem !important;
-                padding-right: 0.8rem !important;
             }
 
             button[data-testid="stChatInputSubmitButton"] {
                 height: 38px !important;
                 min-height: 38px !important;
-                padding-top: 0 !important;
-                padding-bottom: 0 !important;
             }
 
             .block-container {
