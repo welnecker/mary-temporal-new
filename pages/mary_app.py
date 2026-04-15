@@ -319,8 +319,8 @@ def _apply_dark_ui() -> None:
 
             div[data-testid="stChatInput"] textarea {
                 width: 100% !important;
-                min-height: 66px !important;
-                max-height: 240px !important;
+                min-height: 76px !important;
+                max-height: 160px !important;
                 border-radius: 14px !important;
                 background: #101010 !important;
                 color: #f2f2f2 !important;
