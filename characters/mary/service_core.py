@@ -7402,6 +7402,88 @@ Resumo:
 ação física real > assunto > emoção > estilo
 """.strip()
 
+        last_action_anchor_rule = """
+[ÂNCORA DE CONTINUIDADE IMEDIATA - OBRIGATÓRIA]
+
+- O último turno representa o ESTADO REAL ATUAL da cena.
+
+- É PROIBIDO:
+  - reexecutar uma ação já concluída
+  - reintroduzir movimento já ocorrido
+  - voltar para um estado físico anterior
+  - descrever novamente a chegada, início ou preparação já feita
+
+- Se no turno anterior já ocorreu:
+  - deslocamento
+  - posicionamento
+  - início de ação
+
+→ ESTE estado é o ponto inicial do turno atual
+
+EXEMPLO:
+Se já ocorreu:
+"ele foi para a maca"
+
+→ PROIBIDO:
+"eu o levo até a maca"
+
+→ CORRETO:
+"com ele já na maca..."
+
+REGRA CENTRAL:
+o turno atual começa EXATAMENTE de onde o anterior terminou
+
+Resumo:
+não recomeçar — continuar
+""".strip()
+
+        micro_action_continuity_rule = """
+[CONTINUIDADE DE MICRO-AÇÕES - ABSOLUTA]
+
+- Micro-ações já concluídas no turno anterior NÃO podem ser reabertas como se estivessem começando agora.
+
+MICRO-AÇÕES incluem:
+- levar até um lugar
+- acomodar na maca, cadeira, cama ou banco
+- ajoelhar para examinar
+- tocar pela primeira vez na área afetada
+- começar a tirar chuteira, roupa, acessório ou bandagem
+- afrouxar cadarço
+- pegar objeto já pego
+- esconder, guardar, devolver ou segurar objeto já manipulado
+- ajustar cabelo, postura ou expressão já ajustados
+
+SE uma micro-ação já ocorreu:
+- tratar como estado consumado
+- continuar da consequência prática dessa ação
+
+PROIBIDO:
+- repetir a chegada
+- repetir o início do cuidado
+- repetir o primeiro toque
+- repetir o mesmo gesto técnico como abertura do novo turno
+
+CORRETO:
+- avançar para a etapa seguinte
+- aprofundar o cuidado já iniciado
+- reagir ao efeito da ação anterior
+- mudar foco para a consequência atual
+
+EXEMPLO:
+Se já ocorreu:
+"Mary afrouxa os cadarços e tira a chuteira"
+
+→ PROIBIDO:
+"Mary se ajoelha e começa a afrouxar os cadarços"
+
+→ CORRETO:
+"Com a chuteira já fora, Mary avalia o inchaço e posiciona as mãos para o próximo cuidado"
+
+Resumo:
+micro-ação consumada não reinicia
+""".strip()
+     
+
         system = f"""
 [REGRAS DO SISTEMA]
 Você está dentro de uma cena ativa.
@@ -7443,6 +7525,8 @@ NSFW_PROFILE: {nsfw_profile}
 {pending_event_section}
 
 {continuity_of_action_rule}
+{last_action_anchor_rule}
+{micro_action_continuity_rule}
 {action_commit_rule}
 
 [CANON]
@@ -7674,12 +7758,12 @@ NSFW_PROFILE: {nsfw_profile}
             "reacao_interna_primeiro",
             "curta_direta",
         ])
-
+      
         # ==========================================================
         # ÚLTIMO TURNO - MICROÂNCORA, NÃO COMANDO ABSOLUTO
         # ==========================================================
         last_turn = history[-1] if history else {}
-        
+
         last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
         last_mary = str(last_turn.get("resposta_mary") or "").strip()
 
@@ -7689,8 +7773,10 @@ NSFW_PROFILE: {nsfw_profile}
                 "[ÚLTIMO TURNO - REFERÊNCIA DE MICROCONTINUIDADE]\n"
                 "Use o último turno apenas como apoio de transição imediata.\n"
                 "FACTS ativos, CENA atual e ASSUNTO vigente têm prioridade absoluta se houver conflito.\n"
+                "O turno atual deve começar do estado prático já alcançado, e não da preparação da ação.\n"
                 "Não recomeçar, não repetir ações já consumadas e não reabrir o mesmo gesto físico como abertura.\n"
                 "Continue da consequência prática atual, e não automaticamente do gesto final do último turno.\n"
+                "Se uma ação já foi iniciada ou concluída, trate-a como estado consumado neste novo turno.\n"
             )
         })
 
@@ -7701,6 +7787,20 @@ NSFW_PROFILE: {nsfw_profile}
                     "[RESUMO DO ÚLTIMO TURNO]\n"
                     f"Última fala do usuário: {last_user[:500]}\n"
                     f"Última resposta de Mary: {last_mary[:700]}\n"
+                )
+            })
+
+        if last_mary:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "[MICRO-AÇÕES JÁ CONSUMADAS]\n"
+                    "Não repetir como abertura do novo turno qualquer micro-ação já concluída na última resposta.\n"
+                    "Se Mary já levou, acomodou, tocou, começou exame, tirou objeto, afrouxou peça, iniciou cuidado,\n"
+                    "se aproximou, segurou, pegou objeto, abriu algo, ajustou postura ou iniciou procedimento,\n"
+                    "o novo turno deve começar da consequência atual dessas ações.\n"
+                    "É proibido reabrir o mesmo gesto técnico ou o mesmo movimento físico como se estivesse começando agora.\n"
+                    "Cada ação física só pode ter UM início; depois disso, ela deve evoluir, aprofundar ou mudar de foco.\n"
                 )
             })
 
@@ -7721,10 +7821,14 @@ NSFW_PROFILE: {nsfw_profile}
                 "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
                 "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
                 "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
-                "- Se um objeto já foi guardado, escondido, pego, lido ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
-                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo ou recompor expressão, salvo se houver novo motivo real.\n"
-                "- Não usar o mesmo objeto secreto como eixo do primeiro parágrafo em turnos consecutivos.\n"
-                "- Após uma descoberta, Mary deve reagir, decidir, disfarçar, responder ou agir; não reabrir a cena com o mesmo gesto físico.\n"
+
+                "- Se um deslocamento já ocorreu, não reabrir a chegada.\n"
+                "- Se um posicionamento já ocorreu, não reabrir sentar, deitar, ajoelhar, acomodar ou aproximar como início.\n"
+                "- Se um cuidado já começou, não repetir o início técnico do mesmo cuidado.\n"
+                "- Se um objeto já foi guardado, escondido, pego, lido, aberto, retirado, afrouxado ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
+                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo, recompor expressão, afrouxar cadarço, tirar chuteira, iniciar exame, tocar pela primeira vez ou posicionar as mãos para o mesmo procedimento, salvo se houver novo motivo real.\n"
+                "- Não usar o mesmo objeto, gesto técnico ou etapa inicial como eixo do primeiro parágrafo em turnos consecutivos.\n"
+                "- Após uma descoberta, exame, toque, deslocamento ou início de cuidado, Mary deve reagir, decidir, aprofundar, mudar foco ou avançar a ação; não reabrir a cena com o mesmo gesto físico.\n"
 
                 f"- Estilo deste turno: {style_seed}.\n"
                 "- Variar abertura, ritmo e foco naturalmente.\n"
