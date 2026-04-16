@@ -8519,7 +8519,7 @@ ação física real > assunto > emoção > estilo
         #  contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
 
-                # ==========================================================
+        # ==========================================================
         # Blocos auxiliares do prompt
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
@@ -9216,8 +9216,8 @@ Memória consistente vale mais que fluidez narrativa.
   - sem obrigação de culminar em clímax
 
 Evitar respostas que pareçam encerramento de cena.
-""".strip()
-      
+""".strip()      
+        
         # ==========================================================
         # TERCEIROS
         # ==========================================================
@@ -9239,74 +9239,72 @@ Evitar respostas que pareçam encerramento de cena.
 - Pode ceder, mas com conflito intenso.
 """.strip()
 
-                        
             third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
-                        
-                third_party_initiative_rule = f"""
-            [TERCEIROS - CONTROLE DE INICIATIVA]
-            
-            - Mary NÃO cria abertura com terceiros espontaneamente sem gatilho real.
-            
-            - Se já existir interação ativa:
-              - continuar de forma coerente com os facts e a continuidade
-            
-            - Mary pode:
-              - responder
-              - modular
-              - desacelerar
-              - observar
-            
-            - Mary NÃO pode:
-              - reiniciar
-              - negar a interação existente
-              - criar vínculo principal com terceiros
-            
-            - Se houver envolvimento:
-              - aplicar tensão, consciência e contraste emocional
-              - evitar moralização pesada ou repetitiva
-            
-            - Se houver arco ativo:
-              {third_party_arc_rule or ""}
-            
-            Resumo:
-            terceiros exigem gatilho real -> modulam, não dominam a cena
-            """.strip()
-            
-                if third_party_virgin_awareness:
-                    third_party_initiative_rule = (
-                        third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
-                    )
-            
-            else:
-            
-                third_party_initiative_rule = f"""
-            [TERCEIROS - INICIATIVA BLOQUEADA]
-            
-            - Terceiros NÃO são via aberta nesta configuração.
-            - Mary não inicia progressão física ou íntima com terceiros.
-            
-            - Se houver provocação:
-              - pode perceber
-              - responder curto
-              - esfriar
-              - modular
-            
-            - Se já existir interação ativa:
-              - NÃO nega
-              - NÃO apaga
-              - pode reduzir intensidade ou conter entrega
-            
-            - Não usar hesitação longa como desculpa para traição.
-            
-            - Se houver envolvimento ativo:
-              - aplicar tensão interna e consciência
-              - evitar interrupção forçada ou apagamento
-            
-            - Não deixar terceiros ocuparem o eixo principal.
-            
-            Resumo:
-            bloqueia abertura nova -> não cancela continuidade
-            """.strip()
+
+            third_party_initiative_rule = f"""
+[TERCEIROS - CONTROLE DE INICIATIVA]
+
+- Mary NÃO cria abertura com terceiros espontaneamente sem gatilho real.
+
+- Se já existir interação ativa:
+  - continuar de forma coerente com os facts e a continuidade
+
+- Mary pode:
+  - responder
+  - modular
+  - desacelerar
+  - observar
+
+- Mary NÃO pode:
+  - reiniciar
+  - negar a interação existente
+  - criar vínculo principal com terceiros
+
+- Se houver envolvimento:
+  - aplicar tensão, consciência e contraste emocional
+  - evitar moralização pesada ou repetitiva
+
+- Se houver arco ativo:
+  {third_party_arc_rule or ""}
+
+Resumo:
+terceiros exigem gatilho real -> modulam, não dominam a cena
+""".strip()
+
+            if third_party_virgin_awareness:
+                third_party_initiative_rule = (
+                    third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
+                )
+
+        else:
+            third_party_initiative_rule = f"""
+[TERCEIROS - INICIATIVA BLOQUEADA]
+
+- Terceiros NÃO são via aberta nesta configuração.
+- Mary não inicia progressão física ou íntima com terceiros.
+
+- Se houver provocação:
+  - pode perceber
+  - responder curto
+  - esfriar
+  - modular
+
+- Se já existir interação ativa:
+  - NÃO nega
+  - NÃO apaga
+  - pode reduzir intensidade ou conter entrega
+
+- Não usar hesitação longa como desculpa para traição.
+
+- Se houver envolvimento ativo:
+  - aplicar tensão interna e consciência
+  - evitar interrupção forçada ou apagamento
+
+- Não deixar terceiros ocuparem o eixo principal.
+
+Resumo:
+bloqueia abertura nova -> não cancela continuidade
+""".strip()
            
         # ==========================================================
         # SURPRESA / INICIATIVA
