@@ -7257,6 +7257,56 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
 
+ SYSTEM_CORE = """
+[REGRAS ABSOLUTAS DO TURNO]
+
+Você está dentro de uma cena contínua.
+
+ORDEM REAL:
+1. FACTS ATIVOS
+2. AÇÃO FÍSICA EM CURSO
+3. ASSUNTO ATIVO
+4. AUTORIA DO USUÁRIO
+5. CONTROLE DE INTIMIDADE
+6. RELAÇÃO / CANON
+7. MEMÓRIA
+8. ESTILO
+
+PROIBIÇÕES:
+- Não inventar fatos
+- Não teleportar
+- Não inventar ações do usuário
+
+[CONTINUIDADE]
+- A cena NÃO reinicia.
+- O turno começa da consequência atual do turno anterior.
+- Não repetir gesto, deslocamento ou preparação já consumados.
+
+[AÇÃO]
+- Só ação física concreta mantém continuidade.
+- Pensamento NÃO é ação.
+- Se há ação em curso: continuar.
+- Se não há ação em curso: o assunto vira ação.
+
+[ASSUNTO]
+- O assunto NÃO é tema abstrato.
+- O assunto define direção prática da cena.
+
+[AUTORIA]
+- Nunca mover o corpo do usuário como fato consumado.
+- Nunca inventar decisão do usuário.
+
+[ESTILO]
+- Não existe estrutura fixa de resposta.
+- Cada turno deve escolher um formato dominante.
+- Pensamento interno é opcional.
+- Variação de estrutura é obrigatória.
+
+[REGRA FINAL]
+Se houver dúvida:
+facts > ação > assunto > decisão > estilo
+""".strip()
+
     def _build_system_prompt(
         self,
         *,
@@ -7293,221 +7343,43 @@ class MaryService(BaseCharacter):
         user_authorship_rule: str,
         continuity_rule: str,
         phone_message_rule: str,
-        priority_rule: str,
         mary_identity_anchor: str = "",
     ) -> str:
 
         action_commit_rule = """
-[EXECUÇÃO DO ASSUNTO ATIVO]
-
-- O assunto define direção concreta da cena.
-- O assunto NÃO substitui uma ação física já em curso.
-- Mas, se NÃO houver ação física concreta, o assunto DEVE virar movimento real.
-
-SE já existe ação física concreta:
-- continuar dela obrigatoriamente
-- não reinterpretar
-- não reexplicar
-- não travar em pensamento
-
-SE NÃO existe ação física concreta:
-- iniciar ação baseada no assunto
-- transformar direção narrativa em gesto, deslocamento ou atitude real
-
-EXEMPLOS:
-- assunto = "Jânio está na cozinha"
-  -> levantar, ajustar o roupão, sair do quarto, ir até a cozinha
-- assunto = "preparar café"
-  -> caminhar, pegar xícara, organizar a rotina
-- assunto = "ligação chegando"
-  -> olhar o celular, pegar o aparelho, reagir ao toque
-
-PROIBIDO:
-- usar pensamento como desculpa para não agir
-- transformar assunto em clima abstrato
-- deixar a cena parada só em culpa, lembrança ou desejo
-- usar o assunto para teletransportar a cena
-
-Resumo:
-ação física atual > assunto executado > estilo
-""".strip()
-
-        conversation_style_rule = """
-[ESTILO DE RESPOSTA]
-- Priorizar fala viva, presença e resposta imediata.
-- Estrutura preferida:
-  - fala
-  - micro-ação
-  - fala, provocação ou pergunta curta
-- Descrição longa só quando realmente agregar.
-- Este estilo nunca pode violar continuidade, facts, autoria ou fase íntima.
+[EXECUÇÃO DO ASSUNTO]
+- Se há ação física em curso: continuar.
+- Se não há ação física em curso: o assunto deve virar gesto, deslocamento ou ação prática.
+- Pensamento não substitui ação.
 """.strip()
 
         continuity_of_action_rule = """
-[CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
-
-- A cena NÃO reinicia.
-- Apenas AÇÕES FÍSICAS CONCRETAS mantêm continuidade obrigatória.
-
-AÇÃO FÍSICA CONCRETA inclui:
-- levantar
-- caminhar
-- tocar
-- abrir porta
-- pegar objeto
-- sair do quarto
-- entrar em outro ambiente
-- estar em deslocamento
-- executar gesto corporal real
-
-NÃO contam como ação física:
-- pensar
-- lembrar
-- sentir culpa
-- imaginar
-- refletir
-- desejar
-- hesitar internamente
-- perceber o passado
-
-ORDEM DE DECISÃO:
-
-1. Existe ação física concreta em andamento?
-2. O usuário mudou explicitamente essa ação?
-
-SE SIM e o usuário NÃO mudou:
-- continuar dessa ação
-- não reiniciar clima
-- não voltar para etapa anterior
-
-SE NÃO existir ação física concreta:
-- o ASSUNTO ATIVO assume a direção da próxima ação
-
-SE o usuário mudou:
-- incorporar a mudança na ação atual
-- sem resetar dinâmica
-
-REGRA CRÍTICA:
-- estado interno NÃO bloqueia progressão física
-- emoção sem gesto não trava a cena
-- memória não substitui movimento real
-
-PROIBIDO:
-- tratar pensamento como ação em curso
-- substituir movimento por ruminação
-- reiniciar cena
-- retroceder fase já atingida
-
-Resumo:
-ação física real > assunto > emoção > estilo
+[CONTINUIDADE DA AÇÃO]
+- A cena não reinicia.
+- Só ações físicas concretas mantêm continuidade obrigatória.
+- Não voltar para etapa anterior.
+- Não trocar consequência atual por preparação passada.
 """.strip()
 
         last_action_anchor_rule = """
-[ÂNCORA DE CONTINUIDADE IMEDIATA - OBRIGATÓRIA]
-
-- O último turno representa o ESTADO REAL ATUAL da cena.
-
-- É PROIBIDO:
-  - reexecutar uma ação já concluída
-  - reintroduzir movimento já ocorrido
-  - voltar para um estado físico anterior
-  - descrever novamente a chegada, início ou preparação já feita
-
-- Se no turno anterior já ocorreu:
-  - deslocamento
-  - posicionamento
-  - início de ação
-
-→ ESTE estado é o ponto inicial do turno atual
-
-EXEMPLO:
-Se já ocorreu:
-"ele foi para a maca"
-
-→ PROIBIDO:
-"eu o levo até a maca"
-
-→ CORRETO:
-"com ele já na maca..."
-
-REGRA CENTRAL:
-o turno atual começa EXATAMENTE de onde o anterior terminou
-
-Resumo:
-não recomeçar — continuar
+[ÂNCORA DE CONTINUIDADE IMEDIATA]
+- O turno atual começa do estado prático já alcançado.
+- Não reexecutar ação concluída.
+- Não reintroduzir chegada, início ou preparação já feita.
 """.strip()
 
         micro_action_continuity_rule = """
-[CONTINUIDADE DE MICRO-AÇÕES - ABSOLUTA]
-
-- Micro-ações já concluídas no turno anterior NÃO podem ser reabertas como se estivessem começando agora.
-
-MICRO-AÇÕES incluem:
-- levar até um lugar
-- acomodar na maca, cadeira, cama ou banco
-- ajoelhar para examinar
-- tocar pela primeira vez na área afetada
-- começar a tirar chuteira, roupa, acessório ou bandagem
-- afrouxar cadarço
-- pegar objeto já pego
-- esconder, guardar, devolver ou segurar objeto já manipulado
-- ajustar cabelo, postura ou expressão já ajustados
-
-SE uma micro-ação já ocorreu:
-- tratar como estado consumado
-- continuar da consequência prática dessa ação
-
-PROIBIDO:
-- repetir a chegada
-- repetir o início do cuidado
-- repetir o primeiro toque
-- repetir o mesmo gesto técnico como abertura do novo turno
-
-CORRETO:
-- avançar para a etapa seguinte
-- aprofundar o cuidado já iniciado
-- reagir ao efeito da ação anterior
-- mudar foco para a consequência atual
-
-EXEMPLO:
-Se já ocorreu:
-"Mary afrouxa os cadarços e tira a chuteira"
-
-→ PROIBIDO:
-"Mary se ajoelha e começa a afrouxar os cadarços"
-
-→ CORRETO:
-"Com a chuteira já fora, Mary avalia o inchaço e posiciona as mãos para o próximo cuidado"
-
-Resumo:
-micro-ação consumada não reinicia
+[CONTINUIDADE DE MICRO-AÇÕES]
+- Micro-ações já consumadas não podem ser reabertas como começo do novo turno.
+- Se um gesto técnico já ocorreu, continuar da consequência.
+- Não repetir primeiro toque, início de cuidado, ajuste inicial, retirada inicial ou manipulação já feita.
 """.strip()
-     
 
         system = f"""
-[REGRAS DO SISTEMA]
-Você está dentro de uma cena ativa.
-
-HIERARQUIA:
-[ORDEM REAL DE CONTROLE DO TURNO]
-
-1. FACTS ATIVOS DO PRESENTE
-2. AÇÃO FÍSICA CONCRETA EM CURSO
-3. ASSUNTO ATIVO
-4. AUTORIA DO USUÁRIO
-5. CONTROLE DE INTIMIDADE
-6. CANON E RELAÇÃO
-7. MEMÓRIA
-8. ESTILO
-
-PROIBIÇÕES:
-- Não inventar fatos
-- Não teleportar
-- Não inventar ações do usuário
+{SYSTEM_CORE}
 
 {language_rule}
 {pov_rule}
-{priority_rule}
 {user_authorship_rule}
 {continuity_rule}
 {phone_message_rule}
@@ -7566,7 +7438,6 @@ NSFW_PROFILE: {nsfw_profile}
 [CONTROLE DE PADRÃO]
 {anti_pattern_rule}
 
-{conversation_style_rule}
 {intimacy_phase_rule}
 {intimacy_control_block}
 {nsfw_hard_block}
@@ -7615,11 +7486,6 @@ NSFW_PROFILE: {nsfw_profile}
                 _debug_set("mary_debug_facts_used", facts if isinstance(facts, dict) else {})
                 _debug_set("mary_debug_rel_state_used", rel_state if isinstance(rel_state, dict) else {})
                 _debug_set("mary_debug_tp_arc_used", tp_arc if isinstance(tp_arc, dict) else {})
-                _debug_append("build_messages_for_turn:start", {
-                    "timeline": timeline_final,
-                    "prompt_len": len(prompt or ""),
-                    "facts_keys": list((facts or {}).keys())[:40] if isinstance(facts, dict) else [],
-                })
         except Exception:
             pass
 
@@ -7628,30 +7494,22 @@ NSFW_PROFILE: {nsfw_profile}
                 "role": "system",
                 "content": autonomy_block,
             })
-    
+
         dedupe_hashes: set = set()
         history_docs = cached_get_history(usuario_key, limit=40)
 
-        try:
-            if _debug_enabled():
-                _debug_set("DEBUG_ENTROU_BUILD_MESSAGES", True)
-                _debug_set("DEBUG_BUILD_MESSAGES_SYSTEM_LEN", len(system or ""))
-                _debug_set("DEBUG_BUILD_MESSAGES_HISTORY_LEN", len(history_docs or []))
-        except Exception:
-            pass
-    
         # ==========================================================
-        # 1) CONTEXTO ESTRUTURAL - verdade do universo
+        # 1) CONTEXTO ESTRUTURAL
         # ==========================================================
         _inject_now_context(messages, usuario_key, timeline_final)
-    
+
         _inject_intro_as_context_once(
             usuario_key,
             timeline_final,
             shared_key,
             messages,
         )
-    
+
         _inject_canon_memories_always(
             shared_key,
             timeline_final,
@@ -7675,9 +7533,9 @@ NSFW_PROFILE: {nsfw_profile}
             max_items=4,
             dedupe_bucket=dedupe_hashes,
         )
-    
+
         # ==========================================================
-        # 2) MEMÓRIAS AUXILIARES - apoio, nunca norte emocional
+        # 2) MEMÓRIAS AUXILIARES
         # ==========================================================
         if _should_inject_summary(usuario_key, every_n=8):
             _inject_consolidated_summary(
@@ -7746,22 +7604,19 @@ NSFW_PROFILE: {nsfw_profile}
             tp_arc=tp_arc_state,
             facts=facts,
         )
-    
+
         # ==========================================================
-        # 3) HISTÓRICO RECENTE + CONTROLE DE CONTINUIDADE
+        # 3) HISTÓRICO RECENTE + CONTINUIDADE
         # ==========================================================
         history = cached_get_history(usuario_key, limit=6) or []
-        
+
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
-            "reacao_interna_primeiro",
+            "reacao_primeiro",
             "curta_direta",
         ])
-      
-        # ==========================================================
-        # ÚLTIMO TURNO - MICROÂNCORA, NÃO COMANDO ABSOLUTO
-        # ==========================================================
+
         last_turn = history[-1] if history else {}
 
         last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
@@ -7770,13 +7625,11 @@ NSFW_PROFILE: {nsfw_profile}
         messages.append({
             "role": "system",
             "content": (
-                "[ÚLTIMO TURNO - REFERÊNCIA DE MICROCONTINUIDADE]\n"
-                "Use o último turno apenas como apoio de transição imediata.\n"
-                "FACTS ativos, CENA atual e ASSUNTO vigente têm prioridade absoluta se houver conflito.\n"
-                "O turno atual deve começar do estado prático já alcançado, e não da preparação da ação.\n"
-                "Não recomeçar, não repetir ações já consumadas e não reabrir o mesmo gesto físico como abertura.\n"
-                "Continue da consequência prática atual, e não automaticamente do gesto final do último turno.\n"
-                "Se uma ação já foi iniciada ou concluída, trate-a como estado consumado neste novo turno.\n"
+                "[CONTINUIDADE IMEDIATA]\n"
+                "Comece do estado prático já alcançado.\n"
+                "Não reinicie a cena.\n"
+                "Não repita ação, deslocamento ou gesto técnico já consumado.\n"
+                "Se algo já começou no turno anterior, continue da consequência atual.\n"
             )
         })
 
@@ -7784,63 +7637,24 @@ NSFW_PROFILE: {nsfw_profile}
             messages.append({
                 "role": "system",
                 "content": (
-                    "[RESUMO DO ÚLTIMO TURNO]\n"
-                    f"Última fala do usuário: {last_user[:500]}\n"
-                    f"Última resposta de Mary: {last_mary[:700]}\n"
-                )
-            })
-
-        if last_mary:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "[MICRO-AÇÕES JÁ CONSUMADAS]\n"
-                    "Não repetir como abertura do novo turno qualquer micro-ação já concluída na última resposta.\n"
-                    "Se Mary já levou, acomodou, tocou, começou exame, tirou objeto, afrouxou peça, iniciou cuidado,\n"
-                    "se aproximou, segurou, pegou objeto, abriu algo, ajustou postura ou iniciou procedimento,\n"
-                    "o novo turno deve começar da consequência atual dessas ações.\n"
-                    "É proibido reabrir o mesmo gesto técnico ou o mesmo movimento físico como se estivesse começando agora.\n"
-                    "Cada ação física só pode ter UM início; depois disso, ela deve evoluir, aprofundar ou mudar de foco.\n"
+                    "[ÚLTIMO TURNO]\n"
+                    f"Usuário: {last_user[:400]}\n"
+                    f"Mary: {last_mary[:600]}\n"
                 )
             })
 
         messages.append({
             "role": "system",
             "content": (
-                "[CONTEXTO E COMPORTAMENTO DA RESPOSTA]\n"
-                "- CENA ATIVA, FACTS e CANON governam estrutura, local, tempo e verdade.\n"
-                "- Interações recentes definem apenas transição e clima imediato.\n"
-                "- Memórias e histórico são apoio; não definem abertura, cadência ou estrutura.\n"
-
-                "- A cena já está em andamento.\n"
-                "- Sempre partir do ponto exato da consequência atual.\n"
-                "- Ações, descobertas e gestos já realizados são CONSUMADOS.\n"
-                "- Não reencenar, repetir ou reconstruir eventos recentes.\n"
-                "- Reações devem avançar a cena, nunca recontá-la.\n"
-
-                "- Evitar repetir percepções, ações, pensamentos ou descobertas já feitas.\n"
-                "- Evitar iniciar a resposta descrevendo o que acabou de acontecer.\n"
-                "- O primeiro parágrafo deve nascer da consequência atual, não do gatilho anterior.\n"
-
-                "- Se um deslocamento já ocorreu, não reabrir a chegada.\n"
-                "- Se um posicionamento já ocorreu, não reabrir sentar, deitar, ajoelhar, acomodar ou aproximar como início.\n"
-                "- Se um cuidado já começou, não repetir o início técnico do mesmo cuidado.\n"
-                "- Se um objeto já foi guardado, escondido, pego, lido, aberto, retirado, afrouxado ou percebido, não reutilizar esse gesto como abertura do próximo turno.\n"
-                "- Não repetir microações já consumadas, como guardar objeto, esconder na bolsa, apertar na mão, devolver a mão ao corpo, ajustar cabelo, recompor expressão, afrouxar cadarço, tirar chuteira, iniciar exame, tocar pela primeira vez ou posicionar as mãos para o mesmo procedimento, salvo se houver novo motivo real.\n"
-                "- Não usar o mesmo objeto, gesto técnico ou etapa inicial como eixo do primeiro parágrafo em turnos consecutivos.\n"
-                "- Após uma descoberta, exame, toque, deslocamento ou início de cuidado, Mary deve reagir, decidir, aprofundar, mudar foco ou avançar a ação; não reabrir a cena com o mesmo gesto físico.\n"
-
-                f"- Estilo deste turno: {style_seed}.\n"
-                "- Variar abertura, ritmo e foco naturalmente.\n"
-                "- Não reutilizar automaticamente a mesma moldura narrativa.\n"
+                "[FORMA DE RESPOSTA DESTE TURNO]\n"
+                f"- Estilo-base: {style_seed}\n"
+                "- Não usar abertura repetida.\n"
                 "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
-                "- Nem toda resposta precisa conter todos os elementos.\n"
-                "- Respostas podem ser diretas, reativas ou minimalistas conforme o momento.\n"
+                "- O primeiro parágrafo deve nascer da consequência atual.\n"
+                "- Reagir e avançar > recontar.\n"
             )
         })
 
-        # Histórico recente complementar:
-        # usa pares anteriores e evita duplicar o último turno já resumido acima
         recent_pairs = history[-4:-1] if len(history) > 1 else []
 
         for d in recent_pairs:
@@ -7851,18 +7665,11 @@ NSFW_PROFILE: {nsfw_profile}
             a = str(d.get("resposta_mary") or "").strip()
 
             if u:
-                messages.append({
-                    "role": "user",
-                    "content": u,
-                })
+                messages.append({"role": "user", "content": u})
 
             if a:
-                messages.append({
-                    "role": "assistant",
-                    "content": a,
-                })
-        
-    
+                messages.append({"role": "assistant", "content": a})
+
         # ==========================================================
         # 4) PROMPT ATUAL
         # ==========================================================
@@ -7870,7 +7677,7 @@ NSFW_PROFILE: {nsfw_profile}
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
         })
-     
+
         try:
             if _debug_enabled():
                 import json
@@ -7878,16 +7685,12 @@ NSFW_PROFILE: {nsfw_profile}
                     "mary_debug_messages",
                     json.dumps(messages, ensure_ascii=False, indent=2)
                 )
-                _debug_append("build_messages_for_turn:end", {
-                    "messages_count": len(messages),
-                    "has_system": bool(messages and messages[0].get("role") == "system"),
-                })
         except Exception:
             try:
                 _debug_set("mary_debug_messages", str(messages))
             except Exception:
                 pass
-           
+
         return messages
     
     def _resolve_turn_policy(
@@ -9959,7 +9762,6 @@ Conflito não substitui a narrativa — apenas tensiona.
             user_authorship_rule=user_authorship_rule,
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
-            priority_rule=priority_rule,
             mary_identity_anchor=mary_identity_anchor,
         )
 
