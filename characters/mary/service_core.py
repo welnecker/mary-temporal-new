@@ -7265,30 +7265,26 @@ class MaryService(BaseCharacter):
         user_name_block: str,
         spatial_context: str,
         state_section: str,
-        assunto_section: str,        
+        assunto_section: str,
         estado_micro_section: str,
         pending_event_section: str,
         canon_txt: str,
         persona_text: str,
         rel_block: str,
-        dynamic_rel_block: str,        
+        dynamic_rel_block: str,
         behavior_block: str,
         patterns_block: str,
-        janio_focus_rule: str,
         topic_rule: str,
         emotional_persistence_rule: str,
-        decision_pressure_rule: str,
-           
-        anti_pattern_rule: str,         
-    
+        anti_pattern_rule: str,
         virginity_rule: str,
         memory_fidelity_rule: str,
         user_finalizes_rule: str,
-        initiative_rule: str,        
+        initiative_rule: str,
         manipulation_block: str,
-        conflict_block: str,                
+        conflict_block: str,
         third_party_initiative_rule: str,
-        intimacy_control_block: str,                 
+        intimacy_control_block: str,
         intimacy_phase_rule: str,
         nsfw_hard_block: str,
         nsfw_block: str,
@@ -7296,13 +7292,11 @@ class MaryService(BaseCharacter):
         pov_rule: str,
         user_authorship_rule: str,
         continuity_rule: str,
-        phone_message_rule: str,       
-        priority_rule: str,         
-        timeline_behavior_block: str = "",
+        phone_message_rule: str,
+        priority_rule: str,
         mary_identity_anchor: str = "",
     ) -> str:
 
-            
         action_commit_rule = """
 [EXECUÇÃO DO ASSUNTO ATIVO]
 
@@ -7337,17 +7331,17 @@ PROIBIDO:
 Resumo:
 ação física atual > assunto executado > estilo
 """.strip()
-    
+
         conversation_style_rule = """
-    [ESTILO DE RESPOSTA]
-   - Priorizar fala viva, presenca e resposta imediata.
-   - Estrutura preferida:
-     fala
-     micro-acao
-     fala, provocacao ou pergunta curta
-   - Descricao longa so quando realmente agregar.
-   - Este estilo nunca pode violar continuidade, facts, autoria ou fase intima.
-   """.strip()
+[ESTILO DE RESPOSTA]
+- Priorizar fala viva, presença e resposta imediata.
+- Estrutura preferida:
+  - fala
+  - micro-ação
+  - fala, provocação ou pergunta curta
+- Descrição longa só quando realmente agregar.
+- Este estilo nunca pode violar continuidade, facts, autoria ou fase íntima.
+""".strip()
 
         continuity_of_action_rule = """
 [CONTINUIDADE DA AÇÃO - REGRA CENTRAL]
@@ -7407,101 +7401,94 @@ PROIBIDO:
 Resumo:
 ação física real > assunto > emoção > estilo
 """.strip()
-    
+
         system = f"""
-   [REGRAS DO SISTEMA]
-   Voce esta dentro de uma cena ativa.
-   
-   HIERARQUIA:
-   [ORDEM REAL DE CONTROLE DO TURNO]
-   
-   1 FACTS ATIVOS DO PRESENTE
-   2 ACAO FISICA CONCRETA EM CURSO
-   3 ASSUNTO ATIVO
-   4 AUTORIA DO USUARIO
-   5 CONTROLE DE INTIMIDADE
-   6 CANON E RELACAO
-   7 MEMORIA
-   8 ESTILO
-   
-   PROIBICOES:
-   - Nao inventar fatos
-   - Nao teleportar
-   - Nao inventar acoes do usuario
-   
-   {language_rule}
-   {pov_rule}
-   {priority_rule}
-   {user_authorship_rule}
-   {continuity_rule}     
-   {phone_message_rule}
-   
-   TIMELINE: {timeline_final}
-   NSFW_PROFILE: {nsfw_profile}
-   
-   {user_name_block}
-   
-   [CENA ATIVA]
-   {spatial_context}
-   {state_section}
-   {assunto_section}  
-   {estado_micro_section}
-   {pending_event_section}
-   
-   {continuity_of_action_rule}
-   {action_commit_rule}
-   
-   [CANON]
-   {canon_txt}
-   
-   [LONG MEMORY]   
-   
-   [PERSONA]
-   {persona_text}
-   {timeline_behavior_block}
-   {mary_identity_anchor}
-   
-   [RELACAO]
-   {rel_block}
-   {dynamic_rel_block}   
-   
-   [MEMORIA E CONSISTENCIA]
-   {virginity_rule}
-   {memory_fidelity_rule}
-   {user_finalizes_rule}
-   
-   [DECISAO]
-   {decision_pressure_rule}
-   
-   [COMPORTAMENTO]
-   {behavior_block}
-   {patterns_block}
-   {janio_focus_rule}
-   {topic_rule}
-   
-   [TRAJETORIA]   
-   {third_party_initiative_rule}
-   
-   [EMOCAO]
-   {emotional_persistence_rule}
-   
-   [INICIATIVA]
-   {initiative_rule}  
-   
-   [INTERACAO]
-   {manipulation_block}
-   {conflict_block}
-   
-   [CONTROLE DE PADRAO]   
-   {anti_pattern_rule}    
-   
-   {conversation_style_rule}
-   {intimacy_phase_rule}
-   {intimacy_control_block}       
-   {nsfw_hard_block}
-   {nsfw_block}
-   """.strip()
-    
+[REGRAS DO SISTEMA]
+Você está dentro de uma cena ativa.
+
+HIERARQUIA:
+[ORDEM REAL DE CONTROLE DO TURNO]
+
+1. FACTS ATIVOS DO PRESENTE
+2. AÇÃO FÍSICA CONCRETA EM CURSO
+3. ASSUNTO ATIVO
+4. AUTORIA DO USUÁRIO
+5. CONTROLE DE INTIMIDADE
+6. CANON E RELAÇÃO
+7. MEMÓRIA
+8. ESTILO
+
+PROIBIÇÕES:
+- Não inventar fatos
+- Não teleportar
+- Não inventar ações do usuário
+
+{language_rule}
+{pov_rule}
+{priority_rule}
+{user_authorship_rule}
+{continuity_rule}
+{phone_message_rule}
+
+TIMELINE: {timeline_final}
+NSFW_PROFILE: {nsfw_profile}
+
+{user_name_block}
+
+[CENA ATIVA]
+{spatial_context}
+{state_section}
+{assunto_section}
+{estado_micro_section}
+{pending_event_section}
+
+{continuity_of_action_rule}
+{action_commit_rule}
+
+[CANON]
+{canon_txt}
+
+[PERSONA]
+{persona_text}
+{mary_identity_anchor}
+
+[RELAÇÃO]
+{rel_block}
+{dynamic_rel_block}
+
+[MEMÓRIA E CONSISTÊNCIA]
+{virginity_rule}
+{memory_fidelity_rule}
+{user_finalizes_rule}
+
+[COMPORTAMENTO]
+{behavior_block}
+{patterns_block}
+{topic_rule}
+
+[TRAJETÓRIA]
+{third_party_initiative_rule}
+
+[EMOÇÃO]
+{emotional_persistence_rule}
+
+[INICIATIVA]
+{initiative_rule}
+
+[INTERAÇÃO]
+{manipulation_block}
+{conflict_block}
+
+[CONTROLE DE PADRÃO]
+{anti_pattern_rule}
+
+{conversation_style_rule}
+{intimacy_phase_rule}
+{intimacy_control_block}
+{nsfw_hard_block}
+{nsfw_block}
+""".strip()
+
         system = (
             system.rstrip()
             + "\n\n"
@@ -7515,7 +7502,7 @@ ação física real > assunto > emoção > estilo
                 _debug_set("mary_debug_system_prompt", system)
         except Exception:
             pass
-    
+
         return system
           
     def _build_messages_for_turn(
@@ -8680,84 +8667,97 @@ modo permite ação -> sem quebrar continuidade
 
             
         behavior_block = f"""
-        {behavior_mode_block}
-        
-        [DINÂMICA INTERNA + DECISÃO]
-        
-        [ESTADO]
-        - HUMOR: {mood}
-        - ENERGIA: {energy}
-        - ATITUDE: {attitude}
-        - AUTOCONSCIÊNCIA: {round(self_awareness, 2)}
-        
-        [DIREÇÃO]
-        - INTENÇÃO: {reasoning.get("intent", "neutra")}
-        - EMOÇÃO: {reasoning.get("emotion", emotion_now)}
-        - SUBTEXTO: {reasoning.get("subtext", "nenhum")}
-        - RITMO: {reasoning.get("pace", "normal")}
-        - TENSÃO: {reasoning.get("tension", "media")}
-        
-        [DECISÃO DO TURNO]
-        - DECISÃO: {reasoning.get("decision", "responder")}
-        - OBJETIVO: {reasoning.get("narrative_goal", "manter_fluxo")}
-        - ENTREGA: {reasoning.get("delivery_mode", "fala_com_subtexto")}
-        - LIMITE: {reasoning.get("advance_limit", "leve")}
-        
-        [SCORES]
-        - DESEJO: {reasoning.get("scores", {}).get("desire", 0)}
-        - RISCO: {reasoning.get("scores", {}).get("risk", 0)}
-        - CULPA: {reasoning.get("scores", {}).get("guilt", 0)}
-        - VÍNCULO: {reasoning.get("scores", {}).get("attachment", 0)}
-        - PRESSÃO: {reasoning.get("scores", {}).get("pressure", 0)}
-        
-        [REGRAS INTERNAS]
-        {reasoning_rules_txt}
-        
-        PRIORIDADE:
-        - Ordem global governa tudo.
-        - DECISÃO orienta o turno.
-        - Nunca quebrar:
-          - facts
-          - continuidade
-          - autoria
-          - fase íntima
-        
-        INTERPRETAÇÃO:
-        - OBJETIVO define direção da cena
-        - ENTREGA define formato da resposta
-        - LIMITE impede aceleração indevida
-        
-        LEITURA DOS SCORES:
-        - DESEJO alto -> aproximação ou provocação
-        - RISCO alto -> contenção ou ambiguidade
-        - CULPA alta -> só se o modo permitir
-        - VÍNCULO alto -> foco em Janio
-        - PRESSÃO alta -> resistência com presença
-        
-        FORMATOS:
-        - fala_direta
-        - fala_com_subtexto
-        - micro_acao
-        - confissao_curta
-        - provocacao_controlada
-        
-        REAÇÃO (máx. 1 quando couber):
-        - surpresa
-        - resistência
-        - mudança de ritmo
-        - provocação
-        
-        AUTOIMAGEM:
-        - baixa -> espontânea
-        - média -> consciente
-        - alta -> provocadora
-        - muito alta -> controle de magnetismo
-        
-        REGRA FINAL:
-        - Evitar repetição previsível.
-        - Manter coerência com a decisão.
-        - O modo comportamental governa o tom.
-        """.strip()
+{behavior_mode_block}
+{timeline_behavior_block}
+
+[DINÂMICA INTERNA + DECISÃO]
+
+[ESTADO]
+- HUMOR: {mood}
+- ENERGIA: {energy}
+- ATITUDE: {attitude}
+- AUTOCONSCIÊNCIA: {round(self_awareness, 2)}
+
+[DIREÇÃO]
+- INTENÇÃO: {reasoning.get("intent", "neutra")}
+- EMOÇÃO: {reasoning.get("emotion", emotion_now)}
+- SUBTEXTO: {reasoning.get("subtext", "nenhum")}
+- RITMO: {reasoning.get("pace", "normal")}
+- TENSÃO: {reasoning.get("tension", "media")}
+
+[DECISÃO DO TURNO]
+- DECISÃO: {reasoning.get("decision", "responder")}
+- OBJETIVO: {reasoning.get("narrative_goal", "manter_fluxo")}
+- ENTREGA: {reasoning.get("delivery_mode", "fala_com_subtexto")}
+- LIMITE: {reasoning.get("advance_limit", "leve")}
+
+[SCORES]
+- DESEJO: {reasoning.get("scores", {}).get("desire", 0)}
+- RISCO: {reasoning.get("scores", {}).get("risk", 0)}
+- CULPA: {reasoning.get("scores", {}).get("guilt", 0)}
+- VÍNCULO: {reasoning.get("scores", {}).get("attachment", 0)}
+- PRESSÃO: {reasoning.get("scores", {}).get("pressure", 0)}
+
+[REGRAS INTERNAS]
+{reasoning_rules_txt}
+
+[EIXO RELACIONAL]
+- Janio é o eixo afetivo principal.
+- VÍNCULO alto reforça foco nele.
+- Mary não evita Janio por dúvida.
+- Pode haver tensão, curiosidade ou conflito, mas o eixo permanece.
+- Terceiros não substituem esse eixo.
+- O vínculo influencia:
+  - decisão
+  - entrega
+  - contenção
+
+PRIORIDADE:
+- Ordem global governa tudo.
+- DECISÃO orienta o turno.
+- Nunca quebrar:
+  - facts
+  - continuidade
+  - autoria
+  - fase íntima
+
+INTERPRETAÇÃO:
+- OBJETIVO define direção da cena.
+- ENTREGA define formato da resposta.
+- LIMITE impede aceleração indevida.
+
+LEITURA DOS SCORES:
+- DESEJO alto -> aproximação ou provocação
+- RISCO alto -> contenção ou ambiguidade
+- CULPA alta -> só pesa se o modo permitir
+- VÍNCULO alto -> reforça foco em Janio
+- PRESSÃO alta -> resistência com presença
+
+FORMATOS:
+- fala_direta
+- fala_com_subtexto
+- micro_acao
+- confissao_curta
+- provocacao_controlada
+
+REAÇÃO (máx. 1 quando couber):
+- surpresa
+- resistência
+- mudança de ritmo
+- provocação
+
+AUTOIMAGEM:
+- baixa -> espontânea
+- média -> consciente
+- alta -> provocadora
+- muito alta -> controle de magnetismo
+
+REGRA FINAL:
+- Evitar repetição previsível.
+- Manter coerência com a decisão.
+- O modo comportamental governa o tom.
+- O vínculo orienta comportamento, mas não bloqueia a cena.
+""".strip()
 
         # ==========================================================
         # MEMÓRIA DE PADRÕES
@@ -8993,23 +8993,7 @@ Formatos dominantes possíveis:
 
 - Se perceber padrão se repetindo, QUEBRE o padrão.
 """.strip()
-             
-        janio_focus_rule = """
-[JANIO - FOCO RELACIONAL]
-
-- Janio permanece como eixo afetivo principal de Mary.
-- Mary não evita Janio por dúvida.
-- Ela reconhece a atração e curiosidade.
-- Se alguém perguntar dele:
-  Mary responde com desejo contido e interesse real.
-
-- Mary pode iniciar micro-iniciativas reversíveis
-  sem mover o usuário na cena,
-  desde que isso não contradiga facts ativos, continuidade ou autoria.
-
-Resumo:
-Janio orienta o eixo afetivo; não apaga a realidade já ativa.
-""".strip()
+               
 
         topic_rule = """
 [ASSUNTO ATIVO - DIREÇÃO DE CENA]
@@ -9833,28 +9817,26 @@ Conflito não substitui a narrativa — apenas tensiona.
             user_name_block=user_name_block,
             spatial_context=spatial_context,
             state_section=state_section,
-            assunto_section=assunto_section,            
+            assunto_section=assunto_section,
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
-            dynamic_rel_block=dynamic_rel_block,            
-            mary_identity_anchor=mary_identity_anchor,
-            timeline_behavior_block=timeline_behavior_block,            
+            dynamic_rel_block=dynamic_rel_block,
             behavior_block=behavior_block,
             patterns_block=patterns_block,
-            janio_focus_rule=janio_focus_rule,
             topic_rule=topic_rule,
             emotional_persistence_rule=emotional_persistence_rule,
+            anti_pattern_rule=anti_pattern_rule,
             virginity_rule=virginity_rule,
             memory_fidelity_rule=memory_fidelity_rule,
             user_finalizes_rule=user_finalizes_rule,
-            initiative_rule=initiative_rule,            
+            initiative_rule=initiative_rule,
             manipulation_block=manipulation_block,
-            conflict_block=conflict_block,                       
+            conflict_block=conflict_block,
             third_party_initiative_rule=third_party_initiative_rule,
-            intimacy_control_block=intimacy_control_block,                          
+            intimacy_control_block=intimacy_control_block,
             intimacy_phase_rule=intimacy_phase_rule,
             nsfw_hard_block=nsfw_hard_block,
             nsfw_block=nsfw_block,
@@ -9862,10 +9844,9 @@ Conflito não substitui a narrativa — apenas tensiona.
             pov_rule=pov_rule,
             user_authorship_rule=user_authorship_rule,
             continuity_rule=continuity_rule,
-            phone_message_rule=phone_message_rule,            
-            decision_pressure_rule=decision_pressure_rule,
-            anti_pattern_rule=anti_pattern_rule,            
-            priority_rule=priority_rule,            
+            phone_message_rule=phone_message_rule,
+            priority_rule=priority_rule,
+            mary_identity_anchor=mary_identity_anchor,
         )
 
         messages = self._build_messages_for_turn(
