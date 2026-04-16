@@ -7257,7 +7257,7 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
 
- SYSTEM_CORE = """
+SYSTEM_CORE = """
 [REGRAS ABSOLUTAS DO TURNO]
 
 Você está dentro de uma cena contínua.
