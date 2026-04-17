@@ -9654,8 +9654,8 @@ bloqueia abertura nova -> não cancela continuidade
   reação curta → tensão → continuidade da cena
 
 Conflito não substitui a narrativa — apenas tensiona.
-""".strip()
-            
+""".strip()          
+       
         # ==========================================================
         # Estado / cena / nome do usuário
         # ==========================================================
@@ -9673,12 +9673,16 @@ Conflito não substitui a narrativa — apenas tensiona.
             assunto_section = f"\n{assunto_block}\n"
         
         # ==========================================================
-        # 🔥 NOVO: ETAPA ATIVA DO ASSUNTO (ENGINE)
+        # ETAPA ATIVA DO ASSUNTO (ENGINE)
         # ==========================================================
-        assunto_step_block = _render_assunto_step_block(facts)
-        assunto_step_section = ""
-        if isinstance(assunto_step_block, str) and assunto_step_block.strip():
-            assunto_step_section = f"\n{assunto_step_block}\n"
+        assunto_step_section = ""  # ← garante existência SEMPRE
+        
+        try:
+            assunto_step_block = _render_assunto_step_block(facts)
+            if isinstance(assunto_step_block, str) and assunto_step_block.strip():
+                assunto_step_section = f"\n{assunto_step_block}\n"
+        except Exception:
+            assunto_step_section = ""
         
         # ==========================================================
         # MICROCONTINUIDADE
@@ -9708,6 +9712,9 @@ Conflito não substitui a narrativa — apenas tensiona.
         if isinstance(pending_event_block, str) and pending_event_block.strip():
             pending_event_section = f"\n{pending_event_block}\n"
         
+        # ==========================================================
+        # OUTROS
+        # ==========================================================
         user_name_block = _build_user_name_block(user_id, ctx_lower)
         
         scene_loc, scene_time, scene_action = _get_scene_state(facts)
@@ -9718,6 +9725,7 @@ Conflito não substitui a narrativa — apenas tensiona.
             scene_time,
             scene_action,
             locked=scene_locked,
+        )
         )
         # ==========================================================
         # System prompt e messages
