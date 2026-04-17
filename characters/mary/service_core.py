@@ -7540,8 +7540,8 @@ NSFW_PROFILE: {nsfw_profile}
             pass
 
         return system 
-              
-          
+                        
+   
     def _build_messages_for_turn(
         self,
         *,
@@ -7557,6 +7557,12 @@ NSFW_PROFILE: {nsfw_profile}
         autonomy_block: str = "",
     ) -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    
+        # HISTÓRICO PRECISA VIR ANTES DE QUALQUER USO
+        try:
+            history = cached_get_history(usuario_key, limit=6) or []
+        except Exception:
+            history = []
     
         # ==========================================================
         # 1) CANON / MEMÓRIAS / LATENTES
@@ -7590,7 +7596,7 @@ NSFW_PROFILE: {nsfw_profile}
                 dedupe_bucket=dedupe_bucket,
                 facts=facts,
             )
-        
+    
             _inject_relevant_memories(
                 shared_key,
                 timeline_final,
@@ -7616,8 +7622,6 @@ NSFW_PROFILE: {nsfw_profile}
         # ==========================================================
         # 2) HISTÓRICO RECENTE (somente para ponte curta)
         # ==========================================================
-        history = cached_get_history(usuario_key, limit=6) or []
-    
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
@@ -7650,9 +7654,6 @@ NSFW_PROFILE: {nsfw_profile}
                 base + "\n\n" + "\n\n".join(extra_system_parts).strip()
             ).strip()
     
-        # ==========================================================
-        # 3) PROMPT ATUAL
-        # ==========================================================
         messages.append({
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
