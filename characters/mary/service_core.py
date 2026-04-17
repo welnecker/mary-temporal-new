@@ -7464,37 +7464,37 @@ NSFW_PROFILE: {nsfw_profile}
 
     
     def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
-    """
-    Resume a continuidade imediata de forma funcional e curta,
-    sem reencenar a prosa do turno anterior.
-    """
-    if not history:
-        return ""
-
-    last_turn = history[-1] if history else {}
-    if not isinstance(last_turn, dict):
-        return ""
-
-    last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
-    last_mary = str(last_turn.get("resposta_mary") or "").strip()
-
-    lines: List[str] = []
-    lines.append("[PONTE DE CONTINUIDADE DO TURNO ANTERIOR]")
-    lines.append("- Use apenas a consequência prática do último turno.")
-    lines.append("- NÃO recontar a resposta anterior.")
-    lines.append("- NÃO reutilizar clima, descrição ou subtexto anterior como eixo do novo turno.")
-    lines.append("- Se a ação principal terminou, ela terminou.")
-    lines.append("- O novo turno deve obedecer primeiro aos facts ativos do presente.")
-    lines.append("")
-
-    if last_user:
-        lines.append(f"Última ação do usuário: {last_user[:220]}")
-
-    if last_mary:
-        mary_short = re.sub(r"\s+", " ", last_mary).strip()[:260]
-        lines.append(f"Última resposta da Mary (resumo funcional): {mary_short}")
-
-    return "\n".join(lines).strip()
+        """
+        Resume a continuidade imediata de forma funcional e curta,
+        sem reencenar a prosa do turno anterior.
+        """
+        if not history:
+            return ""
+    
+        last_turn = history[-1] if history else {}
+        if not isinstance(last_turn, dict):
+            return ""
+    
+        last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
+        last_mary = str(last_turn.get("resposta_mary") or "").strip()
+    
+        lines: List[str] = []
+        lines.append("[PONTE DE CONTINUIDADE DO TURNO ANTERIOR]")
+        lines.append("- Use apenas a consequência prática do último turno.")
+        lines.append("- NÃO recontar a resposta anterior.")
+        lines.append("- NÃO reutilizar clima, descrição ou subtexto anterior como eixo do novo turno.")
+        lines.append("- Se a ação principal terminou, ela terminou.")
+        lines.append("- O novo turno deve obedecer primeiro aos facts ativos do presente.")
+        lines.append("")
+    
+        if last_user:
+            lines.append(f"Última ação do usuário: {last_user[:220]}")
+    
+        if last_mary:
+            mary_short = re.sub(r"\s+", " ", last_mary).strip()[:260]
+            lines.append(f"Última resposta da Mary (resumo funcional): {mary_short}")
+    
+        return "\n".join(lines).strip()
             
           
     def _build_messages_for_turn(
