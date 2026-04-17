@@ -9726,7 +9726,7 @@ Conflito não substitui a narrativa — apenas tensiona.
             scene_action,
             locked=scene_locked,
         )
-        )
+        
         # ==========================================================
         # System prompt e messages
         # ==========================================================
