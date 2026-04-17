@@ -8,7 +8,7 @@ from .persona_core import _norm_timeline
 
 _PERSONA_RESOLVER: dict[str, Callable[[str], Tuple[str, List[Dict[str, str]]]]] = {}
 
-# ✅ debug para o sidebar
+# debug para o sidebar
 _LAST_PERSONA_IMPORT = {"ok": "", "err": ""}
 
 
@@ -30,7 +30,7 @@ def _import_get_persona(modname: str) -> Optional[Callable[[str], Tuple[str, Lis
 
 
 def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
-    # ✅ se cacheou fallback, não prende: tenta reimportar
+    # se cacheou fallback, tenta reimportar
     if tl in _PERSONA_RESOLVER:
         fn_cached = _PERSONA_RESOLVER[tl]
         if getattr(fn_cached, "_is_fallback", False):
@@ -38,7 +38,6 @@ def _resolver_for(tl: str) -> Callable[[str], Tuple[str, List[Dict[str, str]]]]:
         else:
             return fn_cached
 
-    # ✅ prioridade CORRETA (seu nome real de arquivo)
     if tl == "universitaria":
         fn = _import_get_persona("persona_universitaria")
     else:
