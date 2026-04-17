@@ -7304,6 +7304,54 @@ Se houver dúvida:
 facts > ação > assunto > decisão > estilo
 """.strip()
 
+# ==========================================================
+# ENGINE DE ASSUNTO (SEQUÊNCIA CONTROLADA)
+# ==========================================================
+def _get_current_assunto_step(facts: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    seq = facts.get("assunto_seq") or []
+    idx = facts.get("assunto_idx", 0)
+    if not seq or idx >= len(seq):
+        return None
+    return seq[idx]
+
+
+def _render_assunto_step_block(facts: Dict[str, Any]) -> str:
+    step = _get_current_assunto_step(facts)
+    if not step:
+        return ""
+    return f"""
+[ETAPA ATIVA DO ASSUNTO]
+- Etapa {step["id"]}: {step["desc"]}
+- Status: {step.get("status", "em andamento")}
+
+REGRA:
+- Atuar SOMENTE nesta etapa neste turno.
+- NÃO antecipar próximas etapas.
+""".strip()
+
+
+def _should_advance_assunto(response_text: str, current_step: Dict[str, Any]) -> bool:
+    txt = response_text.lower()
+    desc = current_step["desc"].lower()
+
+    if "almoço" in desc:
+        return any(k in txt for k in ["vamos", "cantina", "almo", "comer"])
+
+    if "josé boto" in desc:
+        return any(k in txt for k in ["boto", "encontr", "convers"])
+
+    return False
+
+
+def _advance_assunto_step(usuario_key: str, facts: Dict[str, Any]):
+    idx = facts.get("assunto_idx", 0)
+    seq = facts.get("assunto_seq", [])
+
+    if idx < len(seq) - 1:
+        idx += 1
+        facts["assunto_idx"] = idx
+        set_fact_safe(usuario_key, "assunto_idx", idx)
+
 def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
     if not history:
         return ""
@@ -7424,6 +7472,7 @@ NSFW_PROFILE: {nsfw_profile}
 {spatial_context}
 {state_section}
 {assunto_section}
+{assunto_step_section}
 {estado_micro_section}
 {pending_event_section}
 
@@ -9606,7 +9655,7 @@ bloqueia abertura nova -> não cancela continuidade
 
 Conflito não substitui a narrativa — apenas tensiona.
 """.strip()
-     
+            
         # ==========================================================
         # Estado / cena / nome do usuário
         # ==========================================================
@@ -9615,25 +9664,41 @@ Conflito não substitui a narrativa — apenas tensiona.
         if isinstance(state_block, str) and state_block.strip():
             state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
         
-        # NOVO: assunto narrativo
+        # ==========================================================
+        # ASSUNTO MACRO
+        # ==========================================================
         assunto_block = _build_assunto_macro_block(facts)
         assunto_section = ""
         if isinstance(assunto_block, str) and assunto_block.strip():
             assunto_section = f"\n{assunto_block}\n"
         
-        # NOVO: microcontinuidade
+        # ==========================================================
+        # 🔥 NOVO: ETAPA ATIVA DO ASSUNTO (ENGINE)
+        # ==========================================================
+        assunto_step_block = _render_assunto_step_block(facts)
+        assunto_step_section = ""
+        if isinstance(assunto_step_block, str) and assunto_step_block.strip():
+            assunto_step_section = f"\n{assunto_step_block}\n"
+        
+        # ==========================================================
+        # MICROCONTINUIDADE
+        # ==========================================================
         estado_micro_block = _build_estado_micro_block(facts)
         estado_micro_section = ""
         if isinstance(estado_micro_block, str) and estado_micro_block.strip():
             estado_micro_section = f"\n{estado_micro_block}\n"
         
-        # NOVO: carregar histórico antes do evento pendente
+        # ==========================================================
+        # HISTÓRICO
+        # ==========================================================
         try:
             history = cached_get_history(usuario_key, limit=10) or []
         except Exception:
             history = []
         
-        # NOVO: evento pendente
+        # ==========================================================
+        # EVENTO PENDENTE
+        # ==========================================================
         pending_event_block, pending_event_used = _build_pending_event_block(
             facts,
             history,
@@ -9654,7 +9719,6 @@ Conflito não substitui a narrativa — apenas tensiona.
             scene_action,
             locked=scene_locked,
         )
-
         # ==========================================================
         # System prompt e messages
         # ==========================================================
