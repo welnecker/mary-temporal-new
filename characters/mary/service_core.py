@@ -7534,16 +7534,28 @@ NSFW_PROFILE: {nsfw_profile}
             dedupe_bucket=dedupe_bucket,
         )
     
-        _inject_relevant_long_memories(
-            usuario_key=usuario_key,
-            long_key=_long_key(_current_user_id_fallback()),
-            prompt=prompt,
-            messages=messages,
-            limit=int(mem_spec.get("long_limit", 4) or 4),
-            timeline=timeline_final,
-            facts=facts,
-            dedupe_bucket=dedupe_bucket,
-        )
+        if _should_inject_long_memory(prompt):
+            _inject_long_memory_textsearch(
+                usuario_key,
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                limit=4,
+                dedupe_bucket=dedupe_bucket,
+                facts=facts,
+            )
+        
+            _inject_relevant_memories(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                k=3,
+                dedupe_bucket=dedupe_bucket,
+                facts=facts,
+                history=history_docs,
+            )
     
         tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
     
