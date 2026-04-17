@@ -7461,6 +7461,41 @@ NSFW_PROFILE: {nsfw_profile}
             pass
 
         return system
+
+    
+    def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
+    """
+    Resume a continuidade imediata de forma funcional e curta,
+    sem reencenar a prosa do turno anterior.
+    """
+    if not history:
+        return ""
+
+    last_turn = history[-1] if history else {}
+    if not isinstance(last_turn, dict):
+        return ""
+
+    last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
+    last_mary = str(last_turn.get("resposta_mary") or "").strip()
+
+    lines: List[str] = []
+    lines.append("[PONTE DE CONTINUIDADE DO TURNO ANTERIOR]")
+    lines.append("- Use apenas a consequência prática do último turno.")
+    lines.append("- NÃO recontar a resposta anterior.")
+    lines.append("- NÃO reutilizar clima, descrição ou subtexto anterior como eixo do novo turno.")
+    lines.append("- Se a ação principal terminou, ela terminou.")
+    lines.append("- O novo turno deve obedecer primeiro aos facts ativos do presente.")
+    lines.append("")
+
+    if last_user:
+        lines.append(f"Última ação do usuário: {last_user[:220]}")
+
+    if last_mary:
+        mary_short = re.sub(r"\s+", " ", last_mary).strip()[:260]
+        lines.append(f"Última resposta da Mary (resumo funcional): {mary_short}")
+
+    return "\n".join(lines).strip()
+            
           
     def _build_messages_for_turn(
         self,
@@ -7470,134 +7505,48 @@ NSFW_PROFILE: {nsfw_profile}
         shared_key: str,
         timeline_final: str,
         prompt: str,
-        mem_spec: Optional[Dict[str, Any]],
+        mem_spec: Dict[str, Any],
         facts: Dict[str, Any],
         rel_state: Dict[str, Any],
         tp_arc: Dict[str, Any],
         autonomy_block: str = "",
     ) -> List[Dict[str, str]]:
-
-        messages: List[Dict[str, str]] = [
-            {"role": "system", "content": system}
-        ]
-
-        try:
-            if _debug_enabled():
-                _debug_set("mary_debug_timeline_used", timeline_final)
-                _debug_set("mary_debug_user_prompt", prompt)
-                _debug_set("mary_debug_facts_used", facts if isinstance(facts, dict) else {})
-                _debug_set("mary_debug_rel_state_used", rel_state if isinstance(rel_state, dict) else {})
-                _debug_set("mary_debug_tp_arc_used", tp_arc if isinstance(tp_arc, dict) else {})
-        except Exception:
-            pass
-
-        if autonomy_block:
-            messages.append({
-                "role": "system",
-                "content": autonomy_block,
-            })
-
-        dedupe_hashes: set = set()
-        history_docs = cached_get_history(usuario_key, limit=40)
-
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    
         # ==========================================================
-        # 1) CONTEXTO ESTRUTURAL
+        # 1) CANON / MEMÓRIAS / LATENTES
         # ==========================================================
-        _inject_now_context(messages, usuario_key, timeline_final)
-
-        _inject_intro_as_context_once(
-            usuario_key,
-            timeline_final,
-            shared_key,
-            messages,
-        )
-
+        dedupe_bucket: set = set()
+    
         _inject_canon_memories_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=12,
-            dedupe_bucket=dedupe_hashes,
-        )
-
-        _inject_active_state_memories_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=8,
-            dedupe_bucket=dedupe_hashes,
-        )
-
-        _inject_long_memory_pins_always(
-            shared_key,
-            timeline_final,
-            messages,
-            max_items=4,
-            dedupe_bucket=dedupe_hashes,
-        )
-
-        # ==========================================================
-        # 2) MEMÓRIAS AUXILIARES
-        # ==========================================================
-        if _should_inject_summary(usuario_key, every_n=8):
-            _inject_consolidated_summary(
-                shared_key,
-                timeline_final,
-                messages,
-                dedupe_bucket=dedupe_hashes,
-            )
-
-        if _should_inject_long_memory(prompt):
-            _inject_long_memory_textsearch(
-                usuario_key,
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                limit=4,
-                dedupe_bucket=dedupe_hashes,
-                facts=facts,
-            )
-
-            _inject_relevant_memories(
-                shared_key,
-                timeline_final,
-                prompt,
-                messages,
-                k=3,
-                dedupe_bucket=dedupe_hashes,
-                facts=facts,
-                history=history_docs,
-            )
-
-        if _should_inject_soft_context(
-            prompt,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-        ):
-            _inject_shared_soft_context(
-                usuario_key,
-                shared_key,
-                timeline_final,
-                messages,
-                max_items=3,
-                dedupe_bucket=dedupe_hashes,
-                facts=facts,
-                history=history_docs,
-            )
-
-        _inject_manual_memory_if_any(
-            usuario_key=usuario_key,
             shared_key=shared_key,
             timeline=timeline_final,
             messages=messages,
-            spec=mem_spec,
-            facts=facts,
+            max_items=30,
+            dedupe_bucket=dedupe_bucket,
         )
-
+    
+        _inject_active_state_memories_always(
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            max_items=12,
+            dedupe_bucket=dedupe_bucket,
+        )
+    
+        _inject_relevant_long_memories(
+            usuario_key=usuario_key,
+            long_key=_long_key(_current_user_id_fallback()),
+            prompt=prompt,
+            messages=messages,
+            limit=int(mem_spec.get("long_limit", 4) or 4),
+            timeline=timeline_final,
+            facts=facts,
+            dedupe_bucket=dedupe_bucket,
+        )
+    
         tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
-
+    
         _inject_latent_memory_if_any(
             usuario_key=usuario_key,
             shared_key=shared_key,
@@ -7606,80 +7555,52 @@ NSFW_PROFILE: {nsfw_profile}
             tp_arc=tp_arc_state,
             facts=facts,
         )
-
+    
         # ==========================================================
-        # 3) HISTÓRICO RECENTE + CONTINUIDADE
+        # 2) HISTÓRICO RECENTE (somente para ponte curta)
         # ==========================================================
         history = cached_get_history(usuario_key, limit=6) or []
-
+    
         style_seed = random.choice([
             "fala_primeiro",
             "acao_primeiro",
             "reacao_primeiro",
             "curta_direta",
         ])
-
-        last_turn = history[-1] if history else {}
-
-        last_user = str(last_turn.get("mensagem_usuario") or last_turn.get("prompt") or "").strip()
-        last_mary = str(last_turn.get("resposta_mary") or "").strip()
-
-        messages.append({
-            "role": "system",
-            "content": (
-                "[CONTINUIDADE IMEDIATA]\n"
-                "Comece do estado prático já alcançado.\n"
-                "Não reinicie a cena.\n"
-                "Não repita ação, deslocamento ou gesto técnico já consumado.\n"
-                "Se algo já começou no turno anterior, continue da consequência atual.\n"
-            )
-        })
-
-        if last_user or last_mary:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "[ÚLTIMO TURNO]\n"
-                    f"Usuário: {last_user[:400]}\n"
-                    f"Mary: {last_mary[:600]}\n"
-                )
-            })
-
-        messages.append({
-            "role": "system",
-            "content": (
-                "[FORMA DE RESPOSTA DESTE TURNO]\n"
-                f"- Estilo-base: {style_seed}\n"
-                "- Não usar abertura repetida.\n"
-                "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
-                "- O primeiro parágrafo deve nascer da consequência atual.\n"
-                "- Reagir e avançar > recontar.\n"
-            )
-        })
-
-        recent_pairs = history[-4:-1] if len(history) > 1 else []
-
-        for d in recent_pairs:
-            if not isinstance(d, dict):
-                continue
-
-            u = str(d.get("mensagem_usuario") or d.get("prompt") or "").strip()
-            a = str(d.get("resposta_mary") or "").strip()
-
-            if u:
-                messages.append({"role": "user", "content": u})
-
-            if a:
-                messages.append({"role": "assistant", "content": a})
-
+    
+        turn_bridge_block = _build_turn_bridge_block(history)
+    
+        extra_system_parts: List[str] = []
+    
+        if autonomy_block and isinstance(autonomy_block, str) and autonomy_block.strip():
+            extra_system_parts.append(autonomy_block.strip())
+    
+        if turn_bridge_block:
+            extra_system_parts.append(turn_bridge_block)
+    
+        extra_system_parts.append(
+            "[FORMA DE RESPOSTA DESTE TURNO]\n"
+            f"- Estilo-base: {style_seed}\n"
+            "- Não usar abertura repetida.\n"
+            "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
+            "- O primeiro parágrafo deve nascer da consequência atual.\n"
+            "- Reagir e avançar > recontar."
+        )
+    
+        if extra_system_parts:
+            base = str(messages[0].get("content") or "").rstrip()
+            messages[0]["content"] = (
+                base + "\n\n" + "\n\n".join(extra_system_parts).strip()
+            ).strip()
+    
         # ==========================================================
-        # 4) PROMPT ATUAL
+        # 3) PROMPT ATUAL
         # ==========================================================
         messages.append({
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
         })
-
+    
         try:
             if _debug_enabled():
                 import json
@@ -7692,7 +7613,7 @@ NSFW_PROFILE: {nsfw_profile}
                 _debug_set("mary_debug_messages", str(messages))
             except Exception:
                 pass
-
+    
         return messages
     
     def _resolve_turn_policy(
