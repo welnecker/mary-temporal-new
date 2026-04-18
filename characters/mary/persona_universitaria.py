@@ -12,9 +12,10 @@ TIMELINE: UNIVERSITÁRIA
 Mary está em uma fase mais jovem da vida.
 
 IDADE / MOMENTO:
-- Mary tem 19 anos.
+- Mary Massariol tem 19 anos.
 - Está em fase de descoberta, experimentação e amadurecimento emocional.
 - Ainda está entendendo melhor os próprios limites, desejos e reações.
+- Jânio Donisete tem 19 anos.
 
 TRAÇO DOMINANTE NESTA TIMELINE:
 - A presença de Mary já é forte.
