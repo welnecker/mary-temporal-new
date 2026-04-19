@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 def _norm(x: Any) -> str:
@@ -19,12 +19,130 @@ def _score_has_any(text: str, terms: List[str], weight: float) -> float:
     return weight if _has_any(text, terms) else 0.0
 
 
+def _safe_list(x: Any) -> List[Any]:
+    return x if isinstance(x, list) else []
+
+
+def _safe_dict(x: Any) -> Dict[str, Any]:
+    return x if isinstance(x, dict) else {}
+
+
+def _pick_present_names(facts: Dict[str, Any], scene_state: Dict[str, Any], memories: List[str]) -> List[str]:
+    presentes: List[str] = []
+
+    cast = _safe_dict(facts.get("cast"))
+    for key in ("presentes", "mentioned", "mencionados"):
+        for item in _safe_list(cast.get(key)):
+            name = str(item or "").strip()
+            if name and name not in presentes:
+                presentes.append(name)
+
+    for key in ("presentes", "people", "characters"):
+        for item in _safe_list(scene_state.get(key)):
+            name = str(item or "").strip()
+            if name and name not in presentes:
+                presentes.append(name)
+
+    mem_text = " ".join(memories[-3:]) if memories else ""
+    for candidate in ["Silvia", "Yasmin", "Korinny", "Laura", "Janio", "Jânio"]:
+        if candidate.lower() in mem_text.lower() and candidate not in presentes:
+            presentes.append(candidate)
+
+    return presentes[:6]
+
+
+def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
+    bullets: List[str] = []
+
+    for turn in recent_turns[-3:]:
+        if not isinstance(turn, dict):
+            continue
+
+        summary = str(turn.get("summary") or "").strip()
+        user_msg = str(turn.get("mensagem_usuario") or turn.get("user") or "").strip()
+        mary_msg = str(turn.get("resposta_mary") or turn.get("assistant") or "").strip()
+
+        source = summary or user_msg or mary_msg
+        if source:
+            source = " ".join(source.split())
+            bullets.append(source[:180])
+
+    return bullets[-3:]
+
+
+def _infer_current_consequence(
+    *,
+    user_text: str,
+    facts: Dict[str, Any],
+    recent_points: List[str],
+) -> str:
+    t = _norm(user_text)
+
+    # 1) assunto atual
+    assunto_seq = _safe_list(facts.get("assunto_seq"))
+    assunto_idx = int(facts.get("assunto_idx", 0) or 0)
+    if assunto_seq and 0 <= assunto_idx < len(assunto_seq):
+        step = _safe_dict(assunto_seq[assunto_idx])
+        desc = str(step.get("desc") or "").strip()
+        if desc:
+            return f"a continuidade imediata gira em torno de: {desc}"
+
+    # 2) direção imediata
+    for key in ("state.assunto", "assunto_raw", "assunto", "scene.action", "cena.acao"):
+        val = str(facts.get(key) or "").strip()
+        if val:
+            return f"a continuidade imediata gira em torno de: {val}"
+
+    # 3) leitura leve do turno do usuário
+    if _has_any(t, ["silvia diz", "silvia fala", "silvia responde"]):
+        return "Silvia acabou de responder e a continuidade plausível é a reação da Mary à fala dela"
+
+    if _has_any(t, ["diretora", "laura"]):
+        return "a conversa com a diretora está em andamento e Mary deve responder a ela"
+
+    if _has_any(t, ["professor", "aula", "carteira", "quadro"]):
+        return "a cena continua em sala de aula, com a aula em andamento e pequenas interações discretas"
+
+    # 4) fallback pelas últimas interações
+    if recent_points:
+        return recent_points[-1]
+
+    return "continuar da consequência prática já alcançada, sem reiniciar a cena"
+
+
+def _build_do_not_repeat(
+    *,
+    facts: Dict[str, Any],
+    recent_points: List[str],
+) -> List[str]:
+    rules: List[str] = [
+        "não reiniciar a cena",
+        "não reexecutar ação já concluída",
+        "não voltar para etapa anterior como se fosse presente",
+    ]
+
+    assunto_done_until = int(facts.get("assunto_done_until", -1) or -1)
+    assunto_seq = _safe_list(facts.get("assunto_seq"))
+
+    if assunto_done_until >= 0 and assunto_seq:
+        step = _safe_dict(assunto_seq[min(assunto_done_until, len(assunto_seq) - 1)])
+        desc = str(step.get("desc") or "").strip()
+        if desc:
+            rules.append(f"não retomar como presente a etapa já concluída: {desc}")
+
+    if recent_points:
+        rules.append("não repetir o último enquadramento da cena palavra por palavra")
+
+    return rules[:5]
+
+
 def build_internal_reasoning(
     *,
     user_text: str,
     facts: Dict[str, Any],
     memories: List[str],
     scene_state: Dict[str, Any],
+    recent_turns: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Reasoning híbrido:
@@ -32,18 +150,17 @@ def build_internal_reasoning(
     2) calcula scores internos
     3) aplica regras duras
     4) decide direção narrativa
+    5) informa ao modelo principal onde e como a cena está
+       sem escrever a cena no lugar dele
     """
     t = _norm(user_text)
     facts = facts if isinstance(facts, dict) else {}
     scene_state = scene_state if isinstance(scene_state, dict) else {}
+    recent_turns = recent_turns if isinstance(recent_turns, list) else []
 
     locked = bool(scene_state.get("locked"))
     intimacy_phase = int(facts.get("intimacy.phase", 0) or 0)
     jealousy_level = int(facts.get("rel.jealousy_level", 0) or 0)
-
-    rel_state = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
-    if not isinstance(rel_state, dict):
-        rel_state = {}
 
     # --------------------------------------------------
     # Memória útil
@@ -60,7 +177,6 @@ def build_internal_reasoning(
     attachment_score = 0.20
     pressure_score = 0.00
 
-    # vínculo / carinho
     desire_score += _score_has_any(
         t,
         ["amor", "beijo", "me beija", "fica comigo", "vem cá", "abraço", "carinho", "quero você", "te desejo"],
@@ -72,14 +188,12 @@ def build_internal_reasoning(
         0.35,
     )
 
-    # erotismo / aproximação
     desire_score += _score_has_any(
         t,
         ["me toca", "chega perto", "não para", "encosta", "vem mais", "quero sentir"],
         0.25,
     )
 
-    # terceiro / traição / risco
     risk_score += _score_has_any(
         t,
         ["enzo", "outro homem", "encontro", "trair", "quiosque", "sozinho comigo", "escondido"],
@@ -91,14 +205,12 @@ def build_internal_reasoning(
         0.45,
     )
 
-    # pressão do usuário
     pressure_score += _score_has_any(
         t,
         ["agora", "vai", "faz logo", "sem pensar", "anda", "decide logo", "não enrola"],
         0.65,
     )
 
-    # ciúme / vínculo fixado
     if jealousy_level >= 1:
         attachment_score += 0.10
         guilt_score += 0.08
@@ -107,7 +219,6 @@ def build_internal_reasoning(
         attachment_score += 0.12
         risk_score += 0.12
 
-    # intimidade acumulada
     if intimacy_phase >= 1:
         desire_score += 0.08
     if intimacy_phase >= 2:
@@ -117,7 +228,6 @@ def build_internal_reasoning(
     if intimacy_phase >= 4:
         desire_score += 0.08
 
-    # memória pode puxar clima
     if mem_text:
         if _has_any(mem_text, ["ciúme", "risco", "culpa", "segredo"]):
             guilt_score += 0.06
@@ -127,7 +237,6 @@ def build_internal_reasoning(
             desire_score += 0.08
             attachment_score += 0.08
 
-    # trava de cena sempre eleva controle
     if locked:
         risk_score += 0.08
 
@@ -168,7 +277,6 @@ def build_internal_reasoning(
     # --------------------------------------------------
     # Decisão principal
     # --------------------------------------------------
-    # 1) pressão alta -> Mary protege agência
     if pressure_score >= 0.60:
         intent = "resistir"
         emotion = "tensa"
@@ -180,7 +288,6 @@ def build_internal_reasoning(
         delivery_mode = "fala_direta"
         advance_limit = "minimo"
 
-    # 2) risco/guilt alto com vínculo alto -> hesitar ou resistir
     elif risk_score >= 0.55 or guilt_score >= 0.55:
         intent = "conflito"
         emotion = "dividida"
@@ -200,7 +307,6 @@ def build_internal_reasoning(
             delivery_mode = "fala_com_subtexto"
             advance_limit = "minimo"
 
-    # 3) desejo + vínculo fortes -> acolher
     elif desire_score >= 0.45 and attachment_score >= 0.40:
         intent = "aproximar"
         emotion = "envolvida"
@@ -212,7 +318,6 @@ def build_internal_reasoning(
         delivery_mode = "fala_direta"
         advance_limit = "medio"
 
-    # 4) desejo alto em fase íntima -> provocar sem concluir
     elif desire_score >= 0.50 and intimacy_phase >= 2:
         intent = "ceder_com_controle"
         emotion = "acesa"
@@ -224,7 +329,6 @@ def build_internal_reasoning(
         delivery_mode = "micro_acao"
         advance_limit = "medio"
 
-    # 5) memória influenciando, mas sem força suficiente
     elif memory_hint:
         intent = "lembrar"
         emotion = "sensivel"
@@ -237,15 +341,57 @@ def build_internal_reasoning(
         advance_limit = "leve"
 
     # --------------------------------------------------
-    # Ajustes finais de precisão
+    # Ajustes finais
     # --------------------------------------------------
     if intimacy_phase >= 4 and decision in ("acolher", "provocar"):
         narrative_goal = "sustentar_pico"
 
     if locked and decision == "provocar" and risk_score >= 0.50:
-        # trava de segurança: não deixar escalada parecer salto de cena
         delivery_mode = "fala_com_subtexto"
         advance_limit = "leve"
+
+    # --------------------------------------------------
+    # NOVO: orientação curta de continuidade
+    # --------------------------------------------------
+    recent_points = _extract_recent_points(recent_turns)
+
+    where = str(
+        facts.get("scene.local")
+        or facts.get("cena.local")
+        or scene_state.get("local")
+        or facts.get("local_cena_atual")
+        or ""
+    ).strip()
+
+    when = str(
+        facts.get("scene.time")
+        or facts.get("cena.tempo")
+        or scene_state.get("time")
+        or facts.get("tempo_cena_atual")
+        or ""
+    ).strip()
+
+    present_names = _pick_present_names(facts, scene_state, memories)
+
+    current_consequence = _infer_current_consequence(
+        user_text=user_text,
+        facts=facts,
+        recent_points=recent_points,
+    )
+
+    do_not_repeat = _build_do_not_repeat(
+        facts=facts,
+        recent_points=recent_points,
+    )
+
+    scene_guidance = {
+        "where": where,
+        "when": when,
+        "who_is_here": present_names,
+        "what_just_happened": recent_points,
+        "current_consequence": current_consequence,
+        "do_not_repeat": do_not_repeat,
+    }
 
     return {
         "intent": intent,
@@ -259,6 +405,7 @@ def build_internal_reasoning(
         "delivery_mode": delivery_mode,
         "advance_limit": advance_limit,
         "memory_hint": memory_hint,
+        "scene_guidance": scene_guidance,
         "scores": {
             "desire": round(desire_score, 3),
             "risk": round(risk_score, 3),
