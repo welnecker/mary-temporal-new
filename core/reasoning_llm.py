@@ -132,14 +132,12 @@ def _compact_scene_state(scene_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _normalize_llm_reasoning(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Normaliza campos esperados para evitar surpresas no merge.
-    """
     if not isinstance(data, dict):
         return {}
 
     out: Dict[str, Any] = {}
 
+    # CAMPOS ANTIGOS
     fields = {
         "intent_refined": "",
         "tone": "",
@@ -154,7 +152,28 @@ def _normalize_llm_reasoning(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(v, str) and v.strip():
             out[k] = v.strip()
 
-    # compat: aceita aliases
+    # NOVOS CAMPOS DE CONTINUIDADE
+    scene_now = data.get("scene_now")
+    if isinstance(scene_now, str) and scene_now.strip():
+        out["scene_now"] = scene_now.strip()
+
+    recent_summary = data.get("recent_summary")
+    if isinstance(recent_summary, list):
+        out["recent_summary"] = [
+            str(x).strip() for x in recent_summary if str(x).strip()
+        ][:3]
+
+    current_consequence = data.get("current_consequence")
+    if isinstance(current_consequence, str) and current_consequence.strip():
+        out["current_consequence"] = current_consequence.strip()
+
+    do_not_repeat = data.get("do_not_repeat")
+    if isinstance(do_not_repeat, list):
+        out["do_not_repeat"] = [
+            str(x).strip() for x in do_not_repeat if str(x).strip()
+        ][:4]
+
+    # compatibilidade
     if not out.get("intent_refined"):
         v = data.get("intent")
         if isinstance(v, str) and v.strip():
@@ -212,7 +231,7 @@ def build_llm_reasoning(
         "Você NÃO inventa fatos.\n"
         "Responda APENAS com JSON válido."
     )
-
+    
     user = f"""
 Refine a direção do próximo turno de Mary.
 
@@ -232,6 +251,7 @@ REASONING BASE:
 {json.dumps(base_reasoning, ensure_ascii=False)}
 
 Retorne APENAS JSON válido com estas chaves:
+
 - intent_refined
 - tone
 - emotional_focus
@@ -239,13 +259,32 @@ Retorne APENAS JSON válido com estas chaves:
 - advance_bias
 - delivery_bias
 
-Regras obrigatórias:
-- respeite o reasoning base
-- respeite cena travada
-- não invente fatos
-- se houver conflito emocional, prefira contenção à aceleração
-- se houver risco alto, reduza avanço
-- seja curto e operacional
+E TAMBÉM:
+
+- scene_now
+- recent_summary (máximo 3 itens curtos)
+- current_consequence
+- do_not_repeat (máximo 4 itens)
+
+REGRAS OBRIGATÓRIAS:
+- NÃO escrever narrativa
+- NÃO fazer roleplay
+- NÃO inventar fatos
+- NÃO criar eventos novos
+- apenas descrever o estado atual da cena
+- continuidade deve ser curta e operacional
+- respeitar facts e scene_state
+- se houver dúvida, manter a continuidade atual
+- não reiniciar a cena
+- não voltar para etapas anteriores
+
+IMPORTANTE:
+- scene_now deve ser uma frase curta
+- recent_summary deve ser factual (sem prosa)
+- current_consequence deve indicar apenas o próximo passo plausível
+- do_not_repeat deve evitar regressão
+
+Se não houver dados suficientes, seja conservador.
 """.strip()
 
     raw = service_router.chat(
@@ -268,26 +307,18 @@ def merge_reasoning(
     base: Dict[str, Any],
     llm: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Faz merge do reasoning determinístico com o refinement do LLM.
 
-    Regras:
-    - base continua soberano nas regras duras
-    - llm só refina intenção/entrega/tom/foco
-    - não derruba campos importantes se vier vazio
-    """
     merged = dict(base or {})
     llm = llm if isinstance(llm, dict) else {}
 
     if not isinstance(merged.get("rules"), list):
         merged["rules"] = []
 
-    # Refino leve da intenção
+    # --- REFINO EXISTENTE ---
     intent_refined = str(llm.get("intent_refined") or "").strip()
     if intent_refined:
         merged["intent"] = intent_refined
 
-    # Refino do modo de entrega
     delivery_bias = str(llm.get("delivery_bias") or "").strip().lower()
     if delivery_bias in {
         "fala_direta",
@@ -298,14 +329,29 @@ def merge_reasoning(
     }:
         merged["delivery_mode"] = delivery_bias
 
-    # Refino do limite de avanço
     advance_bias = str(llm.get("advance_bias") or "").strip().lower()
     if advance_bias in {"minimo", "leve", "medio", "alto", "baixo"}:
-        if advance_bias == "baixo":
-            merged["advance_limit"] = "minimo"
-        else:
-            merged["advance_limit"] = advance_bias
+        merged["advance_limit"] = "minimo" if advance_bias == "baixo" else advance_bias
 
+    # --- NOVO: CONTINUIDADE ---
+    scene_guidance = {}
+
+    if llm.get("scene_now"):
+        scene_guidance["scene_now"] = llm["scene_now"]
+
+    if llm.get("recent_summary"):
+        scene_guidance["recent_summary"] = llm["recent_summary"]
+
+    if llm.get("current_consequence"):
+        scene_guidance["current_consequence"] = llm["current_consequence"]
+
+    if llm.get("do_not_repeat"):
+        scene_guidance["do_not_repeat"] = llm["do_not_repeat"]
+
+    if scene_guidance:
+        merged["scene_guidance_llm"] = scene_guidance
+
+    # mantém bloco antigo
     merged["llm_reasoning"] = {
         "tone": str(llm.get("tone") or "").strip(),
         "emotional_focus": str(llm.get("emotional_focus") or "").strip(),
