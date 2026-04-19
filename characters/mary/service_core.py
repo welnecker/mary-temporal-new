@@ -7388,7 +7388,6 @@ class MaryService(BaseCharacter):
    
     def _build_system_prompt(
         self,
-        *,
         timeline_final: str,
         nsfw_profile: str,
         user_name_block: str,
