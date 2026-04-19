@@ -27,6 +27,8 @@ import hashlib
 import time
 import unicodedata
 from dataclasses import dataclass, field
+from .reasoning_engine import build_internal_reasoning
+from core.reasoning_llm import build_llm_reasoning, merge_reasoning
 from typing import Any, Dict, List, Tuple, Optional, Set
 
 try:
@@ -8274,27 +8276,37 @@ NSFW_PROFILE: {nsfw_profile}
             initiative = False
         elif decision_mode == "advance":
             initiative = True
-               
+      
         # ==========================================================
         #  REASONING ENGINE
         # ==========================================================
         try:
-            history_short = cached_get_history(usuario_key, limit=5) or []
+            history = cached_get_history(usuario_key, limit=10) or []
         except Exception:
-            history_short = []
+            history = []
+        
+        try:
+            recent_turns = _build_recent_turns_for_reasoning(
+                history,
+                max_turns=5,
+            )
+        except Exception:
+            recent_turns = []
+        
+        scene_state_for_reasoning = {
+            "local": facts.get("cena.local"),
+            "tempo": facts.get("cena.tempo"),
+            "acao": facts.get("cena.acao"),
+            "locked": facts.get("cena.locked"),
+        }
         
         try:
             reasoning = build_internal_reasoning(
                 user_text=prompt,
                 facts=facts,
                 memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
-                scene_state={
-                    "local": facts.get("cena.local"),
-                    "tempo": facts.get("cena.tempo"),
-                    "acao": facts.get("cena.acao"),
-                    "locked": facts.get("cena.locked"),
-                },
-                recent_turns=history_short,
+                scene_state=scene_state_for_reasoning,
+                recent_turns=recent_turns,
             )
         except Exception as e:
             reasoning = {}
@@ -8308,6 +8320,17 @@ NSFW_PROFILE: {nsfw_profile}
                 )
             except Exception:
                 pass
+        
+        try:
+            reasoning = _normalize_reasoning_output(
+                reasoning,
+                facts=facts,
+                prompt=prompt,
+                history=history,
+                user_explicit_scene_change=user_explicit_scene_change,
+            )
+        except Exception:
+            pass
         
         # ==========================================================
         #  LLM REASONING (DESLIGADO)
@@ -8324,12 +8347,8 @@ NSFW_PROFILE: {nsfw_profile}
                     user_text=prompt,
                     facts=facts,
                     memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
-                    scene_state={
-                        "local": facts.get("cena.local"),
-                        "tempo": facts.get("cena.tempo"),
-                        "acao": facts.get("cena.acao"),
-                        "locked": facts.get("cena.locked"),
-                    },
+                    scene_state=scene_state_for_reasoning,
+                    recent_turns=recent_turns,
                     base_reasoning=reasoning,
                 )
             except Exception as e:
@@ -8360,6 +8379,16 @@ NSFW_PROFILE: {nsfw_profile}
             except Exception:
                 pass
         
+        try:
+            reasoning = _normalize_reasoning_output(
+                reasoning,
+                facts=facts,
+                prompt=prompt,
+                history=history,
+                user_explicit_scene_change=user_explicit_scene_change,
+            )
+        except Exception:
+            pass        
         # ==========================================================
         #  BLOCO CURTO DE CONTINUIDADE
         # ==========================================================
