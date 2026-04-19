@@ -1107,7 +1107,7 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_last_error"] = {}
 
     if "mary_reasoning_scene_guidance_debug" not in st.session_state:
-    st.session_state["mary_reasoning_scene_guidance_debug"] = ""
+        st.session_state["mary_reasoning_scene_guidance_debug"] = ""
     
     if "mary_reasoning_local_error" not in st.session_state:
         st.session_state["mary_reasoning_local_error"] = {}
