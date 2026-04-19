@@ -1106,6 +1106,21 @@ def _garantir_estado_inicial() -> None:
     if "mary_last_error" not in st.session_state:
         st.session_state["mary_last_error"] = {}
 
+    if "mary_reasoning_scene_guidance_debug" not in st.session_state:
+    st.session_state["mary_reasoning_scene_guidance_debug"] = ""
+    
+    if "mary_reasoning_local_error" not in st.session_state:
+        st.session_state["mary_reasoning_local_error"] = {}
+    
+    if "mary_reasoning_llm_error" not in st.session_state:
+        st.session_state["mary_reasoning_llm_error"] = {}
+    
+    if "mary_reasoning_merge_error" not in st.session_state:
+        st.session_state["mary_reasoning_merge_error"] = {}
+    
+    if "mary_reasoning_scene_guidance_error" not in st.session_state:
+        st.session_state["mary_reasoning_scene_guidance_error"] = {}
+
     # modelos disponíveis
     try:
         modelos = service_router.list_models() or []
@@ -3474,11 +3489,8 @@ def _render_sidebar() -> None:
         # ==========================================================
         # 🧠 Debug Reasoning (NOVO + ANTIGO)
         # ==========================================================
-        with st.expander("🧠 Debug Reasoning", expanded=False):
+        with st.expander("🧠 Debug Reasoning", expanded=False):                    
             try:
-                # ===============================
-                # STATUS DO REASONING LLM
-                # ===============================
                 rr = st.session_state.get("mary_llm_reasoning_status", {}) or {}
         
                 source = rr.get("source", "local_only")
@@ -3499,34 +3511,42 @@ def _render_sidebar() -> None:
         
                 st.markdown("---")
         
-                # ===============================
-                # 🔥 NOVO: SCENE GUIDANCE (ESSENCIAL)
-                # ===============================
                 sg_block = st.session_state.get("mary_reasoning_scene_guidance_debug") or ""
-        
                 if sg_block:
-                    st.markdown("### 🧭 Orientação de Continuidade (novo reasoning)")
+                    st.markdown("### 🧭 Orientação de Continuidade")
                     st.code(sg_block)
                 else:
-                    st.warning("⚠️ Scene guidance vazio (reasoning não gerou ou não foi injetado)")
+                    st.warning("⚠️ Scene guidance vazio")
         
-                # ===============================
-                # 🔍 DEBUG COMPLETO DO REASONING LOCAL
-                # ===============================
                 reasoning_dbg = st.session_state.get("mary_reasoning_debug") or {}
-        
                 if reasoning_dbg:
                     with st.expander("🔎 reasoning completo (dict)", expanded=False):
                         st.json(reasoning_dbg)
         
-                # ===============================
-                # 🔍 DEBUG LLM (se existir)
-                # ===============================
                 reasoning_llm_dbg = st.session_state.get("mary_reasoning_llm_debug") or {}
-        
                 if reasoning_llm_dbg:
                     with st.expander("🤖 reasoning LLM bruto", expanded=False):
                         st.json(reasoning_llm_dbg)
+        
+                err_local = st.session_state.get("mary_reasoning_local_error") or {}
+                if err_local:
+                    with st.expander("💥 erro reasoning local", expanded=False):
+                        st.json(err_local)
+        
+                err_llm = st.session_state.get("mary_reasoning_llm_error") or {}
+                if err_llm:
+                    with st.expander("💥 erro reasoning llm", expanded=False):
+                        st.json(err_llm)
+        
+                err_merge = st.session_state.get("mary_reasoning_merge_error") or {}
+                if err_merge:
+                    with st.expander("💥 erro merge reasoning", expanded=False):
+                        st.json(err_merge)
+        
+                err_sg = st.session_state.get("mary_reasoning_scene_guidance_error") or {}
+                if err_sg:
+                    with st.expander("💥 erro scene guidance", expanded=False):
+                        st.json(err_sg)
         
             except Exception as e:
                 st.error(f"Erro debug reasoning: {type(e).__name__}: {e}")
