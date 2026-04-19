@@ -7385,7 +7385,7 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
-
+   
     def _build_system_prompt(
         self,
         *,
@@ -7423,6 +7423,7 @@ class MaryService(BaseCharacter):
         user_authorship_rule: str,
         continuity_rule: str,
         phone_message_rule: str,
+        reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
     ) -> str:
 
@@ -7476,6 +7477,7 @@ NSFW_PROFILE: {nsfw_profile}
 {assunto_step_section}
 {estado_micro_section}
 {pending_event_section}
+{reasoning_scene_guidance_block}
 
 {continuity_of_action_rule}
 {last_action_anchor_rule}
@@ -7539,8 +7541,162 @@ NSFW_PROFILE: {nsfw_profile}
         except Exception:
             pass
 
-        return system 
-                        
+        return systemdef _build_system_prompt(
+        self,
+        *,
+        timeline_final: str,
+        nsfw_profile: str,
+        user_name_block: str,
+        spatial_context: str,
+        state_section: str,
+        assunto_section: str,
+        assunto_step_section: str, 
+        estado_micro_section: str,
+        pending_event_section: str,
+        canon_txt: str,
+        persona_text: str,
+        rel_block: str,
+        dynamic_rel_block: str,
+        behavior_block: str,
+        patterns_block: str,
+        topic_rule: str,
+        emotional_persistence_rule: str,
+        anti_pattern_rule: str,
+        virginity_rule: str,
+        memory_fidelity_rule: str,
+        user_finalizes_rule: str,
+        initiative_rule: str,
+        manipulation_block: str,
+        conflict_block: str,
+        third_party_initiative_rule: str,
+        intimacy_control_block: str,
+        intimacy_phase_rule: str,
+        nsfw_hard_block: str,
+        nsfw_block: str,
+        language_rule: str,
+        pov_rule: str,
+        user_authorship_rule: str,
+        continuity_rule: str,
+        phone_message_rule: str,
+        reasoning_scene_guidance_block: str,
+        mary_identity_anchor: str = "",
+    ) -> str:
+
+        action_commit_rule = """
+[EXECUÇÃO DO ASSUNTO]
+- Se há ação física em curso: continuar.
+- Se não há ação física em curso: o assunto deve virar gesto, deslocamento ou ação prática.
+- Pensamento não substitui ação.
+""".strip()
+
+        continuity_of_action_rule = """
+[CONTINUIDADE DA AÇÃO]
+- A cena não reinicia.
+- Só ações físicas concretas mantêm continuidade obrigatória.
+- Não voltar para etapa anterior.
+- Não trocar consequência atual por preparação passada.
+""".strip()
+
+        last_action_anchor_rule = """
+[ÂNCORA DE CONTINUIDADE IMEDIATA]
+- O turno atual começa do estado prático já alcançado.
+- Não reexecutar ação concluída.
+- Não reintroduzir chegada, início ou preparação já feita.
+""".strip()
+
+        micro_action_continuity_rule = """
+[CONTINUIDADE DE MICRO-AÇÕES]
+- Micro-ações já consumadas não podem ser reabertas como começo do novo turno.
+- Se um gesto técnico já ocorreu, continuar da consequência.
+- Não repetir primeiro toque, início de cuidado, ajuste inicial, retirada inicial ou manipulação já feita.
+""".strip()
+
+        system = f"""
+{SYSTEM_CORE}
+
+{language_rule}
+{pov_rule}
+{user_authorship_rule}
+{continuity_rule}
+{phone_message_rule}
+
+TIMELINE: {timeline_final}
+NSFW_PROFILE: {nsfw_profile}
+
+{user_name_block}
+
+[CENA ATIVA]
+{spatial_context}
+{state_section}
+{assunto_section}
+{assunto_step_section}
+{estado_micro_section}
+{pending_event_section}
+{reasoning_scene_guidance_block}
+
+{continuity_of_action_rule}
+{last_action_anchor_rule}
+{micro_action_continuity_rule}
+{action_commit_rule}
+
+[CANON]
+{canon_txt}
+
+[PERSONA]
+{persona_text}
+{mary_identity_anchor}
+
+[RELAÇÃO]
+{rel_block}
+{dynamic_rel_block}
+
+[MEMÓRIA E CONSISTÊNCIA]
+{virginity_rule}
+{memory_fidelity_rule}
+{user_finalizes_rule}
+
+[COMPORTAMENTO]
+{behavior_block}
+{patterns_block}
+{topic_rule}
+
+[TRAJETÓRIA]
+{third_party_initiative_rule}
+
+[EMOÇÃO]
+{emotional_persistence_rule}
+
+[INICIATIVA]
+{initiative_rule}
+
+[INTERAÇÃO]
+{manipulation_block}
+{conflict_block}
+
+[CONTROLE DE PADRÃO]
+{anti_pattern_rule}
+
+{intimacy_phase_rule}
+{intimacy_control_block}
+{nsfw_hard_block}
+{nsfw_block}
+""".strip()
+
+        system = (
+            system.rstrip()
+            + "\n\n"
+            + NARRATIVE_SPACE
+            + "\n\n"
+            + CONTROLLED_UNPREDICTABILITY
+        ).strip()
+
+        try:
+            if _debug_enabled():
+                _debug_set("mary_debug_system_prompt", system)
+        except Exception:
+            pass
+
+        return system                    
    
     def _build_messages_for_turn(
         self,
@@ -8272,10 +8428,15 @@ NSFW_PROFILE: {nsfw_profile}
             initiative = False
         elif decision_mode == "advance":
             initiative = True
-
+       
         # ==========================================================
         #  REASONING ENGINE
         # ==========================================================
+        try:
+            history_short = cached_get_history(usuario_key, limit=5) or []
+        except Exception:
+            history_short = []
+        
         try:
             reasoning = build_internal_reasoning(
                 user_text=prompt,
@@ -8287,35 +8448,89 @@ NSFW_PROFILE: {nsfw_profile}
                     "acao": facts.get("cena.acao"),
                     "locked": facts.get("cena.locked"),
                 },
+                recent_turns=history_short,
             )
         except Exception:
             reasoning = {}
-
+        
         # ==========================================================
-        #  LLM REASONING (refino semântico)
+        #  LLM REASONING (DESLIGADO)
+        #  Se o modelo principal for Gemini, não vale duplicar chamada
         # ==========================================================
+        MAIN_MODEL = "google/gemini-3-flash-preview"
+        USE_LLM_REASONING = False
+        
+        llm_reasoning = {}
+        
+        if USE_LLM_REASONING:
+            try:
+                llm_reasoning = build_llm_reasoning(
+                    model="google/gemini-3-flash-preview",
+                    user_text=prompt,
+                    facts=facts,
+                    memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                    scene_state={
+                        "local": facts.get("cena.local"),
+                        "tempo": facts.get("cena.tempo"),
+                        "acao": facts.get("cena.acao"),
+                        "locked": facts.get("cena.locked"),
+                    },
+                    base_reasoning=reasoning,
+                )
+            except Exception:
+                llm_reasoning = {}
+        
         try:
-            llm_reasoning = build_llm_reasoning(
-                model="x-ai/grok-4.1-fast",
-                user_text=prompt,
-                facts=facts,
-                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
-                scene_state={
-                    "local": facts.get("cena.local"),
-                    "tempo": facts.get("cena.tempo"),
-                    "acao": facts.get("cena.acao"),
-                    "locked": facts.get("cena.locked"),
-                },
-                base_reasoning=reasoning,
-            )
-        except Exception:
-            llm_reasoning = {}
-
-        try:
-            reasoning = merge_reasoning(reasoning, llm_reasoning)
+            if llm_reasoning:
+                reasoning = merge_reasoning(reasoning, llm_reasoning)
         except Exception:
             pass
-
+        
+        # ==========================================================
+        #  BLOCO CURTO DE CONTINUIDADE
+        # ==========================================================
+        reasoning_scene_guidance_block = ""
+        try:
+            sg = reasoning.get("scene_guidance") or {}
+            if isinstance(sg, dict) and sg:
+                lines = ["[ORIENTAÇÃO DE CONTINUIDADE]"]
+        
+                where = str(sg.get("where") or "").strip()
+                when = str(sg.get("when") or "").strip()
+                who = sg.get("who_is_here") or []
+                recent = sg.get("what_just_happened") or []
+                consequence = str(sg.get("current_consequence") or "").strip()
+                avoid = sg.get("do_not_repeat") or []
+        
+                if where:
+                    lines.append(f"- Local atual: {where}")
+                if when:
+                    lines.append(f"- Tempo atual: {when}")
+        
+                if isinstance(who, list) and who:
+                    who_txt = ", ".join(str(x).strip() for x in who if str(x).strip())
+                    if who_txt:
+                        lines.append(f"- Presentes: {who_txt}")
+        
+                if isinstance(recent, list):
+                    for item in recent[:3]:
+                        item = str(item or "").strip()
+                        if item:
+                            lines.append(f"- Último ponto: {item}")
+        
+                if consequence:
+                    lines.append(f"- Consequência atual: {consequence}")
+        
+                if isinstance(avoid, list):
+                    for item in avoid[:4]:
+                        item = str(item or "").strip()
+                        if item:
+                            lines.append(f"- Não repetir: {item}")
+        
+                reasoning_scene_guidance_block = "\n".join(lines).strip()
+        except Exception:
+            reasoning_scene_guidance_block = ""
+        
         # ==========================================================
         #  DEBUG + VERIFICAÇÃO SIMPLES (SIDEBAR)
         # ==========================================================
@@ -8324,8 +8539,8 @@ NSFW_PROFILE: {nsfw_profile}
                 "mary_llm_reasoning_status",
                 {
                     "ok": bool(llm_reasoning),
-                    "source": "secondary_llm" if llm_reasoning else "local_only",
-                    "model": "x-ai/grok-4.1-fast" if llm_reasoning else "",
+                    "source": "disabled" if not USE_LLM_REASONING else ("secondary_llm" if llm_reasoning else "local_only"),
+                    "model": "google/gemini-3-flash-preview" if USE_LLM_REASONING and llm_reasoning else "",
                     "decision": reasoning.get("decision", ""),
                     "goal": reasoning.get("narrative_goal", ""),
                     "delivery": reasoning.get("delivery_mode", ""),
@@ -8334,10 +8549,11 @@ NSFW_PROFILE: {nsfw_profile}
             )
         except Exception:
             pass
-
-        # DEBUG bruto (mantém o que você já tinha)
+        
         _ss_set("mary_reasoning_debug", reasoning)
         _ss_set("mary_reasoning_llm_debug", llm_reasoning)
+        _ss_set("mary_reasoning_scene_guidance_debug", reasoning_scene_guidance_block)
+
         # ==========================================================
         # BLOCO RELACIONAL DINÂMICO
         # ==========================================================
@@ -9768,6 +9984,7 @@ Conflito não substitui a narrativa — apenas tensiona.
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
             mary_identity_anchor=mary_identity_anchor,
+            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
         )
 
         messages = self._build_messages_for_turn(
