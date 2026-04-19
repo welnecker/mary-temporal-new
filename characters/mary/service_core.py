@@ -7385,163 +7385,7 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
-   
-    def _build_system_prompt(
-        *,
-        self,
-        timeline_final: str,
-        nsfw_profile: str,
-        user_name_block: str,
-        spatial_context: str,
-        state_section: str,
-        assunto_section: str,
-        assunto_step_section: str, 
-        estado_micro_section: str,
-        pending_event_section: str,
-        canon_txt: str,
-        persona_text: str,
-        rel_block: str,
-        dynamic_rel_block: str,
-        behavior_block: str,
-        patterns_block: str,
-        topic_rule: str,
-        emotional_persistence_rule: str,
-        anti_pattern_rule: str,
-        virginity_rule: str,
-        memory_fidelity_rule: str,
-        user_finalizes_rule: str,
-        initiative_rule: str,
-        manipulation_block: str,
-        conflict_block: str,
-        third_party_initiative_rule: str,
-        intimacy_control_block: str,
-        intimacy_phase_rule: str,
-        nsfw_hard_block: str,
-        nsfw_block: str,
-        language_rule: str,
-        pov_rule: str,
-        user_authorship_rule: str,
-        continuity_rule: str,
-        phone_message_rule: str,
-        reasoning_scene_guidance_block: str,
-        mary_identity_anchor: str = "",
-    ) -> str:
-
-        action_commit_rule = """
-[EXECUÇÃO DO ASSUNTO]
-- Se há ação física em curso: continuar.
-- Se não há ação física em curso: o assunto deve virar gesto, deslocamento ou ação prática.
-- Pensamento não substitui ação.
-""".strip()
-
-        continuity_of_action_rule = """
-[CONTINUIDADE DA AÇÃO]
-- A cena não reinicia.
-- Só ações físicas concretas mantêm continuidade obrigatória.
-- Não voltar para etapa anterior.
-- Não trocar consequência atual por preparação passada.
-""".strip()
-
-        last_action_anchor_rule = """
-[ÂNCORA DE CONTINUIDADE IMEDIATA]
-- O turno atual começa do estado prático já alcançado.
-- Não reexecutar ação concluída.
-- Não reintroduzir chegada, início ou preparação já feita.
-""".strip()
-
-        micro_action_continuity_rule = """
-[CONTINUIDADE DE MICRO-AÇÕES]
-- Micro-ações já consumadas não podem ser reabertas como começo do novo turno.
-- Se um gesto técnico já ocorreu, continuar da consequência.
-- Não repetir primeiro toque, início de cuidado, ajuste inicial, retirada inicial ou manipulação já feita.
-""".strip()
-
-        system = f"""
-{SYSTEM_CORE}
-
-{language_rule}
-{pov_rule}
-{user_authorship_rule}
-{continuity_rule}
-{phone_message_rule}
-
-TIMELINE: {timeline_final}
-NSFW_PROFILE: {nsfw_profile}
-
-{user_name_block}
-
-[CENA ATIVA]
-{spatial_context}
-{state_section}
-{assunto_section}
-{assunto_step_section}
-{estado_micro_section}
-{pending_event_section}
-{reasoning_scene_guidance_block}
-
-{continuity_of_action_rule}
-{last_action_anchor_rule}
-{micro_action_continuity_rule}
-{action_commit_rule}
-
-[CANON]
-{canon_txt}
-
-[PERSONA]
-{persona_text}
-{mary_identity_anchor}
-
-[RELAÇÃO]
-{rel_block}
-{dynamic_rel_block}
-
-[MEMÓRIA E CONSISTÊNCIA]
-{virginity_rule}
-{memory_fidelity_rule}
-{user_finalizes_rule}
-
-[COMPORTAMENTO]
-{behavior_block}
-{patterns_block}
-{topic_rule}
-
-[TRAJETÓRIA]
-{third_party_initiative_rule}
-
-[EMOÇÃO]
-{emotional_persistence_rule}
-
-[INICIATIVA]
-{initiative_rule}
-
-[INTERAÇÃO]
-{manipulation_block}
-{conflict_block}
-
-[CONTROLE DE PADRÃO]
-{anti_pattern_rule}
-
-{intimacy_phase_rule}
-{intimacy_control_block}
-{nsfw_hard_block}
-{nsfw_block}
-""".strip()
-
-        system = (
-            system.rstrip()
-            + "\n\n"
-            + NARRATIVE_SPACE
-            + "\n\n"
-            + CONTROLLED_UNPREDICTABILITY
-        ).strip()
-
-        try:
-            if _debug_enabled():
-                _debug_set("mary_debug_system_prompt", system)
-        except Exception:
-            pass
-
-        return system
+    
 
     def _build_system_prompt(
         self,
@@ -8430,7 +8274,7 @@ NSFW_PROFILE: {nsfw_profile}
             initiative = False
         elif decision_mode == "advance":
             initiative = True
-       
+               
         # ==========================================================
         #  REASONING ENGINE
         # ==========================================================
@@ -8452,12 +8296,21 @@ NSFW_PROFILE: {nsfw_profile}
                 },
                 recent_turns=history_short,
             )
-        except Exception:
+        except Exception as e:
             reasoning = {}
+            try:
+                _ss_set(
+                    "mary_reasoning_local_error",
+                    {
+                        "type": type(e).__name__,
+                        "msg": str(e)[:800],
+                    },
+                )
+            except Exception:
+                pass
         
         # ==========================================================
         #  LLM REASONING (DESLIGADO)
-        #  Se o modelo principal for Gemini, não vale duplicar chamada
         # ==========================================================
         MAIN_MODEL = "google/gemini-3-flash-preview"
         USE_LLM_REASONING = False
@@ -8479,14 +8332,33 @@ NSFW_PROFILE: {nsfw_profile}
                     },
                     base_reasoning=reasoning,
                 )
-            except Exception:
+            except Exception as e:
                 llm_reasoning = {}
+                try:
+                    _ss_set(
+                        "mary_reasoning_llm_error",
+                        {
+                            "type": type(e).__name__,
+                            "msg": str(e)[:800],
+                        },
+                    )
+                except Exception:
+                    pass
         
         try:
             if llm_reasoning:
                 reasoning = merge_reasoning(reasoning, llm_reasoning)
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                _ss_set(
+                    "mary_reasoning_merge_error",
+                    {
+                        "type": type(e).__name__,
+                        "msg": str(e)[:800],
+                    },
+                )
+            except Exception:
+                pass
         
         # ==========================================================
         #  BLOCO CURTO DE CONTINUIDADE
@@ -8530,8 +8402,18 @@ NSFW_PROFILE: {nsfw_profile}
                             lines.append(f"- Não repetir: {item}")
         
                 reasoning_scene_guidance_block = "\n".join(lines).strip()
-        except Exception:
+        except Exception as e:
             reasoning_scene_guidance_block = ""
+            try:
+                _ss_set(
+                    "mary_reasoning_scene_guidance_error",
+                    {
+                        "type": type(e).__name__,
+                        "msg": str(e)[:800],
+                    },
+                )
+            except Exception:
+                pass
         
         # ==========================================================
         #  DEBUG + VERIFICAÇÃO SIMPLES (SIDEBAR)
@@ -8555,6 +8437,15 @@ NSFW_PROFILE: {nsfw_profile}
         _ss_set("mary_reasoning_debug", reasoning)
         _ss_set("mary_reasoning_llm_debug", llm_reasoning)
         _ss_set("mary_reasoning_scene_guidance_debug", reasoning_scene_guidance_block)
+        
+        try:
+            _ss_set("mary_debug_timeline_used", timeline_final)
+            _ss_set("mary_debug_user_prompt", prompt)
+            _ss_set("mary_debug_facts_used", facts)
+            _ss_set("mary_debug_rel_state_used", rel_state)
+            _ss_set("mary_debug_tp_arc_used", tp_arc if isinstance(tp_arc, dict) else {})
+        except Exception:
+            pass
 
         # ==========================================================
         # BLOCO RELACIONAL DINÂMICO
