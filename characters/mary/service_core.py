@@ -7387,6 +7387,7 @@ class MaryService(BaseCharacter):
     display_name = "Mary"
    
     def _build_system_prompt(
+        *,
         self,
         timeline_final: str,
         nsfw_profile: str,
@@ -7540,7 +7541,9 @@ NSFW_PROFILE: {nsfw_profile}
         except Exception:
             pass
 
-        return systemdef _build_system_prompt(
+        return system
+
+    def _build_system_prompt(
         self,
         *,
         timeline_final: str,
