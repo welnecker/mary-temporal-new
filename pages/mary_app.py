@@ -206,8 +206,8 @@ _cleanup_broken_facts_schema_on_boot()
 SENHA_CORRETA = "311071"
 DEFAULT_VISUAL_LIMIT = 80
 
-DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera"
-FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324"
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
+FALLBACK_MODEL = "google/gemini-3-flash-preview"
 
 
 # ==========================================================
@@ -3470,30 +3470,64 @@ def _render_sidebar() -> None:
 
             except Exception as e:
                 st.error(f"Falha ao ler debug persona: {type(e).__name__}: {e}")
-
+     
         # ==========================================================
-        # 🧠 Debug LLM Reasoning (simples)
+        # 🧠 Debug Reasoning (NOVO + ANTIGO)
         # ==========================================================
-        with st.expander("🧠 Debug LLM Reasoning", expanded=False):
+        with st.expander("🧠 Debug Reasoning", expanded=False):
             try:
+                # ===============================
+                # STATUS DO REASONING LLM
+                # ===============================
                 rr = st.session_state.get("mary_llm_reasoning_status", {}) or {}
-
+        
                 source = rr.get("source", "local_only")
                 ok = rr.get("ok", False)
                 model = rr.get("model", "")
-
+        
                 if source == "secondary_llm" and ok:
                     st.success("LLM secundária: ATIVA")
                     if model:
                         st.caption(f"Modelo: {model}")
                 else:
                     st.caption("LLM secundária: INATIVA")
-
+        
                 st.write("Decisão:", rr.get("decision", "—"))
                 st.write("Objetivo:", rr.get("goal", "—"))
                 st.write("Entrega:", rr.get("delivery", "—"))
                 st.write("Avanço:", rr.get("advance", "—"))
-
+        
+                st.markdown("---")
+        
+                # ===============================
+                # 🔥 NOVO: SCENE GUIDANCE (ESSENCIAL)
+                # ===============================
+                sg_block = st.session_state.get("mary_reasoning_scene_guidance_debug") or ""
+        
+                if sg_block:
+                    st.markdown("### 🧭 Orientação de Continuidade (novo reasoning)")
+                    st.code(sg_block)
+                else:
+                    st.warning("⚠️ Scene guidance vazio (reasoning não gerou ou não foi injetado)")
+        
+                # ===============================
+                # 🔍 DEBUG COMPLETO DO REASONING LOCAL
+                # ===============================
+                reasoning_dbg = st.session_state.get("mary_reasoning_debug") or {}
+        
+                if reasoning_dbg:
+                    with st.expander("🔎 reasoning completo (dict)", expanded=False):
+                        st.json(reasoning_dbg)
+        
+                # ===============================
+                # 🔍 DEBUG LLM (se existir)
+                # ===============================
+                reasoning_llm_dbg = st.session_state.get("mary_reasoning_llm_debug") or {}
+        
+                if reasoning_llm_dbg:
+                    with st.expander("🤖 reasoning LLM bruto", expanded=False):
+                        st.json(reasoning_llm_dbg)
+        
             except Exception as e:
                 st.error(f"Erro debug reasoning: {type(e).__name__}: {e}")
                 
