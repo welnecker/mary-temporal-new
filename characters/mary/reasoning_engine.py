@@ -22,8 +22,15 @@ def _clip_text(text: Any, limit: int = 180) -> str:
 
 def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
     """
-    Lê os últimos turnos apenas como ponte curta de continuidade.
-    Não interpreta emoção, não resume memória longa.
+    Lê os últimos turnos como ponte curta de continuidade.
+
+    PRIORIDADE:
+    1) última fala/ação do usuário
+    2) última resposta da Mary
+    3) summary, se existir
+
+    A ideia é ancorar a consequência prática imediata,
+    não um resumo técnico ou abstrato.
     """
     out: List[str] = []
 
@@ -31,19 +38,25 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
         if not isinstance(turn, dict):
             continue
 
-        candidates = [
-            turn.get("summary"),
-            turn.get("mensagem_usuario"),
-            turn.get("user"),
-            turn.get("resposta_mary"),
-            turn.get("assistant"),
-        ]
+        user_msg = _clip_text(
+            turn.get("mensagem_usuario") or turn.get("user"),
+            220,
+        )
+        mary_msg = _clip_text(
+            turn.get("resposta_mary") or turn.get("assistant"),
+            220,
+        )
+        summary = _clip_text(turn.get("summary"), 180)
 
         chosen = ""
-        for c in candidates:
-            chosen = _clip_text(c, 180)
-            if chosen:
-                break
+
+        # prioridade total: ação/fala recente do usuário
+        if user_msg:
+            chosen = user_msg
+        elif mary_msg:
+            chosen = mary_msg
+        elif summary:
+            chosen = summary
 
         if chosen:
             out.append(chosen)
@@ -89,24 +102,41 @@ def _pick_present_names(
 def _extract_current_step_text(facts: Dict[str, Any]) -> str:
     """
     Extrai a etapa atual do assunto em formato humano.
-    Não devolve dict cru.
+    NUNCA devolve dict cru.
     """
-    # assunto_step textual direto
+
+    # 1) campos textuais diretos
     for key in (
         "assunto_step_text",
         "state.assunto_step_text",
         "assunto_atual_texto",
+    ):
+        raw = facts.get(key)
+        if isinstance(raw, str):
+            val = _norm(raw)
+            if val:
+                return val
+
+    # 2) assunto/state.assunto só se forem string
+    for key in (
         "state.assunto",
         "assunto",
         "assunto_raw",
         "scene.action",
         "cena.acao",
     ):
-        val = _norm(facts.get(key))
-        if val:
-            return val
+        raw = facts.get(key)
 
-    # sequência estruturada
+        # se vier dict técnico, ignorar
+        if isinstance(raw, dict):
+            continue
+
+        if isinstance(raw, str):
+            val = _norm(raw)
+            if val:
+                return val
+
+    # 3) sequência estruturada canônica
     seq = _safe_list(facts.get("assunto_seq"))
     idx_raw = facts.get("assunto_idx", 0)
 
@@ -119,11 +149,12 @@ def _extract_current_step_text(facts: Dict[str, Any]) -> str:
         step = _safe_dict(seq[idx])
 
         for k in ("desc", "text", "title", "label", "content"):
-            val = _norm(step.get(k))
-            if val:
-                return val
+            raw = step.get(k)
+            if isinstance(raw, str):
+                val = _norm(raw)
+                if val:
+                    return val
 
-        # fallback: se vier step dict sem campo padrão
         if step:
             return "seguir da etapa atual já ativa"
 
@@ -136,17 +167,21 @@ def _infer_current_consequence(
     recent_points: List[str],
 ) -> str:
     """
-    Regra central:
-    consequência = continuidade prática imediata,
-    sem psicologia e sem memória longa.
+    Consequência correta:
+    prioriza SEMPRE o que acabou de acontecer,
+    e só usa facts como fallback estrutural.
     """
+
+    # 1) prioridade total: última consequência real do turno
+    if recent_points:
+        return recent_points[-1]
+
+    # 2) fallback: etapa atual do assunto, em formato humano
     step_txt = _extract_current_step_text(facts)
     if step_txt:
         return step_txt
 
-    if recent_points:
-        return recent_points[-1]
-
+    # 3) fallback final
     return "continuar da consequência prática já alcançada"
 
 
