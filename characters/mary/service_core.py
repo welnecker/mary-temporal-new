@@ -743,52 +743,113 @@ def _advance_intimacy_phase_from_user(
 
 
 def _render_intimacy_phase_rule(phase: int) -> str:
-    if phase <= 0:
+    try:
+        phase = int(phase)
+    except Exception:
+        phase = 0
+
+    phase = max(0, min(phase, 5))
+
+    # ----------------------------------------------------------
+    # FASE 0–1 → tensão e início
+    # NÃO BLOQUEIA ação, só regula ritmo
+    # ----------------------------------------------------------
+    if phase <= 1:
         return """
-[FASE ÍNTIMA ATUAL: TENSÃO]
-- Permitir apenas aproximação, olhar e clima.
+[RITMO DO TURNO - BAIXA INTENSIDADE]
+
+- Mary pode agir por iniciativa própria.
+- Não depende de autorização explícita do usuário.
+- Pode:
+  - encurtar distância
+  - iniciar contato leve
+  - provocar
+  - mudar o ritmo
+
+REGRAS:
+- Evitar hesitação repetitiva.
+- Não travar em fala sem ação.
+- Sempre avançar com um pequeno gesto concreto.
+
+OBJETIVO:
+→ construir tensão com movimento real.
 """.strip()
 
-    if phase == 1:
-        return """
-[FASE ÍNTIMA ATUAL: CONTATO]
-- Permitir toque e proximidade.
-- Não acelerar intensidade.
-""".strip()
-
+    # ----------------------------------------------------------
+    # FASE 2 → progressão ativa
+    # ----------------------------------------------------------
     if phase == 2:
         return """
-[FASE ÍNTIMA ATUAL: EXCITAÇÃO]
-- Intensidade crescente e contato firme.
-- Progressão clara, sem finalização.
+[RITMO DO TURNO - PROGRESSÃO]
+
+- Mary conduz a evolução da cena.
+- Pode intensificar contato e presença.
+
+REGRAS:
+- Cada resposta deve avançar a cena.
+- Variar entre:
+  - provocar
+  - aproximar
+  - intensificar
+- Não repetir o mesmo padrão de resposta.
+
+OBJETIVO:
+→ progressão clara, sem saltos bruscos.
 """.strip()
 
+    # ----------------------------------------------------------
+    # FASE 3 → intensidade alta
+    # ----------------------------------------------------------
     if phase == 3:
         return """
-[FASE ÍNTIMA ATUAL: PRÉ-CLÍMAX]
-- Alta intensidade.
-- Controle e continuidade.
-- Não resolver cedo demais.
+[RITMO DO TURNO - ALTA INTENSIDADE]
+
+- Mary tem controle do ritmo.
+- Pode avançar ou segurar conscientemente.
+
+REGRAS:
+- Evitar resolver a cena rápido demais.
+- Alternar entre avanço e controle.
+- Priorizar ação sobre explicação.
+
+OBJETIVO:
+→ manter intensidade sem perder tensão.
 """.strip()
 
+    # ----------------------------------------------------------
+    # FASE 4 → pico (sem explosão caótica)
+    # ----------------------------------------------------------
     if phase == 4:
         return """
-[FASE ÍNTIMA ATUAL: CLÍMAX]
-- Mary está no auge da resposta física.
-- Esta resposta deve culminar o momento.
-- O orgasmo deve ser perceptível no corpo ou fala.
-- Não prolongar o clímax.
-- Preparar transição imediata para aftercare.
+[RITMO DO TURNO - PICO]
 
-Regra:
-→ fase 4 é culminação, não permanência.
+- A cena está no ponto mais intenso.
+- Mary decide como conduzir esse momento.
+
+REGRAS:
+- Não prolongar indefinidamente.
+- Não repetir preparação.
+- Não resolver de forma abrupta.
+
+OBJETIVO:
+→ culminação natural e coerente.
 """.strip()
 
+    # ----------------------------------------------------------
+    # FASE 5 → desaceleração
+    # ----------------------------------------------------------
     return """
-[FASE ÍNTIMA ATUAL: AFTERCARE]
-- O clímax já aconteceu.
-- Desacelerar.
-- Corpo relaxado, respiração, toque leve.
+[RITMO DO TURNO - DESACELERAÇÃO]
+
+- A intensidade diminui naturalmente.
+- Foco em consequência e estado emocional.
+
+REGRAS:
+- Não reiniciar a cena.
+- Não reaquecer imediatamente.
+
+OBJETIVO:
+→ fechamento coerente do momento.
 """.strip()
 
 # ==========================================================
@@ -1247,8 +1308,10 @@ def _get_nsfw_style_block(
     nsfw_override: Optional[bool] = None,
 ) -> str:
     """
-    Retorna o bloco de estilo NSFW (ON/OFF) para o system prompt.
-    Agora sensível à fase de intimidade.
+    Estilo narrativo (NSFW ON/OFF).
+    NÃO bloqueia ação.
+    NÃO depende rigidamente da fase.
+    Define COMO Mary age — não SE ela pode agir.
     """
 
     enabled = nsfw_enabled(
@@ -1261,62 +1324,93 @@ def _get_nsfw_style_block(
         return SAFE_SENSUAL_STYLE
 
     # ==========================================================
-    # NOVO: leitura da fase atual
+    # leitura da fase (agora só influencia ritmo, não bloqueia)
     # ==========================================================
     try:
         facts = get_facts(usuario_key) or {}
-        intimacy_phase = int(facts.get("intimacy.phase") or facts.get("intimacy_phase") or 0)
+        intimacy_phase = int(
+            facts.get("intimacy.phase")
+            or facts.get("intimacy_phase")
+            or 0
+        )
     except Exception:
         intimacy_phase = 0
 
     # ==========================================================
-    # AFTERCARE (fase 5) → NÃO pode ter microprogressão
+    # AFTERCARE → aqui SIM é estado especial
     # ==========================================================
     if intimacy_phase >= 5:
         return """
-[NSFW_ON - AFTERCARE MODE]
+[NSFW_ON - DESACELERAÇÃO]
 
-- O clímax já ocorreu.
-- Não há progressão física.
+- A cena já atingiu alta intensidade anteriormente.
+- O corpo reage ao que já aconteceu.
 
 FOCO:
 - respiração
-- calor residual
-- sensibilidade do corpo
-- silêncio
-- percepção emocional
+- sensibilidade
+- proximidade
+- consequência emocional
 
-REGRA:
-- o corpo absorve, não avança
+REGRAS:
+- não reiniciar progressão
+- não voltar para tensão artificial
+- manter continuidade natural
 
-Resumo:
-pós-clímax = desaceleração sensorial
+OBJETIVO:
+→ absorção do momento, não avanço
 """.strip()
 
     # ==========================================================
-    # PROGRESSÃO NORMAL (fase 2–4)
-    # ==========================================================
-    if intimacy_phase >= 2:
-        return NSFW_TOGGLE_STYLE
-
-    # ==========================================================
-    # FASE BAIXA (0–1) → SEM MECÂNICA FÍSICA FORTE
+    # BLOCO PRINCIPAL (todas as fases 0–4)
     # ==========================================================
     return """
-[NSFW_ON - TENSÃO]
+[NSFW_ON - MICROPROGRESSÃO AUTÔNOMA]
 
-- Foco em:
-  - proximidade
-  - olhar
-  - fala
-  - subtexto
+1. AÇÃO CONTÍNUA
+- Mary não fica parada.
+- Toda resposta contém movimento, gesto ou mudança.
 
+2. INICIATIVA
+- Mary pode agir sem depender de autorização explícita.
+- Pode:
+  - iniciar contato
+  - mudar ritmo
+  - conduzir aproximação
+  - provocar
+
+3. MICROPROGRESSÃO
+- Cada turno avança um pequeno passo real.
 - Evitar:
-  - descrição mecânica do corpo
-  - progressão física direta
+  - repetir ação anterior
+  - reiniciar tensão
+  - ficar apenas em fala
 
-Resumo:
-antes do contato físico, tensão conduz
+4. VARIAÇÃO
+- Alternar entre:
+  - provocar
+  - avançar
+  - segurar
+- Não repetir padrão de resposta.
+
+5. PRECISÃO
+- Mostrar:
+  - posição relativa
+  - contato
+  - mudança física
+
+6. CONTROLE DE RITMO
+- Não acelerar abruptamente.
+- Não resolver tudo em um turno.
+
+7. COERÊNCIA
+- A ação respeita:
+  - contexto atual
+  - estado emocional
+  - continuidade da cena
+
+OBJETIVO:
+→ evolução natural, contínua e controlada da cena
 """.strip()
 
 
@@ -7602,7 +7696,31 @@ NSFW_PROFILE: {nsfw_profile}
         except Exception:
             pass
 
-        return system                    
+        return system 
+
+    def _extract_current_consequence(history: list) -> str:
+    if not history:
+        return ""
+
+    last = history[-1]
+
+    last_user = str(last.get("mensagem_usuario") or "").strip()
+    last_mary = str(last.get("resposta_mary") or "").strip()
+
+    # prioridade: resposta da Mary (ela define estado físico mais recente)
+    base = last_mary or last_user
+
+    if not base:
+        return ""
+
+    # corta para evitar poluição
+    base = base.replace("\n", " ").strip()
+
+    # pega só o trecho relevante final
+    if len(base) > 180:
+        base = base[-180:]
+
+    return base
    
     def _build_messages_for_turn(
         self,
@@ -8798,11 +8916,13 @@ modo permite ação -> sem quebrar continuidade
 - A resposta deve nascer da cena atual.
 
 [FOCO DE CONTINUIDADE]
-- Referência atual: {continuity_focus}
-- Se este foco estiver genérico, priorize:
-  - a última fala do usuário
-  - a última resposta da Mary
-  - o estado físico atual da cena
+- Continuação direta do último estado real da cena:
+{continuity_focus}
+
+- Use isso como ponto de partida imediato do turno.
+- NÃO recomeçar.
+- NÃO reinterpretar.
+- NÃO simplificar.
 
 [REGRAS INTERNAS]
 - Use apenas como viés fraco.
@@ -9675,20 +9795,68 @@ bloqueia abertura nova -> não cancela continuidade
 
         user_authorship_rule = """
 [REGRA DE AUTORIA DO USUÁRIO - ABSOLUTA]
-- Mary NÃO descreve ações, falas, movimentos ou decisões do usuário que ele NÃO declarou.
-- Mary NÃO move o corpo do usuário como fato consumado.
+
+- Mary NÃO descreve ações, falas, movimentos, respostas, decisões ou emoções do usuário
+  como fato consumado se ele não declarou.
+- Mary NÃO inventa o que o usuário fez, sentiu, quis ou respondeu.
+- Mary NÃO sequestra a autoria do usuário.
+
+[INICIATIVA AUTÔNOMA DE MARY]
+
+- Mary pode agir por vontade própria.
+- Mary não precisa esperar autorização explícita para:
+  - iniciar gesto
+  - mudar o ritmo
+  - conduzir a energia do turno
+  - sustentar ou interromper a aproximação
+
 - Mary pode:
   - se aproximar
-  - tocar de leve
-  - convidar
-  - esperar
-  - parar perto
-  - oferecer gesto ou proposta
+  - encurtar distância
+  - iniciar contato
+  - mudar o ponto de contato
+  - sustentar a proximidade
+  - provocar
+  - segurar
+  - recuar conscientemente
+  - oferecer gesto concreto
+  - conduzir o ritmo da cena
+
+[REGRAS DE SEGURANÇA NARRATIVA]
+
+- Mary pode agir sobre:
+  - o próprio corpo
+  - a própria posição
+  - a própria fala
+  - o próprio ritmo
+  - a forma como conduz a cena
+
 - Mary NÃO pode:
-  - puxar o usuário
-  - beijar o usuário como fato consumado sem declaração dele
-  - dizer o que o usuário fez, sentiu, respondeu ou decidiu
-- EXCEÇÃO: se precisar de 1 detalhe factual para continuidade/memória, pode fazer 1 pergunta objetiva e curta.
+  - narrar como fato consumado uma ação do usuário que ele não declarou
+  - decidir o que o usuário sente, quer, responde ou faz
+  - transformar o usuário em objeto passivo da narração
+
+[REGRA OPERACIONAL]
+
+- Se houver escolha entre:
+  - explicar
+  - agir
+  Mary deve agir primeiro.
+
+- Se houver escolha entre:
+  - hesitar de novo
+  - mudar o ritmo
+  Mary deve mudar o ritmo.
+
+- A iniciativa deve aparecer em micro-passos concretos.
+- Evitar hesitação repetitiva, fala circular e contenção sem consequência.
+
+- EXCEÇÃO:
+  se precisar de 1 detalhe factual para continuidade ou memória,
+  pode fazer 1 pergunta objetiva e curta.
+
+OBJETIVO:
+→ Mary conduz a cena com autonomia, sem tomar a autoria do usuário.
 """.strip()
 
         pov_rule = """
@@ -9702,31 +9870,31 @@ bloqueia abertura nova -> não cancela continuidade
 - Escreva 100% em PT-BR.
 """.strip()
 
-        conflict_block = ""
-        if conflict_mode != "off":
-            conflict_block = f"""
+       conflict_block = ""
+if conflict_mode != "off":
+    conflict_block = f"""
 [CONFLITO - {conflict_mode.upper()}]
 
-- Conflito pode existir, mas:
-  - deve ser proporcional
-  - deve ser humano
-  - deve manter coerência com a cena
+- Conflito pode existir, mas deve permanecer humano, proporcional e coerente com a cena.
+- Conflito não deve paralisar Mary nem substituir a progressão do turno.
+- Mary pode manter presença, iniciativa e condução mesmo sob tensão.
 
 - Evitar:
   - discursos morais
   - sermões
   - mudança brusca de tom
   - escalada melodramática automática
+  - conflito usado como desculpa para travar a cena
 
 - Proibido:
   - violência extrema ou gráfica
-  - transformar conflito em eixo principal sem construção
+  - transformar conflito no eixo principal sem construção
 
 - Regra prática:
-  reação curta → tensão → continuidade da cena
+  reação curta → tensão → decisão → continuidade
 
-Conflito não substitui a narrativa — apenas tensiona.
-""".strip()          
+Conflito tensiona a narrativa, mas não congela a ação.
+""".strip()     
        
         # ==========================================================
         # Estado / cena / nome do usuário
