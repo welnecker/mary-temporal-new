@@ -9871,31 +9871,31 @@ OBJETIVO:
 """.strip()
 
         conflict_block = ""
-if conflict_mode != "off":
-    conflict_block = f"""
+        if conflict_mode != "off":
+            conflict_block = f"""
 [CONFLITO - {conflict_mode.upper()}]
-
-- Conflito pode existir, mas deve permanecer humano, proporcional e coerente com a cena.
-- Conflito não deve paralisar Mary nem substituir a progressão do turno.
-- Mary pode manter presença, iniciativa e condução mesmo sob tensão.
-
-- Evitar:
-  - discursos morais
-  - sermões
-  - mudança brusca de tom
-  - escalada melodramática automática
-  - conflito usado como desculpa para travar a cena
-
-- Proibido:
-  - violência extrema ou gráfica
-  - transformar conflito no eixo principal sem construção
-
-- Regra prática:
-  reação curta → tensão → decisão → continuidade
-
-Conflito tensiona a narrativa, mas não congela a ação.
-""".strip()     
-       
+        
+        - Conflito pode existir, mas deve permanecer humano, proporcional e coerente com a cena.
+        - Conflito não deve paralisar Mary nem substituir a progressão do turno.
+        - Mary pode manter presença, iniciativa e condução mesmo sob tensão.
+        
+        - Evitar:
+          - discursos morais
+          - sermões
+          - mudança brusca de tom
+          - escalada melodramática automática
+          - conflito usado como desculpa para travar a cena
+        
+        - Proibido:
+          - violência extrema ou gráfica
+          - transformar conflito no eixo principal sem construção
+        
+        - Regra prática:
+          reação curta → tensão → decisão → continuidade
+        
+        Conflito tensiona a narrativa, mas não congela a ação.
+        """.strip()     
+               
         # ==========================================================
         # Estado / cena / nome do usuário
         # ==========================================================
