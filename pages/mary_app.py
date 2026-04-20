@@ -2571,6 +2571,43 @@ def _render_sidebar() -> None:
             st.caption(
                 f"🔌 Provider detectado: **{provider_labels.get(prov_detected or '', prov_detected or '—')}**"
             )
+
+            # ==========================================================
+            # DEBUG REAL DE EXECUÇÃO (MODELO USADO DE VERDADE)
+            # ==========================================================
+            st.markdown("---")
+            st.subheader("🧪 Execução real")
+            
+            used_model_real = str(st.session_state.get("mary_last_used_model") or "").strip()
+            used_provider_real = str(st.session_state.get("mary_last_used_provider") or "").strip()
+            
+            fallback_info = st.session_state.get("mary_last_generation_debug") or {}
+            error_info = st.session_state.get("mary_last_generation_error_debug") or {}
+            
+            # UI vs execução
+            st.caption(f"🧠 Modelo UI: **{st.session_state.get('model') or '—'}**")
+            st.caption(f"⚙️ Modelo usado: **{used_model_real or '—'}**")
+            st.caption(f"🔌 Provider usado: **{used_provider_real or '—'}**")
+            
+            # fallback
+            if isinstance(fallback_info, dict) and fallback_info:
+                fallback_used = fallback_info.get("fallback_used")
+                st.caption(f"♻️ Fallback: **{'SIM' if fallback_used else 'NÃO'}**")
+            
+                requested = str(fallback_info.get("requested_model") or "").strip()
+                effective = str(fallback_info.get("used_model") or "").strip()
+            
+                if requested or effective:
+                    st.code(
+                        f"requested_model = {requested or '—'}\n"
+                        f"used_model = {effective or '—'}"
+                    )
+            
+            # erro de geração
+            if isinstance(error_info, dict) and error_info:
+                with st.expander("⚠️ Último erro de geração"):
+                    st.json(error_info)
+        
         except Exception:
             st.caption("🔌 Provider detectado: **—**")
 
