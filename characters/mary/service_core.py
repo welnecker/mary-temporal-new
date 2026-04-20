@@ -7539,8 +7539,7 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
 class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary"
-    
-
+ 
     def _build_system_prompt(
         self,
         *,
