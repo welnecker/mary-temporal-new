@@ -7697,30 +7697,31 @@ NSFW_PROFILE: {nsfw_profile}
             pass
 
         return system 
-
+    
+    @staticmethod
     def _extract_current_consequence(history: list) -> str:
-    if not history:
-        return ""
+        if not history:
+            return ""
 
-    last = history[-1]
+        last = history[-1]
 
-    last_user = str(last.get("mensagem_usuario") or "").strip()
-    last_mary = str(last.get("resposta_mary") or "").strip()
+        last_user = str(last.get("mensagem_usuario") or "").strip()
+        last_mary = str(last.get("resposta_mary") or "").strip()
 
-    # prioridade: resposta da Mary (ela define estado físico mais recente)
-    base = last_mary or last_user
+        # prioridade: resposta da Mary (ela define estado físico mais recente)
+        base = last_mary or last_user
 
-    if not base:
-        return ""
+        if not base:
+            return ""
 
-    # corta para evitar poluição
-    base = base.replace("\n", " ").strip()
+        # corta para evitar poluição
+        base = base.replace("\n", " ").strip()
 
-    # pega só o trecho relevante final
-    if len(base) > 180:
-        base = base[-180:]
+        # pega só o trecho relevante final
+        if len(base) > 180:
+            base = base[-180:]
 
-    return base
+        return base
    
     def _build_messages_for_turn(
         self,
@@ -9870,7 +9871,7 @@ OBJETIVO:
 - Escreva 100% em PT-BR.
 """.strip()
 
-       conflict_block = ""
+        conflict_block = ""
 if conflict_mode != "off":
     conflict_block = f"""
 [CONFLITO - {conflict_mode.upper()}]
