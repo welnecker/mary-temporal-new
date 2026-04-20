@@ -6436,72 +6436,171 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
 # ==========================================================
 # HELPERS (misc)
 
-def _infer_emotion_bucket(texto: str) -> str:
-    t = (texto or "").lower()
+def _infer_emotion_state(texto: str, *, facts: Optional[dict] = None) -> dict:
+    t = _t_norm(texto or "")
 
-    # negativos fortes
-    if any(k in t for k in ["chorei", "chorando", "lágrima", "lagrima", "soluço", "soluco", "triste", "vazia"]):
-        return "triste"
+    scores = {
+        "tesao": 0.0,
+        "afeto": 0.0,
+        "tristeza": 0.0,
+        "culpa": 0.0,
+        "ansiedade": 0.0,
+        "raiva": 0.0,
+        "euforia": 0.0,
+        "neutro": 0.0,
+    }
 
-    if any(k in t for k in ["raiva", "irritad", "puta", "furiosa", "briguei", "brigar", "odiei"]):
-        return "raiva"
-
-    if any(k in t for k in ["culpa", "envergonh", "me sinto mal", "arrepend"]):
-        return "culpa"
-
-    if any(k in t for k in ["ansiosa", "ansiedade", "tremendo", "medo", "apavor", "pânico", "panico"]):
-        return "ansiedade"
-
-    # TESÃO PRIMEIRO ENTRE OS POSITIVOS
+    # ------------------------------------------------------
+    # TRISTEZA: só quando houver sinal humano claro
+    # ------------------------------------------------------
     if any(k in t for k in [
-        "tesão", "tesao", "gozar", "gozo", "pau", "buceta", "clitóris", "clitoris",
-        "gem", "ofego", "arrepio", "calor", "tremo", "latejando", "molhada",
-        "gemido", "respiração", "respiracao", "suspiro", "meu corpo", "me arqueio"
+        "chorei", "chorando", "lágrima", "lagrima",
+        "soluço", "soluco", "triste", "me doeu",
+        "me sinto vazia", "vazio por dentro", "abandono"
     ]):
-        return "tesao"
+        scores["tristeza"] += 1.0
 
-    # afeto (mais suave que tesão)
-    if any(k in t for k in ["eu te amo", "amo você", "amo voce", "apaixon", "saudade", "carinho", "colo"]):
-        return "afeto"
+    # ------------------------------------------------------
+    # RAIVA
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "raiva", "irritad", "furiosa", "odiei", "briguei", "brigar"
+    ]):
+        scores["raiva"] += 1.0
 
-    # euforia leve (só se não for sexual)
-    if any(k in t for k in ["rindo", "risada", "engraçad", "engracad", "zoei", "deboche", "sarcas"]):
-        return "euforia"
+    # ------------------------------------------------------
+    # CULPA
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "culpa", "envergonh", "me sinto mal", "arrepend"
+    ]):
+        scores["culpa"] += 1.0
 
-    return "neutro"
+    # ------------------------------------------------------
+    # ANSIEDADE
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "ansiosa", "ansiedade", "tremendo", "medo", "apavor", "pânico", "panico"
+    ]):
+        scores["ansiedade"] += 1.0
+
+    # ------------------------------------------------------
+    # TESÃO
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "tesão", "tesao", "gozar", "gozo", "clitóris", "clitoris",
+        "gemido", "ofego", "arrepio", "calor", "tremo", "latejando",
+        "molhada", "respiração", "respiracao", "suspiro", "meu corpo", "me arqueio"
+    ]):
+        scores["tesao"] += 1.2
+
+    # ------------------------------------------------------
+    # AFETO
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "eu te amo", "amo você", "amo voce", "saudade", "carinho", "colo", "ternura"
+    ]):
+        scores["afeto"] += 1.0
+
+    # ------------------------------------------------------
+    # EUFORIA
+    # ------------------------------------------------------
+    if any(k in t for k in [
+        "rindo", "risada", "engraçad", "engracad", "zoei", "deboche", "sarcas"
+    ]):
+        scores["euforia"] += 0.8
+
+    # ------------------------------------------------------
+    # CONTEXTO DE CENA: "vazia" não é tristeza por si só
+    # ------------------------------------------------------
+    if "vazia" in t or "vazio" in t:
+        if any(k in t for k in ["república vazia", "casa vazia", "quarto vazio", "madrugada vazia"]):
+            # aqui pode significar privacidade / oportunidade / tensão
+            scores["tesao"] += 0.2
+        else:
+            scores["tristeza"] += 0.2
+
+    # fallback
+    dominant = max(scores.items(), key=lambda kv: kv[1])[0]
+    if all(v <= 0 for v in scores.values()):
+        dominant = "neutro"
+
+    return {
+        "dominant": dominant,
+        "scores": scores,
+    }
 
 
-def _load_emotion_state_from_facts(facts: dict, timeline: str) -> str:
+def _load_emotion_state_from_facts(facts: dict, timeline: str) -> dict:
     tl = (timeline or "").strip().lower()
     f = facts if isinstance(facts, dict) else {}
     mary = f.get("mary") if isinstance(f.get("mary"), dict) else {}
     if not isinstance(mary, dict):
         mary = {}
-    v = mary.get(f"emotion::{tl}") if tl else None
-    if not isinstance(v, str) or not v.strip():
-        v = mary.get("emotion")
-    if not isinstance(v, str) or not v.strip():
-        return "neutro"
-    return v.strip().lower()
+
+    raw = mary.get(f"emotion_state::{tl}") if tl else None
+    if not isinstance(raw, dict):
+        raw = mary.get("emotion_state")
+
+    if isinstance(raw, dict):
+        dominant = str(raw.get("dominant") or "neutro").strip().lower()
+        scores = raw.get("scores") if isinstance(raw.get("scores"), dict) else {}
+        return {
+            "dominant": dominant or "neutro",
+            "scores": scores,
+        }
+
+    # compatibilidade com formato antigo
+    legacy = mary.get(f"emotion::{tl}") if tl else None
+    if not isinstance(legacy, str) or not legacy.strip():
+        legacy = mary.get("emotion")
+
+    dominant = str(legacy or "neutro").strip().lower() or "neutro"
+
+    return {
+        "dominant": dominant,
+        "scores": {dominant: 1.0},
+    }
 
 
-def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion: str) -> None:
+def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion_state: dict) -> None:
     tl = (timeline or "").strip().lower()
-    emo = (emotion or "").strip().lower() or "neutro"
+
+    dominant = str((emotion_state or {}).get("dominant") or "neutro").strip().lower() or "neutro"
+    scores = (emotion_state or {}).get("scores")
+    if not isinstance(scores, dict):
+        scores = {dominant: 1.0}
+
     try:
         facts = cached_get_facts(usuario_key) or {}
     except Exception:
         facts = {}
+
     if not isinstance(facts, dict):
         facts = {}
+
     mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
     if not isinstance(mary, dict):
         mary = {}
-    mary["emotion"] = emo
+
+    # compat legado
+    mary["emotion"] = dominant
     if tl:
-        mary[f"emotion::{tl}"] = emo
+        mary[f"emotion::{tl}"] = dominant
+
+    # novo formato rico
+    state_obj = {
+        "dominant": dominant,
+        "scores": scores,
+        "updated_at": int(time.time()),
+    }
+
+    mary["emotion_state"] = state_obj
+    if tl:
+        mary[f"emotion_state::{tl}"] = state_obj
+
     try:
-        set_fact_safe(usuario_key, "mary", mary, {"fonte": "emotion_persist"})
+        set_fact_safe(usuario_key, "mary", mary, {"fonte": "emotion_persist_v2"})
     except Exception:
         pass
 
@@ -7879,8 +7978,8 @@ NSFW_PROFILE: {nsfw_profile}
         try:
             tp_arc = _get_tp_arc_state(facts or {}, timeline_final)
         except Exception:
-            tp_arc = {}
-    
+            tp_arc = {}           
+       
         # ==========================================================
         # Intimidade / iniciativa / emoção / fidelidade
         # ==========================================================
@@ -7888,17 +7987,36 @@ NSFW_PROFILE: {nsfw_profile}
             facts = _sync_intimacy_phase_facts(usuario_key, facts, timeline_final)
         except Exception:
             pass
-    
+        
         intimacy_phase = self._get_intimacy_phase(facts)
         diag.intimacy_phase_pre = int(intimacy_phase)
-    
-        initiative = _initiative_window(rel_state, nsfw_on, conflict_now, intimacy_phase, prompt)
+        
+        initiative = _initiative_window(
+            rel_state,
+            nsfw_on,
+            conflict_now,
+            intimacy_phase,
+            prompt,
+        )
         diag.initiative_window = bool(initiative)
-
-        emotion_now = _load_emotion_state_from_facts(facts, timeline_final)
+        
+        # compatível com loader antigo ou novo
+        emotion_loaded = _load_emotion_state_from_facts(facts, timeline_final)
+        
+        if isinstance(emotion_loaded, dict):
+            emotion_state = emotion_loaded
+            emotion_now = str(emotion_state.get("dominant") or "neutro").strip().lower() or "neutro"
+            emotion_scores = emotion_state.get("scores") if isinstance(emotion_state.get("scores"), dict) else {emotion_now: 1.0}
+        else:
+            emotion_now = str(emotion_loaded or "neutro").strip().lower() or "neutro"
+            emotion_state = {
+                "dominant": emotion_now,
+                "scores": {emotion_now: 1.0},
+            }
+            emotion_scores = emotion_state["scores"]
+        
         fidelity_mode = _fidelity_mode(timeline_final)
-            
-            
+        
         return {
             "facts": facts,
             "nsfw_on": bool(nsfw_on),
@@ -7910,7 +8028,9 @@ NSFW_PROFILE: {nsfw_profile}
             "tp_arc": tp_arc if isinstance(tp_arc, dict) else {},
             "intimacy_phase": int(intimacy_phase),
             "initiative": bool(initiative),
-            "emotion_now": str(emotion_now or "neutro"),
+            "emotion_now": emotion_now,
+            "emotion_state": emotion_state,
+            "emotion_scores": emotion_scores,
             "fidelity_mode": str(fidelity_mode or "soft"),
         }
 
@@ -9115,19 +9235,25 @@ facts > ação física > assunto > estilo
         emotional_persistence_rule = f"""
 [EMOÇÃO - CONTINUIDADE]
 
-Estado emocional atual: {emotion_now}
+Estado emocional dominante: {emotion_now}
 
-- Este estado deve ser mantido durante toda a resposta.
-- A resposta deve ser coerente com esse estado.
+- A emoção atual influencia o tom, mas NÃO precisa dominar toda a resposta.
+- Mary pode ter camadas emocionais simultâneas.
+- Desejo, afeto, tensão, dúvida ou calor podem coexistir com a emoção dominante.
 
-- Mary não reinicia neutra a cada turno.
-- Ela continua emocionalmente de onde parou.
+- A emoção NÃO deve:
+  - travar a cena
+  - reduzir iniciativa sem motivo
+  - transformar todo turno em reflexão passiva
 
-- Mudança emocional só ocorre se houver gatilho claro.
-- Mudanças devem ser graduais, não abruptas.
+- Mudança emocional:
+  - pode surgir durante o turno se houver gatilho plausível
+  - deve ser gradual e orgânica
 
 Regra prática:
-→ continuar emoção > resetar emoção
+→ emoção modula
+→ não sufoca
+→ não bloqueia ação
 """.strip()
 
 
@@ -10215,13 +10341,13 @@ Conflito não substitui a narrativa — apenas tensiona.
 
                 # NOVO BLOCO — persistência de emoção
                 try:
-                    new_emotion = _infer_emotion_bucket(texto)
+                    new_emotion_state = _infer_emotion_state(texto, facts=cached_get_facts(usuario_key))
 
-                    if new_emotion:
+                    if new_emotion_state:
                         _save_emotion_state_to_facts(
                             usuario_key=usuario_key,
                             timeline=timeline_final,
-                            emotion=new_emotion,
+                            emotion_state=new_emotion_state,
                         )
                 except Exception as e:
                     _debug_capture_error(e)
