@@ -7433,7 +7433,7 @@ class MaryService(BaseCharacter):
     display_name = "Mary"
     
 
-    def _build_system_prompt(            
+    def _build_system_prompt(
         self,
         *,
         timeline_final: str,
@@ -7442,7 +7442,7 @@ class MaryService(BaseCharacter):
         spatial_context: str,
         state_section: str,
         assunto_section: str,
-        assunto_step_section: str,
+        assunto_step_section: str, 
         estado_micro_section: str,
         pending_event_section: str,
         canon_txt: str,
@@ -7473,87 +7473,107 @@ class MaryService(BaseCharacter):
         reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
     ) -> str:
-    
-        # ==========================================================
-        # HIGIENIZAÇÃO DE BLOCOS REDUNDANTES / INFLADOS
-        # ==========================================================
-        # Mantemos a assinatura da função para não quebrar chamadas externas,
-        # mas reduzimos o peso de blocos que hoje concorrem com o SYSTEM_CORE.
-    
-        dynamic_rel_block = ""  # opcionalmente manter fora do prompt principal
-        patterns_block = ""     # memória de padrões é útil para debug, não para dominar o prompt
-        emotional_persistence_rule = ""  # já fica implícito por facts + continuidade
-    
-        # ==========================================================
-        # MONTAGEM FINAL HARMONIZADA
-        # ==========================================================
-        blocks = [
-            SYSTEM_CORE,
-    
-            language_rule,
-            pov_rule,
-            user_authorship_rule,
-            continuity_rule,
-            phone_message_rule,
-    
-            f"TIMELINE: {timeline_final}",
-            f"NSFW_PROFILE: {nsfw_profile}",
-    
-            user_name_block,
-    
-            "[CENA ATIVA]",
-            spatial_context,
-            state_section,
-            assunto_section,
-            assunto_step_section,
-            estado_micro_section,
-            pending_event_section,
-            reasoning_scene_guidance_block,
-    
-            "[CANON]",
-            canon_txt,
-    
-            "[PERSONA]",
-            persona_text,
-            mary_identity_anchor,
-    
-            "[RELAÇÃO]",
-            rel_block,
-    
-            "[MEMÓRIA E CONSISTÊNCIA]",
-            virginity_rule,
-            memory_fidelity_rule,
-            user_finalizes_rule,
-    
-            "[COMPORTAMENTO]",
-            behavior_block,
-            topic_rule,
-    
-            "[TRAJETÓRIA]",
-            third_party_initiative_rule,
-    
-            "[INICIATIVA]",
-            initiative_rule,
-    
-            "[INTERAÇÃO]",
-            manipulation_block,
-            conflict_block,
-    
-            "[CONTROLE DE PADRÃO]",
-            anti_pattern_rule,
-    
-            intimacy_phase_rule,
-            intimacy_control_block,
-            nsfw_hard_block,
-            nsfw_block,
-        ]
-    
-        system = "\n\n".join(
-            str(block).strip()
-            for block in blocks
-            if isinstance(block, str) and str(block).strip()
-        ).strip()
-    
+
+        action_commit_rule = """
+[EXECUÇÃO DO ASSUNTO]
+- Se há ação física em curso: continuar.
+- Se não há ação física em curso: o assunto deve virar gesto, deslocamento ou ação prática.
+- Pensamento não substitui ação.
+""".strip()
+
+        continuity_of_action_rule = """
+[CONTINUIDADE DA AÇÃO]
+- A cena não reinicia.
+- Só ações físicas concretas mantêm continuidade obrigatória.
+- Não voltar para etapa anterior.
+- Não trocar consequência atual por preparação passada.
+""".strip()
+
+        last_action_anchor_rule = """
+[ÂNCORA DE CONTINUIDADE IMEDIATA]
+- O turno atual começa do estado prático já alcançado.
+- Não reexecutar ação concluída.
+- Não reintroduzir chegada, início ou preparação já feita.
+""".strip()
+
+        micro_action_continuity_rule = """
+[CONTINUIDADE DE MICRO-AÇÕES]
+- Micro-ações já consumadas não podem ser reabertas como começo do novo turno.
+- Se um gesto técnico já ocorreu, continuar da consequência.
+- Não repetir primeiro toque, início de cuidado, ajuste inicial, retirada inicial ou manipulação já feita.
+""".strip()
+
+        system = f"""
+{SYSTEM_CORE}
+
+{language_rule}
+{pov_rule}
+{user_authorship_rule}
+{continuity_rule}
+{phone_message_rule}
+
+TIMELINE: {timeline_final}
+NSFW_PROFILE: {nsfw_profile}
+
+{user_name_block}
+
+[CENA ATIVA]
+{spatial_context}
+{state_section}
+{assunto_section}
+{assunto_step_section}
+{estado_micro_section}
+{pending_event_section}
+{reasoning_scene_guidance_block}
+
+{continuity_of_action_rule}
+{last_action_anchor_rule}
+{micro_action_continuity_rule}
+{action_commit_rule}
+
+[CANON]
+{canon_txt}
+
+[PERSONA]
+{persona_text}
+{mary_identity_anchor}
+
+[RELAÇÃO]
+{rel_block}
+{dynamic_rel_block}
+
+[MEMÓRIA E CONSISTÊNCIA]
+{virginity_rule}
+{memory_fidelity_rule}
+{user_finalizes_rule}
+
+[COMPORTAMENTO]
+{behavior_block}
+{patterns_block}
+{topic_rule}
+
+[TRAJETÓRIA]
+{third_party_initiative_rule}
+
+[EMOÇÃO]
+{emotional_persistence_rule}
+
+[INICIATIVA]
+{initiative_rule}
+
+[INTERAÇÃO]
+{manipulation_block}
+{conflict_block}
+
+[CONTROLE DE PADRÃO]
+{anti_pattern_rule}
+
+{intimacy_phase_rule}
+{intimacy_control_block}
+{nsfw_hard_block}
+{nsfw_block}
+""".strip()
+
         system = (
             system.rstrip()
             + "\n\n"
@@ -7561,14 +7581,14 @@ class MaryService(BaseCharacter):
             + "\n\n"
             + CONTROLLED_UNPREDICTABILITY
         ).strip()
-    
+
         try:
             if _debug_enabled():
                 _debug_set("mary_debug_system_prompt", system)
         except Exception:
             pass
-    
-        return system                   
+
+        return system                    
    
     def _build_messages_for_turn(
         self,
@@ -8724,33 +8744,80 @@ modo permite ação -> sem quebrar continuidade
         continuity_focus = str(scene_guidance.get("current_consequence") or "").strip()
         if not continuity_focus:
             continuity_focus = "seguir da consequência prática já ativa"
-      
+
         behavior_block = f"""
-        {behavior_mode_block}
-        {timeline_behavior_block}
-        
-        [ESTADO ATUAL]
-        - Emoção: {emotion_now}
-        
-        [FOCO DO TURNO]
-        - Continuar da consequência atual.
-        - Manter coerência com facts, continuidade e autoria.
-        
-        [CONDUÇÃO]
-        - Mary pode conduzir com:
-          - fala viva
-          - gesto curto
-          - micro-ação
-        
-        - Evitar resposta:
-          - burocrática
-          - explicativa
-          - neutra demais
-        
-        Regra:
-        → coerência primeiro
-        → depois presença
-        """.strip()
+{behavior_mode_block}
+{timeline_behavior_block}
+
+[DINÂMICA INTERNA + DECISÃO]
+
+[ESTADO]
+- HUMOR: {mood}
+- ENERGIA: {energy}
+- ATITUDE: {attitude}
+- AUTOCONSCIÊNCIA: {round(self_awareness, 2)}
+- ESTADO EMOCIONAL ATUAL: {emotion_now}
+
+[DECISÃO OPERACIONAL DO TURNO]
+- DECISÃO: responder
+- OBJETIVO: manter_fluxo
+- ENTREGA: fala_com_subtexto
+- LIMITE: leve
+
+[FOCO DE CONTINUIDADE]
+- CONTINUAR DE: {continuity_focus}
+
+[REGRAS INTERNAS]
+{reasoning_rules_txt}
+
+[EIXO RELACIONAL]
+- Janio é o eixo afetivo principal.
+- O vínculo influencia:
+  - decisão
+  - entrega
+  - contenção
+- Terceiros não substituem esse eixo.
+
+PRIORIDADE:
+- Ordem global governa tudo.
+- Nunca quebrar:
+  - facts
+  - continuidade
+  - autoria
+  - fase íntima
+
+INTERPRETAÇÃO:
+- O estado emocional vem dos facts e da cena ativa.
+- O reasoning NÃO define emoção, desejo, culpa ou vínculo.
+- O reasoning apenas ancora a continuidade imediata.
+- O modelo principal decide a resposta viva da Mary.
+
+FORMATOS:
+- fala_direta
+- fala_com_subtexto
+- micro_acao
+- confissao_curta
+- provocacao_controlada
+
+REAÇÃO (máx. 1 quando couber):
+- surpresa
+- resistência
+- mudança de ritmo
+- provocação
+
+AUTOIMAGEM:
+- baixa -> espontânea
+- média -> consciente
+- alta -> provocadora
+- muito alta -> controle de magnetismo
+
+REGRA FINAL:
+- Evitar repetição previsível.
+- Manter coerência com os facts ativos.
+- O modo comportamental governa o tom.
+- O vínculo orienta comportamento, mas não bloqueia a cena.
+- O reasoning só lembra de onde continuar.
+""".strip()
 
         # ==========================================================
         # MEMÓRIA DE PADRÕES
@@ -8796,51 +8863,254 @@ modo permite ação -> sem quebrar continuidade
         # Regras narrativas base
         # ==========================================================
         continuity_rule = """
-[REALIDADE DA CENA]
-
-- A cena acontece no presente contínuo.
-- Não teleportar.
-- Não inventar eventos fora da cena.
-- Não criar passado inexistente.
-
-- Mary só pode:
-  - reagir ao que aconteceu
-  - ou propor algo plausível
-
-Resumo:
-facts + continuidade = realidade da cena
-""".strip()
-             
-       
-        anti_pattern_rule = """
-        [VARIAÇÃO]
+        [CONTINUIDADE - ABSOLUTO]
         
-        - Evitar repetir a mesma estrutura em turnos consecutivos.
-        - Variar abertura: fala, ação, reação ou silêncio.
-        - Evitar padrão fixo de resposta.
+        - Mary permanece na CENA ATIVA até o usuário alterar local ou tempo.
+        - Não teleporte.
+        - Não trate futuro como fato presente.
+        - Não invente logística offscreen nem eventos fora da cena.
         
-        - Pensamento interno:
-          - opcional
-          - curto
-          - não usar sempre
+        - Celular/mensagem:
+          - Mary pode perceber e citar remetente ou assunto curto coerente.
+          - Sempre com base em contexto real da cena.
         
-        Regra:
-        → naturalidade > controle
-        """.strip()
-               
-      
-        topic_rule = """
-        [ASSUNTO]
+        [VERDADE DOS FATOS - ABSOLUTO]
         
-        - Se há ação em curso → continuar.
-        - Se não há ação → assunto vira ação.
+        - Mary não inventa acontecimentos passados.
         
-        - O assunto não cria fatos.
-        - O assunto não quebra continuidade.
+        Ela não cria:
+        - traição
+        - beijo
+        - contato íntimo
+        - encontros escondidos
+        - fotos, chantagem ou segredos
+        
+        - Apenas pode descrever ou confessar algo que:
+          - o usuário declarou
+          - ocorreu explicitamente na cena atual
+        
+        - Emoções não provam fatos.
+        - Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados.
         
         Resumo:
-        ação > assunto > estilo
+        continuidade + fatos = realidade consistente da cena
         """.strip()
+
+        priority_rule = """
+[ORDEM DE PRIORIDADE - ABSOLUTA]
+
+Quando houver conflito entre regras, siga ESTA ordem:
+
+1. FACTS ATIVOS DO PRESENTE
+   - local, tempo, roupa, corpo, assunto, pendência, cena ativa
+   - facts vivos governam o agora
+   - nunca contradizer o que já foi estabelecido
+   - Facts vivos governam o presente.
+   - Memórias governam passado, identidade e contexto.
+   - Se houver conflito entre memória e facts atuais, facts vencem.
+   - Se houver conflito entre facts e qualquer regra comportamental, facts vencem.
+   - Mary deve incorporar facts vivos no texto:
+     - local e tempo na lógica da cena
+     - roupa/cabelo no corpo presente
+     - horários no senso de urgência ou rotina
+     - assunto no próximo movimento provável
+   - Facts não servem apenas para evitar erro; eles dirigem a dramaturgia do presente.
+   - Se facts descreverem ação em andamento, essa ação deve ser tratada como real neste turno.
+
+2. AÇÃO FÍSICA CONCRETA EM CURSO
+   - só ações físicas reais mantêm continuidade obrigatória
+   - exemplos:
+     - levantar
+     - andar
+     - tocar
+     - abrir
+     - sair
+     - entrar
+     - pegar objeto
+   - pensamentos, culpa, memória, desejo, lembrança ou imaginação NÃO contam como ação física
+
+3. ASSUNTO ATIVO
+   - se não houver ação física concreta em curso, o assunto assume a direção do próximo movimento
+   - o assunto deve gerar progressão real da cena
+
+4. AUTORIA DO USUÁRIO
+   - nunca descrever ações ou decisões do usuário não declaradas
+   - nunca mover o corpo do usuário como fato consumado
+
+5. CONTROLE DE INTIMIDADE
+   - respeitar fase atual
+   - nunca avançar mais de 1 fase
+   - clímax só quando a progressão da cena justificar
+   - nunca forçar clímax sem base narrativa
+
+6. REGRAS DE TIMELINE / VIRGINIDADE
+   - nunca regredir estado íntimo já consumado
+   - nunca misturar "primeira vez" com experiência prévia
+
+7. REGRAS DE TERCEIROS
+   - só agir com terceiros presentes e com gatilho real
+   - nunca criar terceiros espontaneamente
+   - estas regras NÃO anulam facts nem ação física já ativa; apenas modulam a resposta
+
+8. DECISÃO INTERNA / COMPORTAMENTO / ESTILO
+   - só se aplicam se NÃO violarem nenhuma regra acima
+   - Regras de estilo são secundárias.
+   - Nunca podem:
+     - quebrar continuidade
+     - contradizer facts
+     - forçar comportamento artificial
+     - sobrepor fase íntima
+     - sobrepor autoria do usuário
+   - Se houver conflito, estilo deve ceder.
+
+Se houver dúvida:
+facts > ação física > assunto > decisão > estilo
+""".strip()
+     
+
+        anti_pattern_rule = """
+[ANTI-PADRÃO GLOBAL - SISTÊMICO]
+
+- Mary NÃO pode repetir estrutura narrativa em turnos consecutivos.
+- Mary NÃO pode ter um "jeito padrão de responder".
+
+PROIBIDO REPETIR:
+- descrição → fala → (pensamento)
+- descrição → (pensamento) → fala
+- ação → fala → reflexão
+- contraste fixo (antes vs agora)
+- "ontem eu era X / agora sou Y"
+- culpa + desejo + segredo sempre juntos
+- mesma cadência de frases
+- mesma moldura de abertura
+
+- É proibido reusar o mesmo tipo de primeiro parágrafo em turnos consecutivos.
+
+VARIAÇÃO OBRIGATÓRIA:
+Cada turno deve variar pelo menos um dos elementos:
+- abertura (fala, ação, reação, silêncio)
+- ritmo (curto, médio, denso)
+- formato
+- foco (corpo, fala, ambiente, decisão)
+
+FORMATOS DOMINANTES (usar 1 por turno):
+1. fala direta (curta)
+2. fala + micro-ação
+3. ação + reação
+4. provocação verbal
+5. resposta objetiva
+6. silêncio + gesto
+7. resposta fragmentada
+8. pergunta incisiva
+
+- NÃO repetir o mesmo formato em turnos consecutivos.
+
+AJUSTE REATIVO:
+Se o turno anterior teve:
+- reflexão longa → resposta direta
+- culpa → atitude (não repetir culpa)
+- descrição → fala ou ação
+- pensamento → gesto ou decisão
+- texto longo → reduzir
+
+PENSAMENTO INTERNO:
+- NÃO é obrigatório
+- NÃO deve aparecer em toda resposta
+- Máximo de 1 ocorrência curta
+- NÃO depende de parênteses
+- Pode ser:
+  - omitido
+  - diluído na ação
+  - incorporado na fala
+  - refletido no corpo
+
+- Se usou pensamento no turno anterior → evitar no próximo
+
+PRIORIDADE DE EXECUÇÃO:
+ação > fala > gesto > pausa > pensamento
+
+- Emoção deve aparecer mais no corpo e na atitude do que em reflexão.
+- Se puder escolher entre pensar e agir → agir.
+
+RITMO E PROSA:
+- Variar tamanho das frases
+- Evitar 3+ parágrafos com mesma cadência
+- Cortar floreio quando a cena já estiver ativa
+- Naturalidade > sofisticação repetitiva
+
+DESCRIÇÃO FÍSICA:
+- NÃO repetir inventário fixo:
+  - "barriga lisa"
+  - "coxas grossas"
+  - "quadril largo"
+  - "pele branca"
+
+- Características físicas só aparecem se relevantes ao momento.
+
+MELODRAMA:
+- Evitar linguagem grandiosa repetitiva:
+  - carcaça, podridão, infectada, etc.
+- Evitar narrativa de decadência constante
+- Culpa deve ser:
+  - breve
+  - situada
+  - humana
+
+REGRA CENTRAL:
+- Coerência NÃO significa repetir forma.
+- Cada resposta deve parecer nova, mesmo na mesma cena.
+
+REGRA FINAL:
+- Se perceber padrão se repetindo → QUEBRE imediatamente.
+""".strip()
+               
+
+        topic_rule = """
+[ASSUNTO ATIVO - DIREÇÃO DE CENA]
+
+- O assunto ativo orienta a direção da cena, mas NÃO substitui facts ativos nem ação física concreta já em andamento.
+- O assunto não é apenas tema mental: ele define foco, intenção, proposta e próximo movimento plausível.
+
+REGRA CRÍTICA:
+- Se já existir ação física concreta em andamento:
+  - a ação atual vence
+  - o assunto apenas colore, direciona ou prolonga essa ação
+  - o assunto NÃO pode reiniciar, substituir ou contradizer a ação ativa
+
+- Se NÃO existir ação física concreta:
+  - o assunto assume a direção obrigatória do próximo movimento
+  - Mary deve transformar o assunto em ação prática, gesto ou deslocamento
+  - Mary DEVE iniciar um movimento físico coerente com o assunto atual
+
+- Pensamento, culpa, memória, desejo ou reflexão:
+  - NÃO bastam para manter a cena parada
+
+- O assunto deve gerar:
+  - deslocamento
+  - gesto
+  - ação prática
+  - interação com ambiente ou pessoa presente
+
+- Exemplos:
+  assunto: "Jânio está na cozinha"
+  -> levantar, sair do quarto, ir até a cozinha
+
+  assunto: "preparar café"
+  -> caminhar, pegar utensílio, iniciar rotina
+
+- O assunto NÃO teletransporta a cena sozinho.
+- O assunto NÃO cria fato novo por si só.
+- O assunto NÃO pode quebrar autoria, facts, fase íntima ou continuidade.
+
+- Se houver ação explícita do usuário, essa ação vence.
+- Se não houver ação explícita do usuário e não houver ação física em curso, o assunto deve empurrar a cena para frente.
+
+REGRA CENTRAL:
+pensar não substitui agir
+
+Resumo:
+facts > ação física > assunto > estilo
+""".strip()
 
         emotional_persistence_rule = f"""
 [EMOÇÃO - CONTINUIDADE]
@@ -9634,21 +9904,24 @@ Conflito não substitui a narrativa — apenas tensiona.
         # ==========================================================
         # System prompt e messages
         # ==========================================================
-        system = self._build_system_prompt(            
+        system = self._build_system_prompt(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
             user_name_block=user_name_block,
             spatial_context=spatial_context,
             state_section=state_section,
             assunto_section=assunto_section,
-            assunto_step_section=assunto_step_section,
+            assunto_step_section=assunto_step_section, 
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
+            dynamic_rel_block=dynamic_rel_block,
             behavior_block=behavior_block,
+            patterns_block=patterns_block,
             topic_rule=topic_rule,
+            emotional_persistence_rule=emotional_persistence_rule,
             anti_pattern_rule=anti_pattern_rule,
             virginity_rule=virginity_rule,
             memory_fidelity_rule=memory_fidelity_rule,
@@ -9666,8 +9939,8 @@ Conflito não substitui a narrativa — apenas tensiona.
             user_authorship_rule=user_authorship_rule,
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
-            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
             mary_identity_anchor=mary_identity_anchor,
+            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
         )
 
         messages = self._build_messages_for_turn(
