@@ -11,7 +11,7 @@ MODEL_REGISTRY: Dict[str, List[str]] = {
         "x-ai/grok-4.1-fast",        
         "xiaomi/mimo-v2-flash",
         "deepseek/deepseek-chat-v3-0324",                        
-        "deepseek/deepseek-v3.2-exp",
+        "openai/gpt-5.4",
     ],
     "together": [
         "google/gemma-3n-E4B-it",
