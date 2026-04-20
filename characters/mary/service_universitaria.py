@@ -13,7 +13,6 @@ class MaryServiceUniversitaria(MaryService):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # timeline default
         try:
             self.timeline = "universitaria"
         except Exception:
@@ -21,16 +20,15 @@ class MaryServiceUniversitaria(MaryService):
 
     def reply(
         self,
-        *,
         user: str,
         model: str,
-        prompt: str,
-        timeline: str = "universitaria",
+        *,
+        prompt: Optional[str] = None,
+        timeline: Optional[str] = "universitaria",
         nsfw: Optional[bool] = None,
         allow_third_party_seduction: Optional[bool] = None,
         **kwargs: Any,
     ):
-        # força timeline correta
         timeline_final = (timeline or "universitaria").strip().lower()
         if timeline_final != "universitaria":
             timeline_final = "universitaria"
