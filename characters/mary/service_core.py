@@ -10011,11 +10011,54 @@ Conflito não substitui a narrativa — apenas tensiona.
                 )
              
                 if not texto or not str(texto).strip():
-                    raise RuntimeError(f"Resposta vazia do modelo (model={plan['model']})")
-                 
+                    raise RuntimeError(f"Resposta vazia do modelo (model={plan['model']})")                 
+               
                 diag.model_used = used_model
                 meta: Dict[str, Any] = {}
-        
+                
+                # ----------------------------------------------------------
+                # DEBUG REAL DE EXECUÇÃO (MODELO / PROVIDER / FALLBACK)
+                # ----------------------------------------------------------
+                try:
+                    used_model_str = str(used_model or "").strip()
+                
+                    used_provider = ""
+                    try:
+                        if hasattr(service_router, "resolve_provider"):
+                            used_provider = str(
+                                service_router.resolve_provider(used_model_str) or ""
+                            ).strip()
+                    except Exception:
+                        used_provider = ""
+                
+                    requested_model = str(plan.get("model") or "").strip()
+                    fallback_used = bool(
+                        requested_model and used_model_str and requested_model != used_model_str
+                    )
+                
+                    _debug_set("mary_last_used_model", used_model_str)
+                    _debug_set("mary_last_used_provider", used_provider)
+                
+                    _debug_set(
+                        "mary_last_generation_debug",
+                        {
+                            "requested_model": requested_model,
+                            "used_model": used_model_str,
+                            "used_provider": used_provider,
+                            "fallback_used": fallback_used,
+                            "temperature": float(plan.get("temperature", 0.0) or 0.0),
+                            "max_tokens": int(plan.get("max_tokens", 0) or 0),
+                            "top_p": float(plan.get("top_p", 0.95) or 0.95),
+                            "timeline": str(timeline_final or "").strip(),
+                            "nsfw_profile": str(nsfw_profile or "").strip(),
+                        },
+                    )
+                
+                    _debug_set("mary_fallback_used", fallback_used)
+                
+                except Exception:
+                    pass
+                
                 # ----------------------------------------------------------
                 # Texto final oficial do turno
                 # ----------------------------------------------------------
@@ -10408,8 +10451,22 @@ Conflito não substitui a narrativa — apenas tensiona.
                 _ss_set("mary_last_diagnostics", diag.as_dict())
                 return texto
         
-            except Exception as e:
+            except Exception as e:               
                 _debug_capture_error(e)
+            
+                try:
+                    _debug_set(
+                        "mary_last_generation_error_debug",
+                        {
+                            "requested_model": str(plan.get("model") or "").strip(),
+                            "timeline": str(timeline_final or "").strip(),
+                            "type": type(e).__name__,
+                            "message": str(e),
+                        },
+                    )
+                except Exception:
+                    pass
+            
                 last_err = e
         
         if last_err:
