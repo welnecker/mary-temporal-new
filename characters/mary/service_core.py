@@ -8597,7 +8597,7 @@ Descreva sensações e reações com intensidade natural.
 
 Evite linguagem excessivamente metafórica ou abstrata.
 """.strip()
-
+             
         # ==========================================================
         # DINÂMICA COMPORTAMENTAL (3.5) - HUMOR / ENERGIA / ATITUDE
         # ==========================================================
@@ -8691,7 +8691,16 @@ Resumo:
 modo permite ação -> sem quebrar continuidade
 """.strip()
 
-            
+        # ==========================================================
+        # CONTINUIDADE (USO CORRETO DO REASONING)
+        # ==========================================================
+        scene_guidance = reasoning.get("scene_guidance") if isinstance(reasoning, dict) else {}
+        scene_guidance = scene_guidance if isinstance(scene_guidance, dict) else {}
+
+        continuity_focus = str(scene_guidance.get("current_consequence") or "").strip()
+        if not continuity_focus:
+            continuity_focus = "seguir da consequência prática já ativa"
+
         behavior_block = f"""
 {behavior_mode_block}
 {timeline_behavior_block}
@@ -8703,44 +8712,30 @@ modo permite ação -> sem quebrar continuidade
 - ENERGIA: {energy}
 - ATITUDE: {attitude}
 - AUTOCONSCIÊNCIA: {round(self_awareness, 2)}
+- ESTADO EMOCIONAL ATUAL: {emotion_now}
 
-[DIREÇÃO]
-- INTENÇÃO: {reasoning.get("intent", "neutra")}
-- EMOÇÃO: {reasoning.get("emotion", emotion_now)}
-- SUBTEXTO: {reasoning.get("subtext", "nenhum")}
-- RITMO: {reasoning.get("pace", "normal")}
-- TENSÃO: {reasoning.get("tension", "media")}
+[DECISÃO OPERACIONAL DO TURNO]
+- DECISÃO: responder
+- OBJETIVO: manter_fluxo
+- ENTREGA: fala_com_subtexto
+- LIMITE: leve
 
-[DECISÃO DO TURNO]
-- DECISÃO: {reasoning.get("decision", "responder")}
-- OBJETIVO: {reasoning.get("narrative_goal", "manter_fluxo")}
-- ENTREGA: {reasoning.get("delivery_mode", "fala_com_subtexto")}
-- LIMITE: {reasoning.get("advance_limit", "leve")}
-
-[SCORES]
-- DESEJO: {reasoning.get("scores", {}).get("desire", 0)}
-- RISCO: {reasoning.get("scores", {}).get("risk", 0)}
-- CULPA: {reasoning.get("scores", {}).get("guilt", 0)}
-- VÍNCULO: {reasoning.get("scores", {}).get("attachment", 0)}
-- PRESSÃO: {reasoning.get("scores", {}).get("pressure", 0)}
+[FOCO DE CONTINUIDADE]
+- CONTINUAR DE: {continuity_focus}
 
 [REGRAS INTERNAS]
 {reasoning_rules_txt}
 
 [EIXO RELACIONAL]
 - Janio é o eixo afetivo principal.
-- VÍNCULO alto reforça foco nele.
-- Mary não evita Janio por dúvida.
-- Pode haver tensão, curiosidade ou conflito, mas o eixo permanece.
-- Terceiros não substituem esse eixo.
 - O vínculo influencia:
   - decisão
   - entrega
   - contenção
+- Terceiros não substituem esse eixo.
 
 PRIORIDADE:
 - Ordem global governa tudo.
-- DECISÃO orienta o turno.
 - Nunca quebrar:
   - facts
   - continuidade
@@ -8748,16 +8743,10 @@ PRIORIDADE:
   - fase íntima
 
 INTERPRETAÇÃO:
-- OBJETIVO define direção da cena.
-- ENTREGA define formato da resposta.
-- LIMITE impede aceleração indevida.
-
-LEITURA DOS SCORES:
-- DESEJO alto -> aproximação ou provocação
-- RISCO alto -> contenção ou ambiguidade
-- CULPA alta -> só pesa se o modo permitir
-- VÍNCULO alto -> reforça foco em Janio
-- PRESSÃO alta -> resistência com presença
+- O estado emocional vem dos facts e da cena ativa.
+- O reasoning NÃO define emoção, desejo, culpa ou vínculo.
+- O reasoning apenas ancora a continuidade imediata.
+- O modelo principal decide a resposta viva da Mary.
 
 FORMATOS:
 - fala_direta
@@ -8780,9 +8769,10 @@ AUTOIMAGEM:
 
 REGRA FINAL:
 - Evitar repetição previsível.
-- Manter coerência com a decisão.
+- Manter coerência com os facts ativos.
 - O modo comportamental governa o tom.
 - O vínculo orienta comportamento, mas não bloqueia a cena.
+- O reasoning só lembra de onde continuar.
 """.strip()
 
         # ==========================================================
