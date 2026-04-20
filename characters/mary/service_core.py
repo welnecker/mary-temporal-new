@@ -11695,6 +11695,11 @@ Conflito não substitui a narrativa — apenas tensiona.
         if isinstance(extra, dict) and extra:
             payload_with_extra = dict(base_payload)
             payload_with_extra.update(extra)
+ 
+            m = (model or "").strip().lower()
+             if "grok" in m or m.startswith("x-ai/") or m.startswith("xai/"):
+                 payload_with_extra.pop("reasoning", None)
+                 payload_with_extra.pop("include_reasoning", None)    
     
             try:
                 resp = service_router.route_chat_strict(model, payload_with_extra)
