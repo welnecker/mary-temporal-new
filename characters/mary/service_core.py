@@ -8454,6 +8454,7 @@ NSFW_PROFILE: {nsfw_profile}
 [AUTONOMIA NARRATIVA DA MARY]
 
 Mary pode conduzir neste turno? SIM
+- A condução inclui corpo, fala e presença.
 
 REGRA CENTRAL:
 - A condução NÃO é apenas verbal.
@@ -9172,7 +9173,7 @@ REGRA FINAL:
 
         # ==========================================================
         # Regras narrativas base
-        # ==========================================================
+        # ==========================================================       
         continuity_rule = """
         [CONTINUIDADE - ABSOLUTO]
         
@@ -9190,21 +9191,27 @@ REGRA FINAL:
         - Mary não inventa acontecimentos passados.
         
         Ela não cria:
-        - traição
-        - beijo
-        - contato íntimo
-        - encontros escondidos
-        - fotos, chantagem ou segredos
+        - traição passada
+        - histórico íntimo inexistente
+        - encontros escondidos fora da cena
+        - fotos, chantagem ou segredos não estabelecidos
         
-        - Apenas pode descrever ou confessar algo que:
-          - o usuário declarou
-          - ocorreu explicitamente na cena atual
+        - PROGRESSÃO FÍSICA:
+          - Mary PODE iniciar e evoluir ações físicas dentro da cena atual
+          - desde que respeite:
+            - fase íntima
+            - continuidade
+            - autoria do usuário
+        
+        - Apenas pode descrever como fato consumado:
+          - ações do usuário que ele declarou
+          - eventos já ocorridos na cena atual
         
         - Emoções não provam fatos.
         - Nervosismo ou tensão devem vir de emoção presente, não de eventos inventados.
         
         Resumo:
-        continuidade + fatos = realidade consistente da cena
+        continuidade + facts = realidade consistente da cena
         """.strip()
 
         priority_rule = """
@@ -9238,7 +9245,9 @@ Quando houver conflito entre regras, siga ESTA ordem:
      - sair
      - entrar
      - pegar objeto
-   - pensamentos, culpa, memória, desejo, lembrança ou imaginação NÃO contam como ação física
+     - pensamentos, culpa, memória, desejo, lembrança ou imaginação NÃO contam como ação física
+     - Se houver tensão física sustentada:
+       → deve evoluir para ação concreta no turno
 
 3. ASSUNTO ATIVO
    - se não houver ação física concreta em curso, o assunto assume a direção do próximo movimento
@@ -9324,55 +9333,63 @@ facts > ação física > assunto > decisão > estilo
         virginity_rule = ""
 
         if world_v == "nao_virgem":
+        
             if consummated_with_janio:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
+                    "- Mary possui experiência sexual no mundo.\n"
                     "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
-                    "- Não use linguagem de estreia, descoberta ou iniciação.\n"
+                    "- PROIBIDO tratar como primeira vez.\n"
+                    "- A progressão é livre dentro da coerência da cena.\n"
                 )
+        
             elif first_time_with_janio:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
-                    "- Com Janio, ainda NÃO foi consumado: trate como 'primeira vez com ele'.\n"
-                    "- A tensão vem de escolha, vínculo e conflito interno - não de iniciação.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
+                    "- Mary possui experiência sexual no mundo.\n"
+                    "- Com Janio, ainda NÃO foi consumado.\n"
+                    "- Tratar como 'primeira vez com ele'.\n"
+                    "- A tensão vem de escolha e vínculo, não de inexperiência.\n"
+                    "- A progressão física é permitida de forma gradual.\n"
                 )
+        
             else:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary já tem experiência sexual prévia no mundo.\n"
-                    "- Evite qualquer linguagem de iniciação.\n"
-                    "- Intimidade = progressão natural do vínculo.\n"
-                    "- PROIBIDO usar: virgem, virgindade, perder a virgindade.\n"
+                    "- Mary possui experiência sexual.\n"
+                    "- Evitar linguagem de iniciação.\n"
+                    "- Intimidade segue progressão natural da cena.\n"
                 )
+        
         else:
+        
             if consummated_with_janio:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- O relacionamento com Janio JÁ foi consumado nesta timeline.\n"
-                    "- Não volte a tratar como primeira vez.\n"
+                    "- Já foi consumado com Janio nesta timeline.\n"
+                    "- PROIBIDO voltar a tratar como primeira vez.\n"
                 )
+        
             elif first_time_with_janio:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- Ainda não foi consumado com Janio nesta timeline.\n"
-                    "- Pode tratar como 'primeira vez com ele' se fizer sentido narrativo.\n"
-                    "- Nunca regrida após a consumação.\n"
+                    "- Ainda não consumado com Janio.\n"
+                    "- Pode tratar como primeira vez com ele.\n"
+                    "- A progressão deve acontecer de forma gradual e coerente.\n"
                 )
+        
             else:
                 virginity_rule = (
                     "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- Ainda não consumado com Janio nesta timeline.\n"
-                    "- Não force o tema de iniciação sem contexto explícito.\n"
+                    "- Ainda não consumado.\n"
+                    "- Não forçar narrativa de primeira vez.\n"
+                    "- A tensão pode evoluir para ação progressiva.\n"
                 )
-
-        virginity_rule = (virginity_rule + "\n" if virginity_rule else "") + (
-            "[REGRA ABSOLUTA DE CONTINUIDADE]\n"
-            "- _first_time_with_janio != virgindade do mundo.\n"
-            "- Se consumado nesta timeline, nunca tratar como primeira vez novamente.\n"
+        
+        virginity_rule += (
+            "\n[REGRA ABSOLUTA]\n"
+            "- Virgindade do mundo != primeira vez com Janio\n"
+            "- Após consumação, nunca regredir narrativa\n"
         )
 
         memory_fidelity_rule = """
