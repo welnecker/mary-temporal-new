@@ -7515,26 +7515,38 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
     if not isinstance(last_turn, dict):
         return ""
 
-    last_user = str(last_turn.get("mensagem_usuario") or "").strip()
-    last_mary = str(last_turn.get("resposta_mary") or "").strip()
+    last_user = str(
+        last_turn.get("mensagem_usuario")
+        or last_turn.get("user")
+        or (last_turn.get("role") == "user" and last_turn.get("content"))
+        or ""
+    ).strip()
+
+    last_mary = str(
+        last_turn.get("resposta_mary")
+        or last_turn.get("assistant")
+        or (last_turn.get("role") == "assistant" and last_turn.get("content"))
+        or ""
+    ).strip()
 
     lines = [
         "[PONTE DO TURNO ANTERIOR]",
-        "- Use apenas como referência curta.",
+        "- Use apenas como apoio leve.",
         "- Não substitui facts ativos.",
-        "- Não substitui a cena atual.",
+        "- Não substitui a última interação real.",
     ]
 
     if last_user:
-        short_user = re.sub(r"\s+", " ", last_user).strip()[:160]
+        short_user = re.sub(r"\s+", " ", last_user).strip()
+        short_user = short_user[-220:]
         lines.append(f"Última ação do usuário: {short_user}")
 
     if last_mary:
-        short_mary = re.sub(r"\s+", " ", last_mary).strip()[:160]
+        short_mary = re.sub(r"\s+", " ", last_mary).strip()
+        short_mary = short_mary[-220:]
         lines.append(f"Última Mary: {short_mary}")
 
     return "\n".join(lines)
-
 
 class MaryService(BaseCharacter):
     id = "mary"
@@ -7720,7 +7732,7 @@ NSFW_PROFILE: {nsfw_profile}
         if len(base) > 180:
             base = base[-180:]
 
-        return base
+        return base   
    
     def _build_messages_for_turn(
         self,
@@ -7743,6 +7755,26 @@ NSFW_PROFILE: {nsfw_profile}
             history = cached_get_history(usuario_key, limit=6) or []
         except Exception:
             history = []
+    
+        last_turn = history[-1] if history else {}
+    
+        last_user_real = ""
+        last_mary_real = ""
+    
+        if isinstance(last_turn, dict):
+            last_user_real = str(
+                last_turn.get("mensagem_usuario")
+                or last_turn.get("user")
+                or (last_turn.get("role") == "user" and last_turn.get("content"))
+                or ""
+            ).strip()
+    
+            last_mary_real = str(
+                last_turn.get("resposta_mary")
+                or last_turn.get("assistant")
+                or (last_turn.get("role") == "assistant" and last_turn.get("content"))
+                or ""
+            ).strip()
     
         # ==========================================================
         # 1) CANON / MEMÓRIAS / LATENTES
@@ -7823,9 +7855,9 @@ NSFW_PROFILE: {nsfw_profile}
             "[FORMA DE RESPOSTA DESTE TURNO]\n"
             f"- Estilo-base: {style_seed}\n"
             "- Não usar abertura repetida.\n"
-            "- Evitar padrão fixo (descrição -> pensamento -> fala).\n"
-            "- O primeiro parágrafo deve nascer da consequência atual.\n"
-            "- Reagir e avançar > recontar."
+            "- Evitar padrão fixo.\n"
+            "- O primeiro movimento deve nascer da cena atual.\n"
+            "- Avançar a interação com fala, gesto ou reação concreta.\n"
         )
     
         if extra_system_parts:
@@ -7834,6 +7866,36 @@ NSFW_PROFILE: {nsfw_profile}
                 base + "\n\n" + "\n\n".join(extra_system_parts).strip()
             ).strip()
     
+        # ==========================================================
+        # 3) CONTINUIDADE REAL DO TURNO ANTERIOR
+        # ==========================================================
+        if last_user_real or last_mary_real:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "[CONTINUIDADE REAL DO TURNO ANTERIOR]\n"
+                    "- Continue da consequência prática imediata do último turno.\n"
+                    "- Não resumir.\n"
+                    "- Não reiniciar.\n"
+                    "- Se houver conflito entre abstração e turno real, o turno real vence.\n"
+                )
+            })
+    
+            if last_user_real:
+                messages.append({
+                    "role": "user",
+                    "content": last_user_real,
+                })
+    
+            if last_mary_real:
+                messages.append({
+                    "role": "assistant",
+                    "content": last_mary_real,
+                })
+    
+        # ==========================================================
+        # 4) PROMPT ATUAL
+        # ==========================================================
         messages.append({
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
@@ -8895,8 +8957,11 @@ modo permite ação -> sem quebrar continuidade
         scene_guidance = scene_guidance if isinstance(scene_guidance, dict) else {}
 
         continuity_focus = str(scene_guidance.get("current_consequence") or "").strip()
-        if not continuity_focus:
-            continuity_focus = "seguir da consequência prática já ativa"
+
+        if not continuity_focus or "consequência prática já alcançada" in continuity_focus.lower():
+            continuity_focus_block = "- continuar diretamente da ação física em andamento"
+        else:
+            continuity_focus_block = continuity_focus
 
         behavior_block = f"""       
 {behavior_mode_block}
@@ -8912,12 +8977,13 @@ modo permite ação -> sem quebrar continuidade
 - ESTADO EMOCIONAL ATUAL: {emotion_now}
 
 [DECISÃO OPERACIONAL DO TURNO]
-- Use apenas como referência leve.
-- A resposta deve nascer da cena atual.
+- Ignorar abstrações.
+- Executar ação coerente com a cena atual.
+- Avançar a interação com gesto, fala ou reação concreta.
 
 [FOCO DE CONTINUIDADE]
 - Continuação direta do último estado real da cena:
-{continuity_focus}
+{continuity_focus_block}
 
 - Use isso como ponto de partida imediato do turno.
 - NÃO recomeçar.
@@ -8952,11 +9018,10 @@ INTERPRETAÇÃO:
 - O modelo principal decide a resposta viva da Mary.
 
 FORMATOS:
-- fala_direta
-- fala_com_subtexto
-- micro_acao
-- confissao_curta
-- provocacao_controlada
+- fala + ação combinadas
+- reação física + fala
+- microprogressão de ação
+- continuidade sensorial leve
 
 REAÇÃO (máx. 1 quando couber):
 - surpresa
