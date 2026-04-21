@@ -6484,47 +6484,82 @@ def _advance_assunto_if_needed(
         _set_current_assunto_step_index(usuario_key, idx + 1)
 
 def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
-    if conflict_now:
-        return False
 
     ut = (user_text or "")
 
-    #  NOVO: fase 0 também pode ter iniciativa quando o usuário dá convite claro
+    # 1. convite explícito SEMPRE libera
     if re.search(
-        r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a)\b|"
-        r"\b(vamos\s+pro\s+bar|vem\s+pro\s+bar|me\s+paga\s+um\s+drink|vamos\s+tomar\s+um\s+drink)\b",
+        r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a)\b",
         ut,
         re.IGNORECASE,
     ):
         return True
-        # sem convite, mantém fechado
-        return False
-
-    # (resto do seu código continua)
-    cue = bool(
-        re.search(
-            r"\b(janio|d[uú]vida|briga|intenso|senti|penso em voc[eê]|quero|saudade|beijo|chega perto|vem)\b",
-            ut,
-            re.IGNORECASE,
-        )
-    )
 
     try:
         desire = float(rel.get("desire", 0))
         self_control = float(rel.get("self_control", 40))
         arousal = float(rel.get("arousal", 0))
-
-        if desire >= (self_control * 0.50) and arousal >= 10:
-            return True
-
-        if cue and desire >= (self_control * 0.25):
-            return True
-
-        if re.search(r"\bjanio\b", ut, re.IGNORECASE):
-            return True
-
     except Exception:
-        return bool(re.search(r"\bjanio\b", ut, re.IGNORECASE))
+        desire = 0
+        self_control = 40
+        arousal = 0
+
+    # 2. NOVO: fase 0 NÃO bloqueia iniciativa
+    if phase == 0:
+        if desire >= (self_control * 0.25) or arousal >= 5:
+            return True
+
+    # 3. conflito NÃO bloqueia, só modula
+    if conflict_now:
+        if desire > (self_control * 0.60):
+            return True
+
+    # 4. desejo dominante
+    if desire >= (self_control * 0.40):
+        return True
+
+    # 5. gatilho emocional leve
+    if re.search(r"\b(quero|senti|penso em voc[eê]|saudade|janio)\b", ut, re.IGNORECASE):
+        return True
+
+    return Falsedef _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
+
+    ut = (user_text or "")
+
+    # 1. convite explícito SEMPRE libera
+    if re.search(
+        r"\b(vem|pega|chega\s+perto|vem\s+aqui|me\s+beija|beija|toca|encosta|dan[çc]a)\b",
+        ut,
+        re.IGNORECASE,
+    ):
+        return True
+
+    try:
+        desire = float(rel.get("desire", 0))
+        self_control = float(rel.get("self_control", 40))
+        arousal = float(rel.get("arousal", 0))
+    except Exception:
+        desire = 0
+        self_control = 40
+        arousal = 0
+
+    # 2. NOVO: fase 0 NÃO bloqueia iniciativa
+    if phase == 0:
+        if desire >= (self_control * 0.25) or arousal >= 5:
+            return True
+
+    # 3. conflito NÃO bloqueia, só modula
+    if conflict_now:
+        if desire > (self_control * 0.60):
+            return True
+
+    # 4. desejo dominante
+    if desire >= (self_control * 0.40):
+        return True
+
+    # 5. gatilho emocional leve
+    if re.search(r"\b(quero|senti|penso em voc[eê]|saudade|janio)\b", ut, re.IGNORECASE):
+        return True
 
     return False
 # ==========================================================
@@ -8888,8 +8923,18 @@ SE já existir ação ativa nos facts:
 - Mary pode:
   - desacelerar
   - hesitar
-  - reduzir entrega
-  - mostrar desconforto
+  - modular intensidade
+
+- IMPORTANTE:
+  - Mesmo hesitando, o desejo pode aparecer
+  - O corpo NÃO fica neutro
+  - A tensão continua viva
+
+- O desejo pode se manifestar em:
+  - proximidade
+  - respiração
+  - reação física
+  - fala curta
 
 - O vínculo principal com Janio permanece protegido.
 
@@ -8977,9 +9022,13 @@ modo permite ação -> sem quebrar continuidade
 - ESTADO EMOCIONAL ATUAL: {emotion_now}
 
 [DECISÃO OPERACIONAL DO TURNO]
-- Ignorar abstrações.
-- Executar ação coerente com a cena atual.
-- Avançar a interação com gesto, fala ou reação concreta.
+- Executar ação concreta imediatamente
+- Não explicar antes de agir
+- Priorizar:
+  - reação física
+  - gesto
+  - fala curta
+- Evitar análise emocional longa
 
 [FOCO DE CONTINUIDADE]
 - Continuação direta do último estado real da cena:
