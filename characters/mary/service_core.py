@@ -6522,7 +6522,9 @@ def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, p
     if re.search(r"\b(quero|senti|penso em voc[eê]|saudade|janio)\b", ut, re.IGNORECASE):
         return True
 
-    return Falsedef _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
+    return False
+
+def _initiative_window(rel: Dict[str, Any], nsfw_on: bool, conflict_now: bool, phase: int, user_text: str) -> bool:
 
     ut = (user_text or "")
 
