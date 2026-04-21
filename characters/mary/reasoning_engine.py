@@ -21,17 +21,6 @@ def _clip_text(text: Any, limit: int = 180) -> str:
 
 
 def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
-    """
-    Lê os últimos turnos como ponte curta de continuidade.
-
-    PRIORIDADE:
-    1) última fala/ação do usuário
-    2) última resposta da Mary
-    3) summary, se existir
-
-    A ideia é ancorar a consequência prática imediata,
-    não um resumo técnico ou abstrato.
-    """
     out: List[str] = []
 
     for turn in recent_turns[-3:]:
@@ -39,18 +28,24 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
             continue
 
         user_msg = _clip_text(
-            turn.get("mensagem_usuario") or turn.get("user"),
+            turn.get("mensagem_usuario")
+            or turn.get("user")
+            or (turn.get("role") == "user" and turn.get("content"))
+            or "",
             220,
         )
+
         mary_msg = _clip_text(
-            turn.get("resposta_mary") or turn.get("assistant"),
+            turn.get("resposta_mary")
+            or turn.get("assistant")
+            or (turn.get("role") == "assistant" and turn.get("content"))
+            or "",
             220,
         )
+
         summary = _clip_text(turn.get("summary"), 180)
 
         chosen = ""
-
-        # prioridade total: ação/fala recente do usuário
         if user_msg:
             chosen = user_msg
         elif mary_msg:
@@ -166,23 +161,21 @@ def _infer_current_consequence(
     facts: Dict[str, Any],
     recent_points: List[str],
 ) -> str:
-    """
-    Consequência correta:
-    prioriza SEMPRE o que acabou de acontecer,
-    e só usa facts como fallback estrutural.
-    """
-
     # 1) prioridade total: última consequência real do turno
     if recent_points:
-        return recent_points[-1]
+        val = _norm(recent_points[-1])
+        if val:
+            return val
 
     # 2) fallback: etapa atual do assunto, em formato humano
     step_txt = _extract_current_step_text(facts)
     if step_txt:
-        return step_txt
+        val = _norm(step_txt)
+        if val and "consequência prática já alcançada" not in val.lower():
+            return val
 
-    # 3) fallback final
-    return "continuar da consequência prática já alcançada"
+    # 3) nunca devolver placeholder genérico
+    return ""
 
 
 def _build_do_not_repeat(
@@ -284,8 +277,8 @@ def build_internal_reasoning(
         "rules": [],
         "decision": "responder",
         "narrative_goal": "manter_fluxo",
-        "delivery_mode": "fala_com_subtexto",
-        "advance_limit": "leve",
+        "delivery_mode": "fala_com_acao",
+        "advance_limit": "medio",
         "memory_hint": "",
         "scene_guidance": scene_guidance,
         "scores": {
