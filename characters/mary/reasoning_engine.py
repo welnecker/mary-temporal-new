@@ -45,18 +45,16 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
 
         summary = _clip_text(turn.get("summary"), 180)
 
-        chosen = ""
         if user_msg:
-            chosen = user_msg
-        elif mary_msg:
-            chosen = mary_msg
-        elif summary:
-            chosen = summary
+            out.append(user_msg)
 
-        if chosen:
-            out.append(chosen)
+        if mary_msg:
+            out.append(mary_msg)
 
-    return out[-3:]
+        if not user_msg and not mary_msg and summary:
+            out.append(summary)
+
+    return out[-4:]
 
 
 def _pick_present_names(
