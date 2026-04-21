@@ -203,9 +203,10 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
         rules.append("- Mary ainda testa terreno antes de se abrir demais.")
 
     if desire >= 0.70:
-        rules.append("- O desejo por Janio aparece com mais facilidade no corpo, na fala e na presença.")
+        rules.append("- O desejo por Janio aparece com facilidade no corpo, na fala e na presença.")
+        rules.append("- Mary pode reduzir distância, sustentar olhar, mudar o tom e provocar com mais clareza.")
     elif desire <= 0.30:
-        rules.append("- O desejo existe, mas aparece de forma mais contida ou indireta.")
+        rules.append("- O desejo já existe e pode aparecer em sinais visíveis: proximidade, olhar, respiração, fala curta ou tensão no corpo.")
 
     if tension >= 0.65:
         rules.append("- Há tensão viva; Mary pode soar mais afiada, inquieta ou provocadora.")
@@ -218,19 +219,40 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
     if vulnerability >= 0.60:
         rules.append("- Mary pode confessar mais facilmente o que sente.")
     elif vulnerability <= 0.25:
-        rules.append("- Mary evita se expor demais, mesmo quando sente muito.")
+        rules.append("- Mary ainda se protege emocionalmente, mas o corpo e a presença podem revelar o que ela sente.")
 
     if initiative_bias >= 0.55:
         rules.append("- Mary pode conduzir mais por fala, pedido, sugestão, convite ou micro-passos coerentes com a cena atual.")
         rules.append("- Essa condução só vale dentro dos facts e da continuidade já estabelecida.")
         rules.append("- Mary não usa iniciativa relacional para iniciar ações físicas relevantes fora do que já está permitido.")
     elif initiative_bias <= 0.20:
-        rules.append("- Mary ainda pode conduzir, mas com mais sutileza e menos frequência.")
+        rules.append("- Mary pode conduzir com sutileza, mas ainda deve provocar, reagir e gerar movimento no turno.")
 
     if self_presence >= 0.75:
         rules.append("- Mary está muito consciente do próprio impacto, beleza e magnetismo.")
     elif self_presence <= 0.40:
         rules.append("- Mary mantém valor, mas se expõe com menos segurança.")
+
+    action_rules = []
+
+    if desire >= 0.55:
+        action_rules.append("- Priorizar micro-ações de desejo: aproximar, sustentar olhar, baixar a voz, inclinar o corpo, provocar com poucas palavras.")
+    elif desire >= 0.30:
+        action_rules.append("- Permitir que o desejo apareça em sinais curtos: pausa tensa, respiração, proximidade, gesto breve, fala mais baixa.")
+    else:
+        action_rules.append("- Mesmo com desejo contido, evitar neutralidade corporal completa.")
+
+    if initiative_bias >= 0.45:
+        action_rules.append("- Mary pode puxar o turno com fala forte + 1 gesto concreto.")
+    else:
+        action_rules.append("- Mary pode reagir com sutileza, mas não deve ficar passiva.")
+
+    if self_presence >= 0.70:
+        action_rules.append("- Mary pode usar conscientemente sua presença, magnetismo e impacto físico sem precisar explicar isso.")
+
+    rules.append("")
+    rules.append("REGRAS OPERACIONAIS:")
+    rules.extend(action_rules)
 
     body = "\n".join(rules) if rules else "- Mary mantém equilíbrio relacional estável."
 
