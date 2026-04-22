@@ -21,9 +21,13 @@ def _clip_text(text: Any, limit: int = 180) -> str:
 
 
 def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
+    """
+    Ponte curta real.
+    Pega só os 2 últimos pontos úteis, sem inflar o reasoning.
+    """
     out: List[str] = []
 
-    for turn in recent_turns[-3:]:
+    for turn in recent_turns[-2:]:
         if not isinstance(turn, dict):
             continue
 
@@ -32,7 +36,7 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
             or turn.get("user")
             or (turn.get("role") == "user" and turn.get("content"))
             or "",
-            220,
+            180,
         )
 
         mary_msg = _clip_text(
@@ -40,10 +44,10 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
             or turn.get("assistant")
             or (turn.get("role") == "assistant" and turn.get("content"))
             or "",
-            220,
+            180,
         )
 
-        summary = _clip_text(turn.get("summary"), 180)
+        summary = _clip_text(turn.get("summary"), 140)
 
         if user_msg:
             out.append(user_msg)
@@ -54,7 +58,7 @@ def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
         if not user_msg and not mary_msg and summary:
             out.append(summary)
 
-    return out[-4:]
+    return out[-2:]
 
 
 def _pick_present_names(
@@ -63,13 +67,10 @@ def _pick_present_names(
     recent_turns: List[Dict[str, Any]],
 ) -> List[str]:
     """
-    MUITO IMPORTANTE:
     Só considera presentes explícitos da cena atual.
-    NÃO puxa nomes da long/shared memory.
     """
     presentes: List[str] = []
 
-    # 1) cast explícito em facts
     cast = _safe_dict(facts.get("cast"))
     for key in ("presentes", "present", "characters", "who_is_here"):
         for item in _safe_list(cast.get(key)):
@@ -77,15 +78,21 @@ def _pick_present_names(
             if name and name not in presentes:
                 presentes.append(name)
 
-    # 2) scene_state explícito
     for key in ("presentes", "present", "characters", "who_is_here"):
         for item in _safe_list(scene_state.get(key)):
             name = _norm(item)
             if name and name not in presentes:
                 presentes.append(name)
 
-    # 3) fallback mínimo: Janio só se houver menção recente explícita
-    joined_recent = " ".join(_clip_text(t.get("mensagem_usuario") or t.get("user") or "", 200) for t in recent_turns[-3:] if isinstance(t, dict)).lower()
+    joined_recent = " ".join(
+        _clip_text(
+            t.get("mensagem_usuario") or t.get("user") or "",
+            180,
+        )
+        for t in recent_turns[-2:]
+        if isinstance(t, dict)
+    ).lower()
+
     if "janio" in joined_recent and "Janio" not in presentes:
         presentes.append("Janio")
 
@@ -94,14 +101,14 @@ def _pick_present_names(
 
 def _extract_current_step_text(facts: Dict[str, Any]) -> str:
     """
-    Extrai a etapa atual do assunto em formato humano.
-    NUNCA devolve dict cru.
+    Extrai SOMENTE a etapa atual do assunto.
+    Não pode cair no assunto bruto inteiro.
     """
 
-    # 1) campos textuais diretos
+    # 1) prioridade total: etapa atual explícita
     for key in (
-        "assunto_step_text",
         "state.assunto_step_text",
+        "assunto_step_text",
         "assunto_atual_texto",
     ):
         raw = facts.get(key)
@@ -110,31 +117,11 @@ def _extract_current_step_text(facts: Dict[str, Any]) -> str:
             if val:
                 return val
 
-    # 2) assunto/state.assunto só se forem string
-    for key in (
-        "state.assunto",
-        "assunto",
-        "assunto_raw",
-        "scene.action",
-        "cena.acao",
-    ):
-        raw = facts.get(key)
-
-        # se vier dict técnico, ignorar
-        if isinstance(raw, dict):
-            continue
-
-        if isinstance(raw, str):
-            val = _norm(raw)
-            if val:
-                return val
-
-    # 3) sequência estruturada canônica
+    # 2) sequência estruturada
     seq = _safe_list(facts.get("assunto_seq"))
-    idx_raw = facts.get("assunto_idx", 0)
 
     try:
-        idx = int(idx_raw or 0)
+        idx = int(facts.get("assunto_idx", facts.get("assunto.step_index", 0)) or 0)
     except Exception:
         idx = 0
 
@@ -148,8 +135,16 @@ def _extract_current_step_text(facts: Dict[str, Any]) -> str:
                 if val:
                     return val
 
-        if step:
-            return "seguir da etapa atual já ativa"
+    # 3) fallback mínimo: ação da cena, nunca assunto bruto completo
+    for key in (
+        "scene.action",
+        "cena.acao",
+    ):
+        raw = facts.get(key)
+        if isinstance(raw, str):
+            val = _norm(raw)
+            if val:
+                return val
 
     return ""
 
@@ -159,20 +154,21 @@ def _infer_current_consequence(
     facts: Dict[str, Any],
     recent_points: List[str],
 ) -> str:
-    # 1) prioridade total: última consequência real do turno
+    """
+    Consequência atual = último ponto real do turno OU etapa ativa.
+    Nunca usar placeholder genérico.
+    """
     if recent_points:
         val = _norm(recent_points[-1])
         if val:
             return val
 
-    # 2) fallback: etapa atual do assunto, em formato humano
     step_txt = _extract_current_step_text(facts)
     if step_txt:
         val = _norm(step_txt)
-        if val and "consequência prática já alcançada" not in val.lower():
+        if val:
             return val
 
-    # 3) nunca devolver placeholder genérico
     return ""
 
 
@@ -187,7 +183,6 @@ def _build_do_not_repeat(
         "não voltar para etapa anterior como se fosse presente",
     ]
 
-    # se houver etapa concluída marcada
     done_until = facts.get("assunto_done_until")
     seq = _safe_list(facts.get("assunto_seq"))
 
@@ -215,7 +210,7 @@ def build_internal_reasoning(
     *,
     user_text: str,
     facts: Dict[str, Any],
-    memories: List[str],  # mantido só por compatibilidade; não será usado para decidir continuidade
+    memories: List[str],  # mantido por compatibilidade; não decide continuidade
     scene_state: Dict[str, Any],
     recent_turns: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
@@ -227,6 +222,7 @@ def build_internal_reasoning(
     - NÃO escreve a cena
     - APENAS ancora a continuidade imediata
     """
+
     facts = facts if isinstance(facts, dict) else {}
     scene_state = scene_state if isinstance(scene_state, dict) else {}
     recent_turns = recent_turns if isinstance(recent_turns, list) else []
@@ -265,7 +261,6 @@ def build_internal_reasoning(
         "do_not_repeat": do_not_repeat,
     }
 
-    # compatibilidade mínima com o resto do service
     return {
         "intent": "continuar",
         "emotion": "",
