@@ -7599,50 +7599,154 @@ SYSTEM_CORE = """
 # ==========================================================
 # ENGINE DE ASSUNTO (SEQUÊNCIA CONTROLADA)
 # ==========================================================
+
+from typing import Dict, Any, Optional, List
+
+
 def _get_current_assunto_step(facts: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     seq = facts.get("assunto_seq") or []
-    idx = facts.get("assunto_idx", 0)
-    if not seq or idx >= len(seq):
+
+    try:
+        idx = int(facts.get("assunto_idx", 0) or 0)
+    except Exception:
+        idx = 0
+
+    if not isinstance(seq, list) or not seq:
         return None
-    return seq[idx]
+
+    if idx < 0:
+        idx = 0
+
+    if idx >= len(seq):
+        return None
+
+    step = seq[idx]
+    return step if isinstance(step, dict) else None
+
+
+def _sync_current_assunto_step_fact(usuario_key: str, facts: Dict[str, Any]) -> None:
+    """
+    Garante que a etapa atual fique explícita em state.assunto_step_text,
+    para o restante do sistema usar o passo atual e não a fila inteira.
+    """
+    step = _get_current_assunto_step(facts)
+    if not step:
+        return
+
+    step_desc = str(step.get("desc") or "").strip()
+    if not step_desc:
+        return
+
+    facts["state.assunto_step_text"] = step_desc
+    set_fact_safe(usuario_key, "state.assunto_step_text", step_desc)
 
 
 def _render_assunto_step_block(facts: Dict[str, Any]) -> str:
     step = _get_current_assunto_step(facts)
     if not step:
         return ""
+
+    step_id = step.get("id", "?")
+    step_desc = str(step.get("desc") or "").strip()
+    step_status = str(step.get("status") or "em andamento").strip()
+
     return f"""
 [ETAPA ATIVA DO ASSUNTO]
-- Etapa {step["id"]}: {step["desc"]}
-- Status: {step.get("status", "em andamento")}
+- Etapa {step_id}: {step_desc}
+- Status: {step_status}
 
 REGRA:
 - Atuar SOMENTE nesta etapa neste turno.
 - NÃO antecipar próximas etapas.
+- Se mencionar próximas etapas, apenas insinuar, sem executá-las.
 """.strip()
 
 
 def _should_advance_assunto(response_text: str, current_step: Dict[str, Any]) -> bool:
-    txt = response_text.lower()
-    desc = current_step["desc"].lower()
+    """
+    Avança apenas se a etapa atual foi realmente executada no texto,
+    usando triggers definidos na própria etapa.
 
-    if "almoço" in desc:
-        return any(k in txt for k in ["vamos", "cantina", "almo", "comer"])
+    NÃO usa lógica hardcoded.
+    """
 
-    if "josé boto" in desc:
-        return any(k in txt for k in ["boto", "encontr", "convers"])
+    if not isinstance(current_step, dict):
+        return False
+
+    txt = (response_text or "").lower()
+
+    # 🔥 triggers definidos no próprio step
+    triggers = current_step.get("triggers") or []
+
+    if not isinstance(triggers, list) or not triggers:
+        return False
+
+    for t in triggers:
+        if not isinstance(t, str):
+            continue
+
+        if t.lower() in txt:
+            return True
 
     return False
 
 
-def _advance_assunto_step(usuario_key: str, facts: Dict[str, Any]):
-    idx = facts.get("assunto_idx", 0)
+def _advance_assunto_step(usuario_key: str, facts: Dict[str, Any]) -> None:
     seq = facts.get("assunto_seq", [])
+
+    try:
+        idx = int(facts.get("assunto_idx", 0) or 0)
+    except Exception:
+        idx = 0
+
+    if not isinstance(seq, list) or not seq:
+        return
 
     if idx < len(seq) - 1:
         idx += 1
         facts["assunto_idx"] = idx
         set_fact_safe(usuario_key, "assunto_idx", idx)
+
+        next_step = seq[idx]
+        if isinstance(next_step, dict):
+            step_desc = str(next_step.get("desc") or "").strip()
+            if step_desc:
+                facts["state.assunto_step_text"] = step_desc
+                set_fact_safe(usuario_key, "state.assunto_step_text", step_desc)
+
+
+def _maybe_advance_assunto_step(usuario_key: str, facts: Dict[str, Any], response_text: str) -> None:
+    """
+    Só avança uma etapa por turno, e apenas se a etapa atual foi executada.
+    """
+    current_step = _get_current_assunto_step(facts)
+    if not current_step:
+        return
+
+    if _should_advance_assunto(response_text, current_step):
+        _advance_assunto_step(usuario_key, facts)
+
+
+def _init_assunto_sequence(usuario_key: str, facts: Dict[str, Any], assunto_seq: List[Dict[str, Any]]) -> None:
+    """
+    Inicializa a sequência e fixa a primeira etapa como etapa ativa.
+    Use isso no momento em que você cria a fila assunto_seq.
+    """
+    if not isinstance(assunto_seq, list) or not assunto_seq:
+        return
+
+    facts["assunto_seq"] = assunto_seq
+    facts["assunto_idx"] = 0
+
+    set_fact_safe(usuario_key, "assunto_seq", assunto_seq)
+    set_fact_safe(usuario_key, "assunto_idx", 0)
+
+    first_step = assunto_seq[0]
+    if isinstance(first_step, dict):
+        step_desc = str(first_step.get("desc") or "").strip()
+        if step_desc:
+            facts["state.assunto_step_text"] = step_desc
+            set_fact_safe(usuario_key, "state.assunto_step_text", step_desc)
 
 def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
     if not history:
@@ -8761,31 +8865,81 @@ NSFW_PROFILE: {nsfw_profile}
             )
         except Exception:
             pass
-
+        
         # ==========================================================
         # DECISION ENGINE -> modula iniciativa
         # ==========================================================
         decision_mode = str(decision_state.get("mode") or "observe").strip().lower()
-
+        
         if decision_mode == "recede":
             initiative = False
         elif decision_mode == "seek_help":
             initiative = False
         elif decision_mode == "advance":
             initiative = True
-      
+        
+        # ==========================================================
+        # HARD OVERRIDE - iniciativa vence hesitação
+        # ==========================================================
+        if initiative:
+            decision_state["mode"] = "advance"
+            decision_state["hesitation"] = min(
+                float(decision_state.get("hesitation", 0.30) or 0.30),
+                0.25,
+            )
+        
+        # ==========================================================
+        # HARD OVERRIDE - ação em andamento vence recuo psicológico
+        # ==========================================================
+        try:
+            cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+            cena_acao = str(
+                (cena_obj.get("acao") if isinstance(cena_obj, dict) else None)
+                or facts.get("cena.acao")
+                or ""
+            ).strip().lower()
+        
+            if cena_acao == "em andamento":
+                decision_state["mode"] = "advance"
+                decision_state["conflict"] = False
+                decision_state["conflict_intensity"] = min(
+                    float(decision_state.get("conflict_intensity", 0.20) or 0.20),
+                    0.20,
+                )
+                decision_state["hesitation"] = min(
+                    float(decision_state.get("hesitation", 0.18) or 0.18),
+                    0.18,
+                )
+                initiative = True
+        except Exception:
+            pass
+        
+        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
+        
+        try:
+            _ss_set(
+                "mary_decision_debug",
+                {
+                    "timeline": timeline_final,
+                    "prev_decision_state": prev_decision_state,
+                    "decision_state": decision_state,
+                },
+            )
+        except Exception:
+            pass
+        
         # ==========================================================
         #  REASONING ENGINE
         # ==========================================================
         try:
-            history = cached_get_history(usuario_key, limit=10) or []
+            history = cached_get_history(usuario_key, limit=6) or []
         except Exception:
             history = []
         
         try:
             recent_turns = _build_recent_turns_for_reasoning(
                 history,
-                max_turns=5,
+                max_turns=4,
             )
         except Exception:
             recent_turns = []
@@ -8801,7 +8955,7 @@ NSFW_PROFILE: {nsfw_profile}
             reasoning = build_internal_reasoning(
                 user_text=prompt,
                 facts=facts,
-                memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                memories=[],  # reasoning local não deve usar memória longa para decidir continuidade
                 scene_state=scene_state_for_reasoning,
                 recent_turns=recent_turns,
             )
@@ -8818,17 +8972,6 @@ NSFW_PROFILE: {nsfw_profile}
             except Exception:
                 pass
         
-        try:
-            reasoning = _normalize_reasoning_output(
-                reasoning,
-                facts=facts,
-                prompt=prompt,
-                history=history,
-                user_explicit_scene_change=user_explicit_scene_change,
-            )
-        except Exception:
-            pass
-        
         # ==========================================================
         #  LLM REASONING (DESLIGADO)
         # ==========================================================
@@ -8843,7 +8986,7 @@ NSFW_PROFILE: {nsfw_profile}
                     model="google/gemini-3-flash-preview",
                     user_text=prompt,
                     facts=facts,
-                    memories=long_memory_lines[-8:] if "long_memory_lines" in locals() else [],
+                    memories=[],
                     scene_state=scene_state_for_reasoning,
                     recent_turns=recent_turns,
                     base_reasoning=reasoning,
@@ -8881,11 +9024,48 @@ NSFW_PROFILE: {nsfw_profile}
                 reasoning,
                 facts=facts,
                 prompt=prompt,
-                history=history,
+                history=history[-4:],
                 user_explicit_scene_change=user_explicit_scene_change,
             )
         except Exception:
-            pass        
+            pass
+        
+        # hard clamp: reasoning serve só para continuidade imediata
+        try:
+            sg = reasoning.get("scene_guidance") if isinstance(reasoning, dict) else {}
+            sg = sg if isinstance(sg, dict) else {}
+        
+            reasoning = {
+                "intent": "continuar",
+                "emotion": "",
+                "subtext": "",
+                "pace": "normal",
+                "tension": "media",
+                "rules": [],
+                "decision": "responder",
+                "narrative_goal": "manter_fluxo",
+                "delivery_mode": "fala_com_acao",
+                "advance_limit": "medio",
+                "memory_hint": "",
+                "scene_guidance": {
+                    "where": str(sg.get("where") or "").strip(),
+                    "when": str(sg.get("when") or "").strip(),
+                    "who_is_here": sg.get("who_is_here") if isinstance(sg.get("who_is_here"), list) else [],
+                    "what_just_happened": sg.get("what_just_happened") if isinstance(sg.get("what_just_happened"), list) else [],
+                    "current_consequence": str(sg.get("current_consequence") or "").strip(),
+                    "do_not_repeat": sg.get("do_not_repeat") if isinstance(sg.get("do_not_repeat"), list) else [],
+                },
+                "scores": {
+                    "desire": 0.0,
+                    "risk": 0.0,
+                    "guilt": 0.0,
+                    "attachment": 0.0,
+                    "pressure": 0.0,
+                },
+            }
+        except Exception:
+            pass
+        
         # ==========================================================
         #  BLOCO CURTO DE CONTINUIDADE
         # ==========================================================
@@ -8897,8 +9077,6 @@ NSFW_PROFILE: {nsfw_profile}
         
                 where = str(sg.get("where") or "").strip()
                 when = str(sg.get("when") or "").strip()
-                who = sg.get("who_is_here") or []
-                recent = sg.get("what_just_happened") or []
                 consequence = str(sg.get("current_consequence") or "").strip()
                 avoid = sg.get("do_not_repeat") or []
         
@@ -8907,22 +9085,11 @@ NSFW_PROFILE: {nsfw_profile}
                 if when:
                     lines.append(f"- Tempo atual: {when}")
         
-                if isinstance(who, list) and who:
-                    who_txt = ", ".join(str(x).strip() for x in who if str(x).strip())
-                    if who_txt:
-                        lines.append(f"- Presentes: {who_txt}")
-        
-                if isinstance(recent, list):
-                    for item in recent[:3]:
-                        item = str(item or "").strip()
-                        if item:
-                            lines.append(f"- Último ponto: {item}")
-        
                 if consequence:
                     lines.append(f"- Consequência atual: {consequence}")
         
                 if isinstance(avoid, list):
-                    for item in avoid[:4]:
+                    for item in avoid[:3]:
                         item = str(item or "").strip()
                         if item:
                             lines.append(f"- Não repetir: {item}")
