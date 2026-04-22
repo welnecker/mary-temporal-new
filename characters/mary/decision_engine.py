@@ -169,9 +169,9 @@ def _resolve_decision_pressure_mode(
     )
 
     guilt_weight = (
-        (guilt_tp * 1.8) +
-        (vulnerability * 0.5) +
-        (attachment * 0.25)
+        (guilt_tp * 1.2) +
+        (vulnerability * 0.25) +
+        (attachment * 0.10)
     )
 
     # -------------------------
@@ -184,23 +184,23 @@ def _resolve_decision_pressure_mode(
         guilt_weight += 0.18
 
     if sem["guilt"]:
-        moral_weight += 0.12
-        guilt_weight += 0.32
+        moral_weight += 0.05
+        guilt_weight += 0.12
 
     if sem["third_party"]:
         desire_force += 0.08
-        guilt_weight += 0.12
+        guilt_weight += 0.08
 
     if sem["desire"]:
         desire_force += 0.12
 
     if sem["retreat"]:
-        moral_weight += 0.10
-        guilt_weight += 0.08
+        moral_weight += 0.08
+        guilt_weight += 0.05
 
     if forced_retreat:
-        moral_weight += 0.18
-        guilt_weight += 0.12
+        moral_weight += 0.08
+        guilt_weight += 0.05
 
     desire_force = _clip01(desire_force)
     moral_weight = _clip01(moral_weight)
@@ -215,54 +215,31 @@ def _resolve_decision_pressure_mode(
     mode = "observe"
     hesitation = 0.45
     conflict = False
-   
+
     # -------------------------
     # Lógica de decisão
     # -------------------------
-    if pressure_gap >= 0.18:
+    if pressure_gap >= 0.05:
         mode = "advance"
-        hesitation = 0.22
-    
-    elif pressure_gap <= -0.14:
+        hesitation = 0.12
+
+    elif pressure_gap <= -0.25:
         mode = "recede"
-        hesitation = 0.82
-    
-    elif abs(pressure_gap) < 0.18:
-        mode = "conflicted"
-        hesitation = 0.64
-        conflict = True
+        hesitation = 0.75
+
     else:
-        mode = "observe"
-        hesitation = 0.50
-    
-    
-    # ==========================================================
-    # 🔥 AJUSTE CRÍTICO: NÃO RECUAR EM CENA JÁ AVANÇADA
-    # ==========================================================
-    try:
-        # tenta obter fase íntima atual dos facts
-        intimacy_phase = 0
-        if isinstance(facts, dict):
-            intimacy_phase = int(
-                facts.get(f"intimacy.phase::{timeline}", facts.get("intimacy.phase", 0)) or 0
-            )
-    
-        # se já passou da tensão inicial, bloqueia recuo forte
-        if intimacy_phase >= 2 and mode == "recede":
-            mode = "conflicted"
-            hesitation = min(hesitation, 0.62)
-    
-    except Exception:
-        pass
-    
-    
+        mode = "advance"
+        hesitation = 0.28
+        conflict = False
+
     # -------------------------
     # Persistência emocional (inércia)
     # -------------------------
     prev_mode = str(prev_decision_state.get("mode") or "").strip().lower()
-    
+
     if prev_mode and prev_mode == mode and mode in ("recede", "conflicted"):
         hesitation = min(1.0, hesitation + 0.02)
+
     # -------------------------
     # Monta estado final
     # -------------------------
