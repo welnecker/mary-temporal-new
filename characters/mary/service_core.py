@@ -1551,22 +1551,53 @@ def _persist_scene_basics(usuario_key: str, local: str, tempo: str, acao: str) -
     tempo = str(tempo or "").strip()
     acao = str(acao or "").strip()
 
-    updates = []
-    if local:
-        updates.append(("cena.local", local, {"fonte": "scene"}))
-        updates.append(("local_cena_atual", local, {"fonte": "scene_compat"}))
-    if tempo:
-        updates.append(("cena.tempo", tempo, {"fonte": "scene"}))
-    if acao:
-        updates.append(("cena.acao", acao, {"fonte": "scene"}))
-
     current = cached_get_facts(usuario_key) or {}
     if not isinstance(current, dict):
         current = {}
 
-    for k, v, m in updates:
-        if current.get(k) != v:
-            set_fact_safe(usuario_key, k, v, m)
+    cena_obj = current.get("cena") if isinstance(current.get("cena"), dict) else {}
+    state_obj = current.get("state") if isinstance(current.get("state"), dict) else {}
+
+    current_cena_local = str(
+        (cena_obj.get("local") if isinstance(cena_obj, dict) else None)
+        or current.get("cena.local")
+        or ""
+    ).strip()
+
+    current_state_local = str(
+        (state_obj.get("local") if isinstance(state_obj, dict) else None)
+        or current.get("state.local")
+        or ""
+    ).strip()
+
+    current_tempo = str(
+        (cena_obj.get("tempo") if isinstance(cena_obj, dict) else None)
+        or current.get("cena.tempo")
+        or ""
+    ).strip()
+
+    current_acao = str(
+        (cena_obj.get("acao") if isinstance(cena_obj, dict) else None)
+        or current.get("cena.acao")
+        or ""
+    ).strip()
+
+    if local and current_cena_local != local:
+        set_fact_safe(usuario_key, "cena.local", local, {"fonte": "scene"})
+
+    if local and current_state_local != local:
+        set_fact_safe(usuario_key, "state.local", local, {"fonte": "scene_sync"})
+
+    # compat apenas como espelho, nunca como fonte primária
+    current_compat_local = str(current.get("local_cena_atual") or "").strip()
+    if local and current_compat_local != local:
+        set_fact_safe(usuario_key, "local_cena_atual", local, {"fonte": "scene_compat"})
+
+    if tempo and current_tempo != tempo:
+        set_fact_safe(usuario_key, "cena.tempo", tempo, {"fonte": "scene"})
+
+    if acao and current_acao != acao:
+        set_fact_safe(usuario_key, "cena.acao", acao, {"fonte": "scene"})
 
 def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
     """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
@@ -7010,9 +7041,9 @@ def _get_tp_arc_state(facts: Dict[str, Any], timeline: str) -> Dict[str, Any]:
 def _normalize_scene_local_facts(facts: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Elimina dualidade de local entre:
-    - cena.local
+    - cena.local (fonte principal)
     - state.local
-    - local_cena_atual
+    - local_cena_atual (fallback apenas)
     """
 
     f = dict(facts or {})
@@ -7024,18 +7055,32 @@ def _normalize_scene_local_facts(facts: Optional[Dict[str, Any]]) -> Dict[str, A
     state_local = str(state.get("local") or "").strip()
     atual_local = str(f.get("local_cena_atual") or "").strip()
 
-    # decide qual local usar
-    local_final = cena_local or atual_local or state_local
+    # 🔥 PRIORIDADE CORRETA
+    if cena_local:
+        local_final = cena_local
+    elif state_local:
+        local_final = state_local
+    elif atual_local:
+        local_final = atual_local
+    else:
+        local_final = ""  # não força fallback fixo aqui
 
+    # 🔒 aplica somente se existir valor válido
     if local_final:
         cena["local"] = local_final
-        state["local"] = local_final
-        f["local_cena_atual"] = local_final
+
+        # só sincroniza state se vazio
+        if not state_local:
+            state["local"] = local_final
+
+        # só sincroniza atual se vazio
+        if not atual_local:
+            f["local_cena_atual"] = local_final
 
     f["cena"] = cena
     f["state"] = state
-    return f
 
+    return f
 
 def _save_tp_arc_state(usuario_key: str, timeline: str, arc: Dict[str, Any]) -> None:
     try:
