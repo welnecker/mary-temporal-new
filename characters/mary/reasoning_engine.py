@@ -23,42 +23,45 @@ def _clip_text(text: Any, limit: int = 180) -> str:
 def _extract_recent_points(recent_turns: List[Dict[str, Any]]) -> List[str]:
     """
     Ponte curta real.
-    Pega só os 2 últimos pontos úteis, sem inflar o reasoning.
+    Usa só o último turno útil.
     """
     out: List[str] = []
 
-    for turn in recent_turns[-2:]:
-        if not isinstance(turn, dict):
-            continue
+    if not recent_turns:
+        return out
 
-        user_msg = _clip_text(
-            turn.get("mensagem_usuario")
-            or turn.get("user")
-            or (turn.get("role") == "user" and turn.get("content"))
-            or "",
-            180,
-        )
+    last_turn = recent_turns[-1]
+    if not isinstance(last_turn, dict):
+        return out
 
-        mary_msg = _clip_text(
-            turn.get("resposta_mary")
-            or turn.get("assistant")
-            or (turn.get("role") == "assistant" and turn.get("content"))
-            or "",
-            180,
-        )
+    user_msg = _clip_text(
+        last_turn.get("mensagem_usuario")
+        or last_turn.get("user")
+        or (last_turn.get("role") == "user" and last_turn.get("content"))
+        or "",
+        180,
+    )
 
-        summary = _clip_text(turn.get("summary"), 140)
+    mary_msg = _clip_text(
+        last_turn.get("resposta_mary")
+        or last_turn.get("assistant")
+        or (last_turn.get("role") == "assistant" and last_turn.get("content"))
+        or "",
+        180,
+    )
 
-        if user_msg:
-            out.append(user_msg)
+    summary = _clip_text(last_turn.get("summary"), 140)
 
-        if mary_msg:
-            out.append(mary_msg)
+    if user_msg:
+        out.append(user_msg)
 
-        if not user_msg and not mary_msg and summary:
-            out.append(summary)
+    if mary_msg:
+        out.append(mary_msg)
 
-    return out[-2:]
+    if not user_msg and not mary_msg and summary:
+        out.append(summary)
+
+    return out
 
 
 def _pick_present_names(
@@ -68,6 +71,7 @@ def _pick_present_names(
 ) -> List[str]:
     """
     Só considera presentes explícitos da cena atual.
+    Não infere presença por memória nem por menção solta.
     """
     presentes: List[str] = []
 
@@ -83,18 +87,6 @@ def _pick_present_names(
             name = _norm(item)
             if name and name not in presentes:
                 presentes.append(name)
-
-    joined_recent = " ".join(
-        _clip_text(
-            t.get("mensagem_usuario") or t.get("user") or "",
-            180,
-        )
-        for t in recent_turns[-2:]
-        if isinstance(t, dict)
-    ).lower()
-
-    if "janio" in joined_recent and "Janio" not in presentes:
-        presentes.append("Janio")
 
     return presentes[:4]
 
@@ -210,7 +202,7 @@ def build_internal_reasoning(
     *,
     user_text: str,
     facts: Dict[str, Any],
-    memories: List[str],  # mantido por compatibilidade; não decide continuidade
+    memories: List[str],  # compatibilidade; não decide continuidade
     scene_state: Dict[str, Any],
     recent_turns: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
@@ -230,8 +222,8 @@ def build_internal_reasoning(
     where = _norm(
         facts.get("cena.local")
         or facts.get("scene.local")
-        or facts.get("local_cena_atual")
         or scene_state.get("local")
+        or facts.get("state.local")
     )
 
     when = _norm(
@@ -261,6 +253,7 @@ def build_internal_reasoning(
         "do_not_repeat": do_not_repeat,
     }
 
+    # mantém compatibilidade com o service atual
     return {
         "intent": "continuar",
         "emotion": "",
