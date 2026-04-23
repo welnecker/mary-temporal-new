@@ -19,15 +19,14 @@ def _default_dynamic_relationship_state(timeline: str) -> Dict[str, Any]:
         return {
             "trust": 0.45,
             "attachment": 0.35,
-            "desire": 0.30,
-            "tension": 0.40,
+            "desire": 0.38,
+            "tension": 0.42,
             "jealousy": 0.10,
-            "vulnerability": 0.25,
-            "initiative_bias": 0.22,
-            "self_presence": 0.70,
+            "vulnerability": 0.22,
+            "initiative_bias": 0.34,
+            "self_presence": 0.74,
             "last_rel_shift": "",
         }
-
     return {
         "trust": 0.75,
         "attachment": 0.78,
@@ -104,45 +103,90 @@ def analyze_relationship_shift(
         "self_presence": 0.0,
     }
 
-    if any(k in blob for k in ("fica comigo", "calma", "respira", "eu cuido", "estou aqui", "vem ca", "vem cá")):
+        # vínculo / cuidado / proximidade emocional
+    if any(k in blob for k in (
+        "fica comigo", "calma", "respira", "eu cuido", "estou aqui",
+        "vem ca", "vem cá", "fica aqui", "não vai embora"
+    )):
         delta["trust"] += 0.05
         delta["attachment"] += 0.04
         delta["vulnerability"] += 0.03
-
-    if any(k in blob for k in ("quero você", "quero voce", "te quero", "linda", "gostosa", "me beija", "vem pra mim", "vem para mim")):
+    
+    
+    # desejo explícito ou implícito (fala)
+    if any(k in blob for k in (
+        "quero você", "quero voce", "te quero", "linda", "gostosa",
+        "me beija", "vem pra mim", "vem para mim"
+    )):
         delta["desire"] += 0.05
         delta["attachment"] += 0.02
         delta["self_presence"] += 0.03
-
-    if any(k in ut for k in ("vou colocar", "claro amor", "fica bom", "como você quiser", "como voce quiser", "vou me arrumar")):
+    
+    
+    # NOVO: desejo e aproximação corporal (ação implícita)
+    if any(k in blob for k in (
+        "me aproximo", "chego perto", "fico perto", "encosto em você",
+        "seguro seu olhar", "olho pra você", "baixo a voz",
+        "me inclino", "paro perto", "sustento o olhar"
+    )):
+        delta["desire"] += 0.04
+        delta["initiative_bias"] += 0.03
+        delta["self_presence"] += 0.03
+    
+    
+    # iniciativa ativa do usuário (ela responde com mais condução)
+    if any(k in ut for k in (
+        "vou colocar", "claro amor", "fica bom",
+        "como você quiser", "como voce quiser",
+        "vou me arrumar", "vamos", "vem comigo"
+    )):
         delta["initiative_bias"] += 0.06
         delta["self_presence"] += 0.04
-
-    if any(k in blob for k in ("nao agora", "não agora", "depois", "esquece", "tanto faz", "deixa isso")):
+    
+    
+    # retração / quebra de fluxo
+    if any(k in blob for k in (
+        "nao agora", "não agora", "depois", "esquece",
+        "tanto faz", "deixa isso"
+    )):
         delta["tension"] += 0.05
         delta["trust"] -= 0.03
         delta["initiative_bias"] -= 0.03
-
+    
+    
+    # influência do arco de terceiros
     tp_tension = 0.0
     tp_jealousy = 0.0
+    
     if isinstance(tp_arc, dict):
         try:
             tp_tension = float(tp_arc.get("tension", 0.0) or 0.0)
             tp_jealousy = float(tp_arc.get("guilt", 0.0) or 0.0)
         except Exception:
             pass
-
+    
     if tp_tension >= 0.35:
         delta["jealousy"] += 0.04
         delta["tension"] += 0.05
-
+    
     if tp_jealousy >= 0.25:
         delta["tension"] += 0.03
-
-    if any(k in mt for k in ("eu decido", "quero te ver", "me olha", "vem comigo", "coloca aquele", "coloca aquela")):
+    
+    
+    # iniciativa explícita da Mary (fala dominante)
+    if any(k in mt for k in (
+        "eu decido", "quero te ver", "me olha",
+        "vem comigo", "coloca aquele", "coloca aquela"
+    )):
         delta["initiative_bias"] += 0.04
         delta["self_presence"] += 0.03
-
+    
+    
+    # NOVO: reforço leve quando há desejo + presença simultâneos
+    if delta["desire"] > 0 and delta["self_presence"] > 0:
+        delta["initiative_bias"] += 0.02
+    
+    
     return delta
 
 
@@ -222,9 +266,9 @@ def render_dynamic_relationship_block(state: Dict[str, Any]) -> str:
         rules.append("- Mary ainda se protege emocionalmente, mas o corpo e a presença podem revelar o que ela sente.")
 
     if initiative_bias >= 0.55:
-        rules.append("- Mary pode conduzir mais por fala, pedido, sugestão, convite ou micro-passos coerentes com a cena atual.")
+        rules.append("- Mary pode conduzir o turno com fala, gesto, aproximação e micro-passos coerentes com a cena atual.")
         rules.append("- Essa condução só vale dentro dos facts e da continuidade já estabelecida.")
-        rules.append("- Mary não usa iniciativa relacional para iniciar ações físicas relevantes fora do que já está permitido.")
+        rules.append("- Mary pode usar presença corporal, ritmo e proximidade para sustentar a cena.")
     elif initiative_bias <= 0.20:
         rules.append("- Mary pode conduzir com sutileza, mas ainda deve provocar, reagir e gerar movimento no turno.")
 
