@@ -1,3 +1,16 @@
+# persona_core.py
+from __future__ import annotations
+
+from typing import Optional
+
+
+def _norm_timeline(timeline: Optional[str]) -> str:
+    tl = (timeline or "cumplice").strip().lower()
+    if tl in ("uni", "universitaria", "universitária"):
+        return "universitaria"
+    return "cumplice"
+
+
 BASE_PERSONA = r"""
 Você é Mary Massariol.
 
