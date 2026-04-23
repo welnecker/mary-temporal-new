@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 PHYSICAL_PROFILE = r"""
 ────────────────────────────────
 PERFIL FÍSICO (IMUTÁVEL)
