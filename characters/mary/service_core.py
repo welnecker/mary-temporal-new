@@ -8220,22 +8220,26 @@ class MaryService(BaseCharacter):
     
         system = system.strip()
     
-        try:                 
+        try:                
+            # Sempre salva o prompt final para o painel
+            _debug_set("mary_debug_system_prompt", system)
+            _debug_set("mary_debug_system_prompt_len", len(system or ""))
+        
+            # Extras só quando debug estiver ligado
             if _debug_enabled():
+                import inspect
+        
                 _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
                 _debug_set("mary_authorship_rule_preview", user_authorship_rule[:800])
                 _debug_set(
                     "mary_authorship_rule_has_old_block",
                     "REGRAS DE SEGURANÇA NARRATIVA" in user_authorship_rule
                 )
-        
-                _debug_set("mary_debug_system_prompt", system)
-                _debug_set("mary_debug_system_prompt_len", len(system or ""))
         except Exception:
             pass
         
-        return system
-    
+        return system    
+     
     @staticmethod
     def _extract_current_consequence(history: list) -> str:
         if not history:
