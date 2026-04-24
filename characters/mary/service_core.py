@@ -9926,7 +9926,8 @@ Evite linguagem excessivamente metafórica ou abstrata.
         - Não reduzir resposta por tamanho
         - Só cortar se houver repetição ou falta de avanço
         """.strip()
-       emotional_persistence_rule = """
+     
+        emotional_persistence_rule = """
 [EMOÇÃO]
 
 - Emoção influencia o tom.
