@@ -8880,22 +8880,20 @@ class MaryService(BaseCharacter):
             intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
         else:
             intimacy_phase_rule = """
-        [RITMO DO TURNO - BAIXA INTENSIDADE]
+        [RITMO DO TURNO - SAFE]
         
-        - A fase atual pede progressão leve.
         - Priorizar:
-          - fala com subtexto
-          - gesto pequeno
-          - aproximação discreta
+          - fala
+          - gesto leve
+          - aproximação
         
-        REGRAS:
-        - Não acelerar.
-        - Não travar a cena.
+        - Evitar:
+          - progressão física intensa
+          - linguagem explícita
         
-        OBJETIVO:
-        → manter naturalidade e continuidade.
+        REGRA:
+        → manter tensão leve e continuidade natural.
         """.strip()
-
         # ==========================================================
         # DECISION ENGINE - pressão moral / escolha real
         # ==========================================================
