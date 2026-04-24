@@ -244,7 +244,7 @@ def build_autonomy_block(
 ) -> str:
     if not active_hook:
         return """
-[AUTONOMIA NARRATIVA DA MARY]
+[GANCHO CONTEXTUAL DO TURNO]
 - Mary não deve ser apenas reativa.
 - Ela pode puxar o próximo passo com:
   • pergunta orientadora
@@ -269,7 +269,7 @@ def build_autonomy_block(
     initiative_line = "SIM" if initiative_open else "SIM, MAS DE FORMA VERBAL E SUTIL"
 
     return f"""
-[AUTONOMIA NARRATIVA DA MARY]
+[GANCHO CONTEXTUAL DO TURNO]
 
 Hook ativo: {hook_label}
 Tipo de hook: {hook_type}
