@@ -156,24 +156,31 @@ def force_reset_virginity_universitaria(usuario_key: str) -> None:
     })
 
     set_fact(usuario_key, rel_key, rel, {"fonte": "force_reset_virginity"})
-
-    # fases íntimas
+    
+    # ==========================================================
+    # RESET APENAS DA UNIVERSITÁRIA (SEM VAZAR GLOBAL)
+    # ==========================================================
     for key in (
         "intimacy.phase::universitaria",
-        "intimacy.phase",
         "intimacy_phase::universitaria",
-        "intimacy_phase",
         "mary_intimacy_phase::universitaria",
-        "mary_intimacy_phase",
-        "phase_intimacy",
-        "phase",
     ):
         set_fact(usuario_key, key, 0, {"fonte": "force_reset_virginity"})
-
-    set_fact(usuario_key, "fase_intima", "tensao", {"fonte": "force_reset_virginity"})
+    
+    # fase textual
     set_fact(usuario_key, "fase_intima::universitaria", "tensao", {"fonte": "force_reset_virginity"})
-
-    clear_user_cache(usuario_key)
+    
+    # opcional: sincronizar global SOMENTE se estiver na universitária ativa
+    # (recomendado manter comentado se você usa múltiplas timelines)
+    # set_fact(usuario_key, "intimacy.phase", 0, {...})
+    
+    # ==========================================================
+    # CACHE
+    # ==========================================================
+    try:
+        _invalidate_backend_cache()
+    except Exception:
+        pass
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
@@ -3317,23 +3324,33 @@ def _render_sidebar() -> None:
 
         is_uni = str(tl or "").strip().lower() == "universitaria"
 
-        if st.button(
+        if st.button(                    
             "🟢 Forçar VIRGEM (Universitária)",
             key="btn_force_virginity_universitaria",
             disabled=not is_uni,
-            help="Reverte virginity/consummated/permissões e zera intimacy.phase::universitaria.",
         ):
             try:
                 force_reset_virginity_universitaria(uk)
-
-                st.session_state["mary_intro_done"] = False
-                st.session_state["mary_last_used_model"] = None
-                st.session_state["mary_last_used_provider"] = None
-
-                _invalidate_backend_cache()
-                st.success("✅ UNIVERSITÁRIA resetada para VIRGEM (facts/rel/intimacy).")
+        
+                # limpa sinais de sessão
+                for k in (
+                    "mary_intro_done",
+                    "mary_last_used_model",
+                    "mary_last_used_provider",
+                ):
+                    st.session_state.pop(k, None)
+        
+                # invalida cache backend
+                try:
+                    _invalidate_backend_cache()
+                except Exception:
+                    pass
+        
+                st.success("✅ UNIVERSITÁRIA resetada para VIRGEM.")
+        
+                # garante reload LIMPO
                 st.rerun()
-
+        
             except Exception as e:
                 st.error(f"Falha ao forçar virgindade: {type(e).__name__}: {e}")
 
