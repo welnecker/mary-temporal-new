@@ -2102,9 +2102,13 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     """
     Intro desativada.
-    Não grava mais mary.intro.* nos facts.
+    Remove resíduos antigos mary.intro.<timeline>.text/hash dos facts.
     """
+    tl = _normalize_timeline(timeline)
+
     try:
+        delete_fact(usuario_key, f"mary.intro.{tl}.text")
+        delete_fact(usuario_key, f"mary.intro.{tl}.hash")
         delete_fact(usuario_key, "mary.intro")
     except Exception:
         pass
