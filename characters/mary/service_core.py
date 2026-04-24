@@ -1482,7 +1482,8 @@ def _get_nsfw_style_block(
     
     OBJETIVO:
     → evolução contínua, natural e conduzida por Mary
-    """.strip()return """
+    """.strip()
+       return """
     [NSFW_ON - PROGRESSÃO AUTÔNOMA]
     
     1. AÇÃO CONTÍNUA
