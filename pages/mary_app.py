@@ -2821,13 +2821,28 @@ def _render_sidebar() -> None:
             except Exception:
                 return ""
         
-        _horarios_default = _f("state.horarios") or _f("state.horario")
+        horarios_default = _f("state.horarios") or _f("state.horario")
         
-        st.session_state.setdefault("sb_state_local", _f("state.local"))
-        st.session_state.setdefault("sb_state_roupa", _f("state.roupa"))
-        st.session_state.setdefault("sb_state_cabelo", _f("state.cabelo"))
-        st.session_state.setdefault("sb_state_horarios", _horarios_default)
-        st.session_state.setdefault("sb_state_assunto", _f("state.assunto"))
+        current_state_signature = "|".join([
+            _f("state.local") or "",
+            _f("state.roupa") or "",
+            _f("state.cabelo") or "",
+            horarios_default or "",
+            _f("state.assunto") or "",
+        ])
+        
+        last_state_signature = st.session_state.get("_sb_state_signature")
+        
+        # 🔒 Só atualiza o formulário se NÃO houver edição ativa do usuário
+        form_dirty = st.session_state.get("_sb_state_dirty", False)
+        
+        if (last_state_signature != current_state_signature) and not form_dirty:
+            st.session_state["sb_state_local"] = _f("state.local")
+            st.session_state["sb_state_roupa"] = _f("state.roupa")
+            st.session_state["sb_state_cabelo"] = _f("state.cabelo")
+            st.session_state["sb_state_horarios"] = horarios_default
+            st.session_state["sb_state_assunto"] = _f("state.assunto")
+            st.session_state["_sb_state_signature"] = current_state_signature
         
         with st.expander("Editar Estado Atual (aparece no prompt)", expanded=True):
             if st.session_state.get("_clear_state_form", False):
