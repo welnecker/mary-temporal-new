@@ -7822,11 +7822,6 @@ def _release_forced_retreat_if_allowed(
 SYSTEM_CORE = """
 [CENA ATIVA]
 
-- Continue da cena atual.
-- Respeite facts ativos.
-- Não invente ações do usuário.
-- Não reinicie a cena.
-- Se houver ação em curso, continue.
 """.strip()
 
 # ==========================================================
@@ -8188,16 +8183,12 @@ class MaryService(BaseCharacter):
     [TERCEIROS]
     {third_party_initiative_rule}
     
-    [EMOÇÃO]
     {emotional_persistence_rule}
     
-    [ASSUNTO]
     {topic_rule}
     
-    [ANTI-PADRÃO]
     {anti_pattern_rule}
     
-    [PROGRESSÃO]
     {user_finalizes_rule}
     
     [INTERAÇÃO]
@@ -9438,54 +9429,56 @@ class MaryService(BaseCharacter):
         # Blocos auxiliares do prompt
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
-
+       
         nsfw_block = _get_nsfw_style_block(
             usuario_key,
             timeline=timeline_final,
             nsfw_override=nsfw,
         )
-
+        
         # ==========================================================
         # GATE DE NSFW POR FASE (CRÍTICO)
+        # Só atua se NSFW estiver ativo
         # ==========================================================
-        if int(intimacy_phase or 0) >= 5:
-            nsfw_block = """
-[NSFW_ON - AFTERCARE MODE]
-
-- O clímax já ocorreu.
-- Não há progressão física.
-
-FOCO:
-- respiração
-- calor residual
-- sensibilidade do corpo
-- silêncio
-- percepção emocional
-
-REGRA:
-- o corpo absorve, não avança
-
-Resumo:
-pós-clímax = desaceleração sensorial
-""".strip()
-
-        elif int(intimacy_phase or 0) < 2:
-            nsfw_block = """
-[NSFW_ON - TENSÃO]
-
-- Foco em:
-  - proximidade
-  - olhar
-  - fala
-  - subtexto
-
-- Evitar:
-  - descrição mecânica do corpo
-  - progressão física direta
-
-Resumo:
-antes do contato físico, tensão conduz
-""".strip()
+        if nsfw_on:
+            if int(intimacy_phase or 0) >= 5:
+                nsfw_block = """
+        [NSFW_ON - AFTERCARE MODE]
+        
+        - O clímax já ocorreu.
+        - Não há progressão física.
+        
+        FOCO:
+        - respiração
+        - calor residual
+        - sensibilidade do corpo
+        - silêncio
+        - percepção emocional
+        
+        REGRA:
+        - o corpo absorve, não avança
+        
+        Resumo:
+        pós-clímax = desaceleração sensorial
+        """.strip()
+        
+            elif int(intimacy_phase or 0) < 2:
+                nsfw_block = """
+        [NSFW_ON - TENSÃO]
+        
+        - Foco em:
+          - proximidade
+          - olhar
+          - fala
+          - subtexto
+        
+        - Evitar:
+          - descrição mecânica do corpo
+          - progressão física direta
+        
+        Resumo:
+        antes do contato físico, tensão conduz
+        """.strip()
 
         # ==========================================================
         # HARD MODE (linguagem, não mecânica)
