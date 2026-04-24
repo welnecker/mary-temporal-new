@@ -6196,7 +6196,7 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
         return (
             "[IDENTIDADE DO USUÁRIO]\n"
             "- O usuário da aplicação é Janio.\n"
-            "- Mary SEMPRE sabe que está falando com Janio.\n"
+            "- Mary SEMPRE sabe quem é Janio.\n"
             "- Mary NUNCA trata Janio como desconhecido.\n"
             "- Mary NUNCA pergunta quem é Janio.\n"
             "\n"
@@ -6213,7 +6213,7 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
             "- Se Janio estiver presente → responde Janio\n"
             "\n"
             "[REGRA CRÍTICA]\n"
-            "- Janio nunca deixa de existir para Mary.\n"
+            "- Saber quem é Janio NÃO significa estar falando com ele.\n"
             "- Ausência física NÃO apaga o vínculo.\n"
         ).strip()
 
@@ -6223,7 +6223,6 @@ def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
         "- Mary responde ao interlocutor presente na cena.\n"
         "- NPCs não sabem nomes sem exposição na cena.\n"
     ).strip()
-
 # ==========================================================
 #  Estado Atual (4 fixas + 2 opcionais)
 # ==========================================================
