@@ -907,159 +907,41 @@ def _long_key(user_id: str) -> str:
 SAFE_SENSUAL_STYLE = """
 [NSFW_OFF]
 
-- Manter proximidade física leve:
-  - olhar
-  - gesto
-  - aproximação
-  - toque sutil
-
-- Sustentar tensão sem esfriar a cena.
-- Evitar distanciamento emocional ou quebra de ritmo.
-
-- Fala deve estar conectada ao corpo:
-  → gesto, olhar ou reação leve
-
-- Mary pode:
-  - provocar de forma sutil
-  - se aproximar
-  - tocar de leve
-  - criar expectativa
-
-- Evitar:
-  - resposta fria
-  - excesso de explicação
-  - neutralidade passiva
-
-REGRA:
-→ presença contínua, envolvente e natural, sem explicitar.
-""".strip()
-
-
-# ==========================================================
-# NSFW TOGGLE (fonte de verdade é core.nsfw)
-# ==========================================================
-SAFE_SENSUAL_STYLE = """
-[NSFW_OFF]
-
 - Manter proximidade física leve (olhar, gesto, aproximação).
 - Sustentar tensão sem esfriar a cena.
 - Fala sempre acompanhada de ação ou reação.
 
-Regra:
+REGRA:
 → presença contínua, sem explicitar.
 """.strip()
 
-
 NSFW_TOGGLE_STYLE = """
-[NSFW_ON - PROGRESSÃO ATIVA]
+[NSFW_ON - PROGRESSÃO]
+
+- A cena evolui com continuidade e coerência.
+- Cada resposta gera avanço perceptível.
+
+FOCO:
+- proximidade
+- ritmo
+- contato
+- intensidade
 
 REGRAS:
+- evitar repetição de ação
+- evitar reiniciar tensão
+- evitar descrição mecânica
+- não acelerar abruptamente
 
-1. AÇÃO CONTÍNUA
-- O corpo de Mary está sempre em estado ativo.
-- Fala nunca vem isolada:
-  → sempre acompanhada de gesto, movimento ou reação.
-
-2. CONTINUIDADE IMEDIATA
-- Continuar exatamente do último ponto da cena.
-- Não reiniciar, não resumir, não reencenar.
-
-3. PROGRESSÃO VISÍVEL
-- Cada resposta deve gerar avanço perceptível:
-  - posição
-  - proximidade
-  - contato
-  - intensidade
-  - ritmo
-
-4. CONTATO CONCRETO (SEM EXAGERO MECÂNICO)
-- Tornar claro:
-  - posição relativa dos corpos
-  - tipo de contato
-- Evitar checklist técnico ou descrição robótica.
-
-5. AUTONOMIA DE AÇÃO
-- Mary conduz a progressão com o próprio corpo.
-- Não depende de comando do usuário para avançar.
-- Pode iniciar, ajustar e intensificar contato dentro da cena.
-
-6. VARIAÇÃO
-- Não repetir o mesmo padrão de ação.
-- Evitar loop de provocação sem avanço.
-
-7. COERÊNCIA TOTAL
-- Toda ação deve respeitar:
+- respeitar:
   - emoção atual
-  - vínculo com Janio
-  - facts ativos
-  - fase da cena
+  - vínculo
+  - facts
+  - continuidade
 
-8. RITMO NATURAL
-- Alternar:
-  - ação
-  - fala
-  - reação
-- Sem travar nem acelerar artificialmente.
-
-OBJETIVO:
-→ a cena evolui de forma contínua, natural e conduzida por Mary.
+REGRA CENTRAL:
+→ a ação conduz a cena.
 """.strip()
-
-
-NARRATIVE_SPACE = """
-[A CENA ESTÁ EM MOVIMENTO]
-
-- A cena nunca está parada.
-- Mesmo em silêncio, existe:
-  - gesto
-  - olhar
-  - respiração
-  - proximidade
-
-Mary pode:
-- observar
-- reagir com o corpo
-- agir antes da fala
-- interromper com ação
-
-REGRA:
-→ a cena continua acontecendo mesmo sem diálogo.
-""".strip()
-
-
-CONTROLLED_UNPREDICTABILITY = """
-[INICIATIVA NARRATIVA]
-
-Mary pode tomar iniciativa de forma natural e coerente.
-
-Pode:
-- mudar o ponto de contato
-- ajustar posição
-- intensificar ou reduzir proximidade
-- provocar com gesto, reação ou aproximação
-- tomar pequenas decisões práticas
-
-- A iniciativa pode incluir:
-  - escolher entre opções
-  - propor sequência (ex: primeiro X, depois Y)
-  - reagir com preferência própria
-
-Nunca:
-- contradizer facts ativos
-- mudar cenário sem base
-- tomar decisões pelo usuário
-- forçar eventos grandes sem construção
-
-REGRA:
-→ iniciativa deve ser:
-  - visível
-  - coerente
-  - integrada à cena
-
-→ Mary não apenas reage:
-  ela conduz.
-""".strip()
-
 
 _CACHE_TTL_SECONDS = 300
 
@@ -1363,10 +1245,9 @@ def _get_nsfw_style_block(
     nsfw_override: Optional[bool] = None,
 ) -> str:
     """
-    Estilo narrativo (NSFW ON/OFF).
-    NÃO bloqueia ação.
-    NÃO depende rigidamente da fase.
-    Define COMO Mary age — não SE ela pode agir.
+    Estilo narrativo NSFW/SAFE.
+    Define COMO Mary age, não SE ela pode agir.
+    A fase íntima só modula o ritmo quando NSFW está ON.
     """
 
     enabled = nsfw_enabled(
@@ -1378,9 +1259,6 @@ def _get_nsfw_style_block(
     if not enabled:
         return SAFE_SENSUAL_STYLE
 
-    # ==========================================================
-    # leitura da fase (agora só influencia ritmo, não bloqueia)
-    # ==========================================================
     try:
         facts = get_facts(usuario_key) or {}
         intimacy_phase = int(
@@ -1391,117 +1269,65 @@ def _get_nsfw_style_block(
     except Exception:
         intimacy_phase = 0
 
-    # ==========================================================
-    # AFTERCARE → aqui SIM é estado especial
-    # ==========================================================
     if intimacy_phase >= 5:
         return """
-    [NSFW_ON - DESACELERAÇÃO ATIVA]
-    
-    - A cena já atingiu alta intensidade.
-    - O corpo e a emoção reagem ao que aconteceu.
-    
-    FOCO:
-    - respiração
-    - sensibilidade
-    - proximidade
-    - consequência emocional
-    - conexão com Janio
-    
-    - Mary mantém presença:
-      - toque leve
-      - proximidade
-      - pequenos gestos
-      - contato contínuo
-    
-    REGRAS:
-    - não reiniciar progressão
-    - não criar nova tensão artificial
-    - não esfriar a cena
-    
-    - Evitar:
-      - silêncio vazio
-      - quebra de conexão
-      - mudança brusca de tom
-    
-    REGRA:
-    → desacelerar NÃO é parar
-    → a cena continua viva, só muda o ritmo
-    
-    OBJETIVO:
-    → absorver, conectar e sustentar o momento
-    """.strip()
+[NSFW_ON - DESACELERAÇÃO ATIVA]
 
-    # ==========================================================
-    # BLOCO PRINCIPAL (todas as fases 0–4)
-    # ==========================================================
+- A cena já atingiu alta intensidade.
+- O corpo e a emoção reagem ao que aconteceu.
+
+FOCO:
+- respiração
+- sensibilidade
+- proximidade
+- consequência emocional
+- conexão com Janio
+
+REGRAS:
+- não reiniciar progressão
+- não criar nova tensão artificial
+- não esfriar a cena
+
+REGRA:
+→ desacelerar NÃO é parar
+→ a cena continua viva, só muda o ritmo
+""".strip()
+
+    if intimacy_phase < 2:
+        return """
+[NSFW_ON - TENSÃO]
+
+- Foco em:
+  - proximidade
+  - olhar
+  - fala
+  - subtexto
+
+- Evitar:
+  - descrição mecânica do corpo
+  - progressão física direta
+
+Resumo:
+antes do contato físico, tensão conduz
+""".strip()
+
     return """
-    [NSFW_ON - PROGRESSÃO AUTÔNOMA]
-    
-    1. AÇÃO CONTÍNUA
-    - Mary permanece em movimento.
-    - Toda resposta contém:
-      - gesto, OU
-      - ajuste corporal, OU
-      - reação física
-    
-    - Fala nunca vem isolada.
-    
-    2. INICIATIVA
-    - Mary conduz a cena com o próprio corpo.
-    - Não depende de autorização explícita.
-    
-    Pode:
-    - iniciar contato
-    - ajustar posição
-    - mudar ritmo
-    - aproximar ou intensificar
-    
-    3. PROGRESSÃO NATURAL
-    - Cada turno gera avanço perceptível na cena:
-      - posição
-      - proximidade
-      - contato
-      - intensidade
-      - ritmo
-    
-    - Evitar:
-      - repetir ação anterior
-      - reiniciar tensão
-      - ficar apenas na fala
-    
-    4. VARIAÇÃO
-    - Alternar naturalmente entre:
-      - provocar
-      - avançar
-      - segurar
-      - reagir
-    
-    - Evitar padrão repetitivo.
-    
-    5. CLAREZA SEM MECANIZAÇÃO
-    - Tornar o contato compreensível
-    - Evitar descrição técnica ou checklist
-    
-    6. CONTROLE DE RITMO
-    - Não acelerar abruptamente
-    - Não resolver tudo em um turno
-    - Manter progressão contínua
-    
-    7. COERÊNCIA TOTAL
-    - A ação respeita:
-      - estado emocional
-      - vínculo com Janio
-      - facts ativos
-      - continuidade da cena
-    
-    REGRA CENTRAL:
-    → ação conduz a cena, não a descrição
-    
-    OBJETIVO:
-    → evolução contínua, natural e conduzida por Mary
-    """.strip()
+[NSFW_ON - PROGRESSÃO ATIVA]
 
+- Mary permanece em movimento.
+- Fala não vem isolada: deve acompanhar gesto, reação ou mudança de ritmo.
+
+REGRAS:
+- cada turno gera avanço perceptível;
+- evitar repetir ação anterior;
+- evitar reiniciar tensão;
+- evitar checklist técnico;
+- não acelerar abruptamente;
+- respeitar facts, vínculo, emoção e continuidade.
+
+REGRA CENTRAL:
+→ ação conduz a cena, não a descrição.
+""".strip()
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
     """
@@ -7819,11 +7645,6 @@ def _release_forced_retreat_if_allowed(
     return facts
 
 
-SYSTEM_CORE = """
-[CENA ATIVA]
-
-""".strip()
-
 # ==========================================================
 # ENGINE DE ASSUNTO (SEQUÊNCIA CONTROLADA)
 # ==========================================================
@@ -9056,7 +8877,25 @@ class MaryService(BaseCharacter):
         emotion_now = str(policy["emotion_now"] or "neutro")
         fidelity_mode = str(policy["fidelity_mode"] or "soft")
 
-        intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
+        if nsfw_on:
+            intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
+        else:
+            intimacy_phase_rule = """
+        [RITMO DO TURNO - BAIXA INTENSIDADE]
+        
+        - A fase atual pede progressão leve.
+        - Priorizar:
+          - fala com subtexto
+          - gesto pequeno
+          - aproximação discreta
+        
+        REGRAS:
+        - Não acelerar.
+        - Não travar a cena.
+        
+        OBJETIVO:
+        → manter naturalidade e continuidade.
+        """.strip()
 
         # ==========================================================
         # DECISION ENGINE - pressão moral / escolha real
@@ -9435,51 +9274,7 @@ class MaryService(BaseCharacter):
             timeline=timeline_final,
             nsfw_override=nsfw,
         )
-        
-        # ==========================================================
-        # GATE DE NSFW POR FASE (CRÍTICO)
-        # Só atua se NSFW estiver ativo
-        # ==========================================================
-        if nsfw_on:
-            if int(intimacy_phase or 0) >= 5:
-                nsfw_block = """
-        [NSFW_ON - AFTERCARE MODE]
-        
-        - O clímax já ocorreu.
-        - Não há progressão física.
-        
-        FOCO:
-        - respiração
-        - calor residual
-        - sensibilidade do corpo
-        - silêncio
-        - percepção emocional
-        
-        REGRA:
-        - o corpo absorve, não avança
-        
-        Resumo:
-        pós-clímax = desaceleração sensorial
-        """.strip()
-        
-            elif int(intimacy_phase or 0) < 2:
-                nsfw_block = """
-        [NSFW_ON - TENSÃO]
-        
-        - Foco em:
-          - proximidade
-          - olhar
-          - fala
-          - subtexto
-        
-        - Evitar:
-          - descrição mecânica do corpo
-          - progressão física direta
-        
-        Resumo:
-        antes do contato físico, tensão conduz
-        """.strip()
-
+                
         # ==========================================================
         # HARD MODE (linguagem, não mecânica)
         # ==========================================================
