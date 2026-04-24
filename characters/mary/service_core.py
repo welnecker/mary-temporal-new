@@ -7961,8 +7961,7 @@ class MaryService(BaseCharacter):
         # 5. SYSTEM FINAL
         # ==========================================================
         system = f"""
-    {SYSTEM_CORE}
-    
+   
     {priority_rule}
     
     {language_rule}
