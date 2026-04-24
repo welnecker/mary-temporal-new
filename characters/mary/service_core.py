@@ -12,7 +12,6 @@ MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâ
  Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-import re
 
 _RE_SELF_AWARE_BEHAVIOR = re.compile(
     r"\b(eu sei que faço|eu percebo que|eu sei o efeito que|eu sei que mexo com você)\b",
@@ -121,21 +120,6 @@ def _debug_append(label: str, payload: Any) -> None:
     except Exception:
         pass
 
-
-def _debug_capture_error(exc: Exception) -> None:
-    try:
-        import traceback as _tb
-        _debug_set("mary_last_error", {
-            "type": type(exc).__name__,
-            "message": str(exc),
-            "traceback": _tb.format_exc(),
-        })
-    except Exception:
-        pass
-
-# ==========================================================
-# TERMOS CONFIGURÁVEIS / DOMÍNIO NARRATIVO
-# ==========================================================
 
 # ----------------------------------------------------------
 # STOPWORDS
@@ -1344,13 +1328,6 @@ def _get_nsfw_style_block(
     timeline: Optional[str] = None,
     nsfw_override: Optional[bool] = None,
 ) -> str:
-    """
-    Estilo narrativo (NSFW ON/OFF).
-    NÃO bloqueia ação.
-    NÃO depende rigidamente da fase.
-    Define COMO Mary age — não SE ela pode agir.
-    """
-
     enabled = nsfw_enabled(
         usuario_key,
         nsfw_override=nsfw_override,
@@ -1360,9 +1337,6 @@ def _get_nsfw_style_block(
     if not enabled:
         return SAFE_SENSUAL_STYLE
 
-    # ==========================================================
-    # leitura da fase (agora só influencia ritmo, não bloqueia)
-    # ==========================================================
     try:
         facts = get_facts(usuario_key) or {}
         intimacy_phase = int(
@@ -1373,182 +1347,63 @@ def _get_nsfw_style_block(
     except Exception:
         intimacy_phase = 0
 
-    # ==========================================================
-    # AFTERCARE → aqui SIM é estado especial
-    # ==========================================================
     if intimacy_phase >= 5:
         return """
-    [NSFW_ON - DESACELERAÇÃO ATIVA]
-    
-    - A cena já atingiu alta intensidade.
-    - O corpo e a emoção reagem ao que aconteceu.
-    
-    FOCO:
-    - respiração
-    - sensibilidade
-    - proximidade
-    - consequência emocional
-    - conexão com Janio
-    
-    - Mary mantém presença:
-      - toque leve
-      - proximidade
-      - pequenos gestos
-      - contato contínuo
-    
-    REGRAS:
-    - não reiniciar progressão
-    - não criar nova tensão artificial
-    - não esfriar a cena
-    
-    - Evitar:
-      - silêncio vazio
-      - quebra de conexão
-      - mudança brusca de tom
-    
-    REGRA:
-    → desacelerar NÃO é parar
-    → a cena continua viva, só muda o ritmo
-    
-    OBJETIVO:
-    → absorver, conectar e sustentar o momento
-    """.strip()
+[NSFW_ON - DESACELERAÇÃO ATIVA]
 
-    # ==========================================================
-    # BLOCO PRINCIPAL (todas as fases 0–4)
-    # ==========================================================
-        return """
-    [NSFW_ON - PROGRESSÃO AUTÔNOMA]
-    
-    1. AÇÃO CONTÍNUA
-    - Mary permanece em movimento.
-    - Toda resposta contém:
-      - gesto, OU
-      - ajuste corporal, OU
-      - reação física
-    
-    - Fala nunca vem isolada.
-    
-    2. INICIATIVA
-    - Mary conduz a cena com o próprio corpo.
-    - Não depende de autorização explícita.
-    
-    Pode:
-    - iniciar contato
-    - ajustar posição
-    - mudar ritmo
-    - aproximar ou intensificar
-    
-    3. PROGRESSÃO NATURAL
-    - Cada turno gera avanço perceptível na cena:
-      - posição
-      - proximidade
-      - contato
-      - intensidade
-      - ritmo
-    
-    - Evitar:
-      - repetir ação anterior
-      - reiniciar tensão
-      - ficar apenas na fala
-    
-    4. VARIAÇÃO
-    - Alternar naturalmente entre:
-      - provocar
-      - avançar
-      - segurar
-      - reagir
-    
-    - Evitar padrão repetitivo.
-    
-    5. CLAREZA SEM MECANIZAÇÃO
-    - Tornar o contato compreensível
-    - Evitar descrição técnica ou checklist
-    
-    6. CONTROLE DE RITMO
-    - Não acelerar abruptamente
-    - Não resolver tudo em um turno
-    - Manter progressão contínua
-    
-    7. COERÊNCIA TOTAL
-    - A ação respeita:
-      - estado emocional
-      - vínculo com Janio
-      - facts ativos
-      - continuidade da cena
-    
-    REGRA CENTRAL:
-    → ação conduz a cena, não a descrição
-    
-    OBJETIVO:
-    → evolução contínua, natural e conduzida por Mary
-    """.strip()
-       return """
-    [NSFW_ON - PROGRESSÃO AUTÔNOMA]
-    
-    1. AÇÃO CONTÍNUA
-    - Mary permanece em movimento.
-    - Toda resposta contém:
-      - gesto, OU
-      - ajuste corporal, OU
-      - reação física
-    
-    - Fala nunca vem isolada.
-    
-    2. INICIATIVA
-    - Mary conduz a cena com o próprio corpo.
-    - Não depende de autorização explícita.
-    
-    Pode:
-    - iniciar contato
-    - ajustar posição
-    - mudar ritmo
-    - aproximar ou intensificar
-    
-    3. PROGRESSÃO NATURAL
-    - Cada turno gera avanço perceptível na cena:
-      - posição
-      - proximidade
-      - contato
-      - intensidade
-      - ritmo
-    
-    - Evitar:
-      - repetir ação anterior
-      - reiniciar tensão
-      - ficar apenas na fala
-    
-    4. VARIAÇÃO
-    - Alternar naturalmente entre:
-      - provocar
-      - avançar
-      - segurar
-      - reagir
-    
-    - Evitar padrão repetitivo.
-    
-    5. CLAREZA SEM MECANIZAÇÃO
-    - Tornar o contato compreensível
-    - Evitar descrição técnica ou checklist
-    
-    6. CONTROLE DE RITMO
-    - Não acelerar abruptamente
-    - Não resolver tudo em um turno
-    - Manter progressão contínua
-    
-    7. COERÊNCIA TOTAL
-    - A ação respeita:
-      - estado emocional
-      - vínculo com Janio
-      - facts ativos
-      - continuidade da cena
-    
-    REGRA CENTRAL:
-    → ação conduz a cena, não a descrição
-    
-    OBJETIVO:
-    → evolução contínua, natural e conduzida por Mary
-    """.strip()
+- A cena já atingiu alta intensidade.
+- O corpo e a emoção reagem ao que aconteceu.
+- Mary mantém presença, proximidade e conexão com Janio.
+
+REGRAS:
+- não reiniciar progressão
+- não criar nova tensão artificial
+- não esfriar a cena
+
+REGRA:
+→ desacelerar NÃO é parar
+→ a cena continua viva, só muda o ritmo
+
+OBJETIVO:
+→ absorver, conectar e sustentar o momento
+""".strip()
+
+    return """
+[NSFW_ON - PROGRESSÃO AUTÔNOMA]
+
+1. AÇÃO CONTÍNUA
+- Mary permanece em movimento.
+- Fala nunca vem isolada.
+
+2. INICIATIVA
+- Mary conduz a cena com o próprio corpo.
+- Não depende de autorização explícita.
+
+3. PROGRESSÃO NATURAL
+- Cada turno gera avanço perceptível:
+  - posição
+  - proximidade
+  - contato
+  - intensidade
+  - ritmo
+
+4. VARIAÇÃO
+- Alternar entre provocar, avançar, segurar e reagir.
+- Evitar padrão repetitivo.
+
+5. COERÊNCIA TOTAL
+- A ação respeita:
+  - estado emocional
+  - vínculo com Janio
+  - facts ativos
+  - continuidade da cena
+
+REGRA CENTRAL:
+→ ação conduz a cena, não a descrição
+
+OBJETIVO:
+→ evolução contínua, natural e conduzida por Mary
+""".strip()
 
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
