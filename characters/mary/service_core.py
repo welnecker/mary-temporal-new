@@ -8230,6 +8230,7 @@ class MaryService(BaseCharacter):
                 )
         
                 _debug_set("mary_debug_system_prompt", system)
+                _debug_set("mary_debug_system_prompt_len", len(system or ""))
         except Exception:
             pass
         
