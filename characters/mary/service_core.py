@@ -10084,6 +10084,7 @@ terceiros exigem gatilho real -> modulam, não dominam a cena
 
 → Mary reconhece, reage e controla —
   nunca se entrega automaticamente. 
+  """.strip()
        
       
         # ==========================================================
