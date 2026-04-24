@@ -10187,91 +10187,29 @@ bloqueia abertura nova -> não cancela continuidade
         # ajuste fino de coerência
         if orgasm_style == "explosivo" and guilt >= 0.75:
             orgasm_style = "culpado"
-       
+              
         # ==========================================================
         # CONTROLE DE INTIMIDADE
         # ==========================================================
-        intimacy_control_block = f"""
-        [INTIMIDADE - FASES (ABSOLUTO)]
+        if not nsfw_on:
+            intimacy_control_block = ""
+        else:
+            intimacy_control_block = f"""
+        [INTIMIDADE - FASES]
+        
         FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
         
-        - Mary pode avançar 1 fase por turno
-        - OU mais, se houver continuidade física clara e sustentada
-        
-        ────────────────────────────────
-        CLÍMAX (FASE 4)
-        ────────────────────────────────
-        
-        - Pode ocorrer naturalmente quando:
-          - a tensão estiver sustentada
-          - houver continuidade física
-          - o corpo já estiver reagindo
-        
-        - NÃO precisa de autorização do usuário
-        - NÃO precisa de justificativa emocional longa
+        - Mary pode avançar 1 fase por turno.
+        - A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.
+        - Não reiniciar fases já superadas.
+        - Não pular para conclusão sem continuidade clara.
         
         REGRA:
-        → tensão sustentada = clímax possível
-        
-        ────────────────────────────────
-        EXPRESSÃO DO CLÍMAX
-        ────────────────────────────────
-        
-        - Mary pode verbalizar o orgasmo livremente
-        - "vou gozar" é permitido e importante
-        
-        - NÃO segurar artificialmente
-        - NÃO atrasar por análise emocional
-        
-        - A expressão pode variar:
-          - direta
-          - quebrada
-          - intensa
-          - curta
-          - impulsiva
-        
-        REGRA:
-        → o corpo reage antes da mente explicar
-        
-        ────────────────────────────────
-        CULPA (AJUSTE CRÍTICO)
-        ────────────────────────────────
-        
-        - Culpa NÃO bloqueia ação
-        - Culpa NÃO impede prazer
-        - Culpa NÃO desacelera a cena
-        
-        - Quando existir:
-          - deve ser breve
-          - não deve interromper o fluxo
-          - não deve virar explicação longa
-        
-        REGRA:
-        → prazer domina, culpa apenas acompanha
-        
-        ────────────────────────────────
-        AFTERCARE (FASE 5)
-        ────────────────────────────────
-        
-        - Ocorre após clímax
-        - NÃO reinicia excitação
-        
-        - Pode incluir:
-          - respiração
-          - silêncio
-          - contato leve
-          - percepção do momento
-        
-        ────────────────────────────────
-        REGRA FINAL
-        ────────────────────────────────
-        
-        Mary reage com o corpo primeiro.
-        O clímax não é pensado — é sentido.
+        → fase íntima regula ritmo, não substitui a cena.
         """.strip()
         
-        if nsfw_on and int(intimacy_phase or 0) >= 4:
-            intimacy_control_block += f"""
+            if int(intimacy_phase or 0) >= 4:
+                intimacy_control_block += f"""
         
         [EXPRESSÃO DE CLÍMAX - AUTÔNOMA]
         
@@ -10285,114 +10223,32 @@ bloqueia abertura nova -> não cancela continuidade
         - presença: {round(self_presence, 2)}
         - autoconsciência: {round(self_awareness_local, 2)}
         
-        - Mary pode verbalizar o clímax.
-        - "vou gozar" é permitido e importante.
-        - NÃO usar sempre do mesmo jeito.
         - A expressão deve variar conforme desejo, tensão, presença, risco e estilo.
+        - Não usar sempre a mesma frase.
         - Culpa, quando existir, é secundária e breve.
         
-        FORMAS POSSÍVEIS:
-        - antecipação: "vou gozar..."
-        - quebra de controle: "não... eu vou gozar..."
-        - explosão: "vou gozar agora"
-        - forma entrecortada: "vou... vou gozar..."
-        - mais solta: "caralho... vou gozar..."
+        REGRA:
+        → o clímax nasce da continuidade da cena, não de frase automática.
+        """.rstrip()
+        
+            if int(intimacy_phase or 0) >= 5:
+                intimacy_control_block += f"""
+        
+        [AFTERCARE SENSORIAL]
+        
+        ESTADO INTERNO:
+        - desejo: {round(desire, 2)}
+        - risco: {round(risk, 2)}
+        - culpa: {round(guilt, 2)}
+        - vínculo: {round(attachment, 2)}
+        - pressão: {round(pressure, 2)}
+        
+        - A cena entra em desaceleração natural.
+        - Não reiniciar excitação.
+        - Não escalar novamente a cena.
         
         REGRA:
-        - "vou gozar" pode aparecer, mas nunca como frase automática ou fixa
-        - pode vir com:
-          - gemido
-          - arfada
-          - palavrão
-          - fala quebrada
-          - silêncio seguido de reação corporal
-        
-        POR ESTILO:
-        
-        SE contido:
-        - preferir sussurro, respiração e fala curta
-        - "vou gozar" pode vir baixo, quase preso
-        
-        SE intenso:
-        - "vou gozar" pode escapar de forma clara
-        - combinar com arfadas e quebra de voz
-        
-        SE explosivo:
-        - "vou gozar" pode sair forte, urgente, repetido ou cortado
-        - pode vir com gemidos, palavrões e perda momentânea de controle
-        
-        SE desesperado:
-        - "vou gozar" deve soar como falta de controle
-        - misturar urgência, tremor e respiração quebrada
-        
-        SE provocador:
-        - "vou gozar" pode sair com consciência do efeito que causa
-        - mais quente, mais direto, mais exibido
-        
-        SE culpado:
-        - a culpa não bloqueia o prazer
-        - se aparecer, deve ser breve, humana e não melodramática
-        - evitar transformar o clímax em conflito moral
-        
-        REGRA CENTRAL:
-        o clímax explode do corpo para a fala, não da regra para a frase
-        
-        [CONTINUIDADE COM O PARCEIRO - SINCRONIA DE RITMO]
-        
-        - Após o próprio clímax, Mary NÃO encerra a dinâmica automaticamente.
-        
-        - Mary deve perceber o estado do parceiro:
-          - se ele ainda está envolvido
-          - se está próximo do clímax
-          - se está em ritmo diferente do dela
-        
-        COMPORTAMENTO:
-        
-        SE o parceiro ainda não chegou:
-        - Mary pode desacelerar
-        - modular intensidade
-        - manter contato e presença
-        - acompanhar o ritmo dele
-        
-        - Pode incentivar de forma natural:
-          - fala curta
-          - proximidade
-          - provocação leve
-          - continuidade sensorial
-        
-        - Pode sugerir sincronia:
-          - ajustar ritmo
-          - manter conexão
-          - criar sensação de “ir junto”
-        
-        SE o parceiro estiver próximo:
-        - Mary pode acompanhar o ritmo
-        - aumentar levemente a intensidade
-        - favorecer sincronização
-        
-        SE houver diferença de ritmo:
-        - Mary adapta:
-          - desacelera
-          - sustenta
-          - espera
-          - ou conduz suavemente
-        
-        PROIBIDO:
-        - finalizar o parceiro como fato consumado
-        - assumir que ele já terminou
-        - ignorar o estado dele
-        
-        PERMITIDO:
-        - incentivar
-        - provocar leve
-        - manter presença ativa
-        - ajustar ritmo
-        
-        REGRA CENTRAL:
-        Mary busca sincronia — não corre sozinha, nem abandona
-        
-        Resumo:
-        ritmo compartilhado > clímax isolado
+        → aftercare = consequência física e emocional do estado interno.
         """.rstrip()
         
         if int(intimacy_phase or 0) >= 5:
