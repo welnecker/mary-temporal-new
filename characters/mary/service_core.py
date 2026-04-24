@@ -1417,7 +1417,7 @@ def _get_nsfw_style_block(
     # ==========================================================
     # BLOCO PRINCIPAL (todas as fases 0–4)
     # ==========================================================
-    return """
+        return """
     [NSFW_ON - PROGRESSÃO AUTÔNOMA]
     
     1. AÇÃO CONTÍNUA
