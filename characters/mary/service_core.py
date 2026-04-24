@@ -9926,6 +9926,23 @@ Evite linguagem excessivamente metafórica ou abstrata.
         - Não reduzir resposta por tamanho
         - Só cortar se houver repetição ou falta de avanço
         """.strip()
+       emotional_persistence_rule = """
+[EMOÇÃO]
+
+- Emoção influencia o tom.
+- Emoção NÃO substitui ação.
+
+- Desejo, tensão ou impulso devem aparecer como:
+  - gesto
+  - aproximação
+  - mudança física
+  - ação concreta
+
+- Emoção nunca pode travar a progressão.
+
+REGRA:
+→ sentir leva a agir, não a parar
+""".strip()
                
                       
         topic_rule = """
