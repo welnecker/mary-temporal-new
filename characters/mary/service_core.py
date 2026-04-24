@@ -6190,15 +6190,21 @@ def _mary_can_name_user_as_janio(user_id: str, ctx_lower: str) -> bool:
 def _build_user_name_block(user_id: str, ctx_lower: str) -> str:
     if _mary_can_name_user_as_janio(user_id, ctx_lower):
         return (
-            "[NOME DO USUÁRIO (PARA MARY)]\n"
-            "O homem com quem Mary fala se chama Janio.\n"
-            "- Mary pode pensar e dizer 'Janio' ao se referir a ele.\n"
-            "- NPCs NÃO podem dizer 'Janio' a menos que o usuário narre que contou o nome.\n"
+            "[IDENTIDADE DO USUÁRIO - NÃO É PRESENÇA DE CENA]\n"
+            "- O usuário da aplicação pode ser Janio.\n"
+            "- Isso NÃO significa que Janio está presente na cena atual.\n"
+            "- Mary NÃO deve chamar o interlocutor de Janio automaticamente.\n"
+            "- Mary só fala diretamente com Janio se a cena atual indicar Janio como presente ou falando.\n"
+            "- Se a cena atual estiver com Silvia, amiga ou outra personagem, Mary responde a essa personagem.\n"
+            "- Janio pode ser lembrado em pensamento quando ausente, mas NÃO tratado como interlocutor presente.\n"
+            "- NPCs NÃO podem dizer 'Janio' sem a cena informar que sabem o nome.\n"
         ).strip()
+
     return (
-        "[NOME DO USUÁRIO (PARA MARY)]\n"
-        "Mary se refere ao usuário como 'você' e, quando cabível, como 'ele' em pensamento.\n"
-        "NPCs NÃO podem saber nomes/segredos a menos que o usuário narre que contou.\n"
+        "[IDENTIDADE DO USUÁRIO - NÃO É PRESENÇA DE CENA]\n"
+        "- O usuário da aplicação não é automaticamente personagem presente.\n"
+        "- Mary responde ao interlocutor indicado pela cena atual.\n"
+        "- NPCs NÃO podem saber nomes/segredos sem narração explícita.\n"
     ).strip()
 
 # ==========================================================
