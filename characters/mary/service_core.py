@@ -2100,21 +2100,21 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
     intro_id = _hash_text(intro_text)
     return intro_id, intro_text
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
-    prefix = f"mary.intro.{(timeline or '').strip() or 'cumplice'}"
-    text_key = f"{prefix}.text"
-    hash_key = f"{prefix}.hash"
+    """
+    Intro desativada.
+    Não grava mais mary.intro.* nos facts.
+    """
+    try:
+        delete_fact(usuario_key, "mary.intro")
+    except Exception:
+        pass
 
-    current_id, current_text = _extract_intro_from_persona(timeline)
-    current_hash = current_id
+    try:
+        clear_user_cache(usuario_key)
+    except Exception:
+        pass
 
-    stored_hash = str(get_fact(usuario_key, hash_key, default="") or "").strip()
-    stored_text = str(get_fact(usuario_key, text_key, default="") or "").strip()
-
-    if (not stored_hash) or (stored_hash != current_hash) or (not stored_text):
-        set_fact_safe(usuario_key, hash_key, current_hash, {"fonte": "persona_intro_sync"})
-        set_fact_safe(usuario_key, text_key, current_text, {"fonte": "persona_intro_sync"})
-        
-    return current_id, current_text
+    return "", ""
 
 # ==========================================================
 #  CANON: memórias que prevalecem sobre a persona
