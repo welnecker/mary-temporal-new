@@ -4587,28 +4587,44 @@ def _load_rel_state(
     # _global_virginity é informativo (prompt/debug); por padrão NÃO governa o REL.
     base["_global_virginity"] = global_v
 
-    #  Fallback inteligente:
+    #  Fallback inteligente:      
     # fora da universitaria, se por algum motivo virginity vier vazio,
-    # tenta herdar do global (quando válido).
+    # tenta herdar do global quando válido.
     if timeline != "universitaria" and not base.get("virginity"):
         if global_v in ("virgem", "nao_virgem"):
             base["virginity"] = global_v
 
+    # ==========================================================
+    # RESET FORÇADO DA UNIVERSITÁRIA
+    # ==========================================================
+    # Se o botão "Forçar VIRGEM (Universitária)" foi usado,
+    # este estado vence defaults, canon e derivados.
+    if timeline == "universitaria" and bool((facts or {}).get("rel.force_virgin::universitaria")):
+        base["virginity"] = "virgem"
+        base["consummated"] = False
+        base["intimacy_level"] = 0
+        base["allows_penetration"] = False
+        base["allows_extended_touch"] = False
+        base["allows_mutual_relief"] = False
+        base["allows_sleep_together"] = False
+
     # Primeira vez com Janio (derivado)
     base["_first_time_with_janio"] = _derive_rel_first_time_with_janio(timeline, base)
-    
+
     # Regra mínima de consistência interna do REL:
     # se consumou com Janio, então não pode ficar "virgem" no relacionamento.
-    if bool(base.get("consummated")):
-        base["virginity"] = "nao_virgem"
-        base["allows_penetration"] = True
-        base.setdefault("allows_extended_touch", True)
-        base.setdefault("allows_mutual_relief", True)
+    # EXCEÇÃO: reset forçado da universitaria vence essa derivação.
+    if not (timeline == "universitaria" and bool((facts or {}).get("rel.force_virgin::universitaria"))):
+        if bool(base.get("consummated")):
+            base["virginity"] = "nao_virgem"
+            base["allows_penetration"] = True
+            base.setdefault("allows_extended_touch", True)
+            base.setdefault("allows_mutual_relief", True)
 
-    #  REGRA DE COERÊNCIA (mesmo sem consummated=True):
-    # Se o relacionamento está "nao_virgem", então penetração não pode ficar False.
-    if base.get("virginity") == "nao_virgem":
-        base["allows_penetration"] = True
+        # Regra de coerência:
+        # se o relacionamento está "nao_virgem", então penetração não pode ficar False.
+        if base.get("virginity") == "nao_virgem":
+            base["allows_penetration"] = True
 
     return base
 
@@ -4622,10 +4638,30 @@ def _sync_rel_state_with_facts_canon(
     user_id: str,
 ) -> Dict[str, Any]:
     """
-    Sincroniza REL com memória CANON (shared) de virgindade.
-    Regra: se existir CANON virginity=nao_virgem, isso governa o REL (não regride).
+    Sincroniza REL com memória CANON de virgindade.
+
+    Regra normal:
+    - se existir CANON virginity=nao_virgem, isso governa o REL.
+
+    Exceção:
+    - se houver rel.force_virgin::universitaria=True,
+      a timeline universitária fica travada como virgem e ignora canon antigo.
     """
-    shared_key = _shared_key(user_id, timeline)
+    tl = _normalize_timeline(timeline)
+
+    # ==========================================================
+    # RESET FORÇADO DA UNIVERSITÁRIA
+    # ==========================================================
+    if tl == "universitaria" and bool((facts or {}).get("rel.force_virgin::universitaria")):
+        rel["virginity"] = "virgem"
+        rel["consummated"] = False
+        rel["intimacy_level"] = 0
+        rel["allows_penetration"] = False
+        rel["allows_extended_touch"] = False
+        rel["allows_mutual_relief"] = False
+        return rel
+
+    shared_key = _shared_key(user_id, tl)
 
     try:
         mems = cached_list_memories(shared_key, limit=200)
@@ -4639,12 +4675,15 @@ def _sync_rel_state_with_facts_canon(
     for m in mems:
         if not isinstance(m, dict):
             continue
+
         meta = m.get("meta") or {}
         if not isinstance(meta, dict):
             continue
+
         if meta.get("kind") == "canon" and meta.get("key") == "virginity":
             v = meta.get("value")
-            ts = m.get("ts") or (m.get("meta") or {}).get("ts")
+            ts = m.get("ts") or meta.get("ts")
+
             if canon_ts is None:
                 canon_val, canon_ts = v, ts
             else:
@@ -4652,7 +4691,6 @@ def _sync_rel_state_with_facts_canon(
                     if ts and ts > canon_ts:
                         canon_val, canon_ts = v, ts
                 except Exception:
-                    # ts não comparável: usa a última ocorrência válida
                     canon_val, canon_ts = v, ts
 
     if canon_val == "nao_virgem":
