@@ -1377,42 +1377,42 @@ def _get_nsfw_style_block(
     # AFTERCARE → aqui SIM é estado especial
     # ==========================================================
     if intimacy_phase >= 5:
-    return """
-[NSFW_ON - DESACELERAÇÃO ATIVA]
-
-- A cena já atingiu alta intensidade.
-- O corpo e a emoção reagem ao que aconteceu.
-
-FOCO:
-- respiração
-- sensibilidade
-- proximidade
-- consequência emocional
-- conexão com Janio
-
-- Mary mantém presença:
-  - toque leve
-  - proximidade
-  - pequenos gestos
-  - contato contínuo
-
-REGRAS:
-- não reiniciar progressão
-- não criar nova tensão artificial
-- não esfriar a cena
-
-- Evitar:
-  - silêncio vazio
-  - quebra de conexão
-  - mudança brusca de tom
-
-REGRA:
-→ desacelerar NÃO é parar
-→ a cena continua viva, só muda o ritmo
-
-OBJETIVO:
-→ absorver, conectar e sustentar o momento
-""".strip()
+        return """
+    [NSFW_ON - DESACELERAÇÃO ATIVA]
+    
+    - A cena já atingiu alta intensidade.
+    - O corpo e a emoção reagem ao que aconteceu.
+    
+    FOCO:
+    - respiração
+    - sensibilidade
+    - proximidade
+    - consequência emocional
+    - conexão com Janio
+    
+    - Mary mantém presença:
+      - toque leve
+      - proximidade
+      - pequenos gestos
+      - contato contínuo
+    
+    REGRAS:
+    - não reiniciar progressão
+    - não criar nova tensão artificial
+    - não esfriar a cena
+    
+    - Evitar:
+      - silêncio vazio
+      - quebra de conexão
+      - mudança brusca de tom
+    
+    REGRA:
+    → desacelerar NÃO é parar
+    → a cena continua viva, só muda o ritmo
+    
+    OBJETIVO:
+    → absorver, conectar e sustentar o momento
+    """.strip()
 
     # ==========================================================
     # BLOCO PRINCIPAL (todas as fases 0–4)
