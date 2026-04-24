@@ -100,32 +100,80 @@ def _refresh_tp_arc_from_sidebar(
 
 
 def force_reset_virginity_universitaria(usuario_key: str) -> None:
-    try:
-        delete_fact(usuario_key, "virginity")
-    except Exception:
-        pass
+    tl = "universitaria"
 
-    try:
-        facts = get_facts(usuario_key) or {}
-        if not isinstance(facts, dict):
-            facts = {}
+    facts = get_facts(usuario_key) or {}
+    if not isinstance(facts, dict):
+        facts = {}
 
-        rel_key = "rel.state::universitaria"
-        rel = facts.get(rel_key) if isinstance(facts.get(rel_key), dict) else {}
-        if not isinstance(rel, dict):
-            rel = {}
+    reset_flag = f"rel.force_virgin::{tl}"
 
-        rel["virginity"] = "virgem"
-        rel["consummated"] = False
-        rel["allows_penetration"] = False
-        rel.setdefault("allows_extended_touch", False)
-        rel.setdefault("allows_mutual_relief", False)
+    # trava contra canon e derivados
+    set_fact(usuario_key, reset_flag, True, {"fonte": "force_reset_virginity"})
 
-        set_fact(usuario_key, rel_key, rel, {"fonte": "force_reset_local"})
-        set_fact(usuario_key, "intimacy.phase::universitaria", 0, {"fonte": "force_reset_local"})
-        set_fact(usuario_key, "intimacy.phase", 0, {"fonte": "force_reset_local"})
-    except Exception:
-        pass
+    # limpa aliases soltos
+    for key in (
+        "virginity",
+        "virginity::universitaria",
+        "mary.virginity",
+        "mary.virginity::universitaria",
+        "consummated",
+        "consummated::universitaria",
+        "mary.consummated",
+        "mary.consummated::universitaria",
+    ):
+        try:
+            delete_fact(usuario_key, key)
+        except Exception:
+            pass
+
+    # objeto mary
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    if not isinstance(mary, dict):
+        mary = {}
+
+    mary["virginity"] = "virgem"
+    mary["virginity::universitaria"] = "virgem"
+    mary["consummated"] = False
+    mary["consummated::universitaria"] = False
+    set_fact(usuario_key, "mary", mary, {"fonte": "force_reset_virginity"})
+
+    # rel state
+    rel_key = "rel.state::universitaria"
+    rel = facts.get(rel_key) if isinstance(facts.get(rel_key), dict) else {}
+    if not isinstance(rel, dict):
+        rel = {}
+
+    rel.update({
+        "stage": "conhecendo",
+        "mature_turns": 0,
+        "virginity": "virgem",
+        "consummated": False,
+        "intimacy_level": 0,
+        "allows_penetration": False,
+        "allows_extended_touch": False,
+        "allows_mutual_relief": False,
+    })
+
+    set_fact(usuario_key, rel_key, rel, {"fonte": "force_reset_virginity"})
+
+    # fases íntimas
+    for key in (
+        "intimacy.phase::universitaria",
+        "intimacy.phase",
+        "intimacy_phase::universitaria",
+        "intimacy_phase",
+        "mary_intimacy_phase::universitaria",
+        "mary_intimacy_phase",
+        "phase_intimacy",
+        "phase",
+    ):
+        set_fact(usuario_key, key, 0, {"fonte": "force_reset_virginity"})
+
+    set_fact(usuario_key, "fase_intima", "tensao", {"fonte": "force_reset_virginity"})
+    set_fact(usuario_key, "fase_intima::universitaria", "tensao", {"fonte": "force_reset_virginity"})
+
+    clear_user_cache(usuario_key)
 
 # ==========================================================
 # 🔥 HARD RESET NO BOOT (ANTI-VAZAMENTO ENTRE TIMELINES)
