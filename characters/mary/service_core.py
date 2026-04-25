@@ -1275,7 +1275,11 @@ def _get_nsfw_style_block(
     """
     Estilo narrativo NSFW/SAFE.
     Define COMO Mary age, não SE ela pode agir.
-    A fase íntima só modula o ritmo quando NSFW está ON.
+
+    Ordem de prioridade:
+    1. Estado de pico (orgasm.active)
+    2. Fase íntima
+    3. SAFE fallback
     """
 
     enabled = nsfw_enabled(
@@ -1287,22 +1291,60 @@ def _get_nsfw_style_block(
     if not enabled:
         return SAFE_SENSUAL_STYLE
 
-    try:           
+    try:
         facts = get_facts(usuario_key) or {}
         tl = (timeline or "").strip().lower()
-    
+
+        # =========================
+        # 🔥 DETECÇÃO DE ORGASM (PRIORIDADE MÁXIMA)
+        # =========================
+        orgasm_active = bool(
+            facts.get("orgasm", {})
+            .get("mary", {})
+            .get(f"active::{tl}", False)
+        )
+
+        if orgasm_active:
+            return """
+[NSFW_ON - RESOLUÇÃO DE PICO]
+
+- Mary já atingiu pico de intensidade.
+
+- NÃO:
+  - prolongar estímulo
+  - repetir pré-clímax
+  - manter tensão crescente
+
+- DEVE:
+  - responder com consequência imediata
+  - quebrar controle momentaneamente
+  - reduzir o ritmo após o pico
+
+- Após:
+  - respiração
+  - tremor
+  - pausa
+  - fala fragmentada
+
+REGRA:
+→ pico não evolui, pico resolve.
+""".strip()
+
+        # =========================
+        # 🔍 COLETA ROBUSTA DA FASE
+        # =========================
         candidates = []
-    
+
         if tl:
             candidates.extend([
                 facts.get(f"intimacy.phase::{tl}"),
                 facts.get(f"intimacy_phase::{tl}"),
                 facts.get(f"mary_intimacy_phase::{tl}"),
             ])
-    
+
             intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
             candidates.append(intimacy_obj.get(f"phase::{tl}"))
-    
+
         candidates.extend([
             facts.get("intimacy.phase"),
             facts.get("intimacy_phase"),
@@ -1310,19 +1352,31 @@ def _get_nsfw_style_block(
             facts.get("phase_intimacy"),
             facts.get("phase"),
         ])
-    
-        intimacy_phase = 0
+
+        # pega o MAIOR valor válido (corrige bug anterior)
+        valid_phases = []
         for v in candidates:
-            if v is None or v == "":
-                continue
             try:
-                intimacy_phase = int(v)
-                break
+                if v is None or v == "":
+                    continue
+                valid_phases.append(int(v))
             except Exception:
                 pass
-    
+
+        intimacy_phase = max(valid_phases) if valid_phases else 0
+
+        # clamp defensivo
+        if intimacy_phase < 0:
+            intimacy_phase = 0
+        if intimacy_phase > 5:
+            intimacy_phase = 5
+
     except Exception:
         intimacy_phase = 0
+
+    # =========================
+    # 🎯 ESTILO POR FASE
+    # =========================
 
     if intimacy_phase >= 5:
         return """
@@ -1336,7 +1390,6 @@ FOCO:
 - sensibilidade
 - proximidade
 - consequência emocional
-- conexão com Janio
 
 REGRAS:
 - não reiniciar progressão
@@ -1344,8 +1397,7 @@ REGRAS:
 - não esfriar a cena
 
 REGRA:
-→ desacelerar NÃO é parar
-→ a cena continua viva, só muda o ritmo
+→ desacelerar NÃO é parar.
 """.strip()
 
     if intimacy_phase < 2:
@@ -1359,29 +1411,26 @@ REGRA:
   - subtexto
 
 - Evitar:
-  - descrição mecânica do corpo
   - progressão física direta
 
 Resumo:
-antes do contato físico, tensão conduz
+→ tensão conduz antes do avanço físico.
 """.strip()
 
     return """
 [NSFW_ON - PROGRESSÃO ATIVA]
 
 - Mary permanece em movimento.
-- Fala não vem isolada: deve acompanhar gesto, reação ou mudança de ritmo.
+- Fala acompanha gesto e mudança de ritmo.
 
 REGRAS:
-- cada turno gera avanço perceptível;
-- evitar repetir ação anterior;
-- evitar reiniciar tensão;
-- evitar checklist técnico;
-- não acelerar abruptamente;
-- respeitar facts, vínculo, emoção e continuidade.
+- cada turno avança a cena
+- evitar repetição
+- evitar reiniciar tensão
+- não acelerar abruptamente
 
-REGRA CENTRAL:
-→ ação conduz a cena, não a descrição.
+REGRA:
+→ ação conduz a cena.
 """.strip()
 
 def enforce_third_party_consistency(usuario_key: str, *, timeline: str, nsfw_on: bool) -> None:
