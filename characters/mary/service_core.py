@@ -2365,20 +2365,11 @@ def _inject_active_state_memories_always(
 
 def _choose_intro_text(usuario_key: str, timeline: str) -> str:
     """
-    Prioridade correta:
-    - 1. intro da timeline (mary.intro.<timeline>.text) sincronizado da persona
-    - 2. intro FIXO somente se o flag mary.intro.use_fixed estiver True
+    Intro desativada.
+    Não busca fixed intro.
+    Não sincroniza intro da persona.
     """
-    # intro fixo só entra se explicitamente habilitado
-    use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
-    fixed_intro = str(get_fact(usuario_key, "mary.intro.fixed", default="") or "").strip()
-
-    if use_fixed and fixed_intro:
-        return fixed_intro
-
-    # padrão: sempre usar o intro da timeline (sincronizado)
-    _, intro_text = _sync_intro_fact(usuario_key, timeline)
-    return str(intro_text or "").strip()
+    return ""
 
 
 def _inject_intro_as_context_once(
@@ -2388,54 +2379,10 @@ def _inject_intro_as_context_once(
     messages: List[Dict[str, str]],
 ) -> None:
     """
-    Injeta o intro da persona como contexto UMA ÚNICA VEZ por usuario_key,
-    mas apenas se NÃO houver memórias CANON (canon vence e dispensa intro).
-
-    Correções:
-    - Cleanup de intro legado NÃO pode rodar sempre (senão destrói o guard).
-    - Cleanup roda no máximo 1x por sessão e por timeline.
-    - Só limpa cache/zera flag quando realmente removeu algo.
+    Intro desativada.
+    Mantida só para compatibilidade com chamadas existentes.
     """
-
-    tl = str(timeline or "").strip()
-
-    #  flag SEMPRE definido antes do uso
-    inject_flag = f"{_SS_PREFIX}intro_ctx_injected::{usuario_key}"
-    cleanup_flag = f"{_SS_PREFIX}intro_cleanup_done::{usuario_key}::{tl or 'global'}"
-
-    # -------------------------------
-    #  Cleanup 1x (somente intro/timeline-fixed)
-    # -------------------------------
-    try:
-        use_fixed = bool(get_fact(usuario_key, "mary.intro.use_fixed", default=False))
-
-        if (not use_fixed) and (not bool(_ss_get(cleanup_flag, False))):
-            deleted_any = False
-
-            # remove qualquer intro fixo (global e por timeline)
-            if get_fact(usuario_key, "mary.intro.fixed", default=None) is not None:
-                delete_fact(usuario_key, "mary.intro.fixed")
-                deleted_any = True
-
-            if tl:
-                if get_fact(usuario_key, f"mary.intro.fixed.{tl}", default=None) is not None:
-                    delete_fact(usuario_key, f"mary.intro.fixed.{tl}")
-                    deleted_any = True
-
-                
-            # remove legado que às vezes "trava" a timeline
-            if get_fact(usuario_key, "mary.timeline.fixed", default=None) is not None:
-                delete_fact(usuario_key, "mary.timeline.fixed")
-                deleted_any = True
-
-            _ss_set(cleanup_flag, True)
-
-            # só invalida cache/guard se realmente removeu algo
-            if deleted_any:
-                clear_user_cache(usuario_key)
-                _ss_set(inject_flag, False)
-    except Exception:
-        pass
+    return
 
     # -------------------------------
     #  Guard de sessão (UMA VEZ)
