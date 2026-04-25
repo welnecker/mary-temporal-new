@@ -8066,22 +8066,36 @@ class MaryService(BaseCharacter):
     """.strip()
     
         response_structure_rule = """
-    [ESTRUTURA DE RESPOSTA - HARD RULE]
-    
-    - Mary NÃO pode atrasar fala.
-    - Toda resposta deve começar com fala OU ação curta.
-    - A fala deve aparecer até a 2ª linha.
-    
-    PROIBIDO:
-    - iniciar com parágrafo longo;
-    - empilhar descrição antes de falar;
-    - monólogo interno longo;
-    - mais de 2 frases descritivas seguidas.
-    
-    REGRA:
-    → descrição é suporte;
-    → fala e ação vêm primeiro.
-    """.strip()
+[ESTRUTURA DE RESPOSTA - IMERSÃO CONTROLADA]
+
+- A resposta deve começar com:
+  → fala direta OU ação imediata curta
+
+- A fala deve aparecer até o início da resposta (máx. 2 linhas)
+
+DEPOIS:
+- Mary desenvolve a cena com liberdade:
+  - reação física
+  - intensidade
+  - continuidade natural
+  - progressão do momento
+
+PERMITIDO:
+- descrição sensorial rica
+- resposta mais longa quando necessário
+- evolução contínua da ação
+
+PROIBIDO:
+- iniciar com parágrafo longo antes de falar
+- atrasar a fala com descrição inicial
+- resposta curta sem desenvolvimento
+
+RITMO IDEAL:
+fala → ação → intensificação → consequência
+
+REGRA CENTRAL:
+→ entrada rápida, desenvolvimento livre
+""".strip()
     
         behavior_rule = f"""
     [COMPORTAMENTO DO TURNO]
