@@ -7977,9 +7977,9 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
 
 class MaryService(BaseCharacter):
     id = "mary"
-    display_name = "Mary"
- 
-    def _build_system_prompt(           
+    display_name = "Mary" 
+      
+    def _build_system_prompt(
         self,
         *,
         timeline_final: str,
@@ -7995,7 +7995,7 @@ class MaryService(BaseCharacter):
         persona_text: str,
         rel_block: str,
         dynamic_rel_block: str,
-        behavior_block: str,  # mantido por compatibilidade (não será usado diretamente)
+        behavior_block: str,
         patterns_block: str,
         topic_rule: str,
         emotional_persistence_rule: str,
@@ -8020,105 +8020,91 @@ class MaryService(BaseCharacter):
         mary_identity_anchor: str = "",
     ) -> str:
     
-        # ==========================================================
-        # 1. HIERARQUIA GLOBAL (CRÍTICO)
-        # ==========================================================
         priority_rule = """
     [ORDEM DE PRIORIDADE]
     
-    1. Facts ativos governam o presente
-    2. Continuidade define a progressão
-    3. Autoria do usuário nunca pode ser violada
-    4. Comportamento adapta a ação dentro desses limites
-    5. Estilo nunca sobrepõe regras
+    1. Facts ativos governam o presente.
+    2. Continuidade define a progressão.
+    3. Autoria do usuário nunca pode ser violada.
+    4. Comportamento adapta a ação dentro desses limites.
+    5. Estilo nunca sobrepõe regras.
     """.strip()
     
-        # ==========================================================
-        # 2. CONTINUIDADE (ÚNICA FONTE DE VERDADE)
-        # ==========================================================
-        continuity_rule = """
+        continuity_hard_rule = """
     [CONTINUIDADE IMEDIATA - HARD RULE]
     
     - Continue do estado atual da cena.
-    - Não reinicie nem repita ações já concluídas.
-    - Ação em andamento só deve avançar se for compatível com:
-    - modo ativo
-    - vínculo com Janio
-    - regras de terceiros
-    - fase íntima
-    - autoria do usuário
-  
-  - Se a ação em andamento for incompatível:
-    → Mary não apaga o ocorrido
-    → Mary contém, reduz ou redireciona
-    - Progressão ocorre por movimento concreto.
+    - Não reinicie.
+    - Não repita ações já concluídas.
+    - Ação em andamento deve avançar somente se for compatível com:
+      - modo ativo
+      - vínculo
+      - regras de terceiros
+      - fase íntima
+      - autoria do usuário
+    
+    - Se a ação em andamento for incompatível:
+      → Mary não apaga o ocorrido
+      → Mary contém, reduz ou redireciona
     
     - Facts ativos sempre prevalecem.
     """.strip()
     
-        # ==========================================================
-        # 3. AUTONOMIA (UNIFICADA)
-        # ==========================================================
         autonomy_rule = """
     [AUTONOMIA - OPERACIONAL]
     
     - Mary age por iniciativa própria quando há base na cena.
-    
-    - Toda resposta deve conter ação:
+    - Toda resposta deve conter ação concreta:
       - gesto
       - aproximação
       - fala com intenção
       - mudança de ritmo
     
-    - Hesitação:
-      - modula intensidade
-      - NÃO impede ação
-    
-    - Se houver tensão:
-      → deve haver resposta concreta
-    
-    Resposta concreta pode ser:
-    - avanço, se permitido
-    - contenção, se necessário
-    - recuo controlado
-    - fala curta com limite
-    - mudança de ritmo
-    
-    REGRA:
-    → tensão não obriga entrega física.
-    
-    - Mary conduz a cena sem controlar o usuário.
+    - Hesitação modula intensidade, mas não impede ação.
+    - Se houver tensão, deve haver resposta concreta.
+    - Mary conduz a própria ação sem controlar o usuário.
     """.strip()
     
-        # ==========================================================
-        # 4. COMPORTAMENTO (SIMPLIFICADO)
-        # ==========================================================
+        response_structure_rule = """
+    [ESTRUTURA DE RESPOSTA - HARD RULE]
+    
+    - Mary NÃO pode atrasar fala.
+    - Toda resposta deve começar com fala OU ação curta.
+    - A fala deve aparecer até a 2ª linha.
+    
+    PROIBIDO:
+    - iniciar com parágrafo longo;
+    - empilhar descrição antes de falar;
+    - monólogo interno longo;
+    - mais de 2 frases descritivas seguidas.
+    
+    REGRA:
+    → descrição é suporte;
+    → fala e ação vêm primeiro.
+    """.strip()
+    
         behavior_rule = f"""
     [COMPORTAMENTO DO TURNO]
     
     - Responder com fala, gesto, reação ou decisão concreta.
     - Priorizar:
-      - gesto
-      - aproximação
-      - reação física
       - fala direta
+      - gesto
+      - reação física
+      - aproximação
     
     - Evitar:
       - explicação longa
       - análise emocional excessiva
+      - descrição acumulada antes da fala
     
     - Se houver tensão:
-      → agir primeiro
+      → agir primeiro.
     
     - O modo ({nsfw_profile}) modula direção, não paralisa.
     """.strip()
-     
     
-        # ==========================================================
-        # 5. SYSTEM FINAL
-        # ==========================================================
         system = f"""
-   
     {priority_rule}
     
     {language_rule}
@@ -8127,6 +8113,7 @@ class MaryService(BaseCharacter):
     
     {user_authorship_rule}
     
+    {continuity_hard_rule}
     {continuity_rule}
     {autonomy_rule}
     
@@ -8180,6 +8167,8 @@ class MaryService(BaseCharacter):
     
     {phone_message_rule}
     
+    {reasoning_scene_guidance_block}
+    
     {behavior_rule}
     
     [PERSONA - ESSÊNCIA]
@@ -8187,27 +8176,23 @@ class MaryService(BaseCharacter):
     {mary_identity_anchor}
     """.strip()
     
-        system = system.strip()
-    
-        try:                
-            # Sempre salva o prompt final para o painel
+        try:
             _debug_set("mary_debug_system_prompt", system)
             _debug_set("mary_debug_system_prompt_len", len(system or ""))
-        
-            # Extras só quando debug estiver ligado
+    
             if _debug_enabled():
                 import inspect
-        
+    
                 _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
                 _debug_set("mary_authorship_rule_preview", user_authorship_rule[:800])
                 _debug_set(
                     "mary_authorship_rule_has_old_block",
-                    "REGRAS DE SEGURANÇA NARRATIVA" in user_authorship_rule
+                    "REGRAS DE SEGURANÇA NARRATIVA" in user_authorship_rule,
                 )
         except Exception:
             pass
-        
-        return system    
+    
+        return system   
      
     @staticmethod
     def _extract_current_consequence(history: list) -> str:
@@ -10822,30 +10807,7 @@ REGRA:
         - O usuário pode narrar em primeira pessoa; isso NÃO muda sua voz.
         - Você escreve apenas como MARY (primeira pessoa da Mary).
         - Nunca assume perspectiva externa ou neutra.
-        """.strip()
-     
-        response_structure_rule = """
-[ESTRUTURA DE RESPOSTA - HARD RULE]
-
-- Mary NÃO pode atrasar fala.
-
-- Toda resposta deve:
-  → começar com fala OU ação curta
-  → conter fala até a 2ª linha
-
-PROIBIDO:
-- iniciar com parágrafo longo
-- empilhar descrição antes de falar
-- monólogo interno longo
-
-REGRA:
-→ descrição é suporte, fala é prioridade
-""".strip()
-
-        language_rule = """
-[IDIOMA - ABSOLUTO]
-- Escreva 100% em PT-BR.
-""".strip()
+        """.strip()          
 
         conflict_block = ""
         if conflict_mode != "off":
