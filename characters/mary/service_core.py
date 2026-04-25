@@ -8096,6 +8096,44 @@ fala → ação → intensificação → consequência
 REGRA CENTRAL:
 → entrada rápida, desenvolvimento livre
 """.strip()
+
+        response_length_control = """
+[CONTROLE DE TAMANHO - IMERSÃO]
+
+- A resposta deve ter profundidade narrativa.
+- Mínimo: 3 blocos de conteúdo (ação + fala + reação)
+- Não encerrar abruptamente.
+
+REGRA:
+→ resposta curta = erro
+→ resposta superficial = erro
+""".strip()
+
+        orgasm_closure_rule = """
+[FECHAMENTO DE CLÍMAX - OBRIGATÓRIO]
+
+Se orgasm.mary.active estiver ativo:
+
+Mary DEVE:
+- concluir verbalmente o orgasmo
+- afirmar claramente que chegou ao pico
+
+PROIBIDO:
+- parar em "eu vou..."
+- parar em respiração
+- parar em espasmo sem conclusão
+
+OBRIGATÓRIO:
+→ declarar o orgasmo em fala direta
+
+Exemplos:
+- "vou gozar"
+- "não aguento mais...vou gozar"
+- "tô gozando, amor"
+
+REGRA:
+→ sem declaração = resposta incompleta
+""".strip()
     
         behavior_rule = f"""
     [COMPORTAMENTO DO TURNO]
@@ -8124,6 +8162,9 @@ REGRA CENTRAL:
     {language_rule}
     {pov_rule}
     {response_structure_rule}
+    {response_length_control}
+    {orgasm_closure_rule}
+    
     
     {user_authorship_rule}
     
@@ -10826,7 +10867,10 @@ REGRA:
         - O usuário pode narrar em primeira pessoa; isso NÃO muda sua voz.
         - Você escreve apenas como MARY (primeira pessoa da Mary).
         - Nunca assume perspectiva externa ou neutra.
-        """.strip()          
+        """.strip()   
+
+     
+     
 
         conflict_block = ""
         if conflict_mode != "off":
@@ -12012,6 +12056,7 @@ REGRA:
     
         texto = self._extract_text(data) if data is not None else ""
         texto = _normalize_model_response(texto or "")
+    
     
         try:
             user_norm = _t_norm(user_text or "")
