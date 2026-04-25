@@ -6836,8 +6836,12 @@ def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion_sta
         facts = {}
 
     mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-    if not isinstance(mary, dict):
-        mary = {}
+    mary = dict(mary) if isinstance(mary, dict) else {}
+
+    # Preserva campos críticos já existentes
+    nsfw_global = bool(mary.get("nsfw", False))
+    nsfw_tl_key = f"nsfw::{tl}" if tl else ""
+    nsfw_tl = bool(mary.get(nsfw_tl_key, nsfw_global)) if nsfw_tl_key else nsfw_global
 
     # compat legado
     mary["emotion"] = dominant
@@ -6854,6 +6858,11 @@ def _save_emotion_state_to_facts(*, usuario_key: str, timeline: str, emotion_sta
     mary["emotion_state"] = state_obj
     if tl:
         mary[f"emotion_state::{tl}"] = state_obj
+
+    # Reaplica campos críticos antes de salvar
+    mary["nsfw"] = nsfw_global
+    if tl:
+        mary[nsfw_tl_key] = nsfw_tl
 
     try:
         set_fact_safe(usuario_key, "mary", mary, {"fonte": "emotion_persist_v2"})
@@ -7674,36 +7683,65 @@ def _release_forced_retreat_if_allowed(
         if not isinstance(facts, dict):
             return facts
 
+        tl = (timeline_final or "").strip().lower()
+        if not tl:
+            return facts
+
         mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-        mary = dict(mary)
-
-        # Remove intro antes de salvar mary inteira
-        mary.pop("intro", None)
-
-        set_fact_safe(
-            usuario_key,
-            "mary",
-            mary,
-            {"fonte": "remove_intro_from_mary"},
-        )
-
         rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
         intimacy = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
         cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
 
-        rel_state = rel.get(f"state::{timeline_final}")
+        # Remove apenas mary.intro, sem regravar o objeto mary inteiro.
+        if isinstance(mary, dict) and "intro" in mary:
+            try:
+                set_fact_safe(
+                    usuario_key,
+                    "mary.intro",
+                    None,
+                    {"fonte": "remove_intro_from_mary"},
+                )
+                mary.pop("intro", None)
+            except Exception:
+                pass
+
+        rel_state = rel.get(f"state::{tl}")
         if not isinstance(rel_state, dict):
             rel_state = {}
 
-        phase = intimacy.get(f"phase::{timeline_final}", intimacy.get("phase", 0))
+        phase_candidates = [
+            facts.get(f"intimacy.phase::{tl}"),
+            facts.get(f"intimacy_phase::{tl}"),
+            facts.get(f"mary_intimacy_phase::{tl}"),
+            intimacy.get(f"phase::{tl}"),
+            facts.get("intimacy.phase"),
+            facts.get("intimacy_phase"),
+            facts.get("mary_intimacy_phase"),
+            intimacy.get("phase"),
+            facts.get("phase_intimacy"),
+            facts.get("phase"),
+        ]
+
+        phase_values = []
+        for v in phase_candidates:
+            try:
+                if v is None or v == "":
+                    continue
+                phase_values.append(int(v))
+            except Exception:
+                pass
+
+        phase = max(phase_values) if phase_values else 0
+
         try:
-            phase = int(phase)
+            phase = max(0, min(int(phase), MAX_INTIMACY_PHASE))
         except Exception:
             phase = 0
 
         nsfw_on = bool(
-            mary.get(f"nsfw::{timeline_final}", mary.get("nsfw", False))
-        )
+            mary.get(f"nsfw::{tl}", mary.get("nsfw", False))
+        ) if isinstance(mary, dict) else False
+
         scene_locked = bool(cena.get("locked", False))
         allows_touch = bool(rel_state.get("allows_extended_touch"))
         allows_relief = bool(rel_state.get("allows_mutual_relief"))
@@ -7717,22 +7755,31 @@ def _release_forced_retreat_if_allowed(
         )
 
         if can_release:
-            mary[f"forced_retreat::{timeline_final}"] = False
-            mary["forced_retreat"] = False
-
             set_fact_safe(
                 usuario_key,
-                "mary",
-                mary,
+                f"mary.forced_retreat::{tl}",
+                False,
                 {"fonte": "release_forced_retreat"},
             )
 
-            facts = cached_get_facts(usuario_key) or facts
+            set_fact_safe(
+                usuario_key,
+                "mary.forced_retreat",
+                False,
+                {"fonte": "release_forced_retreat"},
+            )
+
+            try:
+                fresh = cached_get_facts(usuario_key) or {}
+                if isinstance(fresh, dict):
+                    return fresh
+            except Exception:
+                pass
+
+        return facts
 
     except Exception:
-        pass
-
-    return facts
+        return facts
 
 
 # ==========================================================
@@ -8630,6 +8677,29 @@ class MaryService(BaseCharacter):
         shared_key = _shared_key(user_id, timeline_final)
         _sync_intro_fact(usuario_key, timeline_final)
 
+        # ==========================================================
+        # NSFW — UI/override como fonte de verdade do turno
+        # ==========================================================
+        try:
+            if nsfw is None:
+                nsfw = bool(_ss_get("mary_nsfw_on") or False)
+        
+            set_fact_safe(usuario_key, "mary.nsfw", bool(nsfw), {"fonte": "reply_nsfw_lock"})
+            set_fact_safe(
+                usuario_key,
+                f"mary.nsfw::{timeline_final}",
+                bool(nsfw),
+                {"fonte": "reply_nsfw_lock"},
+            )
+        
+            try:
+                _invalidate_backend_cache()
+            except Exception:
+                pass
+        
+        except Exception:
+            pass
+
         diag = _Diag(
             ts=int(time.time()),
             timeline=timeline_final,
@@ -8965,11 +9035,14 @@ class MaryService(BaseCharacter):
                     mary_fact["virginity"] = "nao_virgem"
                     changed = True
 
-                if changed:
+                if changed:             
                     facts["mary"] = mary_fact
-                    set_fact_safe(usuario_key, "mary", mary_fact, {"fonte": "canon_world_sync"})
-        except Exception:
-            pass
+                
+                    try:
+                        set_fact_safe(usuario_key, f"mary.{tl_key}", mary_fact.get(tl_key), {"fonte": "canon_world_sync"})
+                        set_fact_safe(usuario_key, "mary.virginity", mary_fact.get("virginity"), {"fonte": "canon_world_sync"})
+                    except Exception:
+                        pass
 
         # ==========================================================
         # Política do turno (NSFW / terceiros / conflito / iniciativa)
@@ -8986,8 +9059,47 @@ class MaryService(BaseCharacter):
             diag=diag,
         )
 
-        facts = policy["facts"]
+        facts = policy["facts"]               
         nsfw_on = bool(policy["nsfw_on"])
+
+        # ==========================================================
+        # NSFW — TRAVA PÓS-POLICY
+        # Impede que policy/facts antigos voltem o turno para SAFE
+        # ==========================================================
+        try:
+            expected_nsfw = bool(nsfw_on)
+
+            mary_policy = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+            if not isinstance(mary_policy, dict):
+                mary_policy = {}
+
+            if mary_policy.get("nsfw") != expected_nsfw:
+                set_fact_safe(
+                    usuario_key,
+                    "mary.nsfw",
+                    expected_nsfw,
+                    {"fonte": "reply_post_policy_nsfw_lock"},
+                )
+                facts["mary.nsfw"] = expected_nsfw
+
+            tl_nsfw_key = f"nsfw::{timeline_final}"
+            if mary_policy.get(tl_nsfw_key) != expected_nsfw:
+                set_fact_safe(
+                    usuario_key,
+                    f"mary.nsfw::{timeline_final}",
+                    expected_nsfw,
+                    {"fonte": "reply_post_policy_nsfw_lock"},
+                )
+                facts[f"mary.nsfw::{timeline_final}"] = expected_nsfw
+
+            # mantém também dentro do objeto mary local
+            mary_policy["nsfw"] = expected_nsfw
+            mary_policy[tl_nsfw_key] = expected_nsfw
+            facts["mary"] = mary_policy
+
+        except Exception:
+            pass
+
         allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
         nsfw_profile = str(policy["nsfw_profile"])
         behavior_mode = str(policy.get("behavior_mode") or "SAFE").strip().upper()
@@ -9017,6 +9129,7 @@ class MaryService(BaseCharacter):
         REGRA:
         → manter tensão leve e continuidade natural.
         """.strip()
+         
         # ==========================================================
         # DECISION ENGINE - pressão moral / escolha real
         # ==========================================================
