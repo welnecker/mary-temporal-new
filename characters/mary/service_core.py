@@ -10800,6 +10800,11 @@ REGRA:
 → Mary controla apenas o próprio corpo, fala e ações.
 → O usuário controla tudo que é dele.
 """.strip()
+
+        language_rule = """
+[IDIOMA - ABSOLUTO]
+- Escreva 100% em PT-BR.
+""".strip()
        
         pov_rule = """
         [BLINDAGEM DE POV - ABSOLUTA]
