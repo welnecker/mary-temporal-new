@@ -8318,23 +8318,24 @@ class MaryService(BaseCharacter):
                     tp_on = bool(tp_on and nsfw_on)
                     mary_now["allow_third_party_seduction"] = tp_on
     
-                old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
-
-                #  remove qualquer resíduo de intro antes de comparar/salvar
-                mary_now.pop("intro", None)
+                try:
+                    old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
                 
-                if isinstance(old_mary, dict):
-                    old_mary = dict(old_mary)
-                    old_mary.pop("intro", None)
+                    # remove qualquer resíduo de intro antes de comparar/salvar
+                    mary_now.pop("intro", None)
                 
-                if mary_now != old_mary:
-                    set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
-                    facts = cached_get_facts(usuario_key) or {}
-                    facts = _normalize_scene_local_facts(facts)
+                    if isinstance(old_mary, dict):
+                        old_mary = dict(old_mary)
+                        old_mary.pop("intro", None)
                 
-                    #  garante que não volta após reload
-                    if isinstance(facts.get("mary"), dict):
-                        facts["mary"].pop("intro", None)
+                    if mary_now != old_mary:
+                        set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
+                        facts = cached_get_facts(usuario_key) or {}
+                        facts = _normalize_scene_local_facts(facts)
+                
+                        # garante que não volta após reload
+                        if isinstance(facts.get("mary"), dict):
+                            facts["mary"].pop("intro", None)
                 
                 except Exception:
                     pass
