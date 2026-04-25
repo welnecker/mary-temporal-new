@@ -8,6 +8,9 @@ import importlib
 import inspect
 from typing import Any
 import streamlit as st
+#  INICIALIZA LOG DE DEBUG (UMA VEZ POR SESSÃO)
+if "debug_logs" not in st.session_state:
+    st.session_state["debug_logs"] = []
 import httpx
 
 st.set_page_config(
@@ -1106,6 +1109,10 @@ def _garantir_estado_inicial() -> None:
         st.session_state["mary_debug_on"] = False
     if "mary_debug_log" not in st.session_state:
         st.session_state["mary_debug_log"] = []
+    
+    # 💣 NOVO BUFFER DE DEBUG (set_fact)
+    if "debug_logs" not in st.session_state:
+        st.session_state["debug_logs"] = []
 
     # Inputs internos do pipeline
     if "mary_debug_system_prompt" not in st.session_state:
@@ -2672,6 +2679,15 @@ def _render_sidebar() -> None:
         # CONTROLES NARRATIVOS
         # ==========================================================
         st.subheader("🎛️ Controles narrativos")
+        st.sidebar.markdown("### 🧪 Debug Logs (set_fact)")
+
+        logs = st.session_state.get("debug_logs", [])
+        
+        if logs:
+            for log in reversed(logs[-20:]):
+                st.sidebar.text(log)
+        else:
+            st.sidebar.caption("Sem logs ainda...")
 
         nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
         st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
