@@ -7618,6 +7618,11 @@ def _release_forced_retreat_if_allowed(
 
         mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
         mary = dict(mary)
+        
+        # CORREÇÃO
+        mary.pop("intro", None)
+        
+        set_fact_safe(usuario_key, "mary", mary, {...})
 
         rel = facts.get("rel") if isinstance(facts.get("rel"), dict) else {}
         intimacy = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
