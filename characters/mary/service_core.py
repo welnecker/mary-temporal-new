@@ -9044,6 +9044,9 @@ class MaryService(BaseCharacter):
                     except Exception:
                         pass
 
+        except Exception:
+            pass
+
         # ==========================================================
         # Política do turno (NSFW / terceiros / conflito / iniciativa)
         # ==========================================================
