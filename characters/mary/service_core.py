@@ -964,19 +964,22 @@ def _cache_set(key: str, data: Any) -> None:
 # CACHE (facts/history/memories)
 # ==========================================================
 def _sanitize_facts(facts: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Remove campos obsoletos/contaminantes dos facts antes de qualquer uso.
-    """
     if not isinstance(facts, dict):
         return {}
 
     f = dict(facts)
 
-    mary = f.get("mary")
-    if isinstance(mary, dict):
-        mary = dict(mary)
-        mary.pop("intro", None)
-        f["mary"] = mary
+    # remove QUALQUER intro em qualquer nível
+    def _deep_clean(obj):
+        if isinstance(obj, dict):
+            obj.pop("intro", None)
+            for v in obj.values():
+                _deep_clean(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _deep_clean(v)
+
+    _deep_clean(f)
 
     return f
 
@@ -2125,14 +2128,28 @@ def _extract_intro_from_persona(timeline: str) -> Tuple[str, str]:
 def _sync_intro_fact(usuario_key: str, timeline: str) -> Tuple[str, str]:
     """
     Intro desativada.
-    Remove resíduos antigos mary.intro.<timeline>.text/hash dos facts.
+    Remove resíduos antigos mary.intro.<timeline>.text/hash
+    e também remove o campo intro dentro do objeto mary.
     """
     tl = _normalize_timeline(timeline)
 
     try:
         delete_fact(usuario_key, f"mary.intro.{tl}.text")
         delete_fact(usuario_key, f"mary.intro.{tl}.hash")
+        delete_fact(usuario_key, f"mary.intro.{tl}")
         delete_fact(usuario_key, "mary.intro")
+        delete_fact(usuario_key, "mary.intro.fixed")
+        delete_fact(usuario_key, "mary.intro.use_fixed")
+    except Exception:
+        pass
+
+    try:
+        facts_now = get_facts(usuario_key) or {}
+        mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+        if isinstance(mary_now, dict) and "intro" in mary_now:
+            mary_now = dict(mary_now)
+            mary_now.pop("intro", None)
+            set_fact(usuario_key, "mary", mary_now, {"fonte": "cleanup_intro_inside_mary"})
     except Exception:
         pass
 
@@ -8520,6 +8537,7 @@ class MaryService(BaseCharacter):
 
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id, timeline_final)
+        _sync_intro_fact(usuario_key, timeline_final)
 
         diag = _Diag(
             ts=int(time.time()),
