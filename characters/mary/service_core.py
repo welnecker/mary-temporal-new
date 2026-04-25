@@ -1098,27 +1098,26 @@ def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
 # ==========================================================
 def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] = None) -> None:
     try:
+        logs = st.session_state.get("debug_logs", [])
+
         if key == "mary" and isinstance(value, dict):
-            # 🔍 LOG ANTES DA LIMPEZA
             if "intro" in value:
-                print("🔥 [ANTES] mary com intro sendo salvo:")
-                print(value)
+                logs.append(f"🔥 ANTES (com intro): {value}")
 
             value = dict(value)
             value.pop("intro", None)
 
-            # 🔍 LOG DEPOIS DA LIMPEZA
-            print("🧹 [DEPOIS] mary salvo sem intro:")
-            print(value)
+            logs.append(f"🧹 DEPOIS (sem intro): {value}")
 
-        # 🔍 LOG GERAL (opcional, mas útil)
-        print(f"💾 set_fact_safe → key={key} meta={meta}")
+        logs.append(f"💾 set_fact_safe → key={key} meta={meta}")
+
+        st.session_state["debug_logs"] = logs[-50:]  # mantém últimos 50
 
         set_fact(usuario_key, key, value, meta or {})
         clear_user_cache(usuario_key)
 
     except Exception as e:
-        print("❌ ERRO em set_fact_safe:", e)
+        st.session_state["debug_logs"].append(f"❌ ERRO: {e}")
 
 def append_memory_safe(
     shared_key: str,
