@@ -2384,12 +2384,6 @@ def _inject_intro_as_context_once(
     """
     return
 
-    # -------------------------------
-    #  Guard de sessão (UMA VEZ)
-    # -------------------------------
-    if bool(_ss_get(inject_flag, False)):
-        return
-
     # canon vence e dispensa intro
     if _has_canon_memories(shared_key, timeline):
         _ss_set(inject_flag, True)
