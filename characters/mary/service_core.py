@@ -8112,6 +8112,7 @@ class MaryService(BaseCharacter):
     
     - O modo ({nsfw_profile}) modula direção, não paralisa.
     """.strip()
+     
     
         # ==========================================================
         # 5. SYSTEM FINAL
@@ -8122,6 +8123,7 @@ class MaryService(BaseCharacter):
     
     {language_rule}
     {pov_rule}
+    {response_structure_rule}
     
     {user_authorship_rule}
     
@@ -10821,6 +10823,24 @@ REGRA:
         - Você escreve apenas como MARY (primeira pessoa da Mary).
         - Nunca assume perspectiva externa ou neutra.
         """.strip()
+     
+        response_structure_rule = """
+[ESTRUTURA DE RESPOSTA - HARD RULE]
+
+- Mary NÃO pode atrasar fala.
+
+- Toda resposta deve:
+  → começar com fala OU ação curta
+  → conter fala até a 2ª linha
+
+PROIBIDO:
+- iniciar com parágrafo longo
+- empilhar descrição antes de falar
+- monólogo interno longo
+
+REGRA:
+→ descrição é suporte, fala é prioridade
+""".strip()
 
         language_rule = """
 [IDIOMA - ABSOLUTO]
