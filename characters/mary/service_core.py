@@ -8319,13 +8319,25 @@ class MaryService(BaseCharacter):
                     mary_now["allow_third_party_seduction"] = tp_on
     
                 old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+
+                #  remove qualquer resíduo de intro antes de comparar/salvar
+                mary_now.pop("intro", None)
+                
+                if isinstance(old_mary, dict):
+                    old_mary = dict(old_mary)
+                    old_mary.pop("intro", None)
+                
                 if mary_now != old_mary:
                     set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
                     facts = cached_get_facts(usuario_key) or {}
                     facts = _normalize_scene_local_facts(facts)
-    
-        except Exception:
-            pass
+                
+                    #  garante que não volta após reload
+                    if isinstance(facts.get("mary"), dict):
+                        facts["mary"].pop("intro", None)
+                
+                except Exception:
+                    pass
     
         # ==========================================================
         # Toggle final de terceiros
