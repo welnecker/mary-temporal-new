@@ -8273,7 +8273,7 @@ class MaryService(BaseCharacter):
         conflict_mode = _resolve_conflict_mode(timeline_final)
         conflict_now = (conflict_mode != "off") and _conflict_imminent(prompt)
         diag.conflict_now = bool(conflict_now)
-    
+           
         # ==========================================================
         # Sync UI -> facts (debug persistido refletir sidebar)
         # ==========================================================
@@ -8293,20 +8293,20 @@ class MaryService(BaseCharacter):
                 f"{_SS_PREFIX}third_party",
                 "mary::allow_third_party_seduction",
             )
-    
+        
             ui_has_nsfw = any(k in ss for k in nsfw_keys)
             ui_has_tp = any(k in ss for k in tp_keys)
-    
+        
             if ui_has_nsfw or ui_has_tp:
                 facts_now = cached_get_facts(usuario_key) or {}
                 mary_now = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
                 mary_now = dict(mary_now)
-    
+        
                 if ui_has_nsfw:
                     mary_now["nsfw"] = bool(nsfw_on)
                     if timeline_final:
                         mary_now[f"nsfw::{timeline_final}"] = bool(nsfw_on)
-    
+        
                 if ui_has_tp:
                     tp_on = bool(
                         third_party_enabled(
@@ -8317,28 +8317,28 @@ class MaryService(BaseCharacter):
                     )
                     tp_on = bool(tp_on and nsfw_on)
                     mary_now["allow_third_party_seduction"] = tp_on
-    
-                try:
-                    old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
-                
-                    # remove qualquer resíduo de intro antes de comparar/salvar
+        
+                old_mary = facts_now.get("mary") if isinstance(facts_now.get("mary"), dict) else {}
+        
+                # 💣 remove intro antes de comparar/salvar
+                if isinstance(mary_now, dict):
                     mary_now.pop("intro", None)
-                
-                    if isinstance(old_mary, dict):
-                        old_mary = dict(old_mary)
-                        old_mary.pop("intro", None)
-                
-                    if mary_now != old_mary:
-                        set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
-                        facts = cached_get_facts(usuario_key) or {}
-                        facts = _normalize_scene_local_facts(facts)
-                
-                        # garante que não volta após reload
-                        if isinstance(facts.get("mary"), dict):
-                            facts["mary"].pop("intro", None)
-                
-                except Exception:
-                    pass
+        
+                if isinstance(old_mary, dict):
+                    old_mary = dict(old_mary)
+                    old_mary.pop("intro", None)
+        
+                if mary_now != old_mary:
+                    set_fact_safe(usuario_key, "mary", mary_now, {"fonte": "ui_toggle_sync"})
+                    facts = cached_get_facts(usuario_key) or {}
+                    facts = _normalize_scene_local_facts(facts)
+        
+                    # garante que não volta após reload
+                    if isinstance(facts.get("mary"), dict):
+                        facts["mary"].pop("intro", None)
+        
+        except Exception:
+            pass
     
         # ==========================================================
         # Toggle final de terceiros
