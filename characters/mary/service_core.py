@@ -963,15 +963,34 @@ def _cache_set(key: str, data: Any) -> None:
 # ==========================================================
 # CACHE (facts/history/memories)
 # ==========================================================
+def _sanitize_facts(facts: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Remove campos obsoletos/contaminantes dos facts antes de qualquer uso.
+    """
+    if not isinstance(facts, dict):
+        return {}
+
+    f = dict(facts)
+
+    mary = f.get("mary")
+    if isinstance(mary, dict):
+        mary = dict(mary)
+        mary.pop("intro", None)
+        f["mary"] = mary
+
+    return f
+
+
 def cached_get_facts(usuario_key: str) -> Dict[str, Any]:
     ck = f"{_SS_PREFIX}facts::{usuario_key}"
+
     cached = _cache_get(ck)
     if isinstance(cached, dict):
-        return cached
+        return _sanitize_facts(cached)
 
     f = get_facts(usuario_key) or {}
-    if not isinstance(f, dict):
-        f = {}
+    f = _sanitize_facts(f)
+
     _cache_set(ck, f)
     return f
 
@@ -1075,6 +1094,10 @@ def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
 # WRAPPERS DE ESCRITA (invalida cache automaticamente)
 # ==========================================================
 def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] = None) -> None:
+    if key == "mary" and isinstance(value, dict):
+        value = dict(value)
+        value.pop("intro", None)
+
     set_fact(usuario_key, key, value, meta or {})
     clear_user_cache(usuario_key)
 
@@ -2364,11 +2387,6 @@ def _inject_active_state_memories_always(
         messages.append({"role": "system", "content": block})
 
 def _choose_intro_text(usuario_key: str, timeline: str) -> str:
-    """
-    Intro desativada.
-    Não busca fixed intro.
-    Não sincroniza intro da persona.
-    """
     return ""
 
 
@@ -2378,10 +2396,6 @@ def _inject_intro_as_context_once(
     shared_key: str,
     messages: List[Dict[str, str]],
 ) -> None:
-    """
-    Intro desativada.
-    Mantida só para compatibilidade com chamadas existentes.
-    """
     return
 
     # canon vence e dispensa intro
