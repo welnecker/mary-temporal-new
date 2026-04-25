@@ -9656,30 +9656,49 @@ class MaryService(BaseCharacter):
                 force_resolution = bool(rel_state_now.get("force_orgasm_resolution", False))
         except Exception:
             force_resolution = False
-
+       
         # ==========================================================
         # NSFW STYLE BLOCK (com override de pico)
         # ==========================================================
+
+        # Detecta se deve forçar resolução
+        force_resolution = False
+        try:
+            force_resolution = bool(
+                rel_state.get("force_orgasm_resolution", False)
+            )
+        except Exception:
+            force_resolution = False
+
         if force_resolution:
             nsfw_block = """
-[NSFW_ON - RESOLUÇÃO DE PICO]
+[OVERRIDE ABSOLUTO - RESOLUÇÃO DE PICO]
 
-- Mary já atingiu um nível máximo de resposta física.
+- Este turno É de resolução.
+- Ignorar qualquer regra anterior que diga:
+  - não concluir
+  - evitar resolver rápido
+  - segurar
+  - prolongar tensão
+  - alternar avanço e controle
 
-- Este turno NÃO deve:
-  - prolongar estímulo
-  - repetir tensão
-  - manter expectativa
+- Mary já chegou ao pico.
+- NÃO repetir pré-clímax.
+- NÃO dizer "vou chegar", "não aguento", "estou quase" sem resolver.
 
-- Este turno DEVE:
-  - mostrar resposta física imediata
-  - quebrar o controle momentaneamente
-  - transicionar para pós-intensidade (respiração, pausa, recuperação)
+DEVE:
+- mostrar consequência imediata do pico;
+- quebrar o controle momentaneamente;
+- depois reduzir ritmo com respiração, pausa e recuperação.
 
-REGRA:
-→ o pico não continua — ele se resolve.
+IMPORTANTE:
+- Isso NÃO altera virgindade.
+- Isso NÃO marca consumação.
+- Isso NÃO permite penetração.
+
+REGRA FINAL:
+→ pico ativo resolve agora.
 """.strip()
-
         else:
             nsfw_block = _get_nsfw_style_block(
                 usuario_key,
@@ -10324,7 +10343,20 @@ Memória consistente vale mais que fluidez narrativa.
 - Use apenas o que combinar com a Mary atual, sem contradizer o presente.
 """ + "\n" + long_memory_text
 
-        user_finalizes_rule = """
+        
+        if force_resolution:
+            user_finalizes_rule = """
+[PROGRESSÃO - RESOLUÇÃO ATIVA]
+
+- Neste turno, Mary NÃO deve prolongar tensão.
+- Neste turno, Mary NÃO deve manter expectativa.
+- Neste turno, Mary deve resolver o pico já ativo.
+
+REGRA:
+→ se force_orgasm_resolution=True, a resolução vence a progressão aberta.
+""".strip()
+        else:
+            user_finalizes_rule = """
 [PROGRESSÃO - ABERTA E CONTROLADA]
 
 - Mary NÃO precisa:
@@ -10333,25 +10365,16 @@ Memória consistente vale mais que fluidez narrativa.
   - fechar a cena
 
 - Estrutura preferida de resposta:
-  1. reação imediata (emocional ou física)
+  1. reação imediata
   2. fala direta
   3. pequeno gancho ou continuação
-
-- Se o usuário NÃO sinalizar avanço:
-  - Mary permanece no presente
-  - NÃO acelera para conclusão
-  - NÃO antecipa desfecho
 
 - Se o usuário sinalizar avanço:
   - Mary responde e acompanha
   - sem pular etapas
 
-- NSFW_ON:
-  - vocabulário adulto permitido
-  - sem obrigação de culminar em clímax
-
 Evitar respostas que pareçam encerramento de cena.
-""".strip()      
+""".strip()     
         
         # ==========================================================
         # TERCEIROS
