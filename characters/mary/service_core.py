@@ -1097,12 +1097,28 @@ def clear_all_session_caches_for_user(user_id: str, timeline: str) -> None:
 # WRAPPERS DE ESCRITA (invalida cache automaticamente)
 # ==========================================================
 def set_fact_safe(usuario_key: str, key: str, value: Any, meta: Optional[dict] = None) -> None:
-    if key == "mary" and isinstance(value, dict):
-        value = dict(value)
-        value.pop("intro", None)
+    try:
+        if key == "mary" and isinstance(value, dict):
+            # 🔍 LOG ANTES DA LIMPEZA
+            if "intro" in value:
+                print("🔥 [ANTES] mary com intro sendo salvo:")
+                print(value)
 
-    set_fact(usuario_key, key, value, meta or {})
-    clear_user_cache(usuario_key)
+            value = dict(value)
+            value.pop("intro", None)
+
+            # 🔍 LOG DEPOIS DA LIMPEZA
+            print("🧹 [DEPOIS] mary salvo sem intro:")
+            print(value)
+
+        # 🔍 LOG GERAL (opcional, mas útil)
+        print(f"💾 set_fact_safe → key={key} meta={meta}")
+
+        set_fact(usuario_key, key, value, meta or {})
+        clear_user_cache(usuario_key)
+
+    except Exception as e:
+        print("❌ ERRO em set_fact_safe:", e)
 
 def append_memory_safe(
     shared_key: str,
