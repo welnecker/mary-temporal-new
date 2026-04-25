@@ -1265,20 +1265,7 @@ def nsfw_enabled(
     # 5) default
     return False if tl == "universitaria" else True
        
-    if not isinstance(facts, dict):
-        return False
-
-    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
-
-    # por timeline (se existir)
-    if tl:
-        k_tl = f"nsfw::{tl}"
-        if k_tl in mary:
-            return bool(mary.get(k_tl))
-
-    # fallback global
-    return bool(mary.get("nsfw", False))
-
+   
 def _get_nsfw_style_block(
     usuario_key: str,
     *,
@@ -1300,13 +1287,40 @@ def _get_nsfw_style_block(
     if not enabled:
         return SAFE_SENSUAL_STYLE
 
-    try:
+    try:           
         facts = get_facts(usuario_key) or {}
-        intimacy_phase = int(
-            facts.get("intimacy.phase")
-            or facts.get("intimacy_phase")
-            or 0
-        )
+        tl = (timeline or "").strip().lower()
+    
+        candidates = []
+    
+        if tl:
+            candidates.extend([
+                facts.get(f"intimacy.phase::{tl}"),
+                facts.get(f"intimacy_phase::{tl}"),
+                facts.get(f"mary_intimacy_phase::{tl}"),
+            ])
+    
+            intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
+            candidates.append(intimacy_obj.get(f"phase::{tl}"))
+    
+        candidates.extend([
+            facts.get("intimacy.phase"),
+            facts.get("intimacy_phase"),
+            facts.get("mary_intimacy_phase"),
+            facts.get("phase_intimacy"),
+            facts.get("phase"),
+        ])
+    
+        intimacy_phase = 0
+        for v in candidates:
+            if v is None or v == "":
+                continue
+            try:
+                intimacy_phase = int(v)
+                break
+            except Exception:
+                pass
+    
     except Exception:
         intimacy_phase = 0
 
@@ -1620,9 +1634,10 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
     """Mantém consistência entre intimacy.phase (global) e intimacy.phase::<timeline>.
 
     Regras:
-    - Se existir fase por timeline (em qualquer alias), ela vence e sincroniza a global.
-    - Exceção: se a fase por timeline vier zerada por alias legado/ruim, mas a global já for > 0,
-      preserva a global para evitar reset indevido.
+    - Lê todos os aliases disponíveis e usa o maior valor válido para evitar reset indevido.
+    - Se existir fase por timeline, ela vence e sincroniza a global.
+    - Exceção: se a fase por timeline vier zerada, mas a global já for > 0,
+      preserva a global para evitar regressão.
     - Se não existir fase por timeline, cria a fase por timeline a partir da global.
     - Esta função NÃO decide progressão narrativa; apenas alinha chaves e canoniza aliases.
     """
@@ -1646,6 +1661,16 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
             if p > MAX_INTIMACY_PHASE:
                 return MAX_INTIMACY_PHASE
             return p
+
+        def _phase_from_raw(key: str, raw: Any) -> int:
+            if key.startswith("fase_intima"):
+                if isinstance(raw, str):
+                    raw_n = raw.strip().lower()
+                    rev = {v: kk for kk, v in INTIMACY_PHASES.items()}
+                    return _clamp(int(rev.get(raw_n, 0)))
+                return _clamp(_to_int(raw))
+
+            return _clamp(_to_int(raw))
 
         def _set_if_needed(key: str, val: Any) -> None:
             cur = facts.get(key)
@@ -1672,47 +1697,28 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
         ]
 
         # -----------------------------
-        # Lê valor por timeline (canônico ou legado)
+        # Lê todos os valores por timeline
         # -----------------------------
-        tl_val = None
+        tl_values = []
         for k in tl_keys:
             if k in facts:
-                raw = facts.get(k)
-                if k.startswith("fase_intima"):
-                    # label textual -> tenta converter pelo mapa reverso
-                    if isinstance(raw, str):
-                        raw_n = str(raw).strip().lower()
-                        rev = {v: kk for kk, v in INTIMACY_PHASES.items()}
-                        tl_val = _clamp(int(rev.get(raw_n, 0)))
-                    else:
-                        tl_val = _clamp(_to_int(raw))
-                else:
-                    tl_val = _clamp(_to_int(raw))
-                break
+                tl_values.append(_phase_from_raw(k, facts.get(k)))
 
         # -----------------------------
-        # Lê valor global (canônico ou legado)
+        # Lê todos os valores globais
         # -----------------------------
-        g_val = None
+        g_values = []
         for k in global_keys:
             if k in facts:
-                raw = facts.get(k)
-                if k == "fase_intima":
-                    if isinstance(raw, str):
-                        raw_n = str(raw).strip().lower()
-                        rev = {v: kk for kk, v in INTIMACY_PHASES.items()}
-                        g_val = _clamp(int(rev.get(raw_n, 0)))
-                    else:
-                        g_val = _clamp(_to_int(raw))
-                else:
-                    g_val = _clamp(_to_int(raw))
-                break
+                g_values.append(_phase_from_raw(k, facts.get(k)))
+
+        tl_val = max(tl_values) if tl_values else None
+        g_val = max(g_values) if g_values else None
 
         # -----------------------------
         # Se existe valor por timeline, ele governa
         # -----------------------------
         if tl_val is not None:
-            # evita reset indevido por alias legado zerado
             if tl_val == 0 and (g_val is not None and g_val > 0):
                 tl_val = int(g_val)
 
@@ -1724,6 +1730,22 @@ def _sync_intimacy_phase_facts(usuario_key: str, facts: Dict[str, Any], timeline
             _set_if_needed(f"fase_intima::{tl}", label)
 
             return facts
+
+        # -----------------------------
+        # Se não existe valor por timeline, cria a partir da global
+        # -----------------------------
+        base = _clamp(_to_int(g_val or 0))
+        label = INTIMACY_PHASES.get(int(base), "tensao")
+
+        _set_if_needed(tl_key_canon, int(base))
+        _set_if_needed(global_key_canon, int(base))
+        _set_if_needed("fase_intima", label)
+        _set_if_needed(f"fase_intima::{tl}", label)
+
+        return facts
+
+    except Exception:
+        return facts
 
         # -----------------------------
         # Se não existe valor por timeline, cria a partir da global
