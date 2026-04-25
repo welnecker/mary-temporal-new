@@ -8673,7 +8673,10 @@ class MaryService(BaseCharacter):
         except Exception:
             orgasm_active = False
     
-        if orgasm_active and bool(rel_state.get("orgasm_allowed", False)):
+        if orgasm_active and bool(rel_state.get("orgasm_allowed", False)):            
+            # Orgasmo permitido: força resolução sem alterar virgindade/consumação.
+            rel_state["force_orgasm_resolution"] = True
+    
             if intimacy_phase < 2:
                 intimacy_phase = 2
                 try:
@@ -8691,6 +8694,35 @@ class MaryService(BaseCharacter):
                     )
                 except Exception:
                     pass
+    
+            try:
+                set_fact_safe(
+                    usuario_key,
+                    f"rel.state::{timeline_final}.force_orgasm_resolution",
+                    True,
+                    {"fonte": "orgasm_resolution_gate"},
+                )
+                set_fact_safe(
+                    usuario_key,
+                    f"rel.state::{timeline_final}.orgasm_allowed",
+                    True,
+                    {"fonte": "orgasm_resolution_gate"},
+                )
+            except Exception:
+                pass
+    
+        else:
+            rel_state["force_orgasm_resolution"] = False
+    
+            try:
+                set_fact_safe(
+                    usuario_key,
+                    f"rel.state::{timeline_final}.force_orgasm_resolution",
+                    False,
+                    {"fonte": "orgasm_resolution_gate"},
+                )
+            except Exception:
+                pass
     
         # ==========================================================
         # Behavior mode / profile
@@ -9610,18 +9642,51 @@ class MaryService(BaseCharacter):
 
         #  contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
-
+       
         # ==========================================================
         # Blocos auxiliares do prompt
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
-       
-        nsfw_block = _get_nsfw_style_block(
-            usuario_key,
-            timeline=timeline_final,
-            nsfw_override=nsfw,
-        )
-                
+
+        # 🔥 Detecta se deve forçar resolução de pico
+        force_resolution = False
+        try:
+            rel_state_now = facts.get("rel", {}).get(f"state::{timeline_final}", {})
+            if isinstance(rel_state_now, dict):
+                force_resolution = bool(rel_state_now.get("force_orgasm_resolution", False))
+        except Exception:
+            force_resolution = False
+
+        # ==========================================================
+        # NSFW STYLE BLOCK (com override de pico)
+        # ==========================================================
+        if force_resolution:
+            nsfw_block = """
+[NSFW_ON - RESOLUÇÃO DE PICO]
+
+- Mary já atingiu um nível máximo de resposta física.
+
+- Este turno NÃO deve:
+  - prolongar estímulo
+  - repetir tensão
+  - manter expectativa
+
+- Este turno DEVE:
+  - mostrar resposta física imediata
+  - quebrar o controle momentaneamente
+  - transicionar para pós-intensidade (respiração, pausa, recuperação)
+
+REGRA:
+→ o pico não continua — ele se resolve.
+""".strip()
+
+        else:
+            nsfw_block = _get_nsfw_style_block(
+                usuario_key,
+                timeline=timeline_final,
+                nsfw_override=nsfw,
+            )
+
         # ==========================================================
         # HARD MODE (linguagem, não mecânica)
         # ==========================================================
