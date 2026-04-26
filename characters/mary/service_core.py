@@ -8159,7 +8159,214 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
     
-        return system
+        return system 
+     
+    @staticmethod
+    def _extract_current_consequence(history: list) -> str:
+        if not history:
+            return ""
+
+        last = history[-1]
+
+        last_user = str(last.get("mensagem_usuario") or "").strip()
+        last_mary = str(last.get("resposta_mary") or "").strip()
+
+        # prioridade: resposta da Mary (ela define estado físico mais recente)
+        base = last_mary or last_user
+
+        if not base:
+            return ""
+
+        # corta para evitar poluição
+        base = base.replace("\n", " ").strip()
+
+        # pega só o trecho relevante final
+        if len(base) > 180:
+            base = base[-180:]
+
+        return base   
+   
+    def _build_messages_for_turn(
+        self,
+        *,
+        system: str,
+        usuario_key: str,
+        shared_key: str,
+        timeline_final: str,
+        prompt: str,
+        mem_spec: Dict[str, Any],
+        facts: Dict[str, Any],
+        rel_state: Dict[str, Any],
+        tp_arc: Dict[str, Any],
+        autonomy_block: str = "",
+    ) -> List[Dict[str, str]]:
+        messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    
+        # HISTÓRICO PRECISA VIR ANTES DE QUALQUER USO
+        try:
+            history = cached_get_history(usuario_key, limit=6) or []
+        except Exception:
+            history = []
+    
+        last_turn = history[-1] if history else {}
+    
+        last_user_real = ""
+        last_mary_real = ""
+    
+        if isinstance(last_turn, dict):
+            last_user_real = str(
+                last_turn.get("mensagem_usuario")
+                or last_turn.get("user")
+                or (last_turn.get("role") == "user" and last_turn.get("content"))
+                or ""
+            ).strip()
+    
+            last_mary_real = str(
+                last_turn.get("resposta_mary")
+                or last_turn.get("assistant")
+                or (last_turn.get("role") == "assistant" and last_turn.get("content"))
+                or ""
+            ).strip()
+    
+        # ==========================================================
+        # 1) CANON / MEMÓRIAS / LATENTES
+        # ==========================================================
+        dedupe_bucket: set = set()
+    
+        _inject_canon_memories_always(
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            max_items=30,
+            dedupe_bucket=dedupe_bucket,
+        )
+    
+        _inject_active_state_memories_always(
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            max_items=12,
+            dedupe_bucket=dedupe_bucket,
+        )
+    
+        if _should_inject_long_memory(prompt):
+            _inject_long_memory_textsearch(
+                usuario_key,
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                limit=4,
+                dedupe_bucket=dedupe_bucket,
+                facts=facts,
+            )
+    
+            _inject_relevant_memories(
+                shared_key,
+                timeline_final,
+                prompt,
+                messages,
+                k=3,
+                dedupe_bucket=dedupe_bucket,
+                facts=facts,
+                history=history,
+            )
+    
+        tp_arc_state = _get_tp_arc_state(facts or {}, timeline_final)
+    
+        _inject_latent_memory_if_any(
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline=timeline_final,
+            messages=messages,
+            tp_arc=tp_arc_state,
+            facts=facts,
+        )
+    
+        # ==========================================================
+        # 2) HISTÓRICO RECENTE (somente para ponte curta)
+        # ==========================================================
+        style_seed = random.choice([
+            "fala_primeiro",
+            "acao_primeiro",
+            "reacao_primeiro",
+            "curta_direta",
+        ])
+    
+        turn_bridge_block = _build_turn_bridge_block(history)
+    
+        extra_system_parts: List[str] = []
+    
+        if autonomy_block and isinstance(autonomy_block, str) and autonomy_block.strip():
+            extra_system_parts.append(autonomy_block.strip())
+    
+        if turn_bridge_block:
+            extra_system_parts.append(turn_bridge_block)
+    
+        extra_system_parts.append(
+            "[FORMA DE RESPOSTA DESTE TURNO]\n"
+            f"- Estilo-base: {style_seed}\n"
+            "- Não usar abertura repetida.\n"
+            "- Evitar padrão fixo.\n"
+            "- O primeiro movimento deve nascer da cena atual.\n"
+            "- Avançar a interação com fala, gesto ou reação concreta.\n"
+        )
+    
+        if extra_system_parts:
+            base = str(messages[0].get("content") or "").rstrip()
+            messages[0]["content"] = (
+                base + "\n\n" + "\n\n".join(extra_system_parts).strip()
+            ).strip()
+    
+        # ==========================================================
+        # 3) CONTINUIDADE REAL DO TURNO ANTERIOR
+        # ==========================================================
+        if last_user_real or last_mary_real:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "[CONTINUIDADE REAL DO TURNO ANTERIOR]\n"
+                    "- Continue da consequência prática imediata do último turno.\n"
+                    "- Não resumir.\n"
+                    "- Não reiniciar.\n"
+                    "- Se houver conflito entre abstração e turno real, o turno real vence.\n"
+                )
+            })
+    
+            if last_user_real:
+                messages.append({
+                    "role": "user",
+                    "content": last_user_real,
+                })
+    
+            if last_mary_real:
+                messages.append({
+                    "role": "assistant",
+                    "content": last_mary_real,
+                })
+    
+        # ==========================================================
+        # 4) PROMPT ATUAL
+        # ==========================================================
+        messages.append({
+            "role": "user",
+            "content": _wrap_user_prompt_for_pov_guard(prompt),
+        })
+    
+        try:
+            if _debug_enabled():
+                import json
+                _debug_set(
+                    "mary_debug_messages",
+                    json.dumps(messages, ensure_ascii=False, indent=2)
+                )
+        except Exception:
+            try:
+                _debug_set("mary_debug_messages", str(messages))
+            except Exception:
+                pass
+    
+        return messages
     
     def _resolve_turn_policy(
         self,
