@@ -124,6 +124,7 @@ from characters.mary.modules.prompt_blocks import (
     render_inferred_scene_block,
     render_inferred_scene_block,
     render_anti_loop_recent_turns_block,
+    render_reaction_priority_rule,
 )
 
 logger = logging.getLogger(__name__)
@@ -8069,8 +8070,9 @@ class MaryService(BaseCharacter):
         priority_rule = render_priority_rule()
         continuity_hard_rule = render_continuity_hard_rule()        
         response_structure_rule = render_response_structure_rule()
-        response_length_control = render_response_length_control()        
-    
+        reaction_priority_rule = render_reaction_priority_rule()
+        response_length_control = render_response_length_control()   
+            
         orgasm_closure_rule = render_orgasm_closure_rule()
     
         system = f"""
@@ -8079,6 +8081,7 @@ class MaryService(BaseCharacter):
     {language_rule}
     {pov_rule}
     {response_structure_rule}
+    {reaction_priority_rule}
     {response_length_control}
     {orgasm_closure_rule}
     
