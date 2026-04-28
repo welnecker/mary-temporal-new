@@ -12,7 +12,6 @@ MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâ
  Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-import re
 
 _RE_SELF_AWARE_BEHAVIOR = re.compile(
     r"\b(eu sei que faço|eu percebo que|eu sei o efeito que|eu sei que mexo com você)\b",
@@ -115,6 +114,10 @@ from characters.mary.modules.prompt_blocks import (
     render_conflict_block,
     render_force_resolution_nsfw_block,
     render_nsfw_hard_block,
+
+    # 🔥 FALTAVAM
+    render_patterns_block,
+    render_orgasm_closure_rule,
 )
 
 logger = logging.getLogger(__name__)
