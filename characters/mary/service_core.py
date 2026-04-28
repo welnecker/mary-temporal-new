@@ -125,6 +125,7 @@ from characters.mary.modules.prompt_blocks import (
     render_inferred_scene_block,
     render_anti_loop_recent_turns_block,
     render_reaction_priority_rule,
+    render_tp_arc_block
 )
 
 logger = logging.getLogger(__name__)
@@ -7294,7 +7295,7 @@ def _update_tp_arc_for_turn(
     user_text: str = "",
     mary_text: str = "",
     *,
-    nsfw_on: bool = False,
+    nsfw_on: bool = True,
     allow_third_party_seduction: bool = False,
     facts: Optional[Dict[str, Any]] = None,
     prompt: Optional[str] = None,
@@ -7304,104 +7305,107 @@ def _update_tp_arc_for_turn(
     """
     Atualiza o arco de terceiros.
 
-    Regras fixas de anchor:
-    - NSFW OFF  -> 0.85
-    - NSFW ON   -> 0.50
-    - terceiros ON -> 0.20
+    Nova arquitetura:
+    - NSFW é sempre considerado ativo.
+    - Terceiros são controle manual separado.
+    - Toggle de terceiros libera possibilidade, mas NÃO força avanço.
+    - A cena ativa, via signal_level, decide se o arco sobe fase.
     """
+
     if prompt is not None and not user_text:
         user_text = prompt or ""
     if texto is not None and not mary_text:
         mary_text = texto or ""
 
-    if facts is None:
-        facts_now = cached_get_facts(usuario_key) or {}
-    else:
-        facts_now = facts or {}
-
+    facts_now = facts if isinstance(facts, dict) else (cached_get_facts(usuario_key) or {})
     arc = _get_tp_arc_state(facts_now, timeline)
 
     arc.setdefault("phase", 0)
     arc.setdefault("mode", "return")
     arc.setdefault("tension", 0.0)
     arc.setdefault("guilt", 0.0)
-    arc.setdefault("anchor", 0.85)
-    arc.setdefault("anchor_backup", 0.85)
+    arc.setdefault("anchor", 0.50)
+    arc.setdefault("anchor_backup", 0.50)
     arc.setdefault("last", "third_party_off")
     arc.setdefault("last_anchor_mode", "init")
 
+    current_phase = int(arc.get("phase", 0) or 0)
     arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
     arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
-    backup = _clamp01(float(arc.get("anchor_backup", 0.85) or 0.85))
-    third_party_on = bool(nsfw_on and allow_third_party_seduction)
-    
-    # Anchor reage diretamente ao estado atual dos toggles
-    if not nsfw_on:
-        arc["anchor"] = round(backup, 2)
-        arc["last"] = "nsfw_off"
-        arc["last_anchor_mode"] = "nsfw_off_restore_backup"
-    
-    elif third_party_on:
-        arc["anchor"] = 0.20
-        arc["last"] = "third_party_on"
-        arc["last_anchor_mode"] = "third_party_on_fixed"
-    
-    else:
-        arc["anchor"] = 0.50
-        arc["last"] = "nsfw_on"
-        arc["last_anchor_mode"] = "nsfw_on_fixed"
-    
-    freedom = _clamp01(1.0 - float(arc["anchor"]))
-    # 2) limites coerentes com 3 níveis reais
-    if arc["anchor"] >= 0.80:   # 0.85
-        max_phase_allowed = 2
-        test_gain = 0.10
-        guilt_gain = 0.06
-    elif arc["anchor"] >= 0.40: # 0.50
-        max_phase_allowed = 4
-        test_gain = 0.20
-        guilt_gain = 0.10
-    else:                       # 0.20
-        max_phase_allowed = 5
-        test_gain = 0.30
-        guilt_gain = 0.12
+    # ==========================================================
+    # NSFW SEMPRE ATIVO
+    # ==========================================================
+    nsfw_on = True
+    third_party_on = bool(allow_third_party_seduction)
 
-    # 3) evento + sinal
     blob = (user_text or "") + "\n" + (mary_text or "")
     arc_event = _tp_arc_event(user_text or "", mary_text or "")
     signal_level = _third_party_signal_level(blob)
 
-    if arc["anchor"] <= 0.20:
-        desired_phase = 2
-    elif arc["anchor"] <= 0.50:
-        desired_phase = 1
+    # ==========================================================
+    # 1) CONTROLE MANUAL DE TERCEIROS
+    # ==========================================================
+    if not third_party_on:
+        # NSFW ativo, mas terceiros bloqueados.
+        # O eixo íntimo principal continua livre; terceiros não viram arco.
+        arc["anchor"] = 0.50
+        arc["anchor_backup"] = 0.50
+        arc["last"] = "third_party_off_main_bond_only"
+        arc["last_anchor_mode"] = "main_bond_only"
+        max_phase_allowed = 1
+        test_gain = 0.04
+        guilt_gain = 0.03
+
     else:
-        desired_phase = 0
+        # Terceiros permitidos manualmente.
+        # Ainda assim, só avançam se a cena trouxer sinal.
+        arc["anchor"] = 0.20
+        arc["anchor_backup"] = 0.50
+        arc["last"] = "third_party_on_manual"
+        arc["last_anchor_mode"] = "third_party_manual_allowed"
+        max_phase_allowed = 5
+        test_gain = 0.22
+        guilt_gain = 0.10
 
-    current_phase = int(arc.get("phase", 0) or 0)
+    freedom = _clamp01(1.0 - float(arc["anchor"]))
 
+    # ==========================================================
+    # 2) RETORNO / EIXO PRINCIPAL / PUSH COM TERCEIROS
+    # ==========================================================
     if arc_event == "return":
         arc["mode"] = "return"
         arc["phase"] = max(0, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * 0.82)
-        arc["guilt"] = _clamp01(arc["guilt"] * 0.88)
+        arc["tension"] = _clamp01(arc["tension"] * 0.78)
+        arc["guilt"] = _clamp01(arc["guilt"] * 0.84)
+
+    elif not third_party_on:
+        arc["mode"] = "main_bond_only"
+
+        if signal_level >= 1:
+            # Terceiros podem ser notados, mas sem progressão.
+            arc["phase"] = min(max(current_phase, 1), max_phase_allowed)
+            arc["tension"] = _clamp01(arc["tension"] + test_gain)
+            arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
+        else:
+            arc["phase"] = max(0, current_phase - 1)
+            arc["tension"] = _clamp01(arc["tension"] * 0.86)
+            arc["guilt"] = _clamp01(arc["guilt"] * 0.88)
 
     elif third_party_on and signal_level >= 1:
         arc["mode"] = "push"
-        target_phase = current_phase
 
         if signal_level == 1:
             target_phase = max(current_phase, 1)
             arc["tension"] = _clamp01(arc["tension"] + (test_gain * 0.60))
-            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 0.40))
+            arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 0.45))
 
         elif signal_level == 2:
             target_phase = max(current_phase + 1, 2)
             arc["tension"] = _clamp01(arc["tension"] + test_gain)
             arc["guilt"] = _clamp01(arc["guilt"] + guilt_gain)
 
-        elif signal_level >= 3:
+        else:
             target_phase = max(current_phase + 1, 3)
             arc["tension"] = _clamp01(arc["tension"] + (test_gain * 1.20))
             arc["guilt"] = _clamp01(arc["guilt"] + (guilt_gain * 1.15))
@@ -7409,10 +7413,23 @@ def _update_tp_arc_for_turn(
         arc["phase"] = min(target_phase, max_phase_allowed)
 
     else:
-        arc["mode"] = "return"
-        arc["phase"] = max(desired_phase, current_phase - 1)
-        arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.06)))
-        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.05)))
+        # Terceiros permitidos, mas sem sinal na cena: não inventa avanço.
+        arc["mode"] = "idle_allowed"
+        arc["phase"] = max(0, current_phase - 1)
+        arc["tension"] = _clamp01(arc["tension"] * (0.88 + (freedom * 0.04)))
+        arc["guilt"] = _clamp01(arc["guilt"] * (0.90 + (freedom * 0.04)))
+
+    # ==========================================================
+    # 3) TELEMETRIA DO ARCO
+    # ==========================================================
+    arc["third_party_enabled"] = bool(third_party_on)
+    arc["nsfw_on"] = True
+    arc["allow_third_party_seduction"] = bool(allow_third_party_seduction)
+    arc["last_signal_level"] = int(signal_level or 0)
+    arc["last_event"] = str(arc_event or "")
+    arc["phase"] = int(max(0, min(int(arc.get("phase", 0) or 0), max_phase_allowed)))
+    arc["tension"] = _clamp01(float(arc.get("tension", 0.0) or 0.0))
+    arc["guilt"] = _clamp01(float(arc.get("guilt", 0.0) or 0.0))
 
     _save_tp_arc_state(usuario_key, timeline, arc)
     return arc
@@ -8071,7 +8088,8 @@ class MaryService(BaseCharacter):
         continuity_hard_rule = render_continuity_hard_rule()        
         response_structure_rule = render_response_structure_rule()
         reaction_priority_rule = render_reaction_priority_rule()
-        response_length_control = render_response_length_control()   
+        response_length_control = render_response_length_control()
+        tp_arc_block = render_tp_arc_block(tp_arc)
             
         orgasm_closure_rule = render_orgasm_closure_rule()
     
@@ -8109,6 +8127,7 @@ class MaryService(BaseCharacter):
     [RELAÇÃO]
     {rel_block}
     {dynamic_rel_block}
+    {tp_arc_block}
     
     [MEMÓRIA]
     {memory_fidelity_rule}
