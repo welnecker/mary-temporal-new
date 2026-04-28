@@ -8337,11 +8337,12 @@ class MaryService(BaseCharacter):
     
         extra_system_parts.append(
             "[FORMA DE RESPOSTA DESTE TURNO]\n"
-            f"- Estilo-base: {style_seed}\n"
-            "- Não usar abertura repetida.\n"
+            f"- Estilo-base sugerido: {style_seed} (NÃO obrigatório)\n"
             "- Evitar padrão fixo.\n"
+            "- NÃO seguir estrutura rígida.\n"
             "- O primeiro movimento deve nascer da cena atual.\n"
-            "- Avançar a interação com fala, gesto ou reação concreta.\n"
+            "- Priorizar presença real, não execução mecânica.\n"
+            "- Se houver escolha entre correto e impactante → escolher impactante.\n"
         )
     
         if extra_system_parts:
