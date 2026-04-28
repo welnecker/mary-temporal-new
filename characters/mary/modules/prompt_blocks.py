@@ -767,3 +767,52 @@ def render_inferred_scene_block(
 [BASE DA CENA]
 {base}
 """.strip()
+
+def render_anti_loop_recent_turns_block(history: list) -> str:
+    try:
+        recent = history[-3:] if isinstance(history, list) else []
+    except Exception:
+        recent = []
+
+    if not recent:
+        return ""
+
+    openings = []
+
+    for item in recent:
+        if not isinstance(item, dict):
+            continue
+
+        mary_text = str(
+            item.get("resposta_mary")
+            or item.get("assistant")
+            or item.get("content")
+            or ""
+        ).strip()
+
+        if not mary_text:
+            continue
+
+        first_line = mary_text.split("\n", 1)[0].strip()
+        if first_line:
+            openings.append(first_line[:180])
+
+    if not openings:
+        return ""
+
+    rendered = "\n".join(f"- {x}" for x in openings[-3:])
+
+    return f"""
+[ANTI-LOOP DOS ÚLTIMOS TURNOS]
+
+Aberturas recentes de Mary:
+{rendered}
+
+REGRAS:
+- NÃO repetir o mesmo tipo de abertura.
+- NÃO repetir o mesmo fluxo emocional.
+- NÃO repetir: fala bonita → gesto leve → reflexão → pergunta.
+- Se o turno anterior começou com fala, prefira começar com ação curta, silêncio, reação ou detalhe físico.
+- Se o turno anterior teve explicação longa, este turno deve ser mais vivo, direto e menos explicativo.
+- A resposta deve parecer continuação real, não variação do mesmo molde.
+""".strip()
