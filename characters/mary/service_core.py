@@ -113,6 +113,8 @@ from characters.mary.modules.prompt_blocks import (
     render_language_rule,
     render_pov_rule,
     render_conflict_block,
+    render_force_resolution_nsfw_block,
+    render_nsfw_hard_block,
 )
 
 logger = logging.getLogger(__name__)
