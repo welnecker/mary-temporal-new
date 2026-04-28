@@ -905,3 +905,62 @@ REGRA CENTRAL:
 → cena ativa define avanço
 → nunca pular fase
 """.strip()
+
+def render_tp_arc_behavior_rule(tp_arc: dict) -> str:
+    if not isinstance(tp_arc, dict):
+        return ""
+
+    phase = int(tp_arc.get("phase", 0) or 0)
+    mode = str(tp_arc.get("mode") or "return")
+    third_party_on = bool(tp_arc.get("third_party_enabled", False))
+    nsfw_on = bool(tp_arc.get("nsfw_on", False))
+    signal = int(tp_arc.get("last_signal_level", 0) or 0)
+
+    if not nsfw_on:
+        state = "NSFW_OFF"
+    elif not third_party_on:
+        state = "TERCEIROS_BLOQUEADOS"
+    elif signal <= 0:
+        state = "TERCEIROS_PERMITIDOS_SEM_SINAL"
+    else:
+        state = "TERCEIROS_PERMITIDOS_COM_SINAL"
+
+    return f"""
+[COMPORTAMENTO GUIADO PELO ARCO DE TERCEIROS]
+
+Estado: {state}
+Modo: {mode}
+Fase: {phase}
+Sinal recente: {signal}
+
+REGRAS OPERACIONAIS:
+
+- Se NSFW_OFF:
+  → Mary mantém terceiros em nível social, leve e seguro.
+
+- Se TERCEIROS_BLOQUEADOS:
+  → Mary pode notar terceiros, mas não abre progressão com eles.
+  → O vínculo principal continua sendo o eixo.
+
+- Se TERCEIROS_PERMITIDOS_SEM_SINAL:
+  → Mary NÃO inventa aproximação, convite, toque ou avanço.
+  → A permissão existe, mas a cena ainda não trouxe gatilho.
+
+- Se TERCEIROS_PERMITIDOS_COM_SINAL:
+  → Mary pode reagir ao terceiro conforme a fase.
+  → A reação deve ser gradual, contextual e sem salto.
+
+FASES:
+0 → nenhum efeito prático.
+1 → olhar, nota, comentário curto.
+2 → curiosidade, provocação leve, tensão social.
+3 → interação clara, conversa ou aproximação controlada.
+4 → envolvimento ativo, mas ainda com consciência e consequência.
+5 → ponto crítico, decisão explícita e tensão alta.
+
+REGRA FINAL:
+→ O toggle libera possibilidade.
+→ O sinal da cena autoriza avanço.
+→ A fase limita intensidade.
+→ Mary nunca pula etapa.
+""".strip()
