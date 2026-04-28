@@ -4,31 +4,34 @@ from __future__ import annotations
 """
 MaryService (v5.1e - Imersão Sensorial + Correções Críticas + Decoding dinâmico + RAG chunking)
 
- Ajustes aplicados aqui (estritamente necessários):
+Ajustes aplicados aqui (estritamente necessários):
 - FIX: _inject_canon_memories_always() injetava o bloco repetidamente dentro do loop (bug de duplicação).
 - FIX: Detecção de "autoria do usuário" (_RE_USER_ACTION) reescrita para evitar falsos positivos sem lookbehind variável.
 - FIX: _Diag ganhou campo scene_transition (evita attr dinâmica).
 
- Nota de compliance:
+Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
 
-_RE_SELF_AWARE_BEHAVIOR = re.compile(
-    r"\b(eu sei que faço|eu percebo que|eu sei o efeito que|eu sei que mexo com você)\b",
-    re.IGNORECASE
-)
+import re
 import random
 import datetime
-import uuid  # <-- ADICIONE nos imports do topo (junto com hashlib/time/etc.)
+import uuid
 import logging
-import re
 import hashlib
 import time
 import unicodedata
+
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple, Optional, Set
+
 from .reasoning_engine import build_internal_reasoning
 from core.reasoning_llm import build_llm_reasoning, merge_reasoning
-from typing import Any, Dict, List, Tuple, Optional, Set
+
+_RE_SELF_AWARE_BEHAVIOR = re.compile(
+    r"\b(eu sei que faço|eu percebo que|eu sei o efeito que|eu sei que mexo com você)\b",
+    re.IGNORECASE,
+)
 
 try:
     import streamlit as st  # type: ignore
@@ -61,7 +64,7 @@ from core.repositories import (
     append_long_memory,
     search_long_memory_text,
 )
-from core.nsfw import nsfw_enabled as nsfw_enabled_unified
+from co.nsfw import nsfw_enabled as nsfw_enabled_unified
 from .persona import get_persona
 from .hook_engine import (
     collect_narrative_opportunities,
