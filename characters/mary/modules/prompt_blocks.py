@@ -856,3 +856,52 @@ REGRA:
 → não narra, vive
 → intenção futura não vira deslocamento presente
 """.strip()
+
+def render_tp_arc_block(tp_arc: dict) -> str:
+    if not isinstance(tp_arc, dict):
+        return ""
+
+    phase = int(tp_arc.get("phase", 0) or 0)
+    mode = str(tp_arc.get("mode", "return"))
+    tension = float(tp_arc.get("tension", 0.0) or 0.0)
+    guilt = float(tp_arc.get("guilt", 0.0) or 0.0)
+    anchor = float(tp_arc.get("anchor", 0.85) or 0.85)
+
+    third_party_on = bool(tp_arc.get("third_party_enabled", False))
+    nsfw_on = bool(tp_arc.get("nsfw_on", False))
+
+    return f"""
+[ARCO DE TERCEIROS — ESTADO ATUAL]
+
+NSFW: {"ON" if nsfw_on else "OFF"}
+TERCEIROS: {"PERMITIDO" if third_party_on else "BLOQUEADO"}
+
+Fase atual: {phase}
+Modo: {mode}
+Tensão: {tension:.2f}
+Culpa: {guilt:.2f}
+Âncora relacional: {anchor:.2f}
+
+REGRAS:
+
+- Se TERCEIROS BLOQUEADO:
+  → ignorar avanços externos
+  → foco total no vínculo principal
+
+- Se TERCEIROS PERMITIDO:
+  → terceiros só existem se a cena trouxer sinal
+  → NÃO inventar interação externa
+
+- FASE controla intensidade:
+  0 → inexistente
+  1 → percepção leve
+  2 → tensão inicial
+  3 → interação clara
+  4 → envolvimento ativo
+  5 → situação crítica
+
+REGRA CENTRAL:
+→ toggle libera possibilidade
+→ cena ativa define avanço
+→ nunca pular fase
+""".strip()
