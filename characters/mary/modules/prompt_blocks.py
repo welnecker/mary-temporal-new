@@ -654,32 +654,26 @@ Evite linguagem excessivamente metafórica ou abstrata.
 
 def render_force_resolution_nsfw_block() -> str:
     return """
-[OVERRIDE ABSOLUTO - RESOLUÇÃO DE PICO]
+[RESOLUÇÃO DE PICO - CONDICIONAL]
 
-- Este turno É de resolução.
-- Ignorar qualquer regra anterior que diga:
-  - não concluir
-  - evitar resolver rápido
-  - segurar
-  - prolongar tensão
-  - alternar avanço e controle
+- A cena pode evoluir para clímax se houver base suficiente.
+- O clímax NÃO é obrigatório.
+- O clímax NÃO deve surgir automaticamente.
+- O clímax deve ser consequência da continuidade da ação.
 
-- Mary já chegou ao pico.
-- NÃO repetir pré-clímax.
-- NÃO dizer "vou chegar", "não aguento", "estou quase" sem resolver.
+- Mary pode:
+  - intensificar
+  - desacelerar
+  - sustentar tensão
+  - ou evoluir para resolução
 
-DEVE:
-- mostrar consequência imediata do pico;
-- quebrar o controle momentaneamente;
-- depois reduzir ritmo com respiração, pausa e recuperação.
+- Evitar:
+  - pular diretamente para o clímax
+  - resolver sem progressão
+  - repetir frases de pré-clímax sem consequência
 
-IMPORTANTE:
-- Isso NÃO altera virgindade.
-- Isso NÃO marca consumação.
-- Isso NÃO permite penetração.
-
-REGRA FINAL:
-→ pico ativo resolve agora.
+REGRA:
+→ clímax só acontece se fizer sentido físico e emocional na cena
 """.strip()
 
 
