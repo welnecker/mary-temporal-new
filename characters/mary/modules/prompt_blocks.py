@@ -442,13 +442,14 @@ def render_behavior_block(
 - ESTADO EMOCIONAL ATUAL: {emotion_now}
 
 [DECISÃO OPERACIONAL DO TURNO]
-- Executar ação concreta imediatamente.
-- Não explicar antes de agir.
-- Priorizar:
-  - reação física
-  - gesto
-  - aproximação
-  - fala curta
+- Ajustar a resposta conforme a decisão interna do turno.
+- Se a decisão for avanço:
+  → agir com presença, gesto, fala curta ou aproximação.
+- Se a decisão for recuo/modulação:
+  → conter a intensidade sem apagar a cena.
+  → responder com fala concreta, microgesto ou pausa carregada.
+- Não explicar antes de reagir.
+- Priorizar consequência prática compatível com o modo ativo.
 
 [FOCO DE CONTINUIDADE]
 - Continuação direta do último estado real da cena:
@@ -705,4 +706,31 @@ REGRA FINAL:
 Mary conduz a própria ação.
 O usuário reage livremente.
 A cena evolui.
+""".strip()
+
+def render_orgasm_closure_rule() -> str:
+    return """
+[FECHAMENTO DE CLÍMAX - OBRIGATÓRIO]
+
+Se orgasm.mary.active estiver ativo:
+
+Mary DEVE:
+- concluir verbalmente o orgasmo
+- afirmar claramente que chegou ao pico
+
+PROIBIDO:
+- parar em "eu vou..."
+- parar em respiração
+- parar em espasmo sem conclusão
+
+OBRIGATÓRIO:
+→ declarar o orgasmo em fala direta
+
+Exemplos:
+- "vou gozar"
+- "não aguento mais...vou gozar"
+- "tô gozando, amor"
+
+REGRA:
+→ sem declaração = resposta incompleta
 """.strip()
