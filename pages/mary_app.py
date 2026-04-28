@@ -2680,7 +2680,7 @@ def _render_sidebar() -> None:
         # ==========================================================
         st.subheader("🎛️ Controles narrativos")
         st.sidebar.markdown("### 🧪 Debug Logs (set_fact)")
-
+        
         logs = st.session_state.get("debug_logs", [])
         
         if logs:
@@ -2688,78 +2688,56 @@ def _render_sidebar() -> None:
                 st.sidebar.text(log)
         else:
             st.sidebar.caption("Sem logs ainda...")
-
-        nsfw_before = bool(st.session_state.get("mary_nsfw_on", False))
-        st.checkbox("Modo adulto liberado (NSFW)", key="mary_nsfw_on")
-        nsfw_after = bool(st.session_state.get("mary_nsfw_on", False))
-
+        
+        # ==========================================================
+        # NSFW SEMPRE ATIVO
+        # ==========================================================
+        st.session_state["mary_nsfw_on"] = True
+        nsfw_after = True
+        
+        try:
+            set_fact(uk, "mary.nsfw", True, {"fonte": "ui_forced_nsfw_on"})
+            set_fact(uk, f"mary.nsfw::{tl}", True, {"fonte": "ui_forced_nsfw_on"})
+        except Exception:
+            pass
+        
+        st.caption("🔓 Modo adulto sempre ativo.")
+        
+        # ==========================================================
+        # TERCEIROS — CONTROLE MANUAL
+        # ==========================================================
         if "mary_allow_third_party_seduction" not in st.session_state:
             st.session_state["mary_allow_third_party_seduction"] = False
-
-        if not nsfw_after:
-            st.session_state["mary_allow_third_party_seduction"] = False
-            try:
-                set_fact(uk, "rel.ciume_flerte_segredo", "", {"fonte": "nsfw_off_reset"})
-                set_fact(uk, "rel.jealousy_level", 0, {"fonte": "nsfw_off_reset"})
-                set_fact(uk, "rel.ciume_last_trigger_turn", 0, {"fonte": "nsfw_off_reset"})
-            except Exception:
-                pass
-
-        third_after = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-
-        if nsfw_after != nsfw_before:
-            try:
-                _persist_nsfw_for_current_timeline_if_needed_inline()
-            except Exception:
-                pass
-
+        
+        third_before_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
+        
+        st.checkbox(
+            "Permitir Mary ceder a terceiros (segredo)",
+            key="mary_allow_third_party_seduction",
+            help="Libera terceiros como possibilidade narrativa. Só avança se a cena trouxer sinal claro.",
+        )
+        
+        third_after_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
+        
+        if third_after_ui != third_before_ui:
             try:
                 _refresh_tp_arc_from_sidebar(
                     usuario_key=uk,
                     timeline=tl,
-                    nsfw_on=nsfw_after,
-                    allow_third_party_seduction=third_after,
+                    nsfw_on=True,
+                    allow_third_party_seduction=third_after_ui,
                 )
             except Exception:
                 pass
-
+        
             try:
                 _invalidate_backend_cache()
             except Exception:
                 pass
-
+        
             st.rerun()
-
-        if nsfw_after:
-            third_before_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-
-            st.checkbox(
-                "Permitir Mary ceder a terceiros (segredo)",
-                key="mary_allow_third_party_seduction",
-                help="Libera Mary a ir além do 'desvio curto' com terceiros. NÃO altera nada com Janio.",
-            )
-
-            third_after_ui = bool(st.session_state.get("mary_allow_third_party_seduction", False))
-
-            if third_after_ui != third_before_ui:
-                try:
-                    _refresh_tp_arc_from_sidebar(
-                        usuario_key=uk,
-                        timeline=tl,
-                        nsfw_on=nsfw_after,
-                        allow_third_party_seduction=third_after_ui,
-                    )
-                except Exception:
-                    pass
-
-                try:
-                    _invalidate_backend_cache()
-                except Exception:
-                    pass
-
-                st.rerun()
-
-            st.caption("⚠️ Convite degradante/“sumir” com terceiro continua proibido pelas regras.")
+        
+        st.caption("⚠️ Terceiros só entram se você habilitar e a cena trouxer sinal. O vínculo principal continua existindo.")
 
         st.markdown("---")
 
