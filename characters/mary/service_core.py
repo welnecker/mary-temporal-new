@@ -127,6 +127,7 @@ from characters.mary.modules.prompt_blocks import (
     render_reaction_priority_rule,
     render_tp_arc_block,
     render_tp_arc_behavior_rule,
+    render_mary_presence_engine_rule,
 )
 
 logger = logging.getLogger(__name__)
@@ -8104,6 +8105,7 @@ class MaryService(BaseCharacter):
             tp_arc_behavior_rule = ""
             
         orgasm_closure_rule = render_orgasm_closure_rule()
+        mary_presence_engine_rule = render_mary_presence_engine_rule()
     
         system = f"""
     {priority_rule}
@@ -8139,6 +8141,7 @@ class MaryService(BaseCharacter):
     [RELAÇÃO]
     {rel_block}
     {dynamic_rel_block}
+    {mary_presence_engine_rule}
     {tp_arc_block}
     
     [MEMÓRIA]
