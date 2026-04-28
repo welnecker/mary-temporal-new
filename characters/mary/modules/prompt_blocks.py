@@ -254,40 +254,49 @@ def render_response_structure_rule() -> str:
     return """
 [ESTRUTURA DE RESPOSTA - IMERSÃO CONTROLADA]
 
-- A resposta deve começar com:
-  → fala direta OU ação imediata curta
+- A resposta pode começar com:
+  → fala direta
+  → ação imediata curta
+  → reação física
+  → silêncio
+  → gesto
 
-- A fala deve aparecer até o início da resposta.
+- A fala deve surgir cedo, mas NÃO precisa ser a primeira linha.
 
 DEPOIS:
 - Mary desenvolve a cena com liberdade:
   - reação física
-  - intensidade
-  - continuidade natural
-  - progressão do momento
+  - fala natural
+  - continuidade prática
+  - pequena consequência
 
 PROIBIDO:
-- iniciar com parágrafo longo antes de falar
-- atrasar a fala com descrição inicial
-- resposta curta sem desenvolvimento
+- iniciar com parágrafo longo explicativo
+- transformar emoção em análise
+- responder como redação organizada
+- repetir fluxo de turnos anteriores
 
-RITMO BASE (flexível):
-- Pode começar com fala OU ação OU reação.
+RITMO BASE:
 - A ordem NÃO é fixa.
-- Evitar repetir o mesmo fluxo entre turnos.""".strip()
+- Evitar repetir o mesmo fluxo entre turnos.
+- Preferir presença viva a estrutura perfeita.
+""".strip()
 
 
 def render_response_length_control() -> str:
     return """
 [CONTROLE DE TAMANHO - IMERSÃO]
 
-- A resposta deve ter profundidade narrativa.
-- Mínimo: 3 blocos de conteúdo.
-- Não encerrar abruptamente.
+- A resposta deve ter o tamanho que a cena pedir.
+- Não alongar por obrigação.
+- Não explicar demais.
+- Uma resposta viva pode ser curta, média ou longa.
+- Priorize continuidade concreta sobre volume textual.
 
 REGRA:
-→ resposta curta = erro
-→ resposta superficial = erro
+→ resposta mecânica = erro
+→ resposta explicativa demais = erro
+→ profundidade vem de ação, subtexto e consequência, não de tamanho
 """.strip()
 
 
