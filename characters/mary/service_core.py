@@ -9561,76 +9561,57 @@ class MaryService(BaseCharacter):
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
 
-        # 🔥 Detecta se deve forçar resolução de pico
-        force_resolution = False
+        # ==========================================================
+        # 🔥 DETECÇÃO DE RESOLUÇÃO DE PICO
+        # ==========================================================
         try:
-            rel_state_now = facts.get("rel", {}).get(f"state::{timeline_final}", {})
-            if isinstance(rel_state_now, dict):
-                force_resolution = bool(rel_state_now.get("force_orgasm_resolution", False))
+            force_resolution = bool(rel_state.get("force_orgasm_resolution", False))
         except Exception:
             force_resolution = False
-       
+        
+        # ==========================================================
+        # 🧠 SANIDADE DE CLÍMAX (ANTI-QUEBRA DE FLUXO)
+        # ==========================================================
+        try:
+            orgasm_active = bool(
+                facts.get("orgasm", {})
+                     .get("mary", {})
+                     .get(f"active::{timeline_final}", False)
+            )
+        
+            if intimacy_phase < 4:
+                force_resolution = False
+        
+                if orgasm_active:
+                    try:
+                        set_fact_safe(
+                            usuario_key,
+                            f"orgasm.mary.active::{timeline_final}",
+                            False,
+                            {"fonte": "orgasm_guard"}
+                        )
+                    except Exception:
+                        pass
+        
+        except Exception:
+            pass
+        
         # ==========================================================
         # NSFW STYLE BLOCK (com override de pico)
         # ==========================================================
-
-        # Detecta se deve forçar resolução
-        force_resolution = False
-        try:
-            force_resolution = bool(
-                rel_state.get("force_orgasm_resolution", False)
-            )
-        except Exception:
-            force_resolution = False
-
         if force_resolution:
-            nsfw_block = """
-[OVERRIDE ABSOLUTO - RESOLUÇÃO DE PICO]
-
-- Este turno É de resolução.
-- Ignorar qualquer regra anterior que diga:
-  - não concluir
-  - evitar resolver rápido
-  - segurar
-  - prolongar tensão
-  - alternar avanço e controle
-
-- Mary já chegou ao pico.
-- NÃO repetir pré-clímax.
-- NÃO dizer "vou chegar", "não aguento", "estou quase" sem resolver.
-
-DEVE:
-- mostrar consequência imediata do pico;
-- quebrar o controle momentaneamente;
-- depois reduzir ritmo com respiração, pausa e recuperação.
-
-IMPORTANTE:
-- Isso NÃO altera virgindade.
-- Isso NÃO marca consumação.
-- Isso NÃO permite penetração.
-
-REGRA FINAL:
-→ pico ativo resolve agora.
-""".strip()
+            nsfw_block = render_force_resolution_nsfw_block()
         else:
             nsfw_block = _get_nsfw_style_block(
                 usuario_key,
                 timeline=timeline_final,
                 nsfw_override=nsfw,
             )
-
+        
         # ==========================================================
         # HARD MODE (linguagem, não mecânica)
         # ==========================================================
-        nsfw_hard_block = ""
-        if nsfw_on:
-            nsfw_hard_block = """
-[NSFW_ON]
-Mary pode usar linguagem direta quando a cena permitir.
-Descreva sensações e reações com intensidade natural.
-
-Evite linguagem excessivamente metafórica ou abstrata.
-""".strip()
+        nsfw_hard_block = render_nsfw_hard_block(nsfw_on)
              
         # ==========================================================
         # DINÂMICA COMPORTAMENTAL (3.5) - HUMOR / ENERGIA / ATITUDE
