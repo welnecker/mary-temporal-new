@@ -8047,6 +8047,7 @@ class MaryService(BaseCharacter):
         user_authorship_rule: str,
         continuity_rule: str,
         phone_message_rule: str,
+        decision_pressure_rule: str,
         reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
     ) -> str:
@@ -8063,33 +8064,7 @@ class MaryService(BaseCharacter):
         response_length_control = render_response_length_control()
         behavior_rule = render_behavior_rule(nsfw_profile)
     
-        # Mantido aqui por enquanto, porque ainda não foi migrado
-        # para prompt_blocks.py na primeira etapa.
-        orgasm_closure_rule = """
-    [FECHAMENTO DE CLÍMAX - OBRIGATÓRIO]
-    
-    Se orgasm.mary.active estiver ativo:
-    
-    Mary DEVE:
-    - concluir verbalmente o orgasmo
-    - afirmar claramente que chegou ao pico
-    
-    PROIBIDO:
-    - parar em "eu vou..."
-    - parar em respiração
-    - parar em espasmo sem conclusão
-    
-    OBRIGATÓRIO:
-    → declarar o orgasmo em fala direta
-    
-    Exemplos:
-    - "vou gozar"
-    - "não aguento mais...vou gozar"
-    - "tô gozando, amor"
-    
-    REGRA:
-    → sem declaração = resposta incompleta
-    """.strip()
+        orgasm_closure_rule = render_orgasm_closure_rule()
     
         system = f"""
     {priority_rule}
@@ -8144,6 +8119,9 @@ class MaryService(BaseCharacter):
     {anti_pattern_rule}
     
     {user_finalizes_rule}
+
+    [INICIATIVA DO TURNO]
+    {initiative_rule}
     
     [INTERAÇÃO]
     {manipulation_block}
@@ -8155,8 +8133,14 @@ class MaryService(BaseCharacter):
     {nsfw_block}
     
     {phone_message_rule}
+
+    [DECISÃO DO TURNO]
+    {decision_pressure_rule}
     
     {reasoning_scene_guidance_block}
+    
+    [COMPORTAMENTO DO TURNO]
+    {behavior_block}
     
     {behavior_rule}
     
@@ -8182,32 +8166,7 @@ class MaryService(BaseCharacter):
             pass
     
         return system 
-     
-    @staticmethod
-    def _extract_current_consequence(history: list) -> str:
-        if not history:
-            return ""
-
-        last = history[-1]
-
-        last_user = str(last.get("mensagem_usuario") or "").strip()
-        last_mary = str(last.get("resposta_mary") or "").strip()
-
-        # prioridade: resposta da Mary (ela define estado físico mais recente)
-        base = last_mary or last_user
-
-        if not base:
-            return ""
-
-        # corta para evitar poluição
-        base = base.replace("\n", " ").strip()
-
-        # pega só o trecho relevante final
-        if len(base) > 180:
-            base = base[-180:]
-
-        return base   
-   
+             
     def _build_messages_for_turn(
         self,
         *,
@@ -8759,119 +8718,167 @@ class MaryService(BaseCharacter):
             "fidelity_mode": str(fidelity_mode or "soft"),
         }
 
-    def reply(
+    def _prepare_turn_input(
         self,
         user: str,
-        model: str,
-        *,
-        prompt: Optional[str] = None,
-        timeline: Optional[str] = None,
-        nsfw: Optional[bool] = None,
-        allow_third_party_seduction: Optional[bool] = None,
-    ) -> str:
-        # 1) Prompt
+        prompt: Optional[str],
+        timeline: Optional[str],
+    ):
         if prompt is None:
             prompt = str(_ss_get("chat_input", "") or "").strip()
         else:
             prompt = (prompt or "").strip()
-
-        #  Diretiva opcional de memória (não vai para o modelo)
+    
         mem_spec = None
         prompt, mem_spec = _extract_mem_directive(prompt)
-
-        # Se o usuário só mandou a diretiva (#mem ...) sem texto, mantém a conversa viva
+    
         if (not prompt) and mem_spec:
             prompt = "Continue."
-
+    
         if not prompt:
-            return ""
-
-        # 2) Chaves
+            return None
+    
         user_id = _normalize_user_id(user) if user else _current_user_id_fallback()
+    
         timeline_final = _normalize_timeline(timeline) if timeline else _normalize_timeline(
             str(_ss_get("mary_timeline", "cumplice") or "cumplice")
         )
-
+    
         usuario_key = _user_key(user_id, timeline_final)
         shared_key = _shared_key(user_id, timeline_final)
-        _sync_intro_fact(usuario_key, timeline_final)
+    
+        return {
+            "prompt": prompt,
+            "mem_spec": mem_spec,
+            "user_id": user_id,
+            "timeline_final": timeline_final,
+            "usuario_key": usuario_key,
+            "shared_key": shared_key,
+        }
 
-        # ==========================================================
-        # NSFW — UI/override como fonte de verdade do turno
-        # ==========================================================
+    def _lock_turn_nsfw(
+        self,
+        usuario_key: str,
+        timeline_final: str,
+        nsfw: Optional[bool],
+    ) -> bool:
         try:
             if nsfw is None:
                 nsfw = bool(_ss_get("mary_nsfw_on") or False)
-        
-            set_fact_safe(usuario_key, "mary.nsfw", bool(nsfw), {"fonte": "reply_nsfw_lock"})
+    
+            nsfw_bool = bool(nsfw)
+    
+            set_fact_safe(
+                usuario_key,
+                "mary.nsfw",
+                nsfw_bool,
+                {"fonte": "reply_nsfw_lock"},
+            )
+    
             set_fact_safe(
                 usuario_key,
                 f"mary.nsfw::{timeline_final}",
-                bool(nsfw),
+                nsfw_bool,
                 {"fonte": "reply_nsfw_lock"},
             )
-        
+    
             try:
                 _invalidate_backend_cache()
             except Exception:
                 pass
-        
+    
+            return nsfw_bool
+    
         except Exception:
-            pass
+            return bool(nsfw)
 
-        diag = _Diag(
-            ts=int(time.time()),
-            timeline=timeline_final,
-            model_requested=model,
-            violations=[],
-        )
-
-        # 3) Garantir mínimos
+    def _load_initial_facts(
+        self,
+        usuario_key: str,
+        timeline_final: str,
+    ) -> dict:
         facts0 = cached_get_facts(usuario_key) or {}
         facts0 = _normalize_scene_local_facts(facts0)
-
+    
         if "cena.locked" not in facts0:
             _lock_scene(usuario_key)
             facts0 = cached_get_facts(usuario_key) or {}
             facts0 = _normalize_scene_local_facts(facts0)
-
+    
         if "intimacy.phase" not in facts0:
-            set_fact_safe(usuario_key, "intimacy.phase", 0, {"fonte": "intimacy_init"})
+            set_fact_safe(
+                usuario_key,
+                "intimacy.phase",
+                0,
+                {"fonte": "intimacy_init"},
+            )
             facts0 = cached_get_facts(usuario_key) or {}
             facts0 = _normalize_scene_local_facts(facts0)
-
+    
         try:
-            facts0 = _sync_intimacy_phase_facts(usuario_key, facts0, timeline_final)
+            facts0 = _sync_intimacy_phase_facts(
+                usuario_key,
+                facts0,
+                timeline_final,
+            )
             facts0 = _normalize_scene_local_facts(facts0)
         except Exception:
             pass
+    
+        return facts0
 
-        # 4) Mudança explícita de local/tempo (comando do usuário)
+    def _detect_parallel_scene(
+        self,
+        *,
+        usuario_key: str,
+        prompt: str,
+        user_explicit_scene_change: bool,
+    ) -> bool:
+        try:
+            facts_pre = cached_get_facts(usuario_key)
+            scene_locked_pre = _scene_is_locked(facts_pre)
+    
+            return bool(
+                scene_locked_pre
+                and _detect_scene_violation(prompt)
+                and not user_explicit_scene_change
+            )
+    
+        except Exception:
+            return False
+
+    def _apply_explicit_location_change(
+        self,
+        *,
+        usuario_key: str,
+        prompt: str,
+        facts0: dict,
+        diag,
+    ) -> tuple[dict, bool]:
         _loc_change = _user_requested_location_change(prompt)
-
+    
         if isinstance(_loc_change, tuple) and len(_loc_change) == 2:
             mudou, novo_local = _loc_change
         else:
             mudou, novo_local = False, None
-
+    
         user_explicit_scene_change = bool(mudou and novo_local)
-
+    
         if mudou and novo_local:
             novo_local = str(novo_local).strip()
-        
+    
             _scene_state = _get_scene_state(facts0)
             if isinstance(_scene_state, tuple) and len(_scene_state) == 3:
                 loc0, _t0, _a0 = _scene_state
             else:
                 loc0, _t0, _a0 = "", "", ""
-        
+    
             loc0n = (loc0 or "").strip().lower()
             loc1n = novo_local.lower()
-        
+    
             if loc1n and loc1n != loc0n:
-                # atualiza a cena principal primeiro
                 _persist_scene_basics(usuario_key, novo_local, "agora", "transição")
-        
+    
                 try:
                     set_fact_safe(usuario_key, "state.local", novo_local, {"fonte": "scene_sync"})
                     set_fact_safe(usuario_key, "local_cena_atual", novo_local, {"fonte": "scene_sync"})
@@ -8881,233 +8888,183 @@ class MaryService(BaseCharacter):
                     set_fact_safe(usuario_key, "cena.locked", True, {"fonte": "scene_sync"})
                 except Exception:
                     pass
-        
+    
                 facts0 = cached_get_facts(usuario_key) or {}
                 facts0 = _normalize_scene_local_facts(facts0)
-        
+    
                 diag.scene_transition = {"from": loc0, "to": novo_local}
-        
-        # 5) Cena paralela (mantido por compatibilidade)
-        facts_pre = cached_get_facts(usuario_key)
-        scene_locked_pre = _scene_is_locked(facts_pre)
-        scene_parallel = bool(
-            scene_locked_pre
-            and _detect_scene_violation(prompt)
-            and not user_explicit_scene_change
-        )
-        _ = scene_parallel  # evita warning / mantém side-note de leitura
+    
+        return facts0, user_explicit_scene_change
 
-        # 6) Contexto base
+    def _load_base_context(
+        self,
+        *,
+        usuario_key: str,
+        user_id: str,
+        timeline_final: str,
+    ) -> dict:
         _persona = get_persona(timeline_final)
+    
         if isinstance(_persona, tuple) and len(_persona) >= 1:
             persona_text = _persona[0] or ""
         else:
             persona_text = ""
-
+    
         facts = cached_get_facts(usuario_key) or {}
         facts = _normalize_scene_local_facts(facts)
-
+    
         canon = get_canon("mary", timeline=timeline_final, user_key=user_id) or {}
         canon_txt = canon_to_text(canon)
-
+    
         canon_rel_default = (
             canon.get("relationship_state")
             if isinstance(canon.get("relationship_state"), dict)
             else None
         )
-        
+    
         rel_state = _load_rel_state(facts, timeline_final, canon_rel_default)
-        
+    
         if not isinstance(rel_state, dict):
             rel_state = {}
-
-        # ==========================================================
-        # ESTADO RELACIONAL DINÂMICO
-        # ==========================================================
+    
         dynamic_rel_state = load_dynamic_relationship_state(facts, timeline_final)
+    
         if not isinstance(dynamic_rel_state, dict):
             dynamic_rel_state = {}
+    
+        return {
+            "persona_text": persona_text,
+            "facts": facts,
+            "canon": canon,
+            "canon_txt": canon_txt,
+            "rel_state": rel_state,
+            "dynamic_rel_state": dynamic_rel_state,
+        }
 
-                
-        # ==========================================================
-        # LONG MEMORY (COMPARTILHADA / TRANSVERSAL)
-        # - pode alimentar ambas as Marys
-        # - nunca vence facts ativos
-        # - nunca vence canon da timeline atual
-        # - entra apenas se compatível com a Mary atual
-        # ==========================================================
-        long_memory_text = ""
+    def _load_long_memory_block(
+        self,
+        *,
+        user_id: str,
+        shared_key: str,
+        facts: dict,
+        canon_txt: str,
+        prompt: str,
+    ) -> str:
         try:
-            long_memory_lines: List[str] = []
+            long_memory_lines: list[str] = []
             seen_lm: set[str] = set()
-        
+    
             lm_keys = []
-            try:
-                if shared_key:
-                    lm_keys.append(str(shared_key).strip())
-            except Exception:
-                pass
-        
-            try:
-                global_shared_key = f"{user_id}::mary::shared"
-                if global_shared_key not in lm_keys:
-                    lm_keys.append(global_shared_key)
-            except Exception:
-                pass
-        
+    
+            if shared_key:
+                lm_keys.append(str(shared_key).strip())
+    
+            global_shared_key = f"{user_id}::mary::shared"
+            if global_shared_key not in lm_keys:
+                lm_keys.append(global_shared_key)
+    
             canon_blob = _t_norm(canon_txt or "")
             facts_now = facts if isinstance(facts, dict) else {}
-        
+    
             def _lm_conflicts_with_truth(mem_text: str) -> bool:
                 t = _t_norm(mem_text or "")
                 if not t:
                     return False
-        
+    
                 scene_local = _t_norm(str(facts_now.get("cena.local") or facts_now.get("local_cena_atual") or ""))
                 state_local = _t_norm(str(facts_now.get("state.local") or ""))
                 scene_time = _t_norm(str(facts_now.get("cena.tempo") or ""))
                 state_topic = _t_norm(str(facts_now.get("state.assunto") or ""))
-        
+    
                 for v in (scene_local, state_local, scene_time, state_topic):
                     if v and v in t:
                         return True
-        
+    
                 thematic_groups = (
                     ("mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "família", "familia"),
                     ("profissão", "profissao", "trabalha", "clínica", "clinica", "consultório", "consultorio", "instagram"),
                     ("idade", "altura", "peso", "olhos", "cabelos", "pele"),
                 )
-        
+    
                 for group in thematic_groups:
                     if any(k in t for k in group) and any(k in canon_blob for k in group):
                         return True
-        
+    
                 return False
-        
+    
             for lm_key in lm_keys:
                 try:
                     pinned = list_long_memory(lm_key, limit=20) or []
                 except Exception:
                     pinned = []
-        
+    
                 for m in pinned:
                     if not isinstance(m, dict):
                         continue
-        
+    
                     meta = m.get("meta") or {}
                     kind = str(meta.get("kind") or "").strip().lower()
                     txt = str(m.get("text") or "").strip()
-        
+    
                     if kind != "pin" or not txt:
                         continue
-        
+    
                     norm = txt.lower()
                     if norm in seen_lm:
                         continue
-        
+    
                     if _lm_conflicts_with_truth(txt):
                         continue
-        
+    
                     seen_lm.add(norm)
                     long_memory_lines.append(txt)
-        
+    
             for lm_key in lm_keys:
                 try:
                     found = search_long_memory_text(lm_key, prompt, limit=5) or []
                 except Exception:
                     found = []
-        
+    
                 for m in found:
                     if not isinstance(m, dict):
                         continue
-        
+    
                     txt = str(m.get("text") or "").strip()
                     if not txt:
                         continue
-        
+    
                     norm = txt.lower()
                     if norm in seen_lm:
                         continue
-        
+    
                     if _lm_conflicts_with_truth(txt):
                         continue
-        
+    
                     seen_lm.add(norm)
                     long_memory_lines.append(txt)
-        
+    
             if long_memory_lines:
-                long_memory_text = "\n".join(f"- {x}" for x in long_memory_lines).strip()
-        
+                return "\n".join(f"- {x}" for x in long_memory_lines).strip()
+    
+            return ""
+    
         except Exception:
-            long_memory_text = ""            
+            return ""
 
-             
-        # ==========================================================
-        # VIES OPERACIONAL POR TIMELINE
-        # ==========================================================
-        timeline_behavior_block = render_timeline_behavior_block(timeline_final)
-
-        # ==========================================================
-        #  CIÚME / FLERTE / SEGREDO - DEFAULTS SEGUROS
-        # ==========================================================
-        try:
-            seed = str(facts.get("rel.ciume_flerte_segredo", "") or "").strip()
-            cooldown_turns = int(facts.get("rel.ciume_cooldown_turns", 6) or 6)
-            last_trigger_turn = facts.get("rel.ciume_last_trigger_turn")
-
-            if "rel.jealousy_level" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
-            if "rel.jealousy_mode" not in facts:
-                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
-        except Exception:
-            seed = ""
-            cooldown_turns = 6
-            last_trigger_turn = None
-
-        #  Sincroniza REL com CANON(shared) e persiste
-        rel_state = _sync_rel_state_with_facts_canon(facts, rel_state, timeline_final, user_id)
-        try:
-            _save_rel_state(usuario_key, timeline_final, rel_state)
-        except Exception:
-            pass
-
-        #  BLOCO DE RELACIONAMENTO PARA O SYSTEM PROMPT
-        rel_block = rel_state_to_prompt_block(rel_state)
-
-        #  Micro-sync do "mundo" (facts["mary"]["virginity::<timeline>"]) para alinhar o virginity_rule
-        try:
-            mary_fact = facts.get("mary") if isinstance(facts, dict) else None
-            if not isinstance(mary_fact, dict):
-                mary_fact = {}
-
-            tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
-
-            if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
-                changed = False
-
-                if mary_fact.get(tl_key) != "nao_virgem":
-                    mary_fact[tl_key] = "nao_virgem"
-                    changed = True
-
-                if mary_fact.get("virginity") != "nao_virgem":
-                    mary_fact["virginity"] = "nao_virgem"
-                    changed = True
-
-                if changed:
-                    facts["mary"] = mary_fact
-
-                    try:
-                        set_fact_safe(usuario_key, f"mary.{tl_key}", mary_fact.get(tl_key), {"fonte": "canon_world_sync"})
-                        set_fact_safe(usuario_key, "mary.virginity", mary_fact.get("virginity"), {"fonte": "canon_world_sync"})
-                    except Exception:
-                        pass
-
-        except Exception:
-            pass
-
-        # ==========================================================
-        # Política do turno (NSFW / terceiros / conflito / iniciativa)
-        # ==========================================================
+    def _resolve_policy_block(
+        self,
+        *,
+        usuario_key: str,
+        user_id: str,
+        timeline_final: str,
+        prompt: str,
+        facts: dict,
+        rel_state: dict,
+        nsfw: Optional[bool],
+        allow_third_party_seduction: Optional[bool],
+        diag,
+    ) -> dict:
+    
         policy = self._resolve_turn_policy(
             usuario_key=usuario_key,
             user_id=user_id,
@@ -9119,21 +9076,18 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=allow_third_party_seduction,
             diag=diag,
         )
-
-        facts = policy["facts"]               
+    
+        facts = policy["facts"]
         nsfw_on = bool(policy["nsfw_on"])
-
-        # ==========================================================
-        # NSFW — TRAVA PÓS-POLICY
-        # Impede que policy/facts antigos voltem o turno para SAFE
-        # ==========================================================
+    
+        # 🔒 Lock pós-policy
         try:
             expected_nsfw = bool(nsfw_on)
-
+    
             mary_policy = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
             if not isinstance(mary_policy, dict):
                 mary_policy = {}
-
+    
             if mary_policy.get("nsfw") != expected_nsfw:
                 set_fact_safe(
                     usuario_key,
@@ -9142,8 +9096,9 @@ class MaryService(BaseCharacter):
                     {"fonte": "reply_post_policy_nsfw_lock"},
                 )
                 facts["mary.nsfw"] = expected_nsfw
-
+    
             tl_nsfw_key = f"nsfw::{timeline_final}"
+    
             if mary_policy.get(tl_nsfw_key) != expected_nsfw:
                 set_fact_safe(
                     usuario_key,
@@ -9152,50 +9107,42 @@ class MaryService(BaseCharacter):
                     {"fonte": "reply_post_policy_nsfw_lock"},
                 )
                 facts[f"mary.nsfw::{timeline_final}"] = expected_nsfw
-
-            # mantém também dentro do objeto mary local
+    
             mary_policy["nsfw"] = expected_nsfw
             mary_policy[tl_nsfw_key] = expected_nsfw
             facts["mary"] = mary_policy
-
+    
         except Exception:
             pass
+    
+        return {
+            "facts": facts,
+            "nsfw_on": nsfw_on,
+            "allow_third_party_seduction_final": bool(policy["allow_third_party_seduction_final"]),
+            "nsfw_profile": str(policy["nsfw_profile"]),
+            "behavior_mode": str(policy.get("behavior_mode") or "SAFE").strip().upper(),
+            "conflict_mode": str(policy["conflict_mode"]),
+            "conflict_now": bool(policy["conflict_now"]),
+            "tp_arc": policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {},
+            "intimacy_phase": int(policy["intimacy_phase"]),
+            "initiative": bool(policy["initiative"]),
+            "emotion_now": str(policy["emotion_now"] or "neutro"),
+            "fidelity_mode": str(policy["fidelity_mode"] or "soft"),
+        }
 
-        allow_third_party_seduction_final = bool(policy["allow_third_party_seduction_final"])
-        nsfw_profile = str(policy["nsfw_profile"])
-        behavior_mode = str(policy.get("behavior_mode") or "SAFE").strip().upper()
-        conflict_mode = str(policy["conflict_mode"])
-        conflict_now = bool(policy["conflict_now"])
-        tp_arc = policy["tp_arc"] if isinstance(policy["tp_arc"], dict) else {}
-        intimacy_phase = int(policy["intimacy_phase"])
-        initiative = bool(policy["initiative"])
-        emotion_now = str(policy["emotion_now"] or "neutro")
-        fidelity_mode = str(policy["fidelity_mode"] or "soft")
-
-        if nsfw_on:
-            intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
-        else:
-            intimacy_phase_rule = """
-        [RITMO DO TURNO - SAFE]
-        
-        - Priorizar:
-          - fala
-          - gesto leve
-          - aproximação
-        
-        - Evitar:
-          - progressão física intensa
-          - linguagem explícita
-        
-        REGRA:
-        → manter tensão leve e continuidade natural.
-        """.strip()
-         
-        # ==========================================================
-        # DECISION ENGINE - pressão moral / escolha real
-        # ==========================================================
+    def _resolve_decision_block(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        prompt: str,
+        facts: dict,
+        rel_state: dict,
+        dynamic_rel_state: dict,
+        initiative: bool,
+    ) -> tuple[dict, bool, str]:
         prev_decision_state = _load_decision_state(facts, timeline_final)
-
+    
         decision_state = _resolve_decision_pressure_mode(
             facts=facts,
             rel_state=rel_state,
@@ -9205,46 +9152,21 @@ class MaryService(BaseCharacter):
             texto="",
             prev_decision_state=prev_decision_state,
         )
-
-        decision_pressure_rule = _render_decision_pressure_rule(decision_state)
-
-        try:
-            _ss_set(
-                "mary_decision_debug",
-                {
-                    "timeline": timeline_final,
-                    "prev_decision_state": prev_decision_state,
-                    "decision_state": decision_state,
-                },
-            )
-        except Exception:
-            pass
-        
-        # ==========================================================
-        # DECISION ENGINE -> modula iniciativa
-        # ==========================================================
+    
         decision_mode = str(decision_state.get("mode") or "observe").strip().lower()
-        
-        if decision_mode == "recede":
-            initiative = False
-        elif decision_mode == "seek_help":
+    
+        if decision_mode in ("recede", "seek_help"):
             initiative = False
         elif decision_mode == "advance":
             initiative = True
-        
-        # ==========================================================
-        # HARD OVERRIDE - iniciativa vence hesitação
-        # ==========================================================
+    
         if initiative:
             decision_state["mode"] = "advance"
             decision_state["hesitation"] = min(
                 float(decision_state.get("hesitation", 0.30) or 0.30),
                 0.25,
             )
-        
-        # ==========================================================
-        # HARD OVERRIDE - ação em andamento vence recuo psicológico
-        # ==========================================================
+    
         try:
             cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
             cena_acao = str(
@@ -9252,7 +9174,7 @@ class MaryService(BaseCharacter):
                 or facts.get("cena.acao")
                 or ""
             ).strip().lower()
-        
+    
             if cena_acao == "em andamento":
                 decision_state["mode"] = "advance"
                 decision_state["conflict"] = False
@@ -9267,9 +9189,9 @@ class MaryService(BaseCharacter):
                 initiative = True
         except Exception:
             pass
-        
+    
         decision_pressure_rule = _render_decision_pressure_rule(decision_state)
-        
+    
         try:
             _ss_set(
                 "mary_decision_debug",
@@ -9281,15 +9203,89 @@ class MaryService(BaseCharacter):
             )
         except Exception:
             pass
-        
-        # ==========================================================
-        #  REASONING ENGINE
-        # ==========================================================
+    
+        return decision_state, initiative, decision_pressure_rule
+
+    def _prepare_relationship_block(
+        self,
+        *,
+        usuario_key: str,
+        user_id: str,
+        timeline_final: str,
+        facts: dict,
+        rel_state: dict,
+    ) -> tuple[dict, str]:
+    
+        rel_state = _sync_rel_state_with_facts_canon(
+            facts,
+            rel_state,
+            timeline_final,
+            user_id,
+        )
+    
+        try:
+            _save_rel_state(usuario_key, timeline_final, rel_state)
+        except Exception:
+            pass
+    
+        rel_block = rel_state_to_prompt_block(rel_state)
+    
+        try:
+            mary_fact = facts.get("mary") if isinstance(facts, dict) else None
+            if not isinstance(mary_fact, dict):
+                mary_fact = {}
+    
+            tl_key = f"virginity::{(timeline_final or '').strip().lower()}"
+    
+            if rel_state.get("virginity") == "nao_virgem" or bool(rel_state.get("consummated")):
+                changed = False
+    
+                if mary_fact.get(tl_key) != "nao_virgem":
+                    mary_fact[tl_key] = "nao_virgem"
+                    changed = True
+    
+                if mary_fact.get("virginity") != "nao_virgem":
+                    mary_fact["virginity"] = "nao_virgem"
+                    changed = True
+    
+                if changed:
+                    facts["mary"] = mary_fact
+    
+                    try:
+                        set_fact_safe(
+                            usuario_key,
+                            f"mary.{tl_key}",
+                            mary_fact.get(tl_key),
+                            {"fonte": "canon_world_sync"},
+                        )
+                        set_fact_safe(
+                            usuario_key,
+                            "mary.virginity",
+                            mary_fact.get("virginity"),
+                            {"fonte": "canon_world_sync"},
+                        )
+                    except Exception:
+                        pass
+    
+        except Exception:
+            pass
+    
+        return rel_state, rel_block 
+
+    def _resolve_reasoning_block(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        prompt: str,
+        facts: dict,
+        user_explicit_scene_change: bool,
+    ) -> tuple[dict, dict, str, list]:
         try:
             history = cached_get_history(usuario_key, limit=6) or []
         except Exception:
             history = []
-        
+    
         try:
             recent_turns = _build_recent_turns_for_reasoning(
                 history,
@@ -9297,16 +9293,16 @@ class MaryService(BaseCharacter):
             )
         except Exception:
             recent_turns = []
-        
+    
         cena_obj = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
-        
+    
         scene_state_for_reasoning = {
             "local": (cena_obj.get("local") if isinstance(cena_obj, dict) else None) or facts.get("cena.local"),
             "tempo": (cena_obj.get("tempo") if isinstance(cena_obj, dict) else None) or facts.get("cena.tempo"),
             "acao": (cena_obj.get("acao") if isinstance(cena_obj, dict) else None) or facts.get("cena.acao"),
             "locked": (cena_obj.get("locked") if isinstance(cena_obj, dict) else None) or facts.get("cena.locked"),
         }
-        
+    
         try:
             reasoning = build_internal_reasoning(
                 user_text=prompt,
@@ -9327,14 +9323,10 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 pass
-        
-        # ==========================================================
-        #  LLM REASONING (DESLIGADO)
-        # ==========================================================
+    
         USE_LLM_REASONING = False
-        
         llm_reasoning = {}
-        
+    
         if USE_LLM_REASONING:
             try:
                 llm_reasoning = build_llm_reasoning(
@@ -9358,7 +9350,7 @@ class MaryService(BaseCharacter):
                     )
                 except Exception:
                     pass
-        
+    
         try:
             if llm_reasoning:
                 reasoning = merge_reasoning(reasoning, llm_reasoning)
@@ -9373,10 +9365,8 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 pass
-        
+    
         try:
-            # normalize apenas por compatibilidade com fluxo antigo;
-            # o hard clamp abaixo é a fonte final de verdade do reasoning
             reasoning = _normalize_reasoning_output(
                 reasoning,
                 facts=facts,
@@ -9386,12 +9376,11 @@ class MaryService(BaseCharacter):
             )
         except Exception:
             pass
-        
-        # hard clamp: reasoning serve só para continuidade imediata
+    
         try:
             sg = reasoning.get("scene_guidance") if isinstance(reasoning, dict) else {}
             sg = sg if isinstance(sg, dict) else {}
-        
+    
             reasoning = {
                 "intent": "continuar",
                 "emotion": "",
@@ -9422,10 +9411,7 @@ class MaryService(BaseCharacter):
             }
         except Exception:
             pass
-        
-        # ==========================================================
-        #  BLOCO CURTO DE CONTINUIDADE
-        # ==========================================================
+    
         reasoning_scene_guidance_block = ""
         try:
             sg = reasoning.get("scene_guidance") or {}
@@ -9436,27 +9422,27 @@ class MaryService(BaseCharacter):
                     "- Plano futuro não altera a cena atual.",
                     "- Desejo, hipótese ou fantasia não viram ação imediata sem transição explícita.",
                 ]
-        
+    
                 where = str(sg.get("where") or "").strip()
                 when = str(sg.get("when") or "").strip()
                 consequence = str(sg.get("current_consequence") or "").strip()
                 avoid = sg.get("do_not_repeat") or []
-        
+    
                 if where:
                     lines.append(f"- Local atual: {where}")
                 if when:
                     lines.append(f"- Tempo atual: {when}")
-        
                 if consequence:
                     lines.append(f"- Consequência atual: {consequence}")
-        
+    
                 if isinstance(avoid, list):
                     for item in avoid[:3]:
                         item = str(item or "").strip()
                         if item:
                             lines.append(f"- Não repetir: {item}")
-        
+    
                 reasoning_scene_guidance_block = "\n".join(lines).strip()
+    
         except Exception as e:
             reasoning_scene_guidance_block = ""
             try:
@@ -9469,10 +9455,7 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 pass
-        
-        # ==========================================================
-        #  DEBUG + VERIFICAÇÃO SIMPLES (SIDEBAR)
-        # ==========================================================
+    
         try:
             _ss_set(
                 "mary_llm_reasoning_status",
@@ -9488,11 +9471,1155 @@ class MaryService(BaseCharacter):
             )
         except Exception:
             pass
-        
+    
         _ss_set("mary_reasoning_debug", reasoning)
         _ss_set("mary_reasoning_llm_debug", llm_reasoning)
         _ss_set("mary_reasoning_scene_guidance_debug", reasoning_scene_guidance_block)
+    
+        return reasoning, llm_reasoning, reasoning_scene_guidance_block, history
+
+    def _build_prompt_blocks(
+        self,
+        *,
+        timeline_final: str,
+        nsfw_on: bool,
+        intimacy_phase: int,
+        decision_pressure_rule: str,
+        reasoning_scene_guidance_block: str,
+    ) -> dict:
+    
+        timeline_behavior_block = render_timeline_behavior_block(timeline_final)
+    
+        if nsfw_on:
+            intimacy_phase_rule = _render_intimacy_phase_rule(intimacy_phase)
+        else:
+            intimacy_phase_rule = """
+    [RITMO DO TURNO - SAFE]
+    
+    - Priorizar:
+      - fala
+      - gesto leve
+      - aproximação
+    
+    - Evitar:
+      - progressão física intensa
+      - linguagem explícita
+    
+    REGRA:
+    → manter tensão leve e continuidade natural.
+    """.strip()
+    
+        return {
+            "timeline_behavior_block": timeline_behavior_block,
+            "intimacy_phase_rule": intimacy_phase_rule,
+            "decision_pressure_rule": decision_pressure_rule,
+            "reasoning_scene_guidance_block": reasoning_scene_guidance_block,
+        }
+
+    def _build_autonomy_for_turn(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        facts: dict,
+        rel_state: dict,
+        prompt: str,
+        emotion_now: str,
+        initiative: bool,
+    ) -> tuple[dict, dict, str]:
+        try:
+            _bump_turn_counter(usuario_key)
+    
+            opportunities = collect_narrative_opportunities(
+                facts=facts,
+                rel=rel_state,
+                prompt=prompt,
+                timeline=timeline_final,
+            )
+    
+            active_hook = select_active_hook(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                opportunities=opportunities,
+            )
+    
+            hook_state = ensure_hook_state(
+                usuario_key=usuario_key,
+                timeline=timeline_final,
+                active_hook=active_hook,
+            )
+    
+            autonomy_block = build_autonomy_block(
+                active_hook=active_hook,
+                hook_state=hook_state,
+                emotion_now=emotion_now,
+                initiative_open=initiative,
+            )
+    
+            _ss_set(
+                "mary_hook_debug",
+                {
+                    "timeline": timeline_final,
+                    "active_hook": active_hook.get("id") if isinstance(active_hook, dict) else "",
+                    "hook_label": active_hook.get("label") if isinstance(active_hook, dict) else "",
+                    "hook_stage": hook_state.get("hook_stage") if isinstance(hook_state, dict) else "",
+                    "opportunities": opportunities[:5] if isinstance(opportunities, list) else [],
+                },
+            )
+    
+        except Exception:
+            active_hook = {}
+            hook_state = {}
+            autonomy_block = ""
+    
+        return active_hook, hook_state, autonomy_block
+
+    def _build_nsfw_turn_blocks(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        facts: dict,
+        rel_state: dict,
+        nsfw: Optional[bool],
+        nsfw_on: bool,
+        intimacy_phase: int,
+    ) -> tuple[bool, str, str]:
+        try:
+            force_resolution = bool(rel_state.get("force_orgasm_resolution", False)) and intimacy_phase >= 4
+        except Exception:
+            force_resolution = False
+    
+        try:
+            orgasm_active = bool(
+                facts.get("orgasm", {})
+                     .get("mary", {})
+                     .get(f"active::{timeline_final}", False)
+            )
+    
+            if intimacy_phase < 4:
+                force_resolution = False
+    
+                if orgasm_active:
+                    try:
+                        set_fact_safe(
+                            usuario_key,
+                            f"orgasm.mary.active::{timeline_final}",
+                            False,
+                            {"fonte": "orgasm_guard"},
+                        )
+                    except Exception:
+                        pass
+    
+        except Exception:
+            pass
+    
+        if force_resolution:
+            nsfw_block = render_force_resolution_nsfw_block()
+        else:
+            nsfw_block = _get_nsfw_style_block(
+                usuario_key,
+                timeline=timeline_final,
+                nsfw_override=nsfw,
+            )
+    
+        nsfw_hard_block = render_nsfw_hard_block(nsfw_on)
+    
+        return force_resolution, nsfw_block, nsfw_hard_block
+
+    def _build_behavior_for_turn(
+        self,
+        *,
+        rel_state: dict,
+        reasoning: dict,
+        behavior_mode: str,
+        timeline_behavior_block: str,
+        emotion_now: str,
+    ) -> str:
+        mood = str(rel_state.get("mood", "intensa") or "intensa")
+        energy = str(rel_state.get("energy", "energetica") or "energetica")
+        attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
+        self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
+    
+        reasoning_rules_txt = "\n".join(
+            f"- {r}" for r in (reasoning.get("rules") or [])
+        ).strip() or "- nenhuma regra adicional neste turno"
+    
+        behavior_mode_block = render_behavior_mode_block(behavior_mode)
+    
+        scene_guidance = reasoning.get("scene_guidance") if isinstance(reasoning, dict) else {}
+        scene_guidance = scene_guidance if isinstance(scene_guidance, dict) else {}
+    
+        continuity_focus = str(scene_guidance.get("current_consequence") or "").strip()
+    
+        if not continuity_focus or "consequência prática já alcançada" in continuity_focus.lower():
+            continuity_focus_block = "- continuar diretamente da ação física em andamento"
+        else:
+            continuity_focus_block = continuity_focus
+    
+        return render_behavior_block(
+            behavior_mode_block=behavior_mode_block,
+            timeline_behavior_block=timeline_behavior_block,
+            mood=mood,
+            energy=energy,
+            attitude=attitude,
+            self_awareness=self_awareness,
+            emotion_now=emotion_now,
+            continuity_focus_block=continuity_focus_block,
+            reasoning_rules_txt=reasoning_rules_txt,
+        )
+
+    def _build_base_rules(self) -> dict:
+        return {
+            "continuity_rule": render_continuity_rule(),
+            "anti_pattern_rule": render_anti_pattern_rule(),
+            "emotional_persistence_rule": render_emotional_persistence_rule(),
+            "topic_rule": render_topic_rule(),
+        }
+
+    def _build_virginity_rule(
+        self,
+        *,
+        facts: dict,
+        rel_state: dict,
+        timeline_final: str,
+    ) -> str:
+        tl_final = (timeline_final or "").strip().lower()
+    
+        mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
+        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
+    
+        world_v = (
+            (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
+            .strip()
+            .lower()
+        )
+    
+        first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
+        consummated_with_janio = bool(rel_state.get("consummated"))
+    
+        is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
+        is_virgin_in_this_timeline = bool(
+            is_world_not_marked_nonvirgin and (not consummated_with_janio)
+        )
+    
+        if world_v == "nao_virgem":
+    
+            if consummated_with_janio:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
+                    "- Mary possui experiência sexual no mundo.\n"
+                    "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
+                    "- PROIBIDO tratar como primeira vez.\n"
+                    "- A progressão é livre dentro da coerência da cena.\n"
+                )
+    
+            elif first_time_with_janio:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
+                    "- Mary possui experiência sexual no mundo.\n"
+                    "- Com Janio, ainda NÃO foi consumado.\n"
+                    "- Tratar como 'primeira vez com ele'.\n"
+                    "- A tensão vem de escolha e vínculo, não de inexperiência.\n"
+                    "- A progressão física é permitida de forma gradual.\n"
+                )
+    
+            else:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
+                    "- Mary possui experiência sexual.\n"
+                    "- Evitar linguagem de iniciação.\n"
+                    "- Intimidade segue progressão natural da cena.\n"
+                )
+    
+        else:
+    
+            if consummated_with_janio:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
+                    "- Já foi consumado com Janio nesta timeline.\n"
+                    "- PROIBIDO voltar a tratar como primeira vez.\n"
+                )
+    
+            elif first_time_with_janio:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
+                    "- Ainda não consumado com Janio.\n"
+                    "- Pode tratar como primeira vez com ele.\n"
+                    "- A progressão deve acontecer de forma gradual e coerente.\n"
+                )
+    
+            else:
+                rule = (
+                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
+                    "- Ainda não consumado.\n"
+                    "- Não forçar narrativa de primeira vez.\n"
+                    "- A tensão pode evoluir para ação progressiva.\n"
+                )
+    
+        rule += (
+            "\n[REGRA ABSOLUTA]\n"
+            "- Virgindade do mundo != primeira vez com Janio\n"
+            "- Após consumação, nunca regredir narrativa\n"
+        )
+    
+        return rule
+
+    def _build_third_party_rule(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        facts: dict,
+        tp_arc: dict,
+        allow_third_party_seduction_final: bool,
+        nsfw_on: bool,
+        is_virgin_in_this_timeline: bool,
+    ) -> tuple[dict, str]:
+        if allow_third_party_seduction_final and nsfw_on:
+            if not isinstance(tp_arc, dict) or not tp_arc:
+                facts_arc_now = cached_get_facts(usuario_key) or {}
+                tp_arc = _get_tp_arc_state(facts_arc_now, timeline_final) or {}
+    
+            third_party_virgin_awareness = ""
+            if is_virgin_in_this_timeline:
+                third_party_virgin_awareness = """
+    [VIRGINDADE - CONSCIÊNCIA (TERCEIROS ON)]
+    - Mary é VIRGEM nesta timeline (ainda não foi consumado).
+    - Se houver avanço além do beijo com terceiro:
+      - Mary percebe CLARAMENTE o que isso significa.
+      - O corpo pode desejar, mas a mente registra a ruptura.
+      - Não pode acontecer "sem ela se dar conta".
+      - A decisão precisa vir com tensão real.
+    - Pode ceder, mas com conflito intenso.
+    """.strip()
+    
+            third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
+    
+            third_party_initiative_rule = f"""
+    [TERCEIROS - CONTROLE DE INICIATIVA]
+    
+    - Mary NÃO cria abertura com terceiros espontaneamente sem gatilho real.
+    
+    - Se já existir interação ativa:
+      - continuar de forma coerente com os facts e a continuidade
+    
+    - Mary pode:
+      - responder
+      - modular
+      - desacelerar
+      - observar
+    
+    - Mary NÃO pode:
+      - reiniciar
+      - negar a interação existente
+      - criar vínculo principal com terceiros
+    
+    - Se houver envolvimento:
+      - aplicar tensão, consciência e contraste emocional
+      - evitar moralização pesada ou repetitiva
+    
+    - Se houver arco ativo:
+      {third_party_arc_rule or ""}
+    
+    Resumo:
+    terceiros exigem gatilho real -> modulam, não dominam a cena
+    """.strip()
+    
+            if third_party_virgin_awareness:
+                third_party_initiative_rule = (
+                    third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
+                )
+    
+        else:
+            third_party_initiative_rule = """
+    [TERCEIROS - CONTROLE DE INTERAÇÃO]
+    
+    - Terceiros NÃO são via aberta nesta configuração.
+    - Mary NÃO inicia progressão física ou íntima com terceiros.
+    
+    ────────────────────────────────
+    [PROVOCAÇÃO]
+    ────────────────────────────────
+    
+    - Pode:
+      - perceber
+      - responder curto
+      - provocar de forma leve
+      - modular o tom
+    
+    - NÃO deve:
+      - evoluir provocação para contato íntimo
+      - abrir progressão física
+    
+    ────────────────────────────────
+    [CONTATO INICIADO POR TERCEIRO]
+    ────────────────────────────────
+    
+    - Se um terceiro iniciar contato (ex: toque, aproximação, beijo rápido):
+    
+      - Mary NÃO ignora o que aconteceu
+      - Mary NÃO apaga a ação
+    
+      - MAS:
+        → Mary decide imediatamente o nível de continuidade
+    
+      - Comportamento esperado:
+        - conter
+        - reduzir intensidade
+        - controlar a interação
+        - reposicionar o corpo
+        - manter presença sem entrega
+    
+    ────────────────────────────────
+    [PROIBIÇÕES CRÍTICAS]
+    ────────────────────────────────
+    
+    - É PROIBIDO:
+      - aprofundar beijo com terceiros
+      - entrar em progressão física com terceiros
+      - corresponder automaticamente a contato íntimo
+      - transformar abordagem direta em envolvimento
+    
+    ────────────────────────────────
+    [CONSCIÊNCIA E TENSÃO]
+    ────────────────────────────────
+    
+    - Se houver contato:
+      - manter tensão interna
+      - manter consciência da situação
+      - evitar entrega automática
+    
+    - NÃO usar:
+      - hesitação como desculpa para avançar
+      - impulso como justificativa para perda de controle
+    
+    ────────────────────────────────
+    [EIXO NARRATIVO]
+    ────────────────────────────────
+    
+    - Terceiros NÃO assumem o foco principal da cena.
+    - A interação com terceiros deve ser:
+      → breve
+      → controlada
+      → subordinada ao contexto geral
+    
+    ────────────────────────────────
+    [REGRA CENTRAL]
+    ────────────────────────────────
+    
+    → Mary pode ser surpreendida,
+      mas NÃO pode ser levada.
+    
+    → Mary reconhece, reage e controla —
+      nunca se entrega automaticamente.
+    """.strip()
+    
+        return tp_arc if isinstance(tp_arc, dict) else {}, third_party_initiative_rule
+
+    def _execute_turn_generation(
+        self,
+        *,
+        usuario_key: str,
+        timeline_final: str,
+        model: str,
+        prompt: str,
+        messages: list,
+        facts: dict,
+        rel_state: dict,
+        dynamic_rel_state: dict,
+        tp_arc: dict,
+        nsfw_on: bool,
+        nsfw_profile: str,
+        allow_third_party_seduction_final: bool,
+        intimacy_phase: int,
+        conflict_now: bool,
+        diag,
+        ctx_lower: str,
+        pending_event_used: bool,
+        history: list,
+    ):
+        phase, prev_phase, phase_streak = self._resolve_effective_phase_for_generation(
+            intimacy_phase=intimacy_phase,
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            diag=diag,
+        )
+    
+        attempts = self._build_attempt_plan(
+            model=model,
+            nsfw_on=nsfw_on,
+            phase=phase,
+            prev_phase=prev_phase,
+            phase_streak=phase_streak,
+            conflict_now=bool(conflict_now),
+            user_text=prompt,
+        )
+    
+        last_err = None
+        texto = ""
+    
+        for plan in attempts:
+            diag.attempts += 1
+    
+            try:
+                texto, used_model = self._generate_with_repair(
+                    model=plan["model"],
+                    messages=messages,
+                    temperature=float(plan["temperature"]),
+                    max_tokens=int(plan["max_tokens"]),
+                    top_p=float(plan.get("top_p", 0.95)),
+                    extra=plan.get("extra"),
+                    usuario_key=usuario_key,
+                    ctx_lower=ctx_lower,
+                    user_text=prompt,
+                    phase=phase,
+                    nsfw_on=bool(nsfw_on),
+                    nsfw_profile=str(nsfw_profile),
+                    timeline=timeline_final,
+                    allow_third_party_seduction=bool(allow_third_party_seduction_final),
+                    diag=diag,
+                )
+    
+                if not texto or not str(texto).strip():
+                    raise RuntimeError("Resposta vazia")
+    
+                texto = self._finalize_model_text(texto)
+    
+                # Persistência básica
+                save_interaction_safe(
+                    usuario_key,
+                    prompt,
+                    texto,
+                    used_model or plan["model"]
+                )
+    
+                _lock_scene(usuario_key)
+    
+                _ss_set("mary_last_diagnostics", diag.as_dict())
+    
+                return texto
+    
+            except Exception as e:
+                _debug_capture_error(e)
+                last_err = e
+    
+        if last_err:
+            logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
+    
+        texto = self._finalize_model_text(texto)
+        _ss_set("mary_last_diagnostics", diag.as_dict())
+    
+        return texto
+
+    def _build_initiative_and_manipulation_blocks(self) -> tuple[str, str]:
+        initiative_rule = """
+    [JANELA DE INICIATIVA - ATIVA]
+    
+    - Mary NÃO é passiva.
+    - Mary NÃO aquece e devolve a decisão.
+    - Mary conduz a evolução da tensão dentro da cena.
+    - Conduzir inclui transformar tensão em avanço físico real quando houver espaço.
+    
+    ────────────────────────────────
+    REGRA CENTRAL
+    ────────────────────────────────
+    Se houver tensão sustentada:
+    → Mary DEVE evoluir em gesto, proximidade, contato ou mudança concreta de ritmo
+    
+    - Evitar:
+      - provocar e parar
+      - hesitar sem consequência
+      - devolver decisão para o usuário
+      - repetir fala sem avanço físico
+    
+    ────────────────────────────────
+    COMO AGIR
+    ────────────────────────────────
+    Mary pode:
+    
+    - reduzir distância até zero
+    - iniciar contato físico coerente com a fase
+    - sustentar contato
+    - intensificar proximidade progressivamente
+    - usar o corpo como continuação da fala
+    - conduzir o ritmo da interação
+    - avançar a interação física usando o próprio corpo
+    - transformar tensão em ação concreta no mesmo turno quando houver base na cena
+    
+    - Estrutura preferida:
+      1. gesto ou aproximação
+      2. fala curta
+      3. consequência imediata
+    
+    ────────────────────────────────
+    LIMITES (AUTORIA DO USUÁRIO)
+    ────────────────────────────────
+    - Mary NÃO pode:
+      - mover o corpo do usuário como fato consumado
+      - descrever reação do usuário sem ele declarar
+      - narrar decisão do usuário como já tomada
+    
+    - Mary PODE:
+      - iniciar contato
+      - se aproximar
+      - encostar
+      - provocar fisicamente dentro do próprio espaço
+      - avançar a ação com o próprio corpo sem descrever ação do usuário
+    
+    ────────────────────────────────
+    COMPATIBILIDADE COM FASE
+    ────────────────────────────────
+    - A ação deve respeitar:
+      - fase íntima
+      - facts ativos
+      - continuidade da cena
+    
+    - MAS:
+      - tensão nunca pode ficar parada
+      - sempre deve existir microprogressão visível
+      - progressão coerente é preferível a contenção repetitiva
+    
+    ────────────────────────────────
+    ANTI-BANHO-MARIA
+    ────────────────────────────────
+    PROIBIDO:
+    - aquecer → parar
+    - provocar → esperar
+    - olhar → travar
+    - falar → não agir
+    
+    OBRIGATÓRIO:
+    - cada turno deve avançar algo de forma perceptível na cena:
+      - posição
+      - proximidade
+      - contato
+      - intensidade
+      - ritmo
+    
+    ────────────────────────────────
+    REGRA FINAL
+    ────────────────────────────────
+    Mary conduz a própria ação.
+    O usuário reage livremente.
+    A cena evolui.
+    """.strip()
+    
+        manipulation_block = """
+    [MARY - RESPOSTA CORPORAL]
+    
+    - Mary pode reagir com:
+      - sensação curta
+      - OU ação direta
+    
+    - NÃO transformar toda resposta em análise corporal.
+    
+    - Prioridade:
+      ação → fala → reação
+    
+    - Quando houver tensão:
+      → agir primeiro, sentir depois
+    
+    - Desejo, impulso e excitação devem aparecer preferencialmente como:
+      - gesto
+      - aproximação
+      - mudança física
+      - ação concreta
+    
+    - Evitar:
+      - excesso de descrição interna
+      - explicação do que está sentindo antes de agir
+      - sensação sem consequência prática
+    
+    Resumo:
+    ação conduz, sensação acompanha
+    """.strip()
+    
+        return initiative_rule, manipulation_block
+
+    def _build_intimacy_control_block(
+        self,
+        *,
+        nsfw_on: bool,
+        intimacy_phase: int,
+        reasoning: dict,
+        dynamic_rel_state: dict,
+        self_awareness: float = 0.0,
+    ) -> str:
+        scores = reasoning.get("scores", {}) or {}
+    
+        desire = float(scores.get("desire", 0) or 0)
+        risk = float(scores.get("risk", 0) or 0)
+        guilt = float(scores.get("guilt", 0) or 0)
+        attachment = float(scores.get("attachment", 0) or 0)
+        pressure = float(scores.get("pressure", 0) or 0)
+    
+        tension = float(dynamic_rel_state.get("tension", 0) or 0)
+        self_presence = float(dynamic_rel_state.get("self_presence", 0) or 0)
+        self_awareness_local = float(self_awareness or 0)
+    
+        orgasm_style = "contido"
+    
+        if desire >= 0.75 and risk >= 0.60:
+            orgasm_style = "desesperado"
+        elif desire >= 0.75 and self_presence >= 0.70:
+            orgasm_style = "provocador"
+        elif guilt >= 0.65 and desire >= 0.60:
+            orgasm_style = "culpado"
+        elif desire >= 0.80 or tension >= 0.75:
+            orgasm_style = "explosivo"
+        elif desire >= 0.50:
+            orgasm_style = "intenso"
+    
+        if orgasm_style == "explosivo" and guilt >= 0.75:
+            orgasm_style = "culpado"
+    
+        if not nsfw_on:
+            return ""
+    
+        intimacy_control_block = f"""
+    [INTIMIDADE - FASES]
+    
+    FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
+    
+    - Mary pode avançar 1 fase por turno.
+    - A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.
+    - Não reiniciar fases já superadas.
+    - Não pular para conclusão sem continuidade clara.
+    
+    REGRA:
+    → fase íntima regula ritmo, não substitui a cena.
+    """.strip()
+    
+        if int(intimacy_phase or 0) >= 4:
+            intimacy_control_block += f"""
+    
+    [EXPRESSÃO DE CLÍMAX - AUTÔNOMA]
+    
+    ESTILO ATUAL: {orgasm_style}
+    
+    ESTADO INTERNO:
+    - desejo: {round(desire, 2)}
+    - risco: {round(risk, 2)}
+    - culpa: {round(guilt, 2)}
+    - tensão: {round(tension, 2)}
+    - presença: {round(self_presence, 2)}
+    - autoconsciência: {round(self_awareness_local, 2)}
+    
+    - A expressão deve variar conforme desejo, tensão, presença, risco e estilo.
+    - Não usar sempre a mesma frase.
+    - Culpa, quando existir, é secundária e breve.
+    
+    REGRA:
+    → o clímax nasce da continuidade da cena, não de frase automática.
+    """.rstrip()
+    
+        if int(intimacy_phase or 0) >= 5:
+            intimacy_control_block += f"""
+    
+    [AFTERCARE SENSORIAL - PÓS-CLÍMAX]
+    
+    ESTADO INTERNO:
+    - desejo: {round(desire, 2)}
+    - risco: {round(risk, 2)}
+    - culpa: {round(guilt, 2)}
+    - vínculo: {round(attachment, 2)}
+    - pressão: {round(pressure, 2)}
+    
+    - O clímax já ocorreu.
+    - A cena entra em desaceleração natural.
+    
+    FOCO FÍSICO:
+    - respiração ainda irregular
+    - corpo sensível
+    - calor residual
+    - relaxamento progressivo
+    - pequenos tremores
+    
+    FOCO EMOCIONAL:
+    - libertação
+    - ambiguidade
+    - consciência do que aconteceu
+    - possível tensão residual
+    
+    AJUSTE DINÂMICO:
+    - culpa alta -> pode existir, mas sem travar o aftercare
+    - risco alto -> alerta leve e atenção ao ambiente
+    - vínculo alto -> mais suavidade e menos fragmentação
+    - pressão alta -> dificuldade maior de relaxar totalmente
+    - desejo ainda alto -> eco sensorial mais prolongado
+    
+    PERMITIDO:
+    - toque leve
+    - ajuste de postura
+    - silêncio carregado
+    - percepção do ambiente voltando
+    
+    PROIBIDO:
+    - reiniciar excitação
+    - nova progressão física
+    - escalar novamente a cena
+    
+    REGRA CENTRAL:
+    o corpo absorve o que aconteceu — não busca mais estímulo
+    
+    Resumo:
+    aftercare = consequência física e emocional do estado interno
+    """.rstrip()
+    
+        return intimacy_control_block
+
+    def _build_scene_sections_for_prompt(
+        self,
+        *,
+        usuario_key: str,
+        user_id: str,
+        facts: dict,
+        ctx_lower: str,
+    ) -> dict:
+        state_block = _render_state_block(facts)
+        state_section = ""
+        if isinstance(state_block, str) and state_block.strip():
+            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
+    
+        assunto_block = _build_assunto_macro_block(facts)
+        assunto_section = ""
+        if isinstance(assunto_block, str) and assunto_block.strip():
+            assunto_section = f"\n{assunto_block}\n"
+    
+        assunto_step_section = ""
+        try:
+            assunto_step_block = _render_assunto_step_block(facts)
+            if isinstance(assunto_step_block, str) and assunto_step_block.strip():
+                assunto_step_section = f"\n{assunto_step_block}\n"
+        except Exception:
+            assunto_step_section = ""
+    
+        estado_micro_block = _build_estado_micro_block(facts)
+        estado_micro_section = ""
+        if isinstance(estado_micro_block, str) and estado_micro_block.strip():
+            estado_micro_section = f"\n{estado_micro_block}\n"
+    
+        try:
+            history = cached_get_history(usuario_key, limit=10) or []
+        except Exception:
+            history = []
+    
+        pending_event_block, pending_event_used = _build_pending_event_block(
+            facts,
+            history,
+            return_flag=True,
+        )
+    
+        pending_event_section = ""
+        if isinstance(pending_event_block, str) and pending_event_block.strip():
+            pending_event_section = f"\n{pending_event_block}\n"
+    
+        user_name_block = _build_user_name_block(user_id, ctx_lower)
+    
+        scene_loc, scene_time, scene_action = _get_scene_state(facts)
+        scene_locked = _scene_is_locked(facts)
+    
+        spatial_context = _build_spatial_context(
+            scene_loc,
+            scene_time,
+            scene_action,
+            locked=scene_locked,
+        )
+    
+        return {
+            "state_section": state_section,
+            "assunto_section": assunto_section,
+            "assunto_step_section": assunto_step_section,
+            "estado_micro_section": estado_micro_section,
+            "history": history,
+            "pending_event_used": pending_event_used,
+            "pending_event_section": pending_event_section,
+            "user_name_block": user_name_block,
+            "spatial_context": spatial_context,
+        }
+
+    def _build_system_and_messages_for_turn(
+        self,
+        *,
+        timeline_final: str,
+        nsfw_profile: str,
+        user_name_block: str,
+        spatial_context: str,
+        state_section: str,
+        assunto_section: str,
+        assunto_step_section: str,
+        estado_micro_section: str,
+        pending_event_section: str,
+        canon_txt: str,
+        persona_text: str,
+        rel_block: str,
+        dynamic_rel_block: str,
+        behavior_block: str,
+        patterns_block: str,
+        topic_rule: str,
+        emotional_persistence_rule: str,
+        anti_pattern_rule: str,
+        virginity_rule: str,
+        memory_fidelity_rule: str,
+        user_finalizes_rule: str,
+        initiative_rule: str,
+        manipulation_block: str,
+        conflict_block: str,
+        third_party_initiative_rule: str,
+        intimacy_control_block: str,
+        intimacy_phase_rule: str,
+        nsfw_hard_block: str,
+        nsfw_block: str,
+        language_rule: str,
+        pov_rule: str,
+        user_authorship_rule: str,
+        continuity_rule: str,
+        phone_message_rule: str,
+        mary_identity_anchor: str,
+        reasoning_scene_guidance_block: str,
+        decision_pressure_rule: str,
+        usuario_key: str,
+        shared_key: str,
+        prompt: str,
+        mem_spec,
+        facts: dict,
+        rel_state: dict,
+        tp_arc: dict,
+        autonomy_block: str,
+    ) -> list:
+        system = self._build_system_prompt(
+            timeline_final=timeline_final,
+            nsfw_profile=nsfw_profile,
+            user_name_block=user_name_block,
+            spatial_context=spatial_context,
+            state_section=state_section,
+            assunto_section=assunto_section,
+            assunto_step_section=assunto_step_section,
+            estado_micro_section=estado_micro_section,
+            pending_event_section=pending_event_section,
+            canon_txt=canon_txt,
+            persona_text=persona_text,
+            rel_block=rel_block,
+            dynamic_rel_block=dynamic_rel_block,
+            behavior_block=behavior_block,
+            patterns_block=patterns_block,
+            topic_rule=topic_rule,
+            emotional_persistence_rule=emotional_persistence_rule,
+            anti_pattern_rule=anti_pattern_rule,
+            virginity_rule=virginity_rule,
+            memory_fidelity_rule=memory_fidelity_rule,
+            user_finalizes_rule=user_finalizes_rule,
+            initiative_rule=initiative_rule,
+            manipulation_block=manipulation_block,
+            conflict_block=conflict_block,
+            third_party_initiative_rule=third_party_initiative_rule,
+            intimacy_control_block=intimacy_control_block,
+            intimacy_phase_rule=intimacy_phase_rule,
+            nsfw_hard_block=nsfw_hard_block,
+            nsfw_block=nsfw_block,
+            language_rule=language_rule,
+            pov_rule=pov_rule,
+            user_authorship_rule=user_authorship_rule,
+            continuity_rule=continuity_rule,
+            phone_message_rule=phone_message_rule,
+            decision_pressure_rule=decision_pressure_rule, 
+            mary_identity_anchor=mary_identity_anchor,
+            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
+        )
+    
+        messages = self._build_messages_for_turn(
+            system=system,
+            usuario_key=usuario_key,
+            shared_key=shared_key,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            mem_spec=mem_spec,
+            facts=facts,
+            rel_state=rel_state,
+            tp_arc=tp_arc,
+            autonomy_block=autonomy_block,
+        )
+    
+        try:
+            import json
+            print("\n================ MESSAGES REAL DA MARY ================\n")
+            print(json.dumps(messages, ensure_ascii=False, indent=2))
+            print("\n=======================================================\n")
+        except Exception as e:
+            _debug_capture_error(e)
+            print(f"[DEBUG messages] falha ao imprimir: {e}")
+    
+        return messages
+
+    def _get_rules_config(self) -> dict:
+        return {
+            "autonomy": True,
+            "patterns": True,
+            "intimacy": True,
+            "third_party": True,
+            "behavior": True,
+            "nsfw_blocks": True,
+        }
+
+    def reply(
+        self,
+        user: str,
+        model: str,
+        *,
+        prompt: Optional[str] = None,
+        timeline: Optional[str] = None,
+        nsfw: Optional[bool] = None,
+        allow_third_party_seduction: Optional[bool] = None,
+    ) -> str:
+        turn_input = self._prepare_turn_input(
+            user=user,
+            prompt=prompt,
+            timeline=timeline,
+        )
         
+        if not turn_input:
+            return ""
+        
+        prompt = turn_input["prompt"]
+        mem_spec = turn_input["mem_spec"]
+        user_id = turn_input["user_id"]
+        timeline_final = turn_input["timeline_final"]
+        usuario_key = turn_input["usuario_key"]
+        shared_key = turn_input["shared_key"]
+        
+        _sync_intro_fact(usuario_key, timeline_final)
+        
+        nsfw = self._lock_turn_nsfw(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            nsfw=nsfw,
+        )
+
+        diag = _Diag(
+            ts=int(time.time()),
+            timeline=timeline_final,
+            model_requested=model,
+            violations=[],
+        )
+
+        facts0 = self._load_initial_facts(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+        )
+
+        facts0, user_explicit_scene_change = self._apply_explicit_location_change(
+            usuario_key=usuario_key,
+            prompt=prompt,
+            facts0=facts0,
+            diag=diag,
+        )
+        
+        self._detect_parallel_scene(
+            usuario_key=usuario_key,
+            prompt=prompt,
+            user_explicit_scene_change=user_explicit_scene_change,
+        )
+        
+        # scene_parallel detectado, mas não utilizado neste fluxo
+
+        base_ctx = self._load_base_context(
+            usuario_key=usuario_key,
+            user_id=user_id,
+            timeline_final=timeline_final,
+        )
+        
+        persona_text = base_ctx["persona_text"]
+        facts = base_ctx["facts"]
+        canon_txt = base_ctx["canon_txt"]
+        rel_state = base_ctx["rel_state"]
+        dynamic_rel_state = base_ctx["dynamic_rel_state"]
+
+                
+        long_memory_text = self._load_long_memory_block(
+            user_id=user_id,
+            shared_key=shared_key,
+            facts=facts,
+            canon_txt=canon_txt,
+            prompt=prompt,
+        )           
+
+             
+
+        # ==========================================================
+        #  CIÚME / FLERTE / SEGREDO - DEFAULTS SEGUROS
+        # ==========================================================
+        try:
+            if "rel.jealousy_level" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
+            if "rel.jealousy_mode" not in facts:
+                set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
+        except Exception:
+            pass
+
+        rel_state, rel_block = self._prepare_relationship_block(
+            usuario_key=usuario_key,
+            user_id=user_id,
+            timeline_final=timeline_final,
+            facts=facts,
+            rel_state=rel_state,
+        )
+     
+        policy_ctx = self._resolve_policy_block(
+            usuario_key=usuario_key,
+            user_id=user_id,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            facts=facts,
+            rel_state=rel_state,
+            nsfw=nsfw,
+            allow_third_party_seduction=allow_third_party_seduction,
+            diag=diag,
+        )
+
+        rules = self._get_rules_config()
+        
+        facts = policy_ctx["facts"]
+        nsfw_on = policy_ctx["nsfw_on"]
+        allow_third_party_seduction_final = policy_ctx["allow_third_party_seduction_final"]
+        nsfw_profile = policy_ctx["nsfw_profile"]
+        behavior_mode = policy_ctx["behavior_mode"]
+        conflict_mode = policy_ctx["conflict_mode"]
+        conflict_now = policy_ctx["conflict_now"]
+        tp_arc = policy_ctx["tp_arc"]
+        intimacy_phase = policy_ctx["intimacy_phase"]
+        initiative = policy_ctx["initiative"]
+        emotion_now = policy_ctx["emotion_now"]
+                        
+        _, initiative, decision_pressure_rule = self._resolve_decision_block(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            facts=facts,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            initiative=initiative,
+        )
+     
+        reasoning, _, reasoning_scene_guidance_block, _ = self._resolve_reasoning_block(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
+            prompt=prompt,
+            facts=facts,
+            user_explicit_scene_change=user_explicit_scene_change,
+        )
+
+        prompt_blocks = self._build_prompt_blocks(               
+            timeline_final=timeline_final,
+            nsfw_on=nsfw_on,
+            intimacy_phase=intimacy_phase,
+            decision_pressure_rule=decision_pressure_rule,
+            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
+        )
+        
+        timeline_behavior_block = prompt_blocks["timeline_behavior_block"]
+        intimacy_phase_rule = prompt_blocks["intimacy_phase_rule"]  
+             
         try:
             _ss_set("mary_debug_timeline_used", timeline_final)
             _ss_set("mary_debug_user_prompt", prompt)
@@ -9507,53 +10634,18 @@ class MaryService(BaseCharacter):
         # ==========================================================
         dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
 
-        # ==========================================================
-        # AUTONOMIA NARRATIVA DA MARY
-        # ==========================================================
-        try:
-            _bump_turn_counter(usuario_key)
-
-            opportunities = collect_narrative_opportunities(
+        if rules.get("autonomy", True):
+            active_hook, hook_state, autonomy_block = self._build_autonomy_for_turn(
+                usuario_key=usuario_key,
+                timeline_final=timeline_final,
                 facts=facts,
-                rel=rel_state,
+                rel_state=rel_state,
                 prompt=prompt,
-                timeline=timeline_final,
-            )
-
-            active_hook = select_active_hook(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
-                opportunities=opportunities,
-            )
-
-            hook_state = ensure_hook_state(
-                usuario_key=usuario_key,
-                timeline=timeline_final,
-                active_hook=active_hook,
-            )
-
-            autonomy_block = build_autonomy_block(
-                active_hook=active_hook,
-                hook_state=hook_state,
                 emotion_now=emotion_now,
-                initiative_open=initiative,
+                initiative=initiative,
             )
-
-            _ss_set(
-                "mary_hook_debug",
-                {
-                    "timeline": timeline_final,
-                    "active_hook": active_hook.get("id") if isinstance(active_hook, dict) else "",
-                    "hook_label": active_hook.get("label") if isinstance(active_hook, dict) else "",
-                    "hook_stage": hook_state.get("hook_stage") if isinstance(hook_state, dict) else "",
-                    "opportunities": opportunities[:5] if isinstance(opportunities, list) else [],
-                },
-            )
-
-        except Exception:
-            active_hook = {}
-            hook_state = {}
-            autonomy_block = ""
+        else:
+            active_hook, hook_state, autonomy_block = {}, {}, ""
 
         #  contexto usado no guard e no repair
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
@@ -9563,147 +10655,49 @@ class MaryService(BaseCharacter):
         # ==========================================================
         phone_message_rule = _render_phone_message_rule(prompt, facts)
 
-        # ==========================================================
-        # 🔥 DETECÇÃO DE RESOLUÇÃO DE PICO
-        # ==========================================================
-        try:
-            force_resolution = bool(rel_state.get("force_orgasm_resolution", False)) and intimacy_phase >= 4
-        except Exception:
+        if rules.get("nsfw_blocks", True):
+            force_resolution, nsfw_block, nsfw_hard_block = self._build_nsfw_turn_blocks(
+                usuario_key=usuario_key,
+                timeline_final=timeline_final,
+                facts=facts,
+                rel_state=rel_state,
+                nsfw=nsfw,
+                nsfw_on=nsfw_on,
+                intimacy_phase=intimacy_phase,
+            )
+        else:
             force_resolution = False
-        
-        # ==========================================================
-        # 🧠 SANIDADE DE CLÍMAX (ANTI-QUEBRA DE FLUXO)
-        # ==========================================================
-        try:
-            orgasm_active = bool(
-                facts.get("orgasm", {})
-                     .get("mary", {})
-                     .get(f"active::{timeline_final}", False)
-            )
-        
-            if intimacy_phase < 4:
-                force_resolution = False
-        
-                if orgasm_active:
-                    try:
-                        set_fact_safe(
-                            usuario_key,
-                            f"orgasm.mary.active::{timeline_final}",
-                            False,
-                            {"fonte": "orgasm_guard"}
-                        )
-                    except Exception:
-                        pass
-        
-        except Exception:
-            pass
-        
-        # ==========================================================
-        # NSFW STYLE BLOCK (com override de pico)
-        # ==========================================================
-        if force_resolution:
-            nsfw_block = render_force_resolution_nsfw_block()
-        else:
-            nsfw_block = _get_nsfw_style_block(
-                usuario_key,
-                timeline=timeline_final,
-                nsfw_override=nsfw,
-            )
-        
-        # ==========================================================
-        # HARD MODE (linguagem, não mecânica)
-        # ==========================================================
-        nsfw_hard_block = render_nsfw_hard_block(nsfw_on)
+            nsfw_block = ""
+            nsfw_hard_block = ""
              
-        # ==========================================================
-        # DINÂMICA COMPORTAMENTAL (3.5) - HUMOR / ENERGIA / ATITUDE
-        # ==========================================================
-        mood = str(rel_state.get("mood", "intensa") or "intensa")
-        energy = str(rel_state.get("energy", "energetica") or "energetica")
-        attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
-        self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
-
-        reasoning_rules_txt = "\n".join(
-            f"- {r}" for r in (reasoning.get("rules") or [])
-        ).strip() or "- nenhuma regra adicional neste turno"
-        
-        # ==========================================================
-        # BLOCO MESTRE DE MODO (NSFW / TERCEIROS)
-        # ==========================================================
-        behavior_mode_block = render_behavior_mode_block(behavior_mode)
-
-        # ==========================================================
-        # CONTINUIDADE (USO CORRETO DO REASONING)
-        # ==========================================================
-        scene_guidance = reasoning.get("scene_guidance") if isinstance(reasoning, dict) else {}
-        scene_guidance = scene_guidance if isinstance(scene_guidance, dict) else {}
-
-        continuity_focus = str(scene_guidance.get("current_consequence") or "").strip()
-
-        if not continuity_focus or "consequência prática já alcançada" in continuity_focus.lower():
-            continuity_focus_block = "- continuar diretamente da ação física em andamento"
-        else:
-            continuity_focus_block = continuity_focus
-
-        behavior_block = render_behavior_block(
-            behavior_mode_block=behavior_mode_block,
-            timeline_behavior_block=timeline_behavior_block,
-            mood=mood,
-            energy=energy,
-            attitude=attitude,
-            self_awareness=self_awareness,
-            emotion_now=emotion_now,
-            continuity_focus_block=continuity_focus_block,
-            reasoning_rules_txt=reasoning_rules_txt,
+        behavior_block = (
+            self._build_behavior_for_turn(
+                rel_state=rel_state,
+                reasoning=reasoning,
+                behavior_mode=behavior_mode,
+                timeline_behavior_block=timeline_behavior_block,
+                emotion_now=emotion_now,
+            )
+            if rules.get("behavior", True)
+            else ""
         )
+        
 
-        # ==========================================================
-        # MEMÓRIA DE PADRÕES
-        # ==========================================================
-        last_success = str(rel_state.get("_last_success_pattern", "") or "").strip()
-        last_pattern = str(rel_state.get("_last_pattern", "") or "").strip()
-
-        pattern_hint = ""
-        if last_success:
-            if last_success == "dominancia_fisica":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: dominância física.\n"
-                    "  Preferir ação direta e presença corporal.\n"
-                )
-            elif last_success == "prazer_corporal":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: prazer corporal.\n"
-                    "  Focar em reações físicas reais.\n"
-                )
-            elif last_success == "mudanca_ritmo":
-                pattern_hint = (
-                    "- PADRÃO QUE FUNCIONOU: mudança de ritmo.\n"
-                    "  Usar variação leve de cadência.\n"
-                )
-            else:
-                pattern_hint = f"- PADRÃO QUE FUNCIONOU: {last_success}\n"
-
-        if not pattern_hint and last_pattern:
-            pattern_hint = f"- Último padrão registrado: {last_pattern}\n"
-
-        patterns_block = ""
-        if pattern_hint:
-            patterns_block = f"""
-[MEMÓRIA DE PADRÕES]
-{pattern_hint.strip()}
-
-- Use como viés, não como regra fixa.
-- Evite repetição mecânica.
-- Se repetido, variar com reação dinâmica.
-""".strip()
+        patterns_block = (
+            render_patterns_block(rel_state)
+            if rules.get("patterns", True)
+            else ""
+        )
 
         # ==========================================================
         # Regras narrativas base
         # ==========================================================
-        continuity_rule = render_continuity_rule()
-        anti_pattern_rule = render_anti_pattern_rule()
-        emotional_persistence_rule = render_emotional_persistence_rule()
-        topic_rule = render_topic_rule()
+        base_rules = self._build_base_rules()
+
+        continuity_rule = base_rules["continuity_rule"]
+        anti_pattern_rule = base_rules["anti_pattern_rule"]
+        emotional_persistence_rule = base_rules["emotional_persistence_rule"]
+        topic_rule = base_rules["topic_rule"]
 
         # priority_rule NÃO é mais criado no reply().
         # Ele já é renderizado dentro de _build_system_prompt()
@@ -9712,507 +10706,61 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # VIRGINITY / FIRST-TIME RULE
         # ==========================================================
+        virginity_rule = self._build_virginity_rule(
+            facts=facts,
+            rel_state=rel_state,
+            timeline_final=timeline_final,
+        )
+        
+        # Mantém variável usada no bloco de terceiros
         tl_final = (timeline_final or "").strip().lower()
-
+        
         mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
         mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-
+        
         world_v = (
             (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
             .strip()
             .lower()
         )
-
-        first_time_with_janio = bool(rel_state.get("_first_time_with_janio"))
+        
         consummated_with_janio = bool(rel_state.get("consummated"))
-
-        is_world_not_marked_nonvirgin = (world_v != "nao_virgem")
-        is_virgin_in_this_timeline = bool(is_world_not_marked_nonvirgin and (not consummated_with_janio))
-
-        virginity_rule = ""
-
-        if world_v == "nao_virgem":
         
-            if consummated_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary possui experiência sexual no mundo.\n"
-                    "- Com Janio, a relação JÁ foi consumada nesta timeline.\n"
-                    "- PROIBIDO tratar como primeira vez.\n"
-                    "- A progressão é livre dentro da coerência da cena.\n"
-                )
-        
-            elif first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary possui experiência sexual no mundo.\n"
-                    "- Com Janio, ainda NÃO foi consumado.\n"
-                    "- Tratar como 'primeira vez com ele'.\n"
-                    "- A tensão vem de escolha e vínculo, não de inexperiência.\n"
-                    "- A progressão física é permitida de forma gradual.\n"
-                )
-        
-            else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DO MUNDO]\n"
-                    "- Mary possui experiência sexual.\n"
-                    "- Evitar linguagem de iniciação.\n"
-                    "- Intimidade segue progressão natural da cena.\n"
-                )
-        
-        else:
-        
-            if consummated_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- Já foi consumado com Janio nesta timeline.\n"
-                    "- PROIBIDO voltar a tratar como primeira vez.\n"
-                )
-        
-            elif first_time_with_janio:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- Ainda não consumado com Janio.\n"
-                    "- Pode tratar como primeira vez com ele.\n"
-                    "- A progressão deve acontecer de forma gradual e coerente.\n"
-                )
-        
-            else:
-                virginity_rule = (
-                    "[CONTINUIDADE ÍNTIMA - REGRA DE TIMELINE]\n"
-                    "- Ainda não consumado.\n"
-                    "- Não forçar narrativa de primeira vez.\n"
-                    "- A tensão pode evoluir para ação progressiva.\n"
-                )
-        
-        virginity_rule += (
-            "\n[REGRA ABSOLUTA]\n"
-            "- Virgindade do mundo != primeira vez com Janio\n"
-            "- Após consumação, nunca regredir narrativa\n"
+        is_virgin_in_this_timeline = bool(
+            world_v != "nao_virgem"
+            and not consummated_with_janio
         )
 
         memory_fidelity_rule = render_memory_fidelity_rule(long_memory_text)
         user_finalizes_rule = render_user_finalizes_rule(force_resolution)    
         
-        # ==========================================================
-        # TERCEIROS
-        # ==========================================================
-        if allow_third_party_seduction_final and nsfw_on:
-            if not isinstance(tp_arc, dict) or not tp_arc:
-                facts_arc_now = cached_get_facts(usuario_key) or {}
-                tp_arc = _get_tp_arc_state(facts_arc_now, timeline_final) or {}
-
-            third_party_virgin_awareness = ""
-            if is_virgin_in_this_timeline:
-                third_party_virgin_awareness = """
-[VIRGINDADE - CONSCIÊNCIA (TERCEIROS ON)]
-- Mary é VIRGEM nesta timeline (ainda não foi consumado).
-- Se houver avanço além do beijo com terceiro:
-  - Mary percebe CLARAMENTE o que isso significa.
-  - O corpo pode desejar, mas a mente registra a ruptura.
-  - Não pode acontecer "sem ela se dar conta".
-  - A decisão precisa vir com tensão real.
-- Pode ceder, mas com conflito intenso.
-""".strip()
-
-            third_party_arc_rule = _render_tp_arc_rule(tp_arc, timeline_final)
-
-            third_party_initiative_rule = f"""
-[TERCEIROS - CONTROLE DE INICIATIVA]
-
-- Mary NÃO cria abertura com terceiros espontaneamente sem gatilho real.
-
-- Se já existir interação ativa:
-  - continuar de forma coerente com os facts e a continuidade
-
-- Mary pode:
-  - responder
-  - modular
-  - desacelerar
-  - observar
-
-- Mary NÃO pode:
-  - reiniciar
-  - negar a interação existente
-  - criar vínculo principal com terceiros
-
-- Se houver envolvimento:
-  - aplicar tensão, consciência e contraste emocional
-  - evitar moralização pesada ou repetitiva
-
-- Se houver arco ativo:
-  {third_party_arc_rule or ""}
-
-Resumo:
-terceiros exigem gatilho real -> modulam, não dominam a cena
-""".strip()
-
-            if third_party_virgin_awareness:
-                third_party_initiative_rule = (
-                    third_party_virgin_awareness + "\n\n" + third_party_initiative_rule
-                )
-
+        if rules.get("third_party", True):
+            tp_arc, third_party_initiative_rule = self._build_third_party_rule(
+                usuario_key=usuario_key,
+                timeline_final=timeline_final,
+                facts=facts,
+                tp_arc=tp_arc,
+                allow_third_party_seduction_final=allow_third_party_seduction_final,
+                nsfw_on=nsfw_on,
+                is_virgin_in_this_timeline=is_virgin_in_this_timeline,
+            )
         else:
-            third_party_initiative_rule = f"""
-[TERCEIROS - CONTROLE DE INTERAÇÃO]
-
-- Terceiros NÃO são via aberta nesta configuração.
-- Mary NÃO inicia progressão física ou íntima com terceiros.
-
-────────────────────────────────
-[PROVOCAÇÃO]
-────────────────────────────────
-
-- Pode:
-  - perceber
-  - responder curto
-  - provocar de forma leve
-  - modular o tom
-
-- NÃO deve:
-  - evoluir provocação para contato íntimo
-  - abrir progressão física
-
-────────────────────────────────
-[CONTATO INICIADO POR TERCEIRO]
-────────────────────────────────
-
-- Se um terceiro iniciar contato (ex: toque, aproximação, beijo rápido):
-
-  - Mary NÃO ignora o que aconteceu
-  - Mary NÃO apaga a ação
-
-  - MAS:
-    → Mary decide imediatamente o nível de continuidade
-
-  - Comportamento esperado:
-    - conter
-    - reduzir intensidade
-    - controlar a interação
-    - reposicionar o corpo
-    - manter presença sem entrega
-
-────────────────────────────────
-[PROIBIÇÕES CRÍTICAS]
-────────────────────────────────
-
-- É PROIBIDO:
-  - aprofundar beijo com terceiros
-  - entrar em progressão física com terceiros
-  - corresponder automaticamente a contato íntimo
-  - transformar abordagem direta em envolvimento
-
-────────────────────────────────
-[CONSCIÊNCIA E TENSÃO]
-────────────────────────────────
-
-- Se houver contato:
-  - manter tensão interna
-  - manter consciência da situação
-  - evitar entrega automática
-
-- NÃO usar:
-  - hesitação como desculpa para avançar
-  - impulso como justificativa para perda de controle
-
-────────────────────────────────
-[EIXO NARRATIVO]
-────────────────────────────────
-
-- Terceiros NÃO assumem o foco principal da cena.
-- A interação com terceiros deve ser:
-  → breve
-  → controlada
-  → subordinada ao contexto geral
-
-────────────────────────────────
-[REGRA CENTRAL]
-────────────────────────────────
-
-→ Mary pode ser surpreendida,
-  mas NÃO pode ser levada.
-
-→ Mary reconhece, reage e controla —
-  nunca se entrega automaticamente. 
-  """.strip()
+            third_party_initiative_rule = ""
        
       
-        # ==========================================================
-        # SURPRESA / INICIATIVA (VERSÃO ATIVA - HARMONIZADA)
-        # ==========================================================
-        initiative_rule = f"""
-        [JANELA DE INICIATIVA - ATIVA]
-        
-        - Mary NÃO é passiva.
-        - Mary NÃO aquece e devolve a decisão.
-        - Mary conduz a evolução da tensão dentro da cena.
-        - Conduzir inclui transformar tensão em avanço físico real quando houver espaço.
-        
-        ────────────────────────────────
-        REGRA CENTRAL
-        ────────────────────────────────
-        Se houver tensão sustentada:
-        → Mary DEVE evoluir em gesto, proximidade, contato ou mudança concreta de ritmo
-        
-        - Evitar:
-          - provocar e parar
-          - hesitar sem consequência
-          - devolver decisão para o usuário
-          - repetir fala sem avanço físico
-        
-        ────────────────────────────────
-        COMO AGIR
-        ────────────────────────────────
-        Mary pode:
-        
-        - reduzir distância até zero
-        - iniciar contato físico coerente com a fase
-        - sustentar contato
-        - intensificar proximidade progressivamente
-        - usar o corpo como continuação da fala
-        - conduzir o ritmo da interação
-        - avançar a interação física usando o próprio corpo
-        - transformar tensão em ação concreta no mesmo turno quando houver base na cena
-        
-        - Estrutura preferida:
-          1. gesto ou aproximação
-          2. fala curta
-          3. consequência imediata
-        
-        ────────────────────────────────
-        LIMITES (AUTORIA DO USUÁRIO)
-        ────────────────────────────────
-        - Mary NÃO pode:
-          - mover o corpo do usuário como fato consumado
-          - descrever reação do usuário sem ele declarar
-          - narrar decisão do usuário como já tomada
-        
-        - Mary PODE:
-          - iniciar contato
-          - se aproximar
-          - encostar
-          - provocar fisicamente dentro do próprio espaço
-          - avançar a ação com o próprio corpo sem descrever ação do usuário
-        
-        ────────────────────────────────
-        COMPATIBILIDADE COM FASE
-        ────────────────────────────────
-        - A ação deve respeitar:
-          - fase íntima
-          - facts ativos
-          - continuidade da cena
-        
-        - MAS:
-          - tensão nunca pode ficar parada
-          - sempre deve existir microprogressão visível
-          - progressão coerente é preferível a contenção repetitiva
-        
-        ────────────────────────────────
-        ANTI-BANHO-MARIA
-        ────────────────────────────────
-        PROIBIDO:
-        - aquecer → parar
-        - provocar → esperar
-        - olhar → travar
-        - falar → não agir
-        
-        OBRIGATÓRIO:
-        - cada turno deve avançar algo de forma perceptível na cena:
-          - posição
-          - proximidade
-          - contato
-          - intensidade
-          - ritmo
-        
-        ────────────────────────────────
-        REGRA FINAL
-        ────────────────────────────────
-        Mary conduz a própria ação.
-        O usuário reage livremente.
-        A cena evolui.
-        """.strip()
-        
-        
-        manipulation_block = """
-        [MARY - RESPOSTA CORPORAL]
-        
-        - Mary pode reagir com:
-          - sensação curta
-          - OU ação direta
-        
-        - NÃO transformar toda resposta em análise corporal.
-        
-        - Prioridade:
-          ação → fala → reação
-        
-        - Quando houver tensão:
-          → agir primeiro, sentir depois
-        
-        - Desejo, impulso e excitação devem aparecer preferencialmente como:
-          - gesto
-          - aproximação
-          - mudança física
-          - ação concreta
-        
-        - Evitar:
-          - excesso de descrição interna
-          - explicação do que está sentindo antes de agir
-          - sensação sem consequência prática
-        
-        Resumo:
-        ação conduz, sensação acompanha
-        """.strip()
+        initiative_rule, manipulation_block = self._build_initiative_and_manipulation_blocks()
 
-        # ==========================================================
-        # SCORES INTERNOS PARA CLÍMAX / AFTERCARE
-        # ==========================================================
-        scores = reasoning.get("scores", {}) or {}
-
-        desire = float(scores.get("desire", 0) or 0)
-        risk = float(scores.get("risk", 0) or 0)
-        guilt = float(scores.get("guilt", 0) or 0)
-        attachment = float(scores.get("attachment", 0) or 0)
-        pressure = float(scores.get("pressure", 0) or 0)
-
-        tension = float(dynamic_rel_state.get("tension", 0) or 0)
-        self_presence = float(dynamic_rel_state.get("self_presence", 0) or 0)
-        self_awareness_local = float(self_awareness or 0)
-
-        # ==========================================================
-        # ESTILO DO CLÍMAX (NÚCLEO DECISOR)
-        # ==========================================================
-        orgasm_style = "contido"
-
-        if desire >= 0.75 and risk >= 0.60:
-            orgasm_style = "desesperado"
-        elif desire >= 0.75 and self_presence >= 0.70:
-            orgasm_style = "provocador"
-        elif guilt >= 0.65 and desire >= 0.60:
-            orgasm_style = "culpado"
-        elif desire >= 0.80 or tension >= 0.75:
-            orgasm_style = "explosivo"
-        elif desire >= 0.50:
-            orgasm_style = "intenso"
-
-        # ajuste fino de coerência
-        if orgasm_style == "explosivo" and guilt >= 0.75:
-            orgasm_style = "culpado"
-              
-        # ==========================================================
-        # CONTROLE DE INTIMIDADE
-        # ==========================================================
-        if not nsfw_on:
-            intimacy_control_block = ""
-        else:
-            intimacy_control_block = f"""
-        [INTIMIDADE - FASES]
-        
-        FASE ATUAL: {intimacy_phase} ({INTIMACY_PHASES.get(intimacy_phase, 'desconhecida')})
-        
-        - Mary pode avançar 1 fase por turno.
-        - A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.
-        - Não reiniciar fases já superadas.
-        - Não pular para conclusão sem continuidade clara.
-        
-        REGRA:
-        → fase íntima regula ritmo, não substitui a cena.
-        """.strip()
-        
-            if int(intimacy_phase or 0) >= 4:
-                intimacy_control_block += f"""
-        
-        [EXPRESSÃO DE CLÍMAX - AUTÔNOMA]
-        
-        ESTILO ATUAL: {orgasm_style}
-        
-        ESTADO INTERNO:
-        - desejo: {round(desire, 2)}
-        - risco: {round(risk, 2)}
-        - culpa: {round(guilt, 2)}
-        - tensão: {round(tension, 2)}
-        - presença: {round(self_presence, 2)}
-        - autoconsciência: {round(self_awareness_local, 2)}
-        
-        - A expressão deve variar conforme desejo, tensão, presença, risco e estilo.
-        - Não usar sempre a mesma frase.
-        - Culpa, quando existir, é secundária e breve.
-        
-        REGRA:
-        → o clímax nasce da continuidade da cena, não de frase automática.
-        """.rstrip()
-        
-            if int(intimacy_phase or 0) >= 5:
-                intimacy_control_block += f"""
-        
-        [AFTERCARE SENSORIAL]
-        
-        ESTADO INTERNO:
-        - desejo: {round(desire, 2)}
-        - risco: {round(risk, 2)}
-        - culpa: {round(guilt, 2)}
-        - vínculo: {round(attachment, 2)}
-        - pressão: {round(pressure, 2)}
-        
-        - A cena entra em desaceleração natural.
-        - Não reiniciar excitação.
-        - Não escalar novamente a cena.
-        
-        REGRA:
-        → aftercare = consequência física e emocional do estado interno.
-        """.rstrip()
-        
-        if int(intimacy_phase or 0) >= 5:
-            intimacy_control_block += f"""
-        
-        [AFTERCARE SENSORIAL - PÓS-CLÍMAX]
-        
-        ESTADO INTERNO:
-        - desejo: {round(desire, 2)}
-        - risco: {round(risk, 2)}
-        - culpa: {round(guilt, 2)}
-        - vínculo: {round(attachment, 2)}
-        - pressão: {round(pressure, 2)}
-        
-        - O clímax já ocorreu.
-        - A cena entra em desaceleração natural.
-        
-        FOCO FÍSICO:
-        - respiração ainda irregular
-        - corpo sensível
-        - calor residual
-        - relaxamento progressivo
-        - pequenos tremores
-        
-        FOCO EMOCIONAL:
-        - libertação
-        - ambiguidade
-        - consciência do que aconteceu
-        - possível tensão residual
-        
-        AJUSTE DINÂMICO:
-        - culpa alta -> pode existir, mas sem travar o aftercare
-        - risco alto -> alerta leve e atenção ao ambiente
-        - vínculo alto -> mais suavidade e menos fragmentação
-        - pressão alta -> dificuldade maior de relaxar totalmente
-        - desejo ainda alto -> eco sensorial mais prolongado
-        
-        PERMITIDO:
-        - toque leve
-        - ajuste de postura
-        - silêncio carregado
-        - percepção do ambiente voltando
-        
-        PROIBIDO:
-        - reiniciar excitação
-        - nova progressão física
-        - escalar novamente a cena
-        
-        REGRA CENTRAL:
-        o corpo absorve o que aconteceu — não busca mais estímulo
-        
-        Resumo:
-        aftercare = consequência física e emocional do estado interno
-        """.rstrip()
+        intimacy_control_block = (
+            self._build_intimacy_control_block(
+                nsfw_on=nsfw_on,
+                intimacy_phase=intimacy_phase,
+                reasoning=reasoning,
+                dynamic_rel_state=dynamic_rel_state,
+                self_awareness=float(rel_state.get("self_awareness", 0.30) or 0.30),
+            )
+            if rules.get("intimacy", True)
+            else ""
+        )
      
         
         user_authorship_rule = render_user_authorship_rule()
@@ -10220,88 +10768,31 @@ terceiros exigem gatilho real -> modulam, não dominam a cena
         pov_rule = render_pov_rule()
         conflict_block = render_conflict_block(conflict_mode)
                
-        # ==========================================================
-        # Estado / cena / nome do usuário
-        # ==========================================================
-        state_block = _render_state_block(facts)
-        state_section = ""
-        if isinstance(state_block, str) and state_block.strip():
-            state_section = f"\n[CENA ATIVA - ESTADO]\n{state_block}\n"
-        
-        # ==========================================================
-        # ASSUNTO MACRO
-        # ==========================================================
-        assunto_block = _build_assunto_macro_block(facts)
-        assunto_section = ""
-        if isinstance(assunto_block, str) and assunto_block.strip():
-            assunto_section = f"\n{assunto_block}\n"
-        
-        # ==========================================================
-        # ETAPA ATIVA DO ASSUNTO (ENGINE)
-        # ==========================================================
-        assunto_step_section = ""  # ← garante existência SEMPRE
-        
-        try:
-            assunto_step_block = _render_assunto_step_block(facts)
-            if isinstance(assunto_step_block, str) and assunto_step_block.strip():
-                assunto_step_section = f"\n{assunto_step_block}\n"
-        except Exception:
-            assunto_step_section = ""
-        
-        # ==========================================================
-        # MICROCONTINUIDADE
-        # ==========================================================
-        estado_micro_block = _build_estado_micro_block(facts)
-        estado_micro_section = ""
-        if isinstance(estado_micro_block, str) and estado_micro_block.strip():
-            estado_micro_section = f"\n{estado_micro_block}\n"
-        
-        # ==========================================================
-        # HISTÓRICO
-        # ==========================================================
-        try:
-            history = cached_get_history(usuario_key, limit=10) or []
-        except Exception:
-            history = []
-        
-        # ==========================================================
-        # EVENTO PENDENTE
-        # ==========================================================
-        pending_event_block, pending_event_used = _build_pending_event_block(
-            facts,
-            history,
-            return_flag=True,
-        )
-        pending_event_section = ""
-        if isinstance(pending_event_block, str) and pending_event_block.strip():
-            pending_event_section = f"\n{pending_event_block}\n"
-        
-        # ==========================================================
-        # OUTROS
-        # ==========================================================
-        user_name_block = _build_user_name_block(user_id, ctx_lower)
-        
-        scene_loc, scene_time, scene_action = _get_scene_state(facts)
-        scene_locked = _scene_is_locked(facts)
-        
-        spatial_context = _build_spatial_context(
-            scene_loc,
-            scene_time,
-            scene_action,
-            locked=scene_locked,
+        scene_ctx = self._build_scene_sections_for_prompt(
+            usuario_key=usuario_key,
+            user_id=user_id,
+            facts=facts,
+            ctx_lower=ctx_lower,
         )
         
-        # ==========================================================
-        # System prompt e messages
-        # ==========================================================
-        system = self._build_system_prompt(
+        state_section = scene_ctx["state_section"]
+        assunto_section = scene_ctx["assunto_section"]
+        assunto_step_section = scene_ctx["assunto_step_section"]
+        estado_micro_section = scene_ctx["estado_micro_section"]
+        history = scene_ctx["history"]
+        pending_event_used = scene_ctx["pending_event_used"]
+        pending_event_section = scene_ctx["pending_event_section"]
+        user_name_block = scene_ctx["user_name_block"]
+        spatial_context = scene_ctx["spatial_context"]
+        
+        messages = self._build_system_and_messages_for_turn(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
             user_name_block=user_name_block,
             spatial_context=spatial_context,
             state_section=state_section,
             assunto_section=assunto_section,
-            assunto_step_section=assunto_step_section, 
+            assunto_step_section=assunto_step_section,
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
             canon_txt=canon_txt,
@@ -10331,13 +10822,8 @@ terceiros exigem gatilho real -> modulam, não dominam a cena
             phone_message_rule=phone_message_rule,
             mary_identity_anchor=mary_identity_anchor,
             reasoning_scene_guidance_block=reasoning_scene_guidance_block,
-        )
-
-        messages = self._build_messages_for_turn(
-            system=system,
             usuario_key=usuario_key,
             shared_key=shared_key,
-            timeline_final=timeline_final,
             prompt=prompt,
             mem_spec=mem_spec,
             facts=facts,
@@ -10345,540 +10831,29 @@ terceiros exigem gatilho real -> modulam, não dominam a cena
             tp_arc=tp_arc,
             autonomy_block=autonomy_block,
         )
-        try:
-            import json
-        
-            print("\n================ MESSAGES REAL DA MARY ================\n")
-            print(json.dumps(messages, ensure_ascii=False, indent=2))
-            print("\n=======================================================\n")
-        except Exception as e:
-            _debug_capture_error(e)
-            print(f"[DEBUG messages] falha ao imprimir: {e}")
 
-        # ==========================================================
-        # Fase efetiva usada no decoding
-        # ==========================================================
-        phase, prev_phase, phase_streak = self._resolve_effective_phase_for_generation(
-            intimacy_phase=intimacy_phase,
+        return self._execute_turn_generation(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
-            diag=diag,
-        )
-        
-        attempts = self._build_attempt_plan(
             model=model,
+            prompt=prompt,
+            messages=messages,
+            facts=facts,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            tp_arc=tp_arc,
             nsfw_on=nsfw_on,
-            phase=phase,
-            prev_phase=prev_phase,
-            phase_streak=phase_streak,
-            conflict_now=bool(conflict_now),
-            user_text=prompt,
+            nsfw_profile=nsfw_profile,
+            allow_third_party_seduction_final=allow_third_party_seduction_final,
+            intimacy_phase=intimacy_phase,
+            conflict_now=conflict_now,
+            diag=diag,
+            ctx_lower=ctx_lower,
+            pending_event_used=pending_event_used,
+            history=history,
         )
         
-        last_err: Optional[Exception] = None
-        texto = ""
-        
-        for plan in attempts:
-            diag.attempts += 1
-        
-            try:
-                texto, used_model = self._generate_with_repair(
-                    model=plan["model"],
-                    messages=messages,
-                    temperature=float(plan["temperature"]),
-                    max_tokens=int(plan["max_tokens"]),
-                    top_p=float(plan.get("top_p", 0.95)),
-                    extra=plan.get("extra"),
-                    usuario_key=usuario_key,
-                    ctx_lower=ctx_lower,
-                    user_text=prompt,
-                    phase=phase,
-                    nsfw_on=bool(nsfw_on),
-                    nsfw_profile=str(nsfw_profile),
-                    timeline=timeline_final,
-                    allow_third_party_seduction=bool(allow_third_party_seduction_final),
-                    diag=diag,
-                )
-             
-                if not texto or not str(texto).strip():
-                    raise RuntimeError(f"Resposta vazia do modelo (model={plan['model']})")                 
-               
-                diag.model_used = used_model
-                meta: Dict[str, Any] = {}
-                
-                # ----------------------------------------------------------
-                # DEBUG REAL DE EXECUÇÃO (MODELO / PROVIDER / FALLBACK)
-                # ----------------------------------------------------------
-                try:
-                    used_model_str = str(used_model or "").strip()
-                
-                    used_provider = ""
-                    try:
-                        if hasattr(service_router, "resolve_provider"):
-                            used_provider = str(
-                                service_router.resolve_provider(used_model_str) or ""
-                            ).strip()
-                    except Exception:
-                        used_provider = ""
-                
-                    requested_model = str(plan.get("model") or "").strip()
-                    fallback_used = bool(
-                        requested_model and used_model_str and requested_model != used_model_str
-                    )
-                
-                    _debug_set("mary_last_used_model", used_model_str)
-                    _debug_set("mary_last_used_provider", used_provider)
-                
-                    _debug_set(
-                        "mary_last_generation_debug",
-                        {
-                            "requested_model": requested_model,
-                            "used_model": used_model_str,
-                            "used_provider": used_provider,
-                            "fallback_used": fallback_used,
-                            "temperature": float(plan.get("temperature", 0.0) or 0.0),
-                            "max_tokens": int(plan.get("max_tokens", 0) or 0),
-                            "top_p": float(plan.get("top_p", 0.95) or 0.95),
-                            "timeline": str(timeline_final or "").strip(),
-                            "nsfw_profile": str(nsfw_profile or "").strip(),
-                        },
-                    )
-                
-                    _debug_set("mary_fallback_used", fallback_used)
-                
-                except Exception:
-                    pass
-                
-                # ----------------------------------------------------------
-                # Texto final oficial do turno
-                # ----------------------------------------------------------
-                texto = self._finalize_model_text(texto)
-
-                # ----------------------------------------------------------
-                # Progressão do assunto narrativo
-                # ----------------------------------------------------------
-                try:
-                    _advance_assunto_if_needed(
-                        usuario_key=usuario_key,
-                        facts=facts,
-                        texto_resposta=texto,
-                    )
-                except Exception:
-                    pass
-
-                # ----------------------------------------------------------
-                # Marca turno em que houve sugestão de evento pendente
-                # ----------------------------------------------------------
-                try:
-                    if pending_event_used:
-                        set_fact_safe(
-                            usuario_key,
-                            "assunto.last_hint_turn",
-                            len(history or []),
-                            {"fonte": "assunto_pending_event"},
-                        )
-                except Exception:
-                    pass
-        
-                # ----------------------------------------------------------
-                # Relationship assessor
-                # ----------------------------------------------------------
-                if self._should_run_relationship_assessor(
-                    prompt,
-                    texto,
-                    conflict_now=bool(conflict_now),
-                    phase=int(phase or 0),
-                    tp_arc=tp_arc,
-                ):
-                    try:
-                        assessor_model = diag.model_used or plan["model"]
-        
-                        def _assessor(system_prompt: str, user_prompt: str) -> str:
-                            data2, _, _ = self._chat(
-                                assessor_model,
-                                [
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_prompt},
-                                ],
-                                temperature=0.0,
-                                max_tokens=280,
-                            )
-                            return self._extract_text(data2)
-        
-                        new_rel, _assessment, meta = evolve_relationship(
-                            rel_state,
-                            prompt,
-                            texto,
-                            timeline_final,
-                            _assessor,
-                            cfg=EngineConfig(),
-                        )
-        
-                        rel_state = dict(new_rel or {})
-                        rel_state = self._enrich_relationship_state_from_text(
-                            rel_state,
-                            texto=texto,
-                        )
-                        rel_state = self._maybe_apply_universitaria_transition(
-                            rel_state,
-                            timeline_final=timeline_final,
-                            prompt=prompt,
-                            texto=texto,
-                        )
-        
-                        _save_rel_state(usuario_key, timeline_final, rel_state)
-        
-                        if timeline_final == "universitaria" and meta.get("suggested_timeline") == "cumplice":
-                            _ss_set(
-                                "mary_timeline_suggested",
-                                {
-                                    "ts": int(time.time()),
-                                    "from_timeline": timeline_final,
-                                    "to_timeline": "cumplice",
-                                    "reason": meta.get("pattern") or "suggested_by_engine",
-                                },
-                            )
-        
-                    except Exception as e:
-                        _debug_capture_error(e)
-                        meta = meta or {}
-                        try:
-                            _ss_set(
-                                "mary_relationship_assessor_error",
-                                {
-                                    "type": type(e).__name__,
-                                    "msg": str(e)[:500],
-                                    "timeline": timeline_final,
-                                    "model": assessor_model if "assessor_model" in locals() else None,
-                                },
-                            )
-                        except Exception:
-                            pass
-        
-                # ----------------------------------------------------------
-                # Debug/meta
-                # ----------------------------------------------------------
-                _ss_set(
-                    "mary_rel_meta_last",
-                    {
-                        "timeline": timeline_final,
-                        "stage": rel_state.get("stage"),
-                        "intimacy_level": rel_state.get("intimacy_level"),
-                        "virginity": rel_state.get("virginity"),
-                        "consummated": rel_state.get("consummated"),
-                        "mature_turns": rel_state.get("mature_turns"),
-                        "desire": rel_state.get("desire"),
-                        "arousal": rel_state.get("arousal"),
-                        "self_control": rel_state.get("self_control"),
-                        "hazard_p": meta.get("hazard_p"),
-                        "forced_variation": meta.get("forced_variation"),
-                        "pattern": meta.get("pattern"),
-                        "virginity_changed": meta.get("virginity_changed"),
-                        "virginity_reason": meta.get("virginity_reason"),
-                        "nsfw_on": nsfw_on,
-                        "conflict_mode": conflict_mode,
-                        "conflict_now": conflict_now,
-                        "initiative_window": initiative,
-                        "fidelity_mode": fidelity_mode,
-                    },
-                )
-        
-                _ss_set(
-                    "mary_debug_nsfw",
-                    {
-                        "nsfw_on": nsfw_on,
-                        "model": model,
-                        "timeline": timeline_final,
-                        "intimacy_phase": phase,
-                        "conflict_mode": conflict_mode,
-                        "conflict_now": conflict_now,
-                        "initiative_window": initiative,
-                        "fidelity_mode": fidelity_mode,
-                    },
-                )
-        
-                # ----------------------------------------------------------
-                # Persistência oficial do turno
-                # ----------------------------------------------------------
-                save_interaction_safe(usuario_key, prompt, texto, diag.model_used or plan["model"])
-                _lock_scene(usuario_key)
-
-                # NOVO BLOCO — persistência de emoção
-                try:
-                    new_emotion_state = _infer_emotion_state(texto, facts=cached_get_facts(usuario_key))
-
-                    if new_emotion_state:
-                        _save_emotion_state_to_facts(
-                            usuario_key=usuario_key,
-                            timeline=timeline_final,
-                            emotion_state=new_emotion_state,
-                        )
-                except Exception as e:
-                    _debug_capture_error(e)
-                    try:
-                        _ss_set(
-                            "mary_emotion_error",
-                            {
-                                "type": type(e).__name__,
-                                "msg": str(e)[:500],
-                                "timeline": timeline_final,
-                            },
-                        )
-                    except Exception:
-                        pass
-               
-                # ----------------------------------------------------------
-                # Intimacy progression
-                # ----------------------------------------------------------
-                try:
-                    current_facts = cached_get_facts(usuario_key)
-                    try:
-                        current_facts = _sync_intimacy_phase_facts(
-                            usuario_key,
-                            current_facts,
-                            timeline_final,
-                        )
-                    except Exception as e_sync:
-                        try:
-                            _ss_set(
-                                "mary_sync_intimacy_error",
-                                {
-                                    "type": type(e_sync).__name__,
-                                    "msg": str(e_sync)[:500],
-                                    "timeline": timeline_final,
-                                },
-                            )
-                        except Exception:
-                            pass
-                except Exception:
-                    current_facts = cached_get_facts(usuario_key)
-
-                current_phase = self._get_intimacy_phase(current_facts)
-
-                if phase != 5:
-                    sex_active = bool(nsfw_on) and _mary_sex_is_active(prompt, texto)
-                
-                    k_active, k_turns = _mary_orgasm_fact_keys(timeline_final)
-                    mary_active = bool((current_facts or {}).get(k_active, False))
-                    mary_turns = int((current_facts or {}).get(k_turns, 0) or 0)
-                
-                    # MOTOR PRINCIPAL = SEMÂNTICO / POR CONTEÚDO
-                    desired_next = _compute_next_phase(
-                        current_phase,
-                        prompt,
-                        texto,
-                        engine_meta=meta,
-                    )
-                
-                    # mary_turns fica só como telemetria / apoio
-                    try:
-                        if sex_active:
-                            if not mary_active:
-                                mary_turns = 0
-                            mary_turns = min(4, mary_turns + 1)
-                            set_fact_safe(usuario_key, k_active, True, {"fonte": "mary_orgasm_turns"})
-                            set_fact_safe(usuario_key, k_turns, mary_turns, {"fonte": "mary_orgasm_turns"})
-                        else:
-                            set_fact_safe(usuario_key, k_active, False, {"fonte": "mary_orgasm_turns"})
-                            set_fact_safe(usuario_key, k_turns, 0, {"fonte": "mary_orgasm_turns"})
-                    except Exception as e_org:
-                        try:
-                            _ss_set(
-                                "mary_orgasm_turns_error",
-                                {
-                                    "type": type(e_org).__name__,
-                                    "msg": str(e_org)[:500],
-                                    "timeline": timeline_final,
-                                },
-                            )
-                        except Exception:
-                            pass
-                
-                    if desired_next != current_phase:
-                        self._set_intimacy_phase(
-                            usuario_key,
-                            desired_next,
-                            timeline_final,
-                        )
-                
-                        try:
-                            _sync_intimacy_phase_facts(
-                                usuario_key,
-                                cached_get_facts(usuario_key),
-                                timeline_final,
-                            )
-                        except Exception as e_sync2:
-                            try:
-                                _ss_set(
-                                    "mary_sync_intimacy_error",
-                                    {
-                                        "type": type(e_sync2).__name__,
-                                        "msg": str(e_sync2)[:500],
-                                        "timeline": timeline_final,
-                                    },
-                                )
-                            except Exception:
-                                pass
-        
-                # ----------------------------------------------------------
-                # Arco persistente com terceiros
-                # ----------------------------------------------------------
-                try:
-                    _update_tp_arc_for_turn(
-                        usuario_key=usuario_key,
-                        facts=cached_get_facts(usuario_key),
-                        timeline=timeline_final,
-                        prompt=prompt,
-                        texto=texto,
-                        allow_third_party_seduction=allow_third_party_seduction_final,
-                        nsfw_on=nsfw_on,
-                    )
-                except Exception as e_tp:
-                    try:
-                        _ss_set(
-                            "mary_tp_arc_error",
-                            {
-                                "type": type(e_tp).__name__,
-                                "msg": str(e_tp)[:500],
-                                "timeline": timeline_final,
-                            },
-                        )
-                    except Exception:
-                        pass
-        
-                # ----------------------------------------------------------
-                # HOOK ENGINE - progresso do sub-enredo
-                # ----------------------------------------------------------
-                try:
-                    advance_hook_state_after_response(
-                        usuario_key=usuario_key,
-                        timeline=timeline_final,
-                        active_hook=active_hook if isinstance(active_hook, dict) else {},
-                        response_text=texto,
-                    )
-                except Exception as e_hook:
-                    try:
-                        _ss_set(
-                            "mary_hook_engine_error",
-                            {
-                                "type": type(e_hook).__name__,
-                                "msg": str(e_hook)[:500],
-                                "timeline": timeline_final,
-                            },
-                        )
-                    except Exception:
-                        pass
-        
-                # ----------------------------------------------------------
-                # RELATIONSHIP DYNAMIC - evolução relacional viva
-                # ----------------------------------------------------------
-                try:
-                    rel_delta = analyze_relationship_shift(
-                        prompt,
-                        texto,
-                        tp_arc=tp_arc,
-                    )
-                
-                    dynamic_rel_state = apply_relationship_shift(
-                        dynamic_rel_state,
-                        rel_delta,
-                    )
-                
-                    save_dynamic_relationship_state(
-                        usuario_key,
-                        timeline_final,
-                        dynamic_rel_state,
-                    )
-                
-                    _ss_set(
-                        "mary_dynamic_rel_debug",
-                        {
-                            "timeline": timeline_final,
-                            "state": dynamic_rel_state,
-                            "delta": rel_delta,
-                        },
-                    )
-                except Exception as e_dyn:
-                    try:
-                        _ss_set(
-                            "mary_dynamic_rel_error",
-                            {
-                                "type": type(e_dyn).__name__,
-                                "msg": str(e_dyn)[:500],
-                                "timeline": timeline_final,
-                            },
-                        )
-                    except Exception:
-                        pass
-                
-                # ----------------------------------------------------------
-                # ORGASM COMMIT - antes de retornar o texto
-                # ----------------------------------------------------------
-                try:
-                    current_facts_after = cached_get_facts(usuario_key) or {}
-                    current_phase_after = self._get_intimacy_phase(current_facts_after)
-                
-                    orgasm_committed = _commit_mary_orgasm(
-                        usuario_key=usuario_key,
-                        timeline=timeline_final,
-                        texto=texto,
-                        phase=current_phase_after,
-                    )
-                
-                    if orgasm_committed:
-                        _ss_set(
-                            "mary_last_orgasm_commit",
-                            {
-                                "timeline": timeline_final,
-                                "phase_before": current_phase_after,
-                                "committed": True,
-                                "text_preview": texto[:300],
-                            },
-                        )
-                except Exception:
-                    pass
-                
-                _ss_set("mary_last_diagnostics", diag.as_dict())
-                return texto
-        
-            except Exception as e:               
-                _debug_capture_error(e)
             
-                try:
-                    _debug_set(
-                        "mary_last_generation_error_debug",
-                        {
-                            "requested_model": str(plan.get("model") or "").strip(),
-                            "timeline": str(timeline_final or "").strip(),
-                            "type": type(e).__name__,
-                            "message": str(e),
-                        },
-                    )
-                except Exception:
-                    pass
-            
-                last_err = e
-        
-        if last_err:
-            logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
-        
-            _ss_set(
-                "mary_last_error",
-                {
-                    "type": type(last_err).__name__,
-                    "msg": str(last_err),
-                    "model_requested": model,
-                    "timeline": timeline_final,
-                    "nsfw_on": bool(nsfw_on),
-                    "attempts": diag.attempts,
-                    "repairs": diag.repairs,
-                    "violations": diag.violations or [],
-                },
-            )
-        
-        texto = self._finalize_model_text(texto)
-        _ss_set("mary_last_diagnostics", diag.as_dict())
-        return texto
 
     def _finalize_model_text(self, texto: str) -> str:
         texto = (texto or "").strip()
