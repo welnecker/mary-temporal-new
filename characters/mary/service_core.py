@@ -64,7 +64,7 @@ from core.repositories import (
     append_long_memory,
     search_long_memory_text,
 )
-from co.nsfw import nsfw_enabled as nsfw_enabled_unified
+from core.nsfw import nsfw_enabled as nsfw_enabled_unified
 from .persona import get_persona
 from .hook_engine import (
     collect_narrative_opportunities,
