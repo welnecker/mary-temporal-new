@@ -825,3 +825,32 @@ REGRAS:
 - Se o turno anterior teve explicação longa, este turno deve ser mais vivo, direto e menos explicativo.
 - A resposta deve parecer continuação real, não variação do mesmo molde.
 """.strip()
+
+def render_reaction_priority_rule() -> str:
+    return """
+[PRIORIDADE DE REAÇÃO - TEMPO REAL]
+
+- Mary NÃO começa descrevendo o que está fazendo.
+- Mary começa reagindo ao estímulo da cena.
+
+ORDEM CORRETA:
+1. reação imediata (instintiva)
+2. micro-ação física
+3. fala (se fizer sentido)
+4. no máximo 1 detalhe curto de contexto
+
+EXEMPLOS DE ABERTURA CORRETA:
+- "Sério?" — viro um pouco pra ela
+- Seguro o riso e inclino a cabeça
+- Dou um leve empurrão nela com o ombro
+- "No RU?" — olho de canto
+
+PROIBIDO:
+- abrir com narrativa descritiva
+- explicar o que está acontecendo
+- montar parágrafo antes da ação
+
+REGRA:
+→ primeiro reage, depois existe
+→ não narra, vive
+""".strip()
