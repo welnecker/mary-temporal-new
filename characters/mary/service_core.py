@@ -122,6 +122,8 @@ from characters.mary.modules.prompt_blocks import (
     render_patterns_block,
     render_orgasm_closure_rule,
     render_inferred_scene_block,
+    render_inferred_scene_block,
+    render_anti_loop_recent_turns_block,
 )
 
 logger = logging.getLogger(__name__)
@@ -8325,26 +8327,55 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 inferred_scene_block = ""
-    
+        
             if inferred_scene_block:
-                extra_system_parts.append(inferred_scene_block)
-    
+                base_system = str(messages[0].get("content") or "")
+        
+                if "[CENA ATIVA]" in base_system:
+                    base_system = base_system.replace(
+                        "[CENA ATIVA]",
+                        "[CENA ATIVA]\n" + inferred_scene_block,
+                        1,
+                    )
+                else:
+                    base_system = base_system + "\n\n" + inferred_scene_block
+        
+                messages[0]["content"] = base_system.strip()
+        
+        # ----------------------------------------------------------
+        # BLOCOS COMPLEMENTARES (mantêm no final do system)
+        # ----------------------------------------------------------
+        
         if autonomy_block and isinstance(autonomy_block, str) and autonomy_block.strip():
             extra_system_parts.append(autonomy_block.strip())
-    
+        
         if turn_bridge_block:
             extra_system_parts.append(turn_bridge_block)
-    
+        
+        try:
+            anti_loop_block = render_anti_loop_recent_turns_block(history)
+        except Exception:
+            anti_loop_block = ""
+        
+        if anti_loop_block:
+            extra_system_parts.append(anti_loop_block)
+        
         extra_system_parts.append(
-            "[FORMA DE RESPOSTA DESTE TURNO]\n"
-            f"- Estilo-base sugerido: {style_seed} (NÃO obrigatório)\n"
-            "- Evitar padrão fixo.\n"
-            "- NÃO seguir estrutura rígida.\n"
-            "- O primeiro movimento deve nascer da cena atual.\n"
-            "- Priorizar presença real, não execução mecânica.\n"
-            "- Se houver escolha entre correto e impactante → escolher impactante.\n"
+            "[ANTI-TEMPLATE — CONTROLE DE RESPOSTA]\n"
+            "- É PROIBIDO repetir estrutura entre turnos.\n"
+            "- É PROIBIDO seguir sequência automática: fala → gesto → reflexão → conclusão.\n"
+            "- Quebre o padrão esperado.\n"
+            "- Priorizar reação direta, subtexto, corte de frase, pausa viva ou ação curta.\n"
+            "- Se a resposta parecer bonita demais, organizada demais ou certinha demais: está errada.\n"
+            "- Se houver escolha: prefira o que soa mais humano, menos organizado e mais vivo.\n"
         )
-    
+        
+        extra_system_parts.append(
+            "[VARIAÇÃO DE ABERTURA]\n"
+            "- NÃO repetir forma de início do turno anterior.\n"
+            "- Se começou com fala antes → agora comece com ação curta, silêncio, reação ou detalhe físico.\n"
+        )
+        
         if extra_system_parts:
             base = str(messages[0].get("content") or "").rstrip()
             messages[0]["content"] = (
