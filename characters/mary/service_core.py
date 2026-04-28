@@ -8064,11 +8064,9 @@ class MaryService(BaseCharacter):
         # Os blocos recebidos por parâmetro continuam vindo do reply().
         # ==========================================================
         priority_rule = render_priority_rule()
-        continuity_hard_rule = render_continuity_hard_rule()
-        autonomy_rule = render_autonomy_rule()
+        continuity_hard_rule = render_continuity_hard_rule()        
         response_structure_rule = render_response_structure_rule()
-        response_length_control = render_response_length_control()
-        behavior_rule = render_behavior_rule(nsfw_profile)
+        response_length_control = render_response_length_control()        
     
         orgasm_closure_rule = render_orgasm_closure_rule()
     
@@ -8084,8 +8082,7 @@ class MaryService(BaseCharacter):
     {user_authorship_rule}
     
     {continuity_hard_rule}
-    {continuity_rule}
-    {autonomy_rule}
+    {continuity_rule}    
     
     TIMELINE: {timeline_final}
     NSFW_PROFILE: {nsfw_profile}
@@ -8124,16 +8121,12 @@ class MaryService(BaseCharacter):
     
     {anti_pattern_rule}
     
-    {user_finalizes_rule}
-
-    [INICIATIVA DO TURNO]
-    {initiative_rule}
-    
-    [INTERAÇÃO]
-    {manipulation_block}
-    {conflict_block}
+    {user_finalizes_rule}   
+       
     
     {patterns_block}
+
+    {conflict_block}
     
     {nsfw_hard_block}
     {nsfw_block}
