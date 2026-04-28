@@ -125,7 +125,8 @@ from characters.mary.modules.prompt_blocks import (
     render_inferred_scene_block,
     render_anti_loop_recent_turns_block,
     render_reaction_priority_rule,
-    render_tp_arc_block
+    render_tp_arc_block,
+    render_tp_arc_behavior_rule,
 )
 
 logger = logging.getLogger(__name__)
@@ -8077,6 +8078,7 @@ class MaryService(BaseCharacter):
         decision_pressure_rule: str,
         reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
+        tp_arc: Dict[str, Any],
     ) -> str:
     
         # ==========================================================
@@ -8090,6 +8092,7 @@ class MaryService(BaseCharacter):
         reaction_priority_rule = render_reaction_priority_rule()
         response_length_control = render_response_length_control()
         tp_arc_block = render_tp_arc_block(tp_arc)
+        tp_arc_behavior_rule = render_tp_arc_behavior_rule(tp_arc)
             
         orgasm_closure_rule = render_orgasm_closure_rule()
     
@@ -8139,6 +8142,7 @@ class MaryService(BaseCharacter):
     
     [TERCEIROS]
     {third_party_initiative_rule}
+    {tp_arc_behavior_rule}
     
     {emotional_persistence_rule}
     
