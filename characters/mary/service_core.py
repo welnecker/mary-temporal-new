@@ -121,6 +121,7 @@ from characters.mary.modules.prompt_blocks import (
     # 🔥 FALTAVAM
     render_patterns_block,
     render_orgasm_closure_rule,
+    render_inferred_scene_block,
 )
 
 logger = logging.getLogger(__name__)
@@ -8263,7 +8264,7 @@ class MaryService(BaseCharacter):
         )
     
         # ==========================================================
-        # 2) HISTÓRICO RECENTE (somente para ponte curta)
+        # 2) HISTÓRICO RECENTE / CENA INFERIDA / FORMA DO TURNO
         # ==========================================================
         style_seed = random.choice([
             "fala_primeiro",
@@ -8275,6 +8276,58 @@ class MaryService(BaseCharacter):
         turn_bridge_block = _build_turn_bridge_block(history)
     
         extra_system_parts: List[str] = []
+    
+        # ----------------------------------------------------------
+        # CENA OPERACIONAL INFERIDA
+        # ----------------------------------------------------------
+        try:
+            facts_now = facts if isinstance(facts, dict) else {}
+    
+            cena = facts_now.get("cena") if isinstance(facts_now.get("cena"), dict) else {}
+            state = facts_now.get("state") if isinstance(facts_now.get("state"), dict) else {}
+    
+            local = str(
+                cena.get("local")
+                or facts_now.get("cena.local")
+                or state.get("local")
+                or facts_now.get("state.local")
+                or facts_now.get("local_cena_atual")
+                or ""
+            ).strip()
+    
+            tempo = str(
+                cena.get("tempo")
+                or facts_now.get("cena.tempo")
+                or state.get("horario")
+                or state.get("horarios")
+                or facts_now.get("state.horario")
+                or facts_now.get("state.horarios")
+                or ""
+            ).strip()
+    
+            acao = str(
+                cena.get("acao")
+                or facts_now.get("cena.acao")
+                or ""
+            ).strip()
+    
+            scene_empty = not (local or tempo or acao)
+    
+        except Exception:
+            scene_empty = True
+    
+        if scene_empty:
+            try:
+                inferred_scene_block = render_inferred_scene_block(
+                    last_user_real=last_user_real,
+                    last_mary_real=last_mary_real,
+                    prompt=prompt,
+                )
+            except Exception:
+                inferred_scene_block = ""
+    
+            if inferred_scene_block:
+                extra_system_parts.append(inferred_scene_block)
     
         if autonomy_block and isinstance(autonomy_block, str) and autonomy_block.strip():
             extra_system_parts.append(autonomy_block.strip())
