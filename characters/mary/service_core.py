@@ -9567,7 +9567,7 @@ class MaryService(BaseCharacter):
         # 🔥 DETECÇÃO DE RESOLUÇÃO DE PICO
         # ==========================================================
         try:
-            force_resolution = bool(rel_state.get("force_orgasm_resolution", False))
+            force_resolution = bool(rel_state.get("force_orgasm_resolution", False)) and intimacy_phase >= 4
         except Exception:
             force_resolution = False
         
