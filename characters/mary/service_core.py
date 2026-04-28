@@ -8038,7 +8038,7 @@ class MaryService(BaseCharacter):
     id = "mary"
     display_name = "Mary" 
       
-    def _build_system_prompt(
+    def _build_system_prompt(           
         self,
         *,
         timeline_final: str,
@@ -8054,6 +8054,7 @@ class MaryService(BaseCharacter):
         persona_text: str,
         rel_block: str,
         dynamic_rel_block: str,
+        tp_arc: Optional[Dict[str, Any]] = None,
         behavior_block: str,
         patterns_block: str,
         topic_rule: str,
@@ -8078,7 +8079,6 @@ class MaryService(BaseCharacter):
         decision_pressure_rule: str,
         reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
-        tp_arc: Dict[str, Any],
     ) -> str:
     
         # ==========================================================
@@ -8091,8 +8091,17 @@ class MaryService(BaseCharacter):
         response_structure_rule = render_response_structure_rule()
         reaction_priority_rule = render_reaction_priority_rule()
         response_length_control = render_response_length_control()
-        tp_arc_block = render_tp_arc_block(tp_arc)
-        tp_arc_behavior_rule = render_tp_arc_behavior_rule(tp_arc)
+        tp_arc_safe = tp_arc if isinstance(tp_arc, dict) else {}
+
+        try:
+            tp_arc_block = render_tp_arc_block(tp_arc_safe)
+        except Exception:
+            tp_arc_block = ""
+        
+        try:
+            tp_arc_behavior_rule = render_tp_arc_behavior_rule(tp_arc_safe)
+        except Exception:
+            tp_arc_behavior_rule = ""
             
         orgasm_closure_rule = render_orgasm_closure_rule()
     
@@ -10557,6 +10566,7 @@ class MaryService(BaseCharacter):
             persona_text=persona_text,
             rel_block=rel_block,
             dynamic_rel_block=dynamic_rel_block,
+            tp_arc=tp_arc,
             behavior_block=behavior_block,
             patterns_block=patterns_block,
             topic_rule=topic_rule,
