@@ -8148,8 +8148,7 @@ class MaryService(BaseCharacter):
     [COMPORTAMENTO DO TURNO]
     {behavior_block}
     
-    {behavior_rule}
-    
+       
     [PERSONA - ESSÊNCIA]
     {persona_text}
     {mary_identity_anchor}
