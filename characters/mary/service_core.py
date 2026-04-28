@@ -10836,7 +10836,8 @@ class MaryService(BaseCharacter):
         pending_event_section = scene_ctx["pending_event_section"]
         user_name_block = scene_ctx["user_name_block"]
         spatial_context = scene_ctx["spatial_context"]
-        
+
+        mary_identity_anchor = ""        
         messages = self._build_system_and_messages_for_turn(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
@@ -10872,6 +10873,7 @@ class MaryService(BaseCharacter):
             user_authorship_rule=user_authorship_rule,
             continuity_rule=continuity_rule,
             phone_message_rule=phone_message_rule,
+            decision_pressure_rule=decision_pressure_rule,
             mary_identity_anchor=mary_identity_anchor,
             reasoning_scene_guidance_block=reasoning_scene_guidance_block,
             usuario_key=usuario_key,
