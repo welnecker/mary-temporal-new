@@ -10008,10 +10008,42 @@ class MaryService(BaseCharacter):
     
             except Exception as e:
                 _debug_capture_error(e)
-                last_err = e
-    
+
+                try:
+                    _debug_set(
+                        "mary_last_generation_error_debug",
+                        {
+                            "requested_model": str(plan.get("model") or "").strip(),
+                            "timeline": str(timeline_final or "").strip(),
+                            "type": type(e).__name__,
+                            "message": str(e),
+                            "raw_text_preview": str(texto or "")[:300],
+                        },
+                    )
+                except Exception:
+                    pass
+                
+                last_err = e    
         if last_err:
             logger.exception("Falha em todas tentativas de chat", exc_info=last_err)
+
+        if last_err:
+            try:
+                _ss_set(
+                    "mary_last_error",
+                    {
+                        "type": type(last_err).__name__,
+                        "msg": str(last_err),
+                        "model_requested": model,
+                        "timeline": timeline_final,
+                        "nsfw_on": bool(nsfw_on),
+                        "attempts": diag.attempts,
+                        "repairs": diag.repairs,
+                        "violations": diag.violations or [],
+                    },
+                )
+            except Exception:
+                pass
     
         texto = self._finalize_model_text(texto)
         _ss_set("mary_last_diagnostics", diag.as_dict())
