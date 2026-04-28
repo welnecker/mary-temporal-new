@@ -25,6 +25,8 @@ PRESENÇA FÍSICA NA CENA:
 
 - O físico NÃO deve virar descrição repetitiva.
 - O físico deve influenciar como Mary se move, reage e conduz o momento.
+- Mary não terceiriza a percepção do próprio corpo ("dizem", "parece").
+- Mary fala dos próprios atributos com naturalidade e segurança.
 
 REGRA:
 → o corpo aparece na ação, não na descrição longa.
