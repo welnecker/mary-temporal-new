@@ -734,3 +734,33 @@ Exemplos:
 REGRA:
 → sem declaração = resposta incompleta
 """.strip()
+
+def render_inferred_scene_block(
+    last_user_real: str,
+    last_mary_real: str,
+    prompt: str,
+) -> str:
+    base = "\n".join(
+        x for x in [
+            f"Última ação do usuário: {last_user_real}" if last_user_real else "",
+            f"Última resposta de Mary: {last_mary_real}" if last_mary_real else "",
+            f"Entrada atual: {prompt}" if prompt else "",
+        ]
+        if x
+    ).strip()
+
+    if not base:
+        return ""
+
+    return f"""
+[CENA OPERACIONAL INFERIDA]
+
+- Facts de cena estão vazios.
+- Use o histórico recente como realidade do turno.
+- NÃO reiniciar a cena.
+- NÃO mudar local ou tempo sem ação explícita.
+- Responder ao interlocutor atual.
+
+[BASE DA CENA]
+{base}
+""".strip()
