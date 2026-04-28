@@ -93,26 +93,22 @@ from characters.mary.modules.prompt_blocks import (
     render_response_structure_rule,
     render_response_length_control,
     render_behavior_rule,
-)
 
-from characters.mary.modules.prompt_blocks import (
+    render_timeline_behavior_block,
     render_behavior_mode_block,
     render_behavior_block,
-)
 
-from characters.mary.modules.prompt_blocks import (
     render_continuity_rule,
     render_anti_pattern_rule,
     render_emotional_persistence_rule,
     render_topic_rule,
-)
 
-from characters.mary.modules.prompt_blocks import (
     render_memory_fidelity_rule,
     render_user_finalizes_rule,
-)
 
-from characters.mary.modules.prompt_blocks import (
+    render_initiative_rule,
+    render_manipulation_block,
+
     render_user_authorship_rule,
     render_language_rule,
     render_pov_rule,
