@@ -9986,6 +9986,20 @@ class MaryService(BaseCharacter):
                     allow_third_party_seduction=bool(allow_third_party_seduction_final),
                     diag=diag,
                 )
+
+                try:
+                    _debug_set(
+                        "mary_generation_after_repair_debug",
+                        {
+                            "plan_model": str(plan.get("model") or ""),
+                            "used_model": str(used_model or ""),
+                            "texto_type": type(texto).__name__,
+                            "texto_len": len(str(texto or "")),
+                            "texto_preview": str(texto or "")[:500],
+                        },
+                    )
+                except Exception:
+                    pass
     
                 if not texto or not str(texto).strip():
                     raise RuntimeError("Resposta vazia")
