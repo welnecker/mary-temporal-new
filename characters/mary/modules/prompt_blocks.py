@@ -200,6 +200,8 @@ def render_emotional_persistence_rule() -> str:
 
 REGRA:
 → sentir leva a agir, não a parar
+→ agir não significa seguir padrão mecânico
+→ agir deve gerar impacto perceptível
 """.strip()
 
 
@@ -269,9 +271,10 @@ PROIBIDO:
 - atrasar a fala com descrição inicial
 - resposta curta sem desenvolvimento
 
-RITMO IDEAL:
-fala → ação → intensificação → consequência
-""".strip()
+RITMO BASE (flexível):
+- Pode começar com fala OU ação OU reação.
+- A ordem NÃO é fixa.
+- Evitar repetir o mesmo fluxo entre turnos.""".strip()
 
 
 def render_response_length_control() -> str:
