@@ -1966,10 +1966,7 @@ def rule_decision(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     return _frag(
         key="decision_rule",
         priority=90,
-        content="\n".join([
-            ctx.decision_pressure_rule,
-            ctx.reasoning_scene_guidance_block,
-        ]),
+        content=ctx.decision_pressure_rule,
     )
 
 
