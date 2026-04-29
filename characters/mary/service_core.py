@@ -129,6 +129,13 @@ class TurnAssets:
     decision_pressure_rule: str = ""
     autonomy_block: str = ""
     behavior_block: str = ""
+
+    spatial_context: str = ""
+    state_section: str = ""
+    assunto_section: str = ""
+    assunto_step_section: str = ""
+    estado_micro_section: str = ""
+    pending_event_section: str = ""
     
 
 
@@ -191,6 +198,13 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
         autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
         behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
+
+        assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
+        assets.state_section = str(getattr(ctx, "state_section", "") or "")
+        assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
+        assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
+        assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
+        assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
     )
 
     assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
@@ -1910,17 +1924,25 @@ def rule_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_facts_present(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    a = ctx.assets
+
+    content = "\n\n".join(
+        part.strip()
+        for part in [
+            a.spatial_context,
+            a.state_section,
+            a.assunto_section,
+            a.assunto_step_section,
+            a.estado_micro_section,
+            a.pending_event_section,
+        ]
+        if str(part or "").strip()
+    )
+
     return _frag(
         key="facts_present_rule",
         priority=5,
-        content="\n".join([
-            _lget(ctx, "spatial_context"),
-            _lget(ctx, "state_section"),
-            _lget(ctx, "assunto_section"),
-            _lget(ctx, "assunto_step_section"),
-            _lget(ctx, "estado_micro_section"),
-            _lget(ctx, "pending_event_section"),
-        ]),
+        content=content,
     )
 
 
