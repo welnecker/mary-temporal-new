@@ -1806,10 +1806,10 @@ def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         or ""
     )
 
-    acao = (
-        facts.get("cena.acao")
-        or cena.get("acao")
-        or facts.get("acao")
+    assunto = (
+        facts.get("state.assunto")
+        or state.get("assunto")
+        or facts.get("assunto")
         or ""
     )
 
@@ -1818,30 +1818,26 @@ def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         or cena.get("locked")
     )
 
-    assunto = (
-        facts.get("state.assunto")
-        or state.get("assunto")
-        or facts.get("assunto")
-        or ""
-    )
-
     lines = [
         "[CONTINUIDADE INTELIGENTE - REGRA EXECUTÁVEL]",
         "",
-        "A resposta deve continuar do estado real da cena, não de uma abstração genérica.",
+        "A resposta deve continuar do estado real da cena.",
         "",
         "ORDEM DE DECISÃO:",
-        "1. Se houver ação concreta em andamento, continuar a consequência direta dela.",
-        "2. Se não houver ação concreta, usar o assunto ativo como direção macro.",
-        "3. Se houver conflito entre assunto e ação, a ação vence.",
-        "4. Se houver conflito entre memória e facts, facts vencem.",
+        "1. Facts ativos governam local, tempo, roupa, cabelo e estado atual.",
+        "2. A última fala do usuário governa a ação imediata.",
+        "3. O assunto ativo orienta apenas a direção macro.",
+        "4. Memória e canon não podem contradizer facts vivos.",
         "",
-        "PROIBIDO:",
-        "- reiniciar a cena;",
-        "- repetir microação já consumida;",
-        "- trocar local sem comando explícito;",
-        "- avançar tempo sem transição explícita;",
-        "- inventar logística fora da cena;",
+        "REGRAS:",
+        "- continuar do último acontecimento declarado pelo usuário;",
+        "- não reiniciar a cena;",
+        "- não repetir microação já consumida;",
+        "- não trocar local sem comando explícito;",
+        "- não avançar tempo sem transição explícita;",
+        "- não inventar logística fora da cena;",
+        "- se o usuário agir, Mary reage à ação dele;",
+        "- se o usuário apenas sugerir, Mary trata como intenção, não como fato consumado;",
     ]
 
     if local:
@@ -1850,43 +1846,31 @@ def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     if tempo:
         lines.append(f"- Tempo obrigatório atual: {tempo}")
 
-    if acao:
+    if assunto:
         lines.extend([
             "",
-            "AÇÃO CONCRETA DETECTADA:",
-            f"- {acao}",
-            "",
-            "REGRA:",
-            "→ esta ação deve governar a próxima resposta.",
-            "→ Mary deve responder à consequência física, emocional ou prática dessa ação.",
-            "→ não voltar para etapa anterior como se nada tivesse acontecido.",
-        ])
-    elif assunto:
-        lines.extend([
-            "",
-            "SEM AÇÃO CONCRETA DETECTADA.",
-            "ASSUNTO ATIVO DISPONÍVEL:",
+            "ASSUNTO ATIVO:",
             f"- {assunto}",
             "",
-            "REGRA:",
-            "→ usar o assunto apenas como direção macro.",
-            "→ transformar o assunto em fala, gesto, decisão ou próximo passo plausível.",
-            "→ não tratar assunto como fato já realizado se ele ainda for apenas plano.",
+            "REGRA DO ASSUNTO:",
+            "→ usar como direção narrativa macro.",
+            "→ não tratar etapas futuras como já realizadas.",
+            "→ não substituir a ação imediata do usuário pelo assunto.",
         ])
 
     if locked:
         lines.extend([
             "",
             "CENA TRAVADA:",
-            "- A cena está em lock espacial/narrativo.",
-            "- Mary deve permanecer no mesmo eixo de local, tempo e situação.",
-            "- Só mudar se o usuário declarar transição explícita.",
+            "- manter o mesmo eixo de local, tempo e situação.",
+            "- só mudar com transição explícita do usuário.",
         ])
 
     lines.extend([
         "",
         "REGRA FINAL:",
-        "→ continuidade não é repetir; continuidade é avançar a consequência correta.",
+        "→ continuidade não é adivinhar ação oculta.",
+        "→ continuidade é responder ao que foi declarado, respeitando facts e assunto.",
     ])
 
     return _frag(
