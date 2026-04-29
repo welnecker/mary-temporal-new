@@ -1881,7 +1881,7 @@ def rule_language(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="language_rule",
         priority=1,
-        content=_lget(ctx, "language_rule") or render_language_rule(),
+        content=ctx.assets.rule_language or render_language_rule(),
     )
 
 
@@ -1889,7 +1889,7 @@ def rule_pov(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="pov_rule",
         priority=2,
-        content=_lget(ctx, "pov_rule") or render_pov_rule(),
+        content=ctx.assets.rule_pov or render_pov_rule(),
     )
 
 
@@ -1897,7 +1897,7 @@ def rule_user_authorship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="user_authorship_rule",
         priority=3,
-        content=_lget(ctx, "user_authorship_rule") or render_user_authorship_rule(),
+        content=ctx.assets.rule_user_authorship or render_user_authorship_rule(),
     )
 
 
@@ -1905,7 +1905,7 @@ def rule_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="priority_rule",
         priority=4,
-        content=_xget(ctx, "priority_rule"),
+        content=ctx.assets.rule_priority or render_priority_rule(),
     )
 
 
