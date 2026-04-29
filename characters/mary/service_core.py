@@ -116,6 +116,8 @@ class PromptBuildContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
+    raw_history = getattr(ctx, "history", [])
+
     state = TurnState(
         usuario_key=ctx.usuario_key,
         prompt=ctx.prompt,
@@ -123,7 +125,7 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         facts=ctx.facts if isinstance(ctx.facts, dict) else {},
         rel_state=ctx.rel_state if isinstance(ctx.rel_state, dict) else {},
         tp_arc=ctx.tp_arc if isinstance(ctx.tp_arc, dict) else {},
-        history=ctx.history if isinstance(ctx.history, list) else [],
+        history=raw_history if isinstance(raw_history, list) else [],
         nsfw_on=bool(ctx.nsfw_on),
         behavior_mode=str(ctx.behavior_mode or ""),
     )
