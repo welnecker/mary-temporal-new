@@ -103,6 +103,13 @@ class TurnAssets:
     dynamic_rel_block: str = ""
     canon_txt: str = ""
 
+    # 🔥 REGRAS FUNDACIONAIS (ex-legacy)
+    rule_language: str = ""
+    rule_pov: str = ""
+    rule_user_authorship: str = ""
+    rule_priority: str = ""
+    rule_facts_present: str = ""
+
     # Blocos ainda herdados, agora organizados como assets
     virginity_rule: str = ""
     intimacy_phase_rule: str = ""
@@ -122,6 +129,7 @@ class TurnAssets:
     decision_pressure_rule: str = ""
     autonomy_block: str = ""
     behavior_block: str = ""
+    
 
 
 @dataclass
@@ -164,25 +172,32 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         rel_block=str(getattr(ctx, "rel_block", "") or ""),
         dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
         canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
+    
         virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
         intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
         intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
-
+    
         topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
         anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
         user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
-
+    
         initiative_rule=str(getattr(ctx, "initiative_rule", "") or ""),
         emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
-
+    
         nsfw_hard_block=str(getattr(ctx, "nsfw_hard_block", "") or ""),
         nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
-
+    
         phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
         decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
         autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
         behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
     )
+
+    assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
+    assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
+    assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
+    assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.rule_facts_present = ""  # esse é especial (já explico)
 
     return PromptBuildContext(
         state=state,
