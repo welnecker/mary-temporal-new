@@ -1944,12 +1944,24 @@ def rule_progression(ctx: TurnPromptContext) -> Optional[PromptFragment]:
 
 
 def rule_nsfw(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    nsfw_hard = str(ctx.nsfw_hard_block or "").strip()
+    nsfw_style = str(ctx.nsfw_block or "").strip()
+
+    # Remove bloco redundante de progressão:
+    # a progressão já é governada por rule_progression + initiative_rule.
+    nsfw_style = re.sub(
+        r"\n?\[NSFW_ON - PROGRESSÃO ATIVA\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
+        "\n",
+        nsfw_style,
+        flags=re.IGNORECASE,
+    ).strip()
+
     return _frag(
         key="nsfw_rule",
         priority=70,
         content="\n".join([
-            ctx.nsfw_hard_block,
-            ctx.nsfw_block,
+            nsfw_hard,
+            nsfw_style,
         ]),
     )
 
