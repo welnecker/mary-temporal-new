@@ -82,6 +82,69 @@ class TurnPromptContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
+class TurnState:
+    usuario_key: str
+    prompt: str
+    timeline_final: str
+    facts: dict
+    rel_state: dict
+    tp_arc: dict
+    history: list
+    nsfw_on: bool
+    behavior_mode: str
+
+
+@dataclass
+class TurnAssets:
+    persona_text: str = ""
+    mary_identity_anchor: str = ""
+    long_memory_block: str = ""
+    rel_block: str = ""
+    dynamic_rel_block: str = ""
+    canon_txt: str = ""
+
+
+@dataclass
+class PromptBuildContext:
+    state: TurnState
+    assets: TurnAssets
+
+    # Ponte temporária para não quebrar as rules atuais
+    legacy: "TurnPromptContext"
+
+    # Extras continuam compartilhados
+    extra: dict[str, Any] = field(default_factory=dict)
+
+def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
+    state = TurnState(
+        usuario_key=ctx.usuario_key,
+        prompt=ctx.prompt,
+        timeline_final=ctx.timeline_final,
+        facts=ctx.facts if isinstance(ctx.facts, dict) else {},
+        rel_state=ctx.rel_state if isinstance(ctx.rel_state, dict) else {},
+        tp_arc=ctx.tp_arc if isinstance(ctx.tp_arc, dict) else {},
+        history=ctx.history if isinstance(ctx.history, list) else [],
+        nsfw_on=bool(ctx.nsfw_on),
+        behavior_mode=str(ctx.behavior_mode or ""),
+    )
+
+    assets = TurnAssets(
+        persona_text=str(ctx.persona_text or ""),
+        mary_identity_anchor=str(ctx.mary_identity_anchor or ""),
+        long_memory_block=str(ctx.long_memory_block or ""),
+        rel_block=str(ctx.rel_block or ""),
+        dynamic_rel_block=str(ctx.dynamic_rel_block or ""),
+        canon_txt=str(ctx.canon_txt or ""),
+    )
+
+    return PromptBuildContext(
+        state=state,
+        assets=assets,
+        legacy=ctx,
+        extra=ctx.extra if isinstance(ctx.extra, dict) else {},
+    )
+
+@dataclass
 class PromptFragment:
     key: str
     content: str
@@ -89,8 +152,7 @@ class PromptFragment:
     enabled: bool = True
 
 
-PromptRule = Callable[[TurnPromptContext], Optional[PromptFragment]]
-
+PromptRule = Callable[[PromptBuildContext], Optional[PromptFragment]]
 
 def _frag(
     key: str,
@@ -2024,13 +2086,19 @@ def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     )
 
 
-def rule_persona(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    persona = str(ctx.assets.persona_text or "").strip()
+    anchor = str(ctx.assets.mary_identity_anchor or "").strip()
+
+    if not persona and not anchor:
+        return None
+
     return _frag(
         key="persona_rule",
         priority=110,
         content="\n".join([
-            ctx.persona_text,
-            ctx.mary_identity_anchor,
+            persona,
+            anchor,
         ]),
     )
 
@@ -2060,7 +2128,7 @@ PROMPT_RULES: list[PromptRule] = [
     rule_persona,
 ]
 
-def build_prompt_from_rules(ctx: TurnPromptContext) -> str:
+def build_prompt_from_rules(ctx: PromptBuildContext) -> str:
     fragments: list[PromptFragment] = []
     errors: list[dict] = []
 
@@ -8643,8 +8711,8 @@ class MaryService(BaseCharacter):
         # ==================================================
         sections = []
 
-        system = build_prompt_from_rules(ctx)
-
+        prompt_ctx = make_prompt_build_context(ctx)
+        system = build_prompt_from_rules(prompt_ctx)
         if system.strip():
             sections = [
                 f"[RULE] {f.get('key', '')}"
