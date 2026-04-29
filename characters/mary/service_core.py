@@ -1782,13 +1782,117 @@ def rule_facts_present(ctx: TurnPromptContext) -> Optional[PromptFragment]:
 
 
 def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    facts = ctx.facts if isinstance(ctx.facts, dict) else {}
+
+    cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+    state = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+
+    local = (
+        facts.get("cena.local")
+        or cena.get("local")
+        or facts.get("state.local")
+        or state.get("local")
+        or facts.get("local_cena_atual")
+        or ""
+    )
+
+    tempo = (
+        facts.get("cena.tempo")
+        or cena.get("tempo")
+        or facts.get("state.horario")
+        or facts.get("state.tempo")
+        or state.get("horario")
+        or state.get("tempo")
+        or ""
+    )
+
+    acao = (
+        facts.get("cena.acao")
+        or cena.get("acao")
+        or facts.get("acao")
+        or ""
+    )
+
+    locked = bool(
+        facts.get("cena.locked")
+        or cena.get("locked")
+    )
+
+    assunto = (
+        facts.get("state.assunto")
+        or state.get("assunto")
+        or facts.get("assunto")
+        or ""
+    )
+
+    lines = [
+        "[CONTINUIDADE INTELIGENTE - REGRA EXECUTÁVEL]",
+        "",
+        "A resposta deve continuar do estado real da cena, não de uma abstração genérica.",
+        "",
+        "ORDEM DE DECISÃO:",
+        "1. Se houver ação concreta em andamento, continuar a consequência direta dela.",
+        "2. Se não houver ação concreta, usar o assunto ativo como direção macro.",
+        "3. Se houver conflito entre assunto e ação, a ação vence.",
+        "4. Se houver conflito entre memória e facts, facts vencem.",
+        "",
+        "PROIBIDO:",
+        "- reiniciar a cena;",
+        "- repetir microação já consumida;",
+        "- trocar local sem comando explícito;",
+        "- avançar tempo sem transição explícita;",
+        "- inventar logística fora da cena;",
+    ]
+
+    if local:
+        lines.append(f"- Local obrigatório atual: {local}")
+
+    if tempo:
+        lines.append(f"- Tempo obrigatório atual: {tempo}")
+
+    if acao:
+        lines.extend([
+            "",
+            "AÇÃO CONCRETA DETECTADA:",
+            f"- {acao}",
+            "",
+            "REGRA:",
+            "→ esta ação deve governar a próxima resposta.",
+            "→ Mary deve responder à consequência física, emocional ou prática dessa ação.",
+            "→ não voltar para etapa anterior como se nada tivesse acontecido.",
+        ])
+    elif assunto:
+        lines.extend([
+            "",
+            "SEM AÇÃO CONCRETA DETECTADA.",
+            "ASSUNTO ATIVO DISPONÍVEL:",
+            f"- {assunto}",
+            "",
+            "REGRA:",
+            "→ usar o assunto apenas como direção macro.",
+            "→ transformar o assunto em fala, gesto, decisão ou próximo passo plausível.",
+            "→ não tratar assunto como fato já realizado se ele ainda for apenas plano.",
+        ])
+
+    if locked:
+        lines.extend([
+            "",
+            "CENA TRAVADA:",
+            "- A cena está em lock espacial/narrativo.",
+            "- Mary deve permanecer no mesmo eixo de local, tempo e situação.",
+            "- Só mudar se o usuário declarar transição explícita.",
+        ])
+
+    lines.extend([
+        "",
+        "REGRA FINAL:",
+        "→ continuidade não é repetir; continuidade é avançar a consequência correta.",
+    ])
+
     return _frag(
-        key="continuity_rule",
+        key="continuity_rule_smart",
         priority=10,
-        content="\n".join([
-            ctx.extra.get("continuity_hard_rule", ""),
-            ctx.continuity_rule,
-        ]),
+        content="\n".join(lines),
     )
 
 
