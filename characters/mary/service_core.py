@@ -23,7 +23,7 @@ import time
 import unicodedata
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Optional, Set
+from typing import Any, Dict, List, Tuple, Optional, Set, Callable
 @dataclass
 class TurnPromptContext:
     timeline_final: str
@@ -80,6 +80,35 @@ class TurnPromptContext:
 
     system: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class PromptFragment:
+    key: str
+    content: str
+    priority: int = 100
+    enabled: bool = True
+
+
+PromptRule = Callable[[TurnPromptContext], Optional[PromptFragment]]
+
+
+def _frag(
+    key: str,
+    content: str,
+    priority: int = 100,
+    enabled: bool = True,
+) -> Optional[PromptFragment]:
+    content = str(content or "").strip()
+
+    if not content or not enabled:
+        return None
+
+    return PromptFragment(
+        key=key,
+        content=content,
+        priority=priority,
+        enabled=enabled,
+    )
 
 
 from .reasoning_engine import build_internal_reasoning
@@ -1700,6 +1729,242 @@ Mary pode reagir ao conteúdo mostrado.
 REGRA FINAL:
 → celular cria interrupção, tensão ou escolha; não cria informação oculta.
 """.strip()
+
+# ==========================================================
+# PROMPT RULE ENGINE - FASE 1
+# ==========================================================
+
+def rule_language(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="language_rule",
+        priority=1,
+        content=ctx.language_rule or render_language_rule(),
+    )
+
+
+def rule_pov(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="pov_rule",
+        priority=2,
+        content=ctx.pov_rule or render_pov_rule(),
+    )
+
+
+def rule_user_authorship(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="user_authorship_rule",
+        priority=3,
+        content=ctx.user_authorship_rule or render_user_authorship_rule(),
+    )
+
+
+def rule_priority(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="priority_rule",
+        priority=4,
+        content=ctx.extra.get("priority_rule", ""),
+    )
+
+
+def rule_facts_present(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="facts_present_rule",
+        priority=5,
+        content="\n".join([
+            ctx.spatial_context,
+            ctx.state_section,
+            ctx.assunto_section,
+            ctx.assunto_step_section,
+            ctx.estado_micro_section,
+            ctx.pending_event_section,
+        ]),
+    )
+
+
+def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="continuity_rule",
+        priority=10,
+        content="\n".join([
+            ctx.extra.get("continuity_hard_rule", ""),
+            ctx.continuity_rule,
+        ]),
+    )
+
+
+def rule_memory(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="memory_rule",
+        priority=20,
+        content="\n".join([
+            ctx.memory_fidelity_rule,
+            ctx.long_memory_block,
+        ]),
+    )
+
+
+def rule_relationship(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="relationship_rule",
+        priority=30,
+        content="\n".join([
+            ctx.rel_block,
+            ctx.dynamic_rel_block,
+            ctx.extra.get("mary_presence_engine_rule", ""),
+            ctx.extra.get("tp_arc_block", ""),
+        ]),
+    )
+
+
+def rule_intimacy(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="intimacy_rule",
+        priority=40,
+        content="\n".join([
+            ctx.virginity_rule,
+            ctx.intimacy_phase_rule,
+            ctx.intimacy_control_block,
+        ]),
+    )
+
+
+def rule_third_party(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="third_party_rule",
+        priority=50,
+        content="\n".join([
+            ctx.third_party_initiative_rule,
+            ctx.extra.get("tp_arc_behavior_rule", ""),
+        ]),
+    )
+
+
+def rule_progression(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="progression_rule",
+        priority=60,
+        content="\n".join([
+            ctx.emotional_persistence_rule,
+            ctx.topic_rule,
+            ctx.anti_pattern_rule,
+            ctx.user_finalizes_rule,
+            ctx.initiative_rule,
+            ctx.manipulation_block,
+            ctx.patterns_block,
+        ]),
+    )
+
+
+def rule_nsfw(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="nsfw_rule",
+        priority=70,
+        content="\n".join([
+            ctx.nsfw_hard_block,
+            ctx.nsfw_block,
+        ]),
+    )
+
+
+def rule_phone(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="phone_message_rule",
+        priority=80,
+        content=ctx.phone_message_rule,
+    )
+
+
+def rule_decision(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="decision_rule",
+        priority=90,
+        content="\n".join([
+            ctx.decision_pressure_rule,
+            ctx.reasoning_scene_guidance_block,
+        ]),
+    )
+
+
+def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="behavior_rule",
+        priority=100,
+        content="\n".join([
+            ctx.autonomy_block,
+            ctx.behavior_block,
+        ]),
+    )
+
+
+def rule_persona(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="persona_rule",
+        priority=110,
+        content="\n".join([
+            ctx.persona_text,
+            ctx.mary_identity_anchor,
+        ]),
+    )
+
+PROMPT_RULES: list[PromptRule] = [
+    rule_language,
+    rule_pov,
+    rule_user_authorship,
+    rule_priority,
+    rule_facts_present,
+    rule_continuity,
+    rule_memory,
+    rule_relationship,
+    rule_intimacy,
+    rule_third_party,
+    rule_progression,
+    rule_nsfw,
+    rule_phone,
+    rule_decision,
+    rule_behavior,
+    rule_persona,
+]
+
+def build_prompt_from_rules(ctx: TurnPromptContext) -> str:
+    fragments: list[PromptFragment] = []
+    errors: list[dict] = []
+
+    for rule in PROMPT_RULES:
+        try:
+            frag = rule(ctx)
+
+            if frag and frag.enabled and str(frag.content or "").strip():
+                fragments.append(frag)
+
+        except Exception as e:
+            errors.append({
+                "rule": getattr(rule, "__name__", str(rule)),
+                "error": repr(e),
+            })
+
+    fragments.sort(key=lambda f: f.priority)
+
+    try:
+        ctx.extra["prompt_fragments_debug"] = [
+            {
+                "key": f.key,
+                "priority": f.priority,
+                "enabled": f.enabled,
+                "chars": len(f.content or ""),
+            }
+            for f in fragments
+        ]
+
+        if errors:
+            ctx.extra["prompt_rule_errors"] = errors
+    except Exception:
+        pass
+
+    return "\n\n".join(
+        f.content.strip()
+        for f in fragments
+        if str(f.content or "").strip()
+    ).strip()
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
@@ -8241,8 +8506,17 @@ class MaryService(BaseCharacter):
             })
         except Exception:
             pass
-    
-        sections = build_prompt_sections(ctx)
+           
+        system = build_prompt_from_rules(ctx)
+
+        if not system.strip():
+            sections = build_prompt_sections(ctx)
+
+            system = "\n\n".join(
+                s.strip()
+                for s in sections
+                if str(s or "").strip()
+            ).strip()
     
         system = "\n\n".join(
             s.strip()
