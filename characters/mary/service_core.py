@@ -8349,7 +8349,37 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
-        return system      
+        return system
+
+    def _build_system_prompt_from_ctx(self, ctx: TurnPromptContext) -> str:
+        sections = build_prompt_sections(ctx)
+    
+        system = "\n\n".join(
+            s.strip()
+            for s in sections
+            if str(s or "").strip()
+        ).strip()
+    
+        try:
+            _debug_set("mary_debug_system_prompt", system)
+            _debug_set("mary_debug_system_prompt_len", len(system or ""))
+    
+            if _debug_enabled():
+                import inspect
+    
+                _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
+                _debug_set(
+                    "mary_prompt_sections_debug",
+                    [
+                        s.split("\n", 1)[0][:120]
+                        for s in sections
+                        if str(s or "").strip()
+                    ],
+                )
+        except Exception:
+            pass
+    
+        return system
              
     def _build_messages_for_turn(
         self,
@@ -10700,46 +10730,8 @@ class MaryService(BaseCharacter):
         tp_arc: dict,
         autonomy_block: str,
     ) -> list:
-        system = self._build_system_prompt(
-            timeline_final=timeline_final,
-            nsfw_profile=nsfw_profile,
-            user_name_block=user_name_block,
-            spatial_context=spatial_context,
-            state_section=state_section,
-            assunto_section=assunto_section,
-            assunto_step_section=assunto_step_section,
-            estado_micro_section=estado_micro_section,
-            pending_event_section=pending_event_section,
-            canon_txt=canon_txt,
-            persona_text=persona_text,
-            rel_block=rel_block,
-            dynamic_rel_block=dynamic_rel_block,
-            tp_arc=tp_arc,
-            behavior_block=behavior_block,
-            patterns_block=patterns_block,
-            topic_rule=topic_rule,
-            emotional_persistence_rule=emotional_persistence_rule,
-            anti_pattern_rule=anti_pattern_rule,
-            virginity_rule=virginity_rule,
-            memory_fidelity_rule=memory_fidelity_rule,
-            user_finalizes_rule=user_finalizes_rule,
-            initiative_rule=initiative_rule,
-            manipulation_block=manipulation_block,
-            conflict_block=conflict_block,
-            third_party_initiative_rule=third_party_initiative_rule,
-            intimacy_control_block=intimacy_control_block,
-            intimacy_phase_rule=intimacy_phase_rule,
-            nsfw_hard_block=nsfw_hard_block,
-            nsfw_block=nsfw_block,
-            language_rule=language_rule,
-            pov_rule=pov_rule,
-            user_authorship_rule=user_authorship_rule,
-            continuity_rule=continuity_rule,
-            phone_message_rule=phone_message_rule,
-            decision_pressure_rule=decision_pressure_rule, 
-            mary_identity_anchor=mary_identity_anchor,
-            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
-        )
+        system = self._build_system_prompt_from_ctx(ctx)
+        ctx.system = system
     
         messages = self._build_messages_for_turn(
             system=system,
