@@ -1919,7 +1919,7 @@ def rule_third_party(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         key="third_party_rule",
         priority=50,
         content=ctx.extra.get("tp_arc_behavior_rule", ""),
-    ))
+    )
 
 
 def rule_progression(ctx: TurnPromptContext) -> Optional[PromptFragment]:
