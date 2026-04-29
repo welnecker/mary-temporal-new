@@ -122,16 +122,19 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     raw_tp_arc = getattr(ctx, "tp_arc", {})
     raw_extra = getattr(ctx, "extra", {})
 
+    facts = raw_facts if isinstance(raw_facts, dict) else {}
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+
     state = TurnState(
         usuario_key=str(getattr(ctx, "usuario_key", "") or ""),
-        prompt=str(getattr(ctx, "prompt", "") or ""),
+        prompt=str(getattr(ctx, "prompt", "") or getattr(ctx, "user_input", "") or ""),
         timeline_final=str(getattr(ctx, "timeline_final", "") or ""),
-        facts=raw_facts if isinstance(raw_facts, dict) else {},
+        facts=facts,
         rel_state=raw_rel_state if isinstance(raw_rel_state, dict) else {},
         tp_arc=raw_tp_arc if isinstance(raw_tp_arc, dict) else {},
         history=raw_history if isinstance(raw_history, list) else [],
-        nsfw_on=bool(getattr(ctx, "nsfw_on", False)),
-        behavior_mode=str(getattr(ctx, "behavior_mode", "") or ""),
+        nsfw_on=bool(mary.get("nsfw")),
+        behavior_mode=str(facts.get("behavior_mode") or ""),
     )
 
     assets = TurnAssets(
@@ -149,6 +152,7 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         legacy=ctx,
         extra=raw_extra if isinstance(raw_extra, dict) else {},
     )
+    
 @dataclass
 class PromptFragment:
     key: str
@@ -1798,58 +1802,77 @@ REGRA FINAL:
 """.strip()
 
 # ==========================================================
-# PROMPT RULE ENGINE - FASE 1
+# PROMPT RULE ENGINE - FASE 2
+# Compatível com PromptBuildContext + legacy seguro
 # ==========================================================
 
-def rule_language(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def _legacy(ctx: PromptBuildContext):
+    return getattr(ctx, "legacy", None)
+
+
+def _lget(ctx: PromptBuildContext, name: str, default: str = ""):
+    legacy = _legacy(ctx)
+    return getattr(legacy, name, default) if legacy is not None else default
+
+
+def _xget(ctx: PromptBuildContext, name: str, default: str = ""):
+    extra = getattr(ctx, "extra", {}) or {}
+    return extra.get(name, default) if isinstance(extra, dict) else default
+
+
+def _clean_block(text: str) -> str:
+    return str(text or "").strip()
+
+
+def rule_language(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="language_rule",
         priority=1,
-        content=ctx.language_rule or render_language_rule(),
+        content=_lget(ctx, "language_rule") or render_language_rule(),
     )
 
 
-def rule_pov(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_pov(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="pov_rule",
         priority=2,
-        content=ctx.pov_rule or render_pov_rule(),
+        content=_lget(ctx, "pov_rule") or render_pov_rule(),
     )
 
 
-def rule_user_authorship(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_user_authorship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="user_authorship_rule",
         priority=3,
-        content=ctx.user_authorship_rule or render_user_authorship_rule(),
+        content=_lget(ctx, "user_authorship_rule") or render_user_authorship_rule(),
     )
 
 
-def rule_priority(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="priority_rule",
         priority=4,
-        content=ctx.extra.get("priority_rule", ""),
+        content=_xget(ctx, "priority_rule"),
     )
 
 
-def rule_facts_present(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_facts_present(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="facts_present_rule",
         priority=5,
         content="\n".join([
-            ctx.spatial_context,
-            ctx.state_section,
-            ctx.assunto_section,
-            ctx.assunto_step_section,
-            ctx.estado_micro_section,
-            ctx.pending_event_section,
+            _lget(ctx, "spatial_context"),
+            _lget(ctx, "state_section"),
+            _lget(ctx, "assunto_section"),
+            _lget(ctx, "assunto_step_section"),
+            _lget(ctx, "estado_micro_section"),
+            _lget(ctx, "pending_event_section"),
         ]),
     )
 
 
-def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
-    facts = ctx.facts if isinstance(ctx.facts, dict) else {}
+def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
 
     cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
     state = facts.get("state") if isinstance(facts.get("state"), dict) else {}
@@ -1866,8 +1889,10 @@ def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     tempo = (
         facts.get("cena.tempo")
         or cena.get("tempo")
+        or facts.get("state.horarios")
         or facts.get("state.horario")
         or facts.get("state.tempo")
+        or state.get("horarios")
         or state.get("horario")
         or state.get("tempo")
         or ""
@@ -1947,97 +1972,88 @@ def rule_continuity(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     )
 
 
-def rule_memory(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_memory(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="memory_rule",
         priority=20,
         content="\n".join([
-            ctx.memory_fidelity_rule,
-            ctx.long_memory_block,
+            _lget(ctx, "memory_fidelity_rule"),
+            ctx.assets.long_memory_block,
         ]),
     )
 
 
-def rule_relationship(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="relationship_rule",
         priority=30,
         content="\n".join([
-            ctx.rel_block,
-            ctx.dynamic_rel_block,
+            ctx.assets.rel_block,
+            ctx.assets.dynamic_rel_block,
         ]),
     )
 
 
-def rule_intimacy(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="presence_rule",
+        priority=35,
+        content=_xget(ctx, "mary_presence_engine_rule"),
+    )
+
+
+def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="intimacy_rule",
         priority=40,
         content="\n".join([
-            ctx.virginity_rule,
-            ctx.intimacy_phase_rule,
-            ctx.intimacy_control_block,
+            _lget(ctx, "virginity_rule"),
+            _lget(ctx, "intimacy_phase_rule"),
+            _lget(ctx, "intimacy_control_block"),
         ]),
     )
 
 
-def rule_third_party(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="third_party_rule",
         priority=50,
-        content=ctx.extra.get("tp_arc_behavior_rule", ""),
+        content=_xget(ctx, "tp_arc_behavior_rule"),
     )
 
 
-def rule_progression(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_progression(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="progression_rule",
         priority=60,
         content="\n".join([
-            ctx.topic_rule,
-            ctx.anti_pattern_rule,
-            ctx.user_finalizes_rule,
+            _lget(ctx, "topic_rule"),
+            _lget(ctx, "anti_pattern_rule"),
+            _lget(ctx, "user_finalizes_rule"),
         ]),
     )
 
-def rule_presence(ctx: TurnPromptContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="presence_rule",
-        priority=35,
-        content=ctx.extra.get("mary_presence_engine_rule", ""),
-    )
 
-
-def rule_initiative(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="initiative_rule",
         priority=65,
-        content=ctx.initiative_rule,
+        content=_lget(ctx, "initiative_rule"),
     )
 
 
-def rule_emotion(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="emotion_rule",
         priority=68,
-        content=ctx.emotional_persistence_rule,
+        content=_lget(ctx, "emotional_persistence_rule"),
     )
 
 
-def rule_autonomy(ctx: TurnPromptContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="autonomy_rule",
-        priority=95,
-        content=ctx.autonomy_block,
-    )
+def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    nsfw_hard = _clean_block(_lget(ctx, "nsfw_hard_block"))
+    nsfw_style = _clean_block(_lget(ctx, "nsfw_block"))
 
-
-def rule_nsfw(ctx: TurnPromptContext) -> Optional[PromptFragment]:
-    nsfw_hard = str(ctx.nsfw_hard_block or "").strip()
-    nsfw_style = str(ctx.nsfw_block or "").strip()
-
-    # Remove bloco redundante de progressão:
-    # a progressão já é governada por rule_progression + initiative_rule.
     nsfw_style = re.sub(
         r"\n?\[NSFW_ON - PROGRESSÃO ATIVA\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
         "\n",
@@ -2055,26 +2071,33 @@ def rule_nsfw(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     )
 
 
-def rule_phone(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_phone(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="phone_message_rule",
         priority=80,
-        content=ctx.phone_message_rule,
+        content=_lget(ctx, "phone_message_rule"),
     )
 
 
-def rule_decision(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+def rule_decision(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="decision_rule",
         priority=90,
-        content=ctx.decision_pressure_rule,
+        content=_lget(ctx, "decision_pressure_rule"),
     )
 
 
-def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
-    behavior = str(ctx.behavior_block or "")
+def rule_autonomy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="autonomy_rule",
+        priority=95,
+        content=_lget(ctx, "autonomy_block"),
+    )
 
-    # Remove bloco redundante: já coberto por rule_continuity
+
+def rule_behavior(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    behavior = _clean_block(_lget(ctx, "behavior_block"))
+
     behavior = re.sub(
         r"\n?\[FOCO DE CONTINUIDADE\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
         "\n",
@@ -2085,18 +2108,13 @@ def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     return _frag(
         key="behavior_rule",
         priority=100,
-        content="\n".join([            
-            behavior,
-        ]),
+        content=behavior,
     )
 
 
 def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    persona = str(ctx.assets.persona_text or "").strip()
-    anchor = str(ctx.assets.mary_identity_anchor or "").strip()
-
-    if not persona and not anchor:
-        return None
+    persona = _clean_block(ctx.assets.persona_text)
+    anchor = _clean_block(ctx.assets.mary_identity_anchor)
 
     return _frag(
         key="persona_rule",
@@ -2106,7 +2124,6 @@ def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
             anchor,
         ]),
     )
-
 PROMPT_RULES: list[PromptRule] = [
     rule_language,
     rule_pov,
