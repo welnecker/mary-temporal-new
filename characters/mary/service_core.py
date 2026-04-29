@@ -1898,8 +1898,6 @@ def rule_relationship(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         content="\n".join([
             ctx.rel_block,
             ctx.dynamic_rel_block,
-            ctx.extra.get("mary_presence_engine_rule", ""),
-            ctx.extra.get("tp_arc_block", ""),
         ]),
     )
 
@@ -1923,6 +1921,7 @@ def rule_third_party(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         content="\n".join([
             ctx.third_party_initiative_rule,
             ctx.extra.get("tp_arc_behavior_rule", ""),
+            ctx.extra.get("tp_arc_block", ""),
         ]),
     )
 
@@ -1932,14 +1931,41 @@ def rule_progression(ctx: TurnPromptContext) -> Optional[PromptFragment]:
         key="progression_rule",
         priority=60,
         content="\n".join([
-            ctx.emotional_persistence_rule,
             ctx.topic_rule,
             ctx.anti_pattern_rule,
             ctx.user_finalizes_rule,
-            ctx.initiative_rule,
-            ctx.manipulation_block,
-            ctx.patterns_block,
         ]),
+    )
+
+def rule_presence(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="presence_rule",
+        priority=35,
+        content=ctx.extra.get("mary_presence_engine_rule", ""),
+    )
+
+
+def rule_initiative(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="initiative_rule",
+        priority=65,
+        content=ctx.initiative_rule,
+    )
+
+
+def rule_emotion(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="emotion_rule",
+        priority=68,
+        content=ctx.emotional_persistence_rule,
+    )
+
+
+def rule_autonomy(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="autonomy_rule",
+        priority=95,
+        content=ctx.autonomy_block,
     )
 
 
@@ -1996,8 +2022,7 @@ def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
     return _frag(
         key="behavior_rule",
         priority=100,
-        content="\n".join([
-            ctx.autonomy_block,
+        content="\n".join([            
             behavior,
         ]),
     )
@@ -2020,14 +2045,21 @@ PROMPT_RULES: list[PromptRule] = [
     rule_priority,
     rule_facts_present,
     rule_continuity,
+
     rule_memory,
     rule_relationship,
+    rule_presence,
     rule_intimacy,
     rule_third_party,
+
     rule_progression,
+    rule_initiative,
+    rule_emotion,
     rule_nsfw,
+
     rule_phone,
     rule_decision,
+    rule_autonomy,
     rule_behavior,
     rule_persona,
 ]
@@ -8516,9 +8548,7 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
         _prompt_section(
             "RELAÇÃO",
             ctx.rel_block,
-            ctx.dynamic_rel_block,
-            ctx.extra.get("mary_presence_engine_rule", ""),
-            ctx.extra.get("tp_arc_block", ""),
+            ctx.dynamic_rel_block,            
         ),
 
         _prompt_section(
@@ -8541,12 +8571,10 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
         ),
 
         _prompt_section(
-            "PROGRESSÃO / EMOÇÃO / ASSUNTO",
-            ctx.emotional_persistence_rule,
+            "PROGRESSÃO / EMOÇÃO / ASSUNTO",            
             ctx.topic_rule,
             ctx.anti_pattern_rule,
-            ctx.user_finalizes_rule,
-            ctx.initiative_rule,
+            ctx.user_finalizes_rule,           
             ctx.manipulation_block,
             ctx.patterns_block,
         ),
