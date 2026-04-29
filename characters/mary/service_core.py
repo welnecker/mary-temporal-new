@@ -198,21 +198,21 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
         autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
         behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
-
-        assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
-        assets.state_section = str(getattr(ctx, "state_section", "") or "")
-        assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
-        assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
-        assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
-        assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
     )
-
+    
+    assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
+    assets.state_section = str(getattr(ctx, "state_section", "") or "")
+    assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
+    assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
+    assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
+    assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
+    
     assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
     assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
     assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
     assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.rule_facts_present = ""  # esse é especial (já explico)
-
+    assets.rule_facts_present = ""
+    
     return PromptBuildContext(
         state=state,
         assets=assets,
