@@ -1905,10 +1905,7 @@ def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         or ""
     )
 
-    locked = bool(
-        facts.get("cena.locked")
-        or cena.get("locked")
-    )
+    locked = bool(facts.get("cena.locked") or cena.get("locked"))
 
     lines = [
         "[CONTINUIDADE INTELIGENTE - REGRA EXECUTÁVEL]",
@@ -1973,32 +1970,42 @@ def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_memory(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    memory_fidelity = _clean_block(_lget(ctx, "memory_fidelity_rule"))
+    canon = _clean_block(ctx.assets.canon_txt)
+    long_memory = _clean_block(ctx.assets.long_memory_block)
+
     return _frag(
         key="memory_rule",
         priority=20,
-        content="\n".join([
-            _lget(ctx, "memory_fidelity_rule"),
-            ctx.assets.long_memory_block,
+        content="\n\n".join([
+            memory_fidelity,
+            canon,
+            long_memory,
         ]),
     )
 
 
 def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    rel = _clean_block(ctx.assets.rel_block)
+    dynamic = _clean_block(ctx.assets.dynamic_rel_block)
+
     return _frag(
         key="relationship_rule",
         priority=30,
-        content="\n".join([
-            ctx.assets.rel_block,
-            ctx.assets.dynamic_rel_block,
+        content="\n\n".join([
+            rel,
+            dynamic,
         ]),
     )
 
 
 def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    presence = _clean_block(_xget(ctx, "mary_presence_engine_rule"))
+
     return _frag(
         key="presence_rule",
         priority=35,
-        content=_xget(ctx, "mary_presence_engine_rule"),
+        content=presence,
     )
 
 
@@ -2119,11 +2126,12 @@ def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="persona_rule",
         priority=110,
-        content="\n".join([
+        content="\n\n".join([
             persona,
             anchor,
         ]),
     )
+    
 PROMPT_RULES: list[PromptRule] = [
     rule_language,
     rule_pov,
