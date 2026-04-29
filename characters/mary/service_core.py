@@ -10193,6 +10193,26 @@ class MaryService(BaseCharacter):
                     pass
     
                 if not texto or not str(texto).strip():
+                    try:
+                        _debug_set(
+                            "mary_empty_response_debug",
+                            {
+                                "plan_model": str(plan.get("model") or ""),
+                                "temperature": plan.get("temperature"),
+                                "top_p": plan.get("top_p"),
+                                "max_tokens": plan.get("max_tokens"),
+                                "messages_count": len(messages or []),
+                                "system_len": len(str(messages[0].get("content") or "")) if messages else 0,
+                                "last_user": str(messages[-1].get("content") or "")[:500] if messages else "",
+                                "diag_attempts": getattr(diag, "attempts", None),
+                                "used_model": str(used_model or ""),
+                                "texto_type": type(texto).__name__,
+                                "texto_preview": str(texto or "")[:500],
+                            },
+                        )
+                    except Exception:
+                        pass
+                
                     raise RuntimeError("Resposta vazia")
     
                 texto = self._finalize_model_text(texto)
@@ -11554,7 +11574,8 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 pass
-            return "", used_model
+        
+            raise RuntimeError("LLM retornou vazio na geração inicial")
     
         violations = _violations(
             texto=texto,
@@ -11749,12 +11770,28 @@ class MaryService(BaseCharacter):
             pass
     
         if not texto2:
-            texto = _trim_scene_finalization(texto)
             try:
-                texto = _seal_broken_ending(texto)
+                diag.violations = list(
+                    dict.fromkeys((diag.violations or []) + ["repair_vazio"])
+                )
             except Exception:
                 pass
-            return texto, used_model
+        
+            try:
+                _debug_set(
+                    "mary_repair_empty_response",
+                    {
+                        "used_model": used_model,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "max_tokens": max_tokens,
+                        "original_text_preview": (texto or "")[:400],
+                    },
+                )
+            except Exception:
+                pass
+        
+            raise RuntimeError("LLM retornou vazio no repair")
     
         violations2 = _violations(
             texto=texto2,
