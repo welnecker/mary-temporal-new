@@ -1971,12 +1971,22 @@ def rule_decision(ctx: TurnPromptContext) -> Optional[PromptFragment]:
 
 
 def rule_behavior(ctx: TurnPromptContext) -> Optional[PromptFragment]:
+    behavior = str(ctx.behavior_block or "")
+
+    # Remove bloco redundante: já coberto por rule_continuity
+    behavior = re.sub(
+        r"\n?\[FOCO DE CONTINUIDADE\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
+        "\n",
+        behavior,
+        flags=re.IGNORECASE,
+    ).strip()
+
     return _frag(
         key="behavior_rule",
         priority=100,
         content="\n".join([
             ctx.autonomy_block,
-            ctx.behavior_block,
+            behavior,
         ]),
     )
 
