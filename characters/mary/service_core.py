@@ -8120,7 +8120,6 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
             ctx.extra.get("orgasm_closure_rule", ""),
             ctx.user_authorship_rule,
             ctx.extra.get("continuity_hard_rule", ""),
-            ctx.continuity_rule,
         ),
 
         _prompt_section(
@@ -8154,15 +8153,13 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
 
         _prompt_section(
             "INTIMIDADE",
-            ctx.virginity_rule,
-            ctx.intimacy_phase_rule,
+            ctx.virginity_rule,            
             ctx.intimacy_control_block,
         ),
 
         _prompt_section(
             "TERCEIROS",
-            ctx.third_party_initiative_rule,
-            ctx.extra.get("tp_arc_behavior_rule", ""),
+            ctx.third_party_initiative_rule,            
         ),
 
         _prompt_section(
