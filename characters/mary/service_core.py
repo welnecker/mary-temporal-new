@@ -176,8 +176,7 @@ from characters.mary.modules.prompt_blocks import (
 
     # 🔥 FALTAVAM
     render_patterns_block,
-    render_orgasm_closure_rule,
-    render_inferred_scene_block,
+    render_orgasm_closure_rule,   
     render_inferred_scene_block,
     render_anti_loop_recent_turns_block,
     render_reaction_priority_rule,
@@ -8149,17 +8148,23 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
             ctx.extra.get("tp_arc_block", ""),
         ),
 
-        _prompt_section("MEMÓRIA", ctx.memory_fidelity_rule),
+        _prompt_section(
+            "MEMÓRIA",
+            ctx.memory_fidelity_rule,
+            ctx.long_memory_block,
+        ),
 
         _prompt_section(
             "INTIMIDADE",
-            ctx.virginity_rule,            
+            ctx.virginity_rule,
+            ctx.intimacy_phase_rule,
             ctx.intimacy_control_block,
         ),
 
         _prompt_section(
             "TERCEIROS",
-            ctx.third_party_initiative_rule,            
+            ctx.third_party_initiative_rule,
+            ctx.extra.get("tp_arc_behavior_rule", ""),
         ),
 
         _prompt_section(
@@ -8168,11 +8173,19 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
             ctx.topic_rule,
             ctx.anti_pattern_rule,
             ctx.user_finalizes_rule,
+            ctx.initiative_rule,
+            ctx.manipulation_block,
             ctx.patterns_block,
         ),
 
         _prompt_section("CONFLITO", ctx.conflict_block),
-        _prompt_section("NSFW", ctx.nsfw_hard_block, ctx.nsfw_block),
+
+        _prompt_section(
+            "NSFW",
+            ctx.nsfw_hard_block,
+            ctx.nsfw_block,
+        ),
+
         _prompt_section("CELULAR / MENSAGEM", ctx.phone_message_rule),
 
         _prompt_section(
@@ -8181,7 +8194,11 @@ def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
             ctx.reasoning_scene_guidance_block,
         ),
 
-        _prompt_section("COMPORTAMENTO DO TURNO", ctx.behavior_block),
+        _prompt_section(
+            "COMPORTAMENTO DO TURNO",
+            ctx.autonomy_block,
+            ctx.behavior_block,
+        ),
 
         _prompt_section(
             "PERSONA - ESSÊNCIA",
@@ -8211,7 +8228,7 @@ class MaryService(BaseCharacter):
         persona_text: str,
         rel_block: str,
         dynamic_rel_block: str,
-        tp_arc: Optional[Dict[str, Any]] = None,
+        long_memory_block: str,
         behavior_block: str,
         patterns_block: str,
         topic_rule: str,
@@ -8236,6 +8253,7 @@ class MaryService(BaseCharacter):
         decision_pressure_rule: str,
         reasoning_scene_guidance_block: str,
         mary_identity_anchor: str = "",
+        tp_arc: Optional[Dict[str, Any]] = None,
     ) -> str:
 
         tp_arc_safe = tp_arc if isinstance(tp_arc, dict) else {}
@@ -8266,6 +8284,7 @@ class MaryService(BaseCharacter):
             persona_text=persona_text,
             rel_block=rel_block,
             dynamic_rel_block=dynamic_rel_block,
+            long_memory_block=long_memory_block,
             tp_arc=tp_arc_safe,
 
             behavior_block=behavior_block,
@@ -8349,37 +8368,7 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
-        return system
-
-    def _build_system_prompt_from_ctx(self, ctx: TurnPromptContext) -> str:
-        sections = build_prompt_sections(ctx)
-    
-        system = "\n\n".join(
-            s.strip()
-            for s in sections
-            if str(s or "").strip()
-        ).strip()
-    
-        try:
-            _debug_set("mary_debug_system_prompt", system)
-            _debug_set("mary_debug_system_prompt_len", len(system or ""))
-    
-            if _debug_enabled():
-                import inspect
-    
-                _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
-                _debug_set(
-                    "mary_prompt_sections_debug",
-                    [
-                        s.split("\n", 1)[0][:120]
-                        for s in sections
-                        if str(s or "").strip()
-                    ],
-                )
-        except Exception:
-            pass
-    
-        return system
+        return system      
              
     def _build_messages_for_turn(
         self,
@@ -10683,67 +10672,21 @@ class MaryService(BaseCharacter):
 
     def _build_system_and_messages_for_turn(
         self,
-        *,
-        timeline_final: str,
-        nsfw_profile: str,
-        user_name_block: str,
-        spatial_context: str,
-        state_section: str,
-        assunto_section: str,
-        assunto_step_section: str,
-        estado_micro_section: str,
-        pending_event_section: str,
-        canon_txt: str,
-        persona_text: str,
-        rel_block: str,
-        dynamic_rel_block: str,
-        behavior_block: str,
-        patterns_block: str,
-        topic_rule: str,
-        emotional_persistence_rule: str,
-        anti_pattern_rule: str,
-        virginity_rule: str,
-        memory_fidelity_rule: str,
-        user_finalizes_rule: str,
-        initiative_rule: str,
-        manipulation_block: str,
-        conflict_block: str,
-        third_party_initiative_rule: str,
-        intimacy_control_block: str,
-        intimacy_phase_rule: str,
-        nsfw_hard_block: str,
-        nsfw_block: str,
-        language_rule: str,
-        pov_rule: str,
-        user_authorship_rule: str,
-        continuity_rule: str,
-        phone_message_rule: str,
-        mary_identity_anchor: str,
-        reasoning_scene_guidance_block: str,
-        decision_pressure_rule: str,
-        usuario_key: str,
-        shared_key: str,
-        prompt: str,
-        mem_spec,
-        facts: dict,
-        rel_state: dict,
-        tp_arc: dict,
-        autonomy_block: str,
+        ctx: TurnPromptContext,
     ) -> list:
-        system = self._build_system_prompt_from_ctx(ctx)
-        ctx.system = system
+        system = self._build_system_prompt(ctx)
     
         messages = self._build_messages_for_turn(
             system=system,
-            usuario_key=usuario_key,
-            shared_key=shared_key,
-            timeline_final=timeline_final,
-            prompt=prompt,
-            mem_spec=mem_spec,
-            facts=facts,
-            rel_state=rel_state,
-            tp_arc=tp_arc,
-            autonomy_block=autonomy_block,
+            usuario_key=ctx.usuario_key,
+            shared_key=ctx.shared_key,
+            timeline_final=ctx.timeline_final,
+            prompt=ctx.prompt,
+            mem_spec=ctx.mem_spec,
+            facts=ctx.facts,
+            rel_state=ctx.rel_state,
+            tp_arc=ctx.tp_arc,
+            autonomy_block=ctx.autonomy_block,
         )
     
         try:
@@ -11091,20 +11034,25 @@ class MaryService(BaseCharacter):
         spatial_context = scene_ctx["spatial_context"]
 
         mary_identity_anchor = ""        
-        messages = self._build_system_and_messages_for_turn(
+        ctx = TurnPromptContext(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
             user_name_block=user_name_block,
             spatial_context=spatial_context,
+        
             state_section=state_section,
             assunto_section=assunto_section,
             assunto_step_section=assunto_step_section,
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
+        
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
             dynamic_rel_block=dynamic_rel_block,
+            long_memory_block=long_memory_text,
+            tp_arc=tp_arc if isinstance(tp_arc, dict) else {},
+        
             behavior_block=behavior_block,
             patterns_block=patterns_block,
             topic_rule=topic_rule,
@@ -11121,6 +11069,7 @@ class MaryService(BaseCharacter):
             intimacy_phase_rule=intimacy_phase_rule,
             nsfw_hard_block=nsfw_hard_block,
             nsfw_block=nsfw_block,
+        
             language_rule=language_rule,
             pov_rule=pov_rule,
             user_authorship_rule=user_authorship_rule,
@@ -11129,15 +11078,17 @@ class MaryService(BaseCharacter):
             decision_pressure_rule=decision_pressure_rule,
             mary_identity_anchor=mary_identity_anchor,
             reasoning_scene_guidance_block=reasoning_scene_guidance_block,
+        
             usuario_key=usuario_key,
             shared_key=shared_key,
             prompt=prompt,
             mem_spec=mem_spec,
             facts=facts,
             rel_state=rel_state,
-            tp_arc=tp_arc,
             autonomy_block=autonomy_block,
         )
+        
+        messages = self._build_system_and_messages_for_turn(ctx)
 
         return self._execute_turn_generation(
             usuario_key=usuario_key,
