@@ -117,35 +117,38 @@ class PromptBuildContext:
 
 def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     raw_history = getattr(ctx, "history", [])
+    raw_facts = getattr(ctx, "facts", {})
+    raw_rel_state = getattr(ctx, "rel_state", {})
+    raw_tp_arc = getattr(ctx, "tp_arc", {})
+    raw_extra = getattr(ctx, "extra", {})
 
     state = TurnState(
-        usuario_key=ctx.usuario_key,
-        prompt=ctx.prompt,
-        timeline_final=ctx.timeline_final,
-        facts=ctx.facts if isinstance(ctx.facts, dict) else {},
-        rel_state=ctx.rel_state if isinstance(ctx.rel_state, dict) else {},
-        tp_arc=ctx.tp_arc if isinstance(ctx.tp_arc, dict) else {},
+        usuario_key=str(getattr(ctx, "usuario_key", "") or ""),
+        prompt=str(getattr(ctx, "prompt", "") or ""),
+        timeline_final=str(getattr(ctx, "timeline_final", "") or ""),
+        facts=raw_facts if isinstance(raw_facts, dict) else {},
+        rel_state=raw_rel_state if isinstance(raw_rel_state, dict) else {},
+        tp_arc=raw_tp_arc if isinstance(raw_tp_arc, dict) else {},
         history=raw_history if isinstance(raw_history, list) else [],
-        nsfw_on=bool(ctx.nsfw_on),
-        behavior_mode=str(ctx.behavior_mode or ""),
+        nsfw_on=bool(getattr(ctx, "nsfw_on", False)),
+        behavior_mode=str(getattr(ctx, "behavior_mode", "") or ""),
     )
 
     assets = TurnAssets(
-        persona_text=str(ctx.persona_text or ""),
-        mary_identity_anchor=str(ctx.mary_identity_anchor or ""),
-        long_memory_block=str(ctx.long_memory_block or ""),
-        rel_block=str(ctx.rel_block or ""),
-        dynamic_rel_block=str(ctx.dynamic_rel_block or ""),
-        canon_txt=str(ctx.canon_txt or ""),
+        persona_text=str(getattr(ctx, "persona_text", "") or ""),
+        mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
+        long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
+        rel_block=str(getattr(ctx, "rel_block", "") or ""),
+        dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
+        canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
     )
 
     return PromptBuildContext(
         state=state,
         assets=assets,
         legacy=ctx,
-        extra=ctx.extra if isinstance(ctx.extra, dict) else {},
+        extra=raw_extra if isinstance(raw_extra, dict) else {},
     )
-
 @dataclass
 class PromptFragment:
     key: str
