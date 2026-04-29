@@ -41,6 +41,7 @@ class TurnPromptContext:
     persona_text: str
     rel_block: str
     dynamic_rel_block: str
+    long_memory_block: str
     tp_arc: dict
 
     behavior_block: str
