@@ -103,6 +103,26 @@ class TurnAssets:
     dynamic_rel_block: str = ""
     canon_txt: str = ""
 
+    # Blocos ainda herdados, agora organizados como assets
+    virginity_rule: str = ""
+    intimacy_phase_rule: str = ""
+    intimacy_control_block: str = ""
+
+    topic_rule: str = ""
+    anti_pattern_rule: str = ""
+    user_finalizes_rule: str = ""
+
+    initiative_rule: str = ""
+    emotional_persistence_rule: str = ""
+
+    nsfw_hard_block: str = ""
+    nsfw_block: str = ""
+
+    phone_message_rule: str = ""
+    decision_pressure_rule: str = ""
+    autonomy_block: str = ""
+    behavior_block: str = ""
+
 
 @dataclass
 class PromptBuildContext:
@@ -144,6 +164,24 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         rel_block=str(getattr(ctx, "rel_block", "") or ""),
         dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
         canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
+        virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
+        intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
+        intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
+
+        topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
+        anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
+        user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
+
+        initiative_rule=str(getattr(ctx, "initiative_rule", "") or ""),
+        emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
+
+        nsfw_hard_block=str(getattr(ctx, "nsfw_hard_block", "") or ""),
+        nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
+
+        phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
+        decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
+        autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
+        behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
     )
 
     return PromptBuildContext(
@@ -2013,13 +2051,12 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="intimacy_rule",
         priority=40,
-        content="\n".join([
-            _lget(ctx, "virginity_rule"),
-            _lget(ctx, "intimacy_phase_rule"),
-            _lget(ctx, "intimacy_control_block"),
+        content="\n\n".join([
+            _clean_block(ctx.assets.virginity_rule),
+            _clean_block(ctx.assets.intimacy_phase_rule),
+            _clean_block(ctx.assets.intimacy_control_block),
         ]),
     )
-
 
 def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     tp_arc = ctx.state.tp_arc if isinstance(ctx.state.tp_arc, dict) else {}
@@ -2093,10 +2130,10 @@ def rule_progression(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="progression_rule",
         priority=60,
-        content="\n".join([
-            _lget(ctx, "topic_rule"),
-            _lget(ctx, "anti_pattern_rule"),
-            _lget(ctx, "user_finalizes_rule"),
+        content="\n\n".join([
+            _clean_block(ctx.assets.topic_rule),
+            _clean_block(ctx.assets.anti_pattern_rule),
+            _clean_block(ctx.assets.user_finalizes_rule),
         ]),
     )
 
@@ -2105,7 +2142,7 @@ def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="initiative_rule",
         priority=65,
-        content=_lget(ctx, "initiative_rule"),
+        content=_clean_block(ctx.assets.initiative_rule),
     )
 
 
@@ -2113,13 +2150,12 @@ def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="emotion_rule",
         priority=68,
-        content=_lget(ctx, "emotional_persistence_rule"),
+        content=_clean_block(ctx.assets.emotional_persistence_rule),
     )
 
-
 def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    nsfw_hard = _clean_block(_lget(ctx, "nsfw_hard_block"))
-    nsfw_style = _clean_block(_lget(ctx, "nsfw_block"))
+    nsfw_hard = _clean_block(ctx.assets.nsfw_hard_block)
+    nsfw_style = _clean_block(ctx.assets.nsfw_block)
 
     nsfw_style = re.sub(
         r"\n?\[NSFW_ON - PROGRESSÃO ATIVA\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
@@ -2131,18 +2167,17 @@ def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="nsfw_rule",
         priority=70,
-        content="\n".join([
+        content="\n\n".join([
             nsfw_hard,
             nsfw_style,
         ]),
     )
 
-
 def rule_phone(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="phone_message_rule",
         priority=80,
-        content=_lget(ctx, "phone_message_rule"),
+        content=_clean_block(ctx.assets.phone_message_rule),
     )
 
 
@@ -2150,7 +2185,7 @@ def rule_decision(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="decision_rule",
         priority=90,
-        content=_lget(ctx, "decision_pressure_rule"),
+        content=_clean_block(ctx.assets.decision_pressure_rule),
     )
 
 
@@ -2158,12 +2193,12 @@ def rule_autonomy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="autonomy_rule",
         priority=95,
-        content=_lget(ctx, "autonomy_block"),
+        content=_clean_block(ctx.assets.autonomy_block),
     )
 
 
 def rule_behavior(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    behavior = _clean_block(_lget(ctx, "behavior_block"))
+    behavior = _clean_block(ctx.assets.behavior_block)
 
     behavior = re.sub(
         r"\n?\[FOCO DE CONTINUIDADE\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
