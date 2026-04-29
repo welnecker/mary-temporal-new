@@ -8091,11 +8091,114 @@ def _build_turn_bridge_block(history: List[Dict[str, Any]]) -> str:
 
     return "\n".join(lines)
 
+def _prompt_section(title: str, *parts: str) -> str:
+    body = "\n\n".join(
+        str(p).strip()
+        for p in parts
+        if str(p or "").strip()
+    ).strip()
+
+    if not body:
+        return ""
+
+    if title:
+        return f"[{title}]\n{body}"
+
+    return body
+
+
+def build_prompt_sections(ctx: TurnPromptContext) -> list[str]:
+    return [
+        _prompt_section(
+            "",
+            ctx.extra.get("priority_rule", ""),
+            ctx.language_rule,
+            ctx.pov_rule,
+            ctx.extra.get("response_structure_rule", ""),
+            ctx.extra.get("reaction_priority_rule", ""),
+            ctx.extra.get("response_length_control", ""),
+            ctx.extra.get("orgasm_closure_rule", ""),
+            ctx.user_authorship_rule,
+            ctx.extra.get("continuity_hard_rule", ""),
+            ctx.continuity_rule,
+        ),
+
+        _prompt_section(
+            "CONFIGURAÇÃO DO TURNO",
+            f"TIMELINE: {ctx.timeline_final}",
+            f"NSFW_PROFILE: {ctx.nsfw_profile}",
+            ctx.user_name_block,
+        ),
+
+        _prompt_section(
+            "CENA ATIVA",
+            ctx.spatial_context,
+            ctx.state_section,
+            ctx.assunto_section,
+            ctx.assunto_step_section,
+            ctx.estado_micro_section,
+            ctx.pending_event_section,
+        ),
+
+        _prompt_section("CANON", ctx.canon_txt),
+
+        _prompt_section(
+            "RELAÇÃO",
+            ctx.rel_block,
+            ctx.dynamic_rel_block,
+            ctx.extra.get("mary_presence_engine_rule", ""),
+            ctx.extra.get("tp_arc_block", ""),
+        ),
+
+        _prompt_section("MEMÓRIA", ctx.memory_fidelity_rule),
+
+        _prompt_section(
+            "INTIMIDADE",
+            ctx.virginity_rule,
+            ctx.intimacy_phase_rule,
+            ctx.intimacy_control_block,
+        ),
+
+        _prompt_section(
+            "TERCEIROS",
+            ctx.third_party_initiative_rule,
+            ctx.extra.get("tp_arc_behavior_rule", ""),
+        ),
+
+        _prompt_section(
+            "PROGRESSÃO / EMOÇÃO / ASSUNTO",
+            ctx.emotional_persistence_rule,
+            ctx.topic_rule,
+            ctx.anti_pattern_rule,
+            ctx.user_finalizes_rule,
+            ctx.patterns_block,
+        ),
+
+        _prompt_section("CONFLITO", ctx.conflict_block),
+        _prompt_section("NSFW", ctx.nsfw_hard_block, ctx.nsfw_block),
+        _prompt_section("CELULAR / MENSAGEM", ctx.phone_message_rule),
+
+        _prompt_section(
+            "DECISÃO DO TURNO",
+            ctx.decision_pressure_rule,
+            ctx.reasoning_scene_guidance_block,
+        ),
+
+        _prompt_section("COMPORTAMENTO DO TURNO", ctx.behavior_block),
+
+        _prompt_section(
+            "PERSONA - ESSÊNCIA",
+            ctx.persona_text,
+            ctx.mary_identity_anchor,
+        ),
+    ]
+
+
 class MaryService(BaseCharacter):
     id = "mary"
-    display_name = "Mary" 
-      
-    def _build_system_prompt(       
+    display_name = "Mary"
+
+    def _build_system_prompt(
         self,
         *,
         timeline_final: str,
@@ -8138,10 +8241,6 @@ class MaryService(BaseCharacter):
         mary_identity_anchor: str = "",
     ) -> str:
 
-        # ==========================================================
-        # CONTEXTO INTERNO DO PROMPT
-        # Mantém compatibilidade com chamadas antigas.
-        # ==========================================================
         tp_arc_safe = tp_arc if isinstance(tp_arc, dict) else {}
 
         try:
@@ -8219,126 +8318,7 @@ class MaryService(BaseCharacter):
             },
         )
 
-        def section(title: str, *parts: str) -> str:
-            body = "\n\n".join(
-                str(p).strip()
-                for p in parts
-                if str(p or "").strip()
-            ).strip()
-
-            if not body:
-                return ""
-
-            if title:
-                return f"[{title}]\n{body}"
-
-            return body
-
-        sections = [
-            section(
-                "",
-                ctx.extra.get("priority_rule", ""),
-                ctx.language_rule,
-                ctx.pov_rule,
-                ctx.extra.get("response_structure_rule", ""),
-                ctx.extra.get("reaction_priority_rule", ""),
-                ctx.extra.get("response_length_control", ""),
-                ctx.extra.get("orgasm_closure_rule", ""),
-                ctx.user_authorship_rule,
-                ctx.extra.get("continuity_hard_rule", ""),
-                ctx.continuity_rule,
-            ),
-
-            section(
-                "CONFIGURAÇÃO DO TURNO",
-                f"TIMELINE: {ctx.timeline_final}",
-                f"NSFW_PROFILE: {ctx.nsfw_profile}",
-                ctx.user_name_block,
-            ),
-
-            section(
-                "CENA ATIVA",
-                ctx.spatial_context,
-                ctx.state_section,
-                ctx.assunto_section,
-                ctx.assunto_step_section,
-                ctx.estado_micro_section,
-                ctx.pending_event_section,
-            ),
-
-            section(
-                "CANON",
-                ctx.canon_txt,
-            ),
-
-            section(
-                "RELAÇÃO",
-                ctx.rel_block,
-                ctx.dynamic_rel_block,
-                ctx.extra.get("mary_presence_engine_rule", ""),
-                ctx.extra.get("tp_arc_block", ""),
-            ),
-
-            section(
-                "MEMÓRIA",
-                ctx.memory_fidelity_rule,
-            ),
-
-            section(
-                "INTIMIDADE",
-                ctx.virginity_rule,
-                ctx.intimacy_phase_rule,
-                ctx.intimacy_control_block,
-            ),
-
-            section(
-                "TERCEIROS",
-                ctx.third_party_initiative_rule,
-                ctx.extra.get("tp_arc_behavior_rule", ""),
-            ),
-
-            section(
-                "PROGRESSÃO / EMOÇÃO / ASSUNTO",
-                ctx.emotional_persistence_rule,
-                ctx.topic_rule,
-                ctx.anti_pattern_rule,
-                ctx.user_finalizes_rule,
-                ctx.patterns_block,
-            ),
-
-            section(
-                "CONFLITO",
-                ctx.conflict_block,
-            ),
-
-            section(
-                "NSFW",
-                ctx.nsfw_hard_block,
-                ctx.nsfw_block,
-            ),
-
-            section(
-                "CELULAR / MENSAGEM",
-                ctx.phone_message_rule,
-            ),
-
-            section(
-                "DECISÃO DO TURNO",
-                ctx.decision_pressure_rule,
-                ctx.reasoning_scene_guidance_block,
-            ),
-
-            section(
-                "COMPORTAMENTO DO TURNO",
-                ctx.behavior_block,
-            ),
-
-            section(
-                "PERSONA - ESSÊNCIA",
-                ctx.persona_text,
-                ctx.mary_identity_anchor,
-            ),
-        ]
+        sections = build_prompt_sections(ctx)
 
         system = "\n\n".join(
             s.strip()
@@ -8372,7 +8352,7 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
-        return system              
+        return system      
              
     def _build_messages_for_turn(
         self,
