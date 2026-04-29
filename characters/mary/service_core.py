@@ -8491,7 +8491,7 @@ class MaryService(BaseCharacter):
         except Exception:
             tp_arc_behavior_rule = ""
     
-        # 🔥 Atualiza apenas o extra (não recria ctx!)
+        # 🔥 Atualiza apenas o extra (não recria ctx!)                
         try:
             ctx.extra.update({
                 "priority_rule": render_priority_rule(),
@@ -8506,10 +8506,21 @@ class MaryService(BaseCharacter):
             })
         except Exception:
             pass
-           
+
+        # ==================================================
+        # NOVO MOTOR: PromptRules
+        # ==================================================
+        sections = []
+
         system = build_prompt_from_rules(ctx)
 
-        if not system.strip():
+        if system.strip():
+            sections = [
+                f"[RULE] {f.get('key', '')}"
+                for f in ctx.extra.get("prompt_fragments_debug", [])
+                if isinstance(f, dict)
+            ]
+        else:
             sections = build_prompt_sections(ctx)
 
             system = "\n\n".join(
@@ -8517,45 +8528,49 @@ class MaryService(BaseCharacter):
                 for s in sections
                 if str(s or "").strip()
             ).strip()
-    
-        system = "\n\n".join(
-            s.strip()
-            for s in sections
-            if str(s or "").strip()
-        ).strip()
-    
+
         try:
             _debug_set("mary_debug_system_prompt", system)
             _debug_set("mary_debug_system_prompt_len", len(system or ""))
-    
+
             if _debug_enabled():
                 import inspect
-    
+
                 _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
-    
+
                 _debug_set(
                     "mary_authorship_rule_preview",
                     (ctx.user_authorship_rule or "")[:800],
                 )
-    
+
                 _debug_set(
                     "mary_authorship_rule_has_old_block",
                     "REGRAS DE SEGURANÇA NARRATIVA" in (ctx.user_authorship_rule or ""),
                 )
-    
+
                 _debug_set(
                     "mary_prompt_sections_debug",
                     [
-                        s.split("\n", 1)[0][:120]
+                        str(s).split("\n", 1)[0][:120]
                         for s in sections
                         if str(s or "").strip()
                     ],
                 )
-    
+
+                _debug_set(
+                    "mary_prompt_fragments_debug",
+                    ctx.extra.get("prompt_fragments_debug", []),
+                )
+
+                _debug_set(
+                    "mary_prompt_rule_errors",
+                    ctx.extra.get("prompt_rule_errors", []),
+                )
+
         except Exception:
             pass
-    
-        return system      
+
+        return system     
              
     def _build_messages_for_turn(
         self,
