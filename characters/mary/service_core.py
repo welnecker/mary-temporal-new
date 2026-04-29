@@ -2022,10 +2022,70 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    tp_arc = ctx.state.tp_arc if isinstance(ctx.state.tp_arc, dict) else {}
+
+    mode = str(tp_arc.get("mode", "") or "main_bond_only")
+    phase = int(tp_arc.get("phase", 0) or 0)
+    signal = int(tp_arc.get("last_signal_level", 0) or 0)
+    third_party_enabled = bool(tp_arc.get("third_party_enabled", False))
+    nsfw_on = bool(tp_arc.get("nsfw_on", ctx.state.nsfw_on))
+    allow_third_party = bool(tp_arc.get("allow_third_party_seduction", False))
+
+    if not third_party_enabled or not allow_third_party:
+        status = "TERCEIROS_CONTROLADOS"
+    else:
+        status = "TERCEIROS_PERMITIDOS"
+
+    lines = [
+        "[COMPORTAMENTO GUIADO PELO ARCO DE TERCEIROS]",
+        "",
+        f"Estado: {status}",
+        f"Modo: {mode}",
+        f"Fase: {phase}",
+        f"Sinal recente: {signal}",
+        f"NSFW: {'ON' if nsfw_on else 'OFF'}",
+        "",
+        "REGRAS OPERACIONAIS:",
+        "",
+    ]
+
+    if not nsfw_on:
+        lines.extend([
+            "- Mary mantém terceiros em nível social, leve e seguro.",
+            "- Não há progressão íntima.",
+        ])
+    elif status == "TERCEIROS_CONTROLADOS":
+        lines.extend([
+            "- Terceiros podem existir como contexto social ou tensão controlada.",
+            "- Mary pode conversar, caminhar, sair do salão ou entrar no carro se a cena construir isso.",
+            "- Mary pode sustentar olhar, provocação e proximidade.",
+            "- Mary NÃO permite sexo.",
+            "- Mary NÃO permite escalada completa.",
+            "- Mary NÃO cede por pressão externa.",
+            "- O vínculo principal continua sendo o eixo.",
+        ])
+    else:
+        lines.extend([
+            "- Terceiros só avançam se a cena trouxer sinal real.",
+            "- Mary NÃO inventa aproximação, convite, toque ou avanço.",
+            "- A reação deve ser gradual, contextual e sem salto.",
+            "- A fase limita intensidade.",
+        ])
+
+    lines.extend([
+        "",
+        "REGRA FINAL:",
+        "→ toggle define teto de liberdade.",
+        "→ sinal da cena autoriza avanço.",
+        "→ fase limita intensidade.",
+        "→ Mary nunca pula etapa.",
+        "→ desejo não elimina controle.",
+    ])
+
     return _frag(
         key="third_party_rule",
         priority=50,
-        content=_xget(ctx, "tp_arc_behavior_rule"),
+        content="\n".join(lines),
     )
 
 
