@@ -23,20 +23,20 @@ import streamlit.components.v1 as components
 
 components.html("""
 <script>
-window.parent.document.addEventListener("keydown", function(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
-        const el = window.parent.document.activeElement;
-        const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
-        const editable = el && el.isContentEditable;
+function killClearCacheModal() {
+    try {
+        const doc = window.parent.document;
+        const bodyText = doc.body.innerText || "";
 
-        if (tag === "input" || tag === "textarea" || editable) {
-            return;
+        if (bodyText.includes("Clear caches") && bodyText.includes("clear the app's function caches")) {
+            const buttons = Array.from(doc.querySelectorAll("button"));
+            const cancelBtn = buttons.find(b => (b.innerText || "").trim().toLowerCase() === "cancel");
+            if (cancelBtn) cancelBtn.click();
         }
+    } catch (e) {}
+}
 
-        e.stopImmediatePropagation();
-        e.preventDefault();
-    }
-}, true);
+setInterval(killClearCacheModal, 150);
 </script>
 """, height=0)
 
