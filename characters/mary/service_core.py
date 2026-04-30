@@ -2436,11 +2436,23 @@ def build_prompt_from_rules(ctx: PromptBuildContext) -> str:
     except Exception:
         pass
 
-    return "\n\n".join(
+    system = "\n\n".join(
         f.content.strip()
         for f in fragments
         if str(f.content or "").strip()
     ).strip()
+    
+    try:
+        ctx.extra["prompt_system_len"] = len(system)
+    except Exception:
+        pass
+    
+    if not system:
+        raise RuntimeError(
+            f"Prompt vazio. fragments={len(fragments)} errors={errors}"
+        )
+    
+    return system
 
 # ==========================================================
 # CONTINUIDADE ESPACIAL (Scene Lock REAL)
@@ -8963,86 +8975,38 @@ class MaryService(BaseCharacter):
         except Exception:
             tp_arc_behavior_rule = ""
     
-        # 🔥 Atualiza apenas o extra (não recria ctx!)                
+        ctx.extra = ctx.extra if isinstance(ctx.extra, dict) else {}
+    
+        ctx.extra.update({
+            "priority_rule": render_priority_rule(),
+            "continuity_hard_rule": render_continuity_hard_rule(),
+            "response_structure_rule": render_response_structure_rule(),
+            "reaction_priority_rule": render_reaction_priority_rule(),
+            "response_length_control": render_response_length_control(),
+            "orgasm_closure_rule": render_orgasm_closure_rule(),
+            "mary_presence_engine_rule": render_mary_presence_engine_rule(),
+            "tp_arc_block": tp_arc_block,
+            "tp_arc_behavior_rule": tp_arc_behavior_rule,
+        })
+    
+        build_ctx = make_prompt_build_context(ctx)
+        system = build_prompt_from_rules(build_ctx)
+    
+        if not system.strip():
+            raise RuntimeError(
+                "Prompt final vazio: build_prompt_from_rules não gerou fragmentos."
+            )
+    
+        ctx.system = system
+    
         try:
-            ctx.extra.update({
-                "priority_rule": render_priority_rule(),
-                "continuity_hard_rule": render_continuity_hard_rule(),
-                "response_structure_rule": render_response_structure_rule(),
-                "reaction_priority_rule": render_reaction_priority_rule(),
-                "response_length_control": render_response_length_control(),
-                "orgasm_closure_rule": render_orgasm_closure_rule(),
-                "mary_presence_engine_rule": render_mary_presence_engine_rule(),
-                "tp_arc_block": tp_arc_block,
-                "tp_arc_behavior_rule": tp_arc_behavior_rule,
-            })
+            _ss_set("mary_debug_system_prompt", system)
+            _ss_set("mary_debug_prompt_fragments", build_ctx.extra.get("prompt_fragments_debug", []))
+            _ss_set("mary_debug_prompt_rule_errors", build_ctx.extra.get("prompt_rule_errors", []))
         except Exception:
             pass
-
-        # ==================================================
-        # NOVO MOTOR: PromptRules
-        # ==================================================
-        sections = []
-
-        prompt_ctx = make_prompt_build_context(ctx)
-        system = build_prompt_from_rules(prompt_ctx)
-        if system.strip():
-            sections = [
-                f"[RULE] {f.get('key', '')}"
-                for f in ctx.extra.get("prompt_fragments_debug", [])
-                if isinstance(f, dict)
-            ]
-        else:
-            sections = build_prompt_sections(ctx)
-
-            system = "\n\n".join(
-                s.strip()
-                for s in sections
-                if str(s or "").strip()
-            ).strip()
-
-        try:
-            _debug_set("mary_debug_system_prompt", system)
-            _debug_set("mary_debug_system_prompt_len", len(system or ""))
-
-            if _debug_enabled():
-                import inspect
-
-                _debug_set("mary_service_file_active", inspect.getfile(self.__class__))
-
-                _debug_set(
-                    "mary_authorship_rule_preview",
-                    (ctx.user_authorship_rule or "")[:800],
-                )
-
-                _debug_set(
-                    "mary_authorship_rule_has_old_block",
-                    "REGRAS DE SEGURANÇA NARRATIVA" in (ctx.user_authorship_rule or ""),
-                )
-
-                _debug_set(
-                    "mary_prompt_sections_debug",
-                    [
-                        str(s).split("\n", 1)[0][:120]
-                        for s in sections
-                        if str(s or "").strip()
-                    ],
-                )
-
-                _debug_set(
-                    "mary_prompt_fragments_debug",
-                    ctx.extra.get("prompt_fragments_debug", []),
-                )
-
-                _debug_set(
-                    "mary_prompt_rule_errors",
-                    ctx.extra.get("prompt_rule_errors", []),
-                )
-
-        except Exception:
-            pass
-
-        return system     
+    
+        return system    
              
     def _build_messages_for_turn(
         self,
@@ -11596,6 +11560,9 @@ class MaryService(BaseCharacter):
         conflict_block = render_conflict_block(conflict_mode)
     
         return {
+            "rel_block": rel_block,
+            "dynamic_rel_block": dynamic_rel_block,
+        
             "behavior_block": behavior_block,
             "patterns_block": patterns_block,
             "manipulation_block": manipulation_block,
@@ -11620,7 +11587,6 @@ class MaryService(BaseCharacter):
             "pov_rule": pov_rule,
             "user_authorship_rule": user_authorship_rule,
             "continuity_rule": continuity_rule,
-            "dynamic_rel_block": dynamic_rel_block,
         }
 
     def _resolve_turn_context(
