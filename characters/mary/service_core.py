@@ -11430,6 +11430,7 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # RELAÇÃO DINÂMICA
         # ==========================================================
+        rel_block = rel_state_to_prompt_block(rel_state)
         dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
     
         # ==========================================================
@@ -11488,8 +11489,7 @@ class MaryService(BaseCharacter):
         # ==========================================================
         # BASE RULES
         # ==========================================================
-        base_rules = self._build_base_rules()
-    
+           
         continuity_rule = ""
         anti_pattern_rule = render_anti_pattern_rule()
         emotional_persistence_rule = render_emotional_persistence_rule()
