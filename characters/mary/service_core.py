@@ -199,7 +199,7 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     except Exception:
         pass 
 
-        assets = TurnAssets(
+    assets = TurnAssets(    
             persona_text=str(getattr(ctx, "persona_text", "") or ""),
             mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
             long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
@@ -266,6 +266,14 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
         assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
     
+        return PromptBuildContext(
+                state=state,
+                assets=assets,
+                legacy=ctx,
+                extra={}
+            )
+
+
 @dataclass
 class PromptFragment:
     key: str
