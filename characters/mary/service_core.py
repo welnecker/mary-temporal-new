@@ -1616,22 +1616,25 @@ def sync_active_interlocutor_for_turn(
         text = str(text or "").strip()
         if not text:
             return []
-
-        ignore = {
-            "Mary", "Carro", "Jeep", "Renegade", "Forró", "Sexta",
-            "Noite", "Anthony", "Janio", "Jânio", "Silvia", "Sílvia",
-        }
-
+    
         candidates = re.findall(
             r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,}(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,})?\b",
             text,
         )
-
-        return [
-            canonicalize_name(c)
-            for c in candidates
-            if c.strip() not in ignore
-        ]
+    
+        IGNORE = {
+            # verbos comuns no início de fala
+            "Olha", "Deixa", "Quero", "Sinto", "Levo", "É", "Vou",
+            "Quero", "Preciso", "Deixa", "Vem", "Para", "Agora",
+    
+            # palavras comuns da narrativa
+            "Carro", "Jeep", "Renegade", "Forró", "Noite", "Sexta",
+    
+            # personagem fixo (não pode virar interlocutor)
+            "Mary",
+        }
+    
+        return [c for c in candidates if c not in IGNORE]
 
     known_names = {
         "anthony": "Anthony",
@@ -1651,7 +1654,7 @@ def sync_active_interlocutor_for_turn(
     for raw_name, canonical_name in known_names.items():
         if raw_name in prompt_blob:
             detected = canonical_name
-            break
+            break    
 
     # 2. Detecção dinâmica por nomes próprios no prompt atual
     if not detected:
