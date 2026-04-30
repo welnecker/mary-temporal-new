@@ -186,7 +186,7 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         nsfw_on=bool(mary.get("nsfw")),
         behavior_mode=str(facts.get("behavior_mode") or ""),
     )
-     try:
+    try:
         active_interlocutor = sync_active_interlocutor_for_turn(
             state.usuario_key,
             state.facts,
@@ -197,9 +197,10 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
             state.facts["active_interlocutor"] = active_interlocutor
             state.facts["cena.interlocutor"] = active_interlocutor
     except Exception:
-        pass
+        pass 
 
     assets = TurnAssets(
+        
         persona_text=str(getattr(ctx, "persona_text", "") or ""),
         mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
         long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
