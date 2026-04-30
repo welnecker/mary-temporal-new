@@ -136,6 +136,12 @@ class TurnAssets:
     assunto_step_section: str = ""
     estado_micro_section: str = ""
     pending_event_section: str = ""
+
+    patterns_block: str = ""
+    manipulation_block: str = ""
+    conflict_block: str = ""
+    third_party_initiative_rule: str = ""
+    reasoning_scene_guidance_block: str = ""
     
 
 
@@ -212,6 +218,12 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
     assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
     assets.rule_facts_present = ""
+
+    assets.patterns_block = str(getattr(ctx, "patterns_block", "") or "")
+    assets.manipulation_block = str(getattr(ctx, "manipulation_block", "") or "")
+    assets.conflict_block = str(getattr(ctx, "conflict_block", "") or "")
+    assets.third_party_initiative_rule = str(getattr(ctx, "third_party_initiative_rule", "") or "")
+    assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
     
     return PromptBuildContext(
         state=state,
@@ -2263,6 +2275,45 @@ def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
             anchor,
         ]),
     )
+
+def rule_reasoning_scene_guidance(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="reasoning_scene_guidance_rule",
+        priority=11,
+        content=_clean_block(ctx.assets.reasoning_scene_guidance_block),
+    )
+
+
+def rule_third_party_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="third_party_initiative_rule",
+        priority=51,
+        content=_clean_block(ctx.assets.third_party_initiative_rule),
+    )
+
+
+def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="patterns_rule",
+        priority=62,
+        content=_clean_block(ctx.assets.patterns_block),
+    )
+
+
+def rule_manipulation(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="manipulation_rule",
+        priority=63,
+        content=_clean_block(ctx.assets.manipulation_block),
+    )
+
+
+def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="conflict_rule",
+        priority=64,
+        content=_clean_block(ctx.assets.conflict_block),
+    )
     
 PROMPT_RULES: list[PromptRule] = [
     rule_language,
@@ -2271,14 +2322,19 @@ PROMPT_RULES: list[PromptRule] = [
     rule_priority,
     rule_facts_present,
     rule_continuity,
+    rule_reasoning_scene_guidance,
 
     rule_memory,
     rule_relationship,
     rule_presence,
     rule_intimacy,
     rule_third_party,
+    rule_third_party_initiative,
 
     rule_progression,
+    rule_patterns,
+    rule_manipulation,
+    rule_conflict,
     rule_initiative,
     rule_emotion,
     rule_nsfw,
