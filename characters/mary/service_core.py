@@ -199,80 +199,75 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     except Exception:
         pass 
 
-    assets = TurnAssets(    
-            persona_text=str(getattr(ctx, "persona_text", "") or ""),
-            mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
-            long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
-            rel_block=str(getattr(ctx, "rel_block", "") or ""),
-            dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
-            canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
+    assets = TurnAssets(           
+        persona_text=str(getattr(ctx, "persona_text", "") or ""),
+        mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
+        long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
+        rel_block=str(getattr(ctx, "rel_block", "") or ""),
+        dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
+        canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
     
-            # Mantidos: ainda são estado/continuidade sensível
-            virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
-            intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
-            intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
+        # Mantidos
+        virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
+        intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
+        intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
     
-            # Mantidos por enquanto: apoio sem migrar totalmente
-            topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
-            anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
-            user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
-            emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
+        topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
+        anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
+        user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
+        emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
     
-            # Neutralizados: já existem como render_* novo/importado
-            initiative_rule="",
-            manipulation_block="",
-            conflict_block="",
-            third_party_initiative_rule="",
-            nsfw_hard_block="",
+        # Neutralizados
+        initiative_rule="",
+        manipulation_block="",
+        conflict_block="",
+        third_party_initiative_rule="",
+        nsfw_hard_block="",
     
-            # Mantidos
-            nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
-            phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
-            decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
-            autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
-            behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
-        )
+        # Mantidos
+        nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
+        phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
+        decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
+        autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
+        behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
+    )
     
-        assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
-        assets.state_section = str(getattr(ctx, "state_section", "") or "")
-        assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
-        assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
-        assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
-        assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
+    assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
+    assets.state_section = str(getattr(ctx, "state_section", "") or "")
+    assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
+    assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
+    assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
+    assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
     
-        assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
-        assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
-        assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
-        assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.rule_facts_present = ""
+    assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
+    assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
+    assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
+    assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.rule_facts_present = ""
     
-        # Neutralizados: migrados para prompt_blocks.py / PROMPT_RULES
-        assets.patterns_block = ""
-        assets.manipulation_block = ""
-        assets.conflict_block = ""
-        assets.third_party_initiative_rule = ""
+    assets.patterns_block = ""
+    assets.manipulation_block = ""
+    assets.conflict_block = ""
+    assets.third_party_initiative_rule = ""
     
-        # Mantido: ainda é orientação gerada pelo reasoning
-        assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
+    assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
     
-        assets.continuity_hard_rule = str((raw_extra.get("continuity_hard_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.response_structure_rule = str((raw_extra.get("response_structure_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.reaction_priority_rule = str((raw_extra.get("reaction_priority_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.response_length_control = str((raw_extra.get("response_length_control") if isinstance(raw_extra, dict) else "") or "")
+    assets.continuity_hard_rule = str((raw_extra.get("continuity_hard_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.response_structure_rule = str((raw_extra.get("response_structure_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.reaction_priority_rule = str((raw_extra.get("reaction_priority_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.response_length_control = str((raw_extra.get("response_length_control") if isinstance(raw_extra, dict) else "") or "")
     
-        # Estes vêm do pipeline novo via extra
-        assets.orgasm_closure_rule = str((raw_extra.get("orgasm_closure_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.tp_arc_block = str((raw_extra.get("tp_arc_block") if isinstance(raw_extra, dict) else "") or "")
-        assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
-        assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.orgasm_closure_rule = str((raw_extra.get("orgasm_closure_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.tp_arc_block = str((raw_extra.get("tp_arc_block") if isinstance(raw_extra, dict) else "") or "")
+    assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
     
-        return PromptBuildContext(
-                state=state,
-                assets=assets,
-                legacy=ctx,
-                extra={}
-            )
-
+    return PromptBuildContext(
+        state=state,
+        assets=assets,
+        legacy=ctx,
+        extra={}
+    )
 
 @dataclass
 class PromptFragment:
