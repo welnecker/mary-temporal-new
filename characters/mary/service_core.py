@@ -1946,6 +1946,48 @@ def rule_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         content=_clean_block(ctx.assets.rule_priority) or render_priority_rule(),
     )
 
+def rule_active_interlocutor(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
+    history = ctx.state.history if isinstance(ctx.state.history, list) else []
+
+    interlocutor = ""
+
+    # 1. tenta facts explícito
+    interlocutor = facts.get("active_interlocutor") or ""
+
+    # 2. fallback: tenta inferir do último user
+    if not interlocutor and history:
+        last_user = str(history[-1].get("mensagem_usuario") or "").lower()
+
+        for name in ["anthony", "janio"]:
+            if name in last_user:
+                interlocutor = name.capitalize()
+                break
+
+    if not interlocutor:
+        interlocutor = "não definido"
+
+    content = f"""
+[INTERLOCUTOR ATIVO DA CENA]
+
+- Interlocutor atual: {interlocutor}
+
+REGRAS:
+- A cena ocorre com quem está fisicamente presente.
+- Não substituir por vínculo emocional.
+- Não trocar automaticamente por Janio.
+- Não inserir personagem ausente.
+
+REGRA FINAL:
+→ quem está na cena governa a cena
+"""
+
+    return _frag(
+        key="active_interlocutor_rule",
+        priority=4.5,  # ← ENTRE prioridade e facts
+        content=content,
+    )
+
 
 def rule_facts_present(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     a = ctx.assets
@@ -2058,6 +2100,7 @@ def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
     lines.extend([
         "",
+        "- O interlocutor ativo da cena tem prioridade sobre o eixo relacional.",
         "REGRA FINAL:",
         "→ continuidade não é adivinhar ação oculta.",
         "→ continuidade é responder ao que foi declarado, respeitando facts e assunto.",
@@ -2367,6 +2410,7 @@ PROMPT_RULES: list[PromptRule] = [
     rule_pov,
     rule_user_authorship,
     rule_priority,
+    rule_active_interlocutor,
     rule_facts_present,
 
     rule_continuity_hard,
