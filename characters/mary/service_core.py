@@ -142,6 +142,15 @@ class TurnAssets:
     conflict_block: str = ""
     third_party_initiative_rule: str = ""
     reasoning_scene_guidance_block: str = ""
+
+    continuity_hard_rule: str = ""
+    response_structure_rule: str = ""
+    reaction_priority_rule: str = ""
+    response_length_control: str = ""
+    orgasm_closure_rule: str = ""
+    tp_arc_block: str = ""
+    tp_arc_behavior_rule: str = ""
+    mary_presence_engine_rule: str = ""
     
 
 
@@ -224,6 +233,15 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     assets.conflict_block = str(getattr(ctx, "conflict_block", "") or "")
     assets.third_party_initiative_rule = str(getattr(ctx, "third_party_initiative_rule", "") or "")
     assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
+
+    assets.continuity_hard_rule = str((raw_extra.get("continuity_hard_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.response_structure_rule = str((raw_extra.get("response_structure_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.reaction_priority_rule = str((raw_extra.get("reaction_priority_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.response_length_control = str((raw_extra.get("response_length_control") if isinstance(raw_extra, dict) else "") or "")
+    assets.orgasm_closure_rule = str((raw_extra.get("orgasm_closure_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.tp_arc_block = str((raw_extra.get("tp_arc_block") if isinstance(raw_extra, dict) else "") or "")
+    assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
+    assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
     
     return PromptBuildContext(
         state=state,
@@ -2087,12 +2105,10 @@ def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    presence = _clean_block(_xget(ctx, "mary_presence_engine_rule"))
-
     return _frag(
         key="presence_rule",
         priority=35,
-        content=presence,
+        content=_clean_block(ctx.assets.mary_presence_engine_rule),
     )
 
 
@@ -2314,6 +2330,60 @@ def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         priority=64,
         content=_clean_block(ctx.assets.conflict_block),
     )
+
+def rule_continuity_hard(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="continuity_hard_rule",
+        priority=9,
+        content=_clean_block(ctx.assets.continuity_hard_rule),
+    )
+
+
+def rule_response_structure(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="response_structure_rule",
+        priority=12,
+        content=_clean_block(ctx.assets.response_structure_rule),
+    )
+
+
+def rule_reaction_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="reaction_priority_rule",
+        priority=13,
+        content=_clean_block(ctx.assets.reaction_priority_rule),
+    )
+
+
+def rule_response_length(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="response_length_control",
+        priority=14,
+        content=_clean_block(ctx.assets.response_length_control),
+    )
+
+
+def rule_orgasm_closure(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="orgasm_closure_rule",
+        priority=41,
+        content=_clean_block(ctx.assets.orgasm_closure_rule),
+    )
+
+
+def rule_tp_arc_extra(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="tp_arc_extra_rule",
+        priority=52,
+        content="\n\n".join(
+            part
+            for part in [
+                _clean_block(ctx.assets.tp_arc_block),
+                _clean_block(ctx.assets.tp_arc_behavior_rule),
+            ]
+            if part
+        ),
+    )
     
 PROMPT_RULES: list[PromptRule] = [
     rule_language,
@@ -2321,15 +2391,23 @@ PROMPT_RULES: list[PromptRule] = [
     rule_user_authorship,
     rule_priority,
     rule_facts_present,
+
+    rule_continuity_hard,
     rule_continuity,
     rule_reasoning_scene_guidance,
+    rule_response_structure,
+    rule_reaction_priority,
+    rule_response_length,
 
     rule_memory,
     rule_relationship,
     rule_presence,
     rule_intimacy,
+    rule_orgasm_closure,
+
     rule_third_party,
     rule_third_party_initiative,
+    rule_tp_arc_extra,
 
     rule_progression,
     rule_patterns,
