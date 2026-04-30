@@ -1953,14 +1953,36 @@ def rule_active_interlocutor(ctx: PromptBuildContext) -> Optional[PromptFragment
     interlocutor = ""
 
     # 1. tenta facts explícito
-    interlocutor = facts.get("active_interlocutor") or ""
+    interlocutor = (
+        facts.get("active_interlocutor")
+        or facts.get("interlocutor_ativo")
+        or facts.get("cena.interlocutor")
+        or facts.get("state.interlocutor")
+        or ""
+    )
+    
+    cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+    state = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+    
+    if not interlocutor:
+        interlocutor = (
+            cena.get("interlocutor")
+            or cena.get("interlocutor_ativo")
+            or state.get("interlocutor")
+            or state.get("interlocutor_ativo")
+            or ""
+        )
 
     # 2. fallback: tenta inferir do último user
     if not interlocutor and history:
-        last_user = str(history[-1].get("mensagem_usuario") or "").lower()
-
+        last = history[-1] if isinstance(history[-1], dict) else {}
+        blob = " ".join([
+            str(last.get("mensagem_usuario") or ""),
+            str(last.get("resposta_mary") or ""),
+        ]).lower()
+    
         for name in ["anthony", "janio"]:
-            if name in last_user:
+            if name in blob:
                 interlocutor = name.capitalize()
                 break
 
