@@ -11811,6 +11811,19 @@ class MaryService(BaseCharacter):
             facts=facts,
             ctx_lower=ctx_lower,
         )
+        
+        history = scene_ctx.get("history", [])
+        pending_event_used = bool(scene_ctx.get("pending_event_used", False))
+        
+        scene_fields = {
+            "user_name_block": scene_ctx.get("user_name_block", ""),
+            "spatial_context": scene_ctx.get("spatial_context", ""),
+            "state_section": scene_ctx.get("state_section", ""),
+            "assunto_section": scene_ctx.get("assunto_section", ""),
+            "assunto_step_section": scene_ctx.get("assunto_step_section", ""),
+            "estado_micro_section": scene_ctx.get("estado_micro_section", ""),
+            "pending_event_section": scene_ctx.get("pending_event_section", ""),
+        }
     
         # ==========================================================
         # 5. TURN CONTEXT (NOVO MOTOR)
@@ -11824,7 +11837,7 @@ class MaryService(BaseCharacter):
             shared_key=shared_key,
     
             # scene
-            **scene_ctx,
+            **scene_fields,
     
             # core
             persona_text=persona_text,
@@ -11860,8 +11873,8 @@ class MaryService(BaseCharacter):
             conflict_now=conflict_now,
             diag=diag,
             ctx_lower=ctx_lower,
-            pending_event_used=scene_ctx["pending_event_used"],
-            history=scene_ctx["history"],
+            pending_event_used=pending_event_used,
+            history=history,
         )
         
             
