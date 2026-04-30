@@ -11798,13 +11798,11 @@ class MaryService(BaseCharacter):
             behavior_mode=behavior_mode,
             conflict_mode=conflict_mode,
             emotion_now=emotion_now,
+            initiative=initiative,
         )
-    
-        # ==========================================================
-        # 4. SCENE CONTEXT
-        # ==========================================================
+        
         ctx_lower = _build_context_for_guard(usuario_key, prompt)
-    
+        
         scene_ctx = self._build_scene_sections_for_prompt(
             usuario_key=usuario_key,
             user_id=user_id,
@@ -11815,40 +11813,58 @@ class MaryService(BaseCharacter):
         history = scene_ctx.get("history", [])
         pending_event_used = bool(scene_ctx.get("pending_event_used", False))
         
-        scene_fields = {
-            "user_name_block": scene_ctx.get("user_name_block", ""),
-            "spatial_context": scene_ctx.get("spatial_context", ""),
-            "state_section": scene_ctx.get("state_section", ""),
-            "assunto_section": scene_ctx.get("assunto_section", ""),
-            "assunto_step_section": scene_ctx.get("assunto_step_section", ""),
-            "estado_micro_section": scene_ctx.get("estado_micro_section", ""),
-            "pending_event_section": scene_ctx.get("pending_event_section", ""),
-        }
-    
-        # ==========================================================
-        # 5. TURN CONTEXT (NOVO MOTOR)
-        # ==========================================================
         ctx = TurnPromptContext(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
-            prompt=prompt,
-            mem_spec=mem_spec,
+        
+            user_name_block=scene_ctx.get("user_name_block", ""),
+            spatial_context=scene_ctx.get("spatial_context", ""),
+            state_section=scene_ctx.get("state_section", ""),
+            assunto_section=scene_ctx.get("assunto_section", ""),
+            assunto_step_section=scene_ctx.get("assunto_step_section", ""),
+            estado_micro_section=scene_ctx.get("estado_micro_section", ""),
+            pending_event_section=scene_ctx.get("pending_event_section", ""),
+        
+            canon_txt=canon_txt,
+            persona_text=persona_text,
+            rel_block=blocks.get("rel_block", ""),
+            dynamic_rel_block=blocks.get("dynamic_rel_block", ""),
+            long_memory_block=long_memory_text,
+            tp_arc=tp_arc if isinstance(tp_arc, dict) else {},
+        
+            behavior_block=blocks.get("behavior_block", ""),
+            patterns_block=blocks.get("patterns_block", ""),
+            topic_rule=blocks.get("topic_rule", ""),
+            emotional_persistence_rule=blocks.get("emotional_persistence_rule", ""),
+            anti_pattern_rule=blocks.get("anti_pattern_rule", ""),
+            virginity_rule=blocks.get("virginity_rule", ""),
+            memory_fidelity_rule=blocks.get("memory_fidelity_rule", ""),
+            user_finalizes_rule=blocks.get("user_finalizes_rule", ""),
+            initiative_rule=blocks.get("initiative_rule", ""),
+            manipulation_block=blocks.get("manipulation_block", ""),
+            conflict_block=blocks.get("conflict_block", ""),
+            third_party_initiative_rule=blocks.get("third_party_initiative_rule", ""),
+            intimacy_control_block=blocks.get("intimacy_control_block", ""),
+            intimacy_phase_rule=blocks.get("intimacy_phase_rule", ""),
+            nsfw_hard_block=blocks.get("nsfw_hard_block", ""),
+            nsfw_block=blocks.get("nsfw_block", ""),
+        
+            language_rule=blocks.get("language_rule", ""),
+            pov_rule=blocks.get("pov_rule", ""),
+            user_authorship_rule=blocks.get("user_authorship_rule", ""),
+            continuity_rule=blocks.get("continuity_rule", ""),
+            phone_message_rule=blocks.get("phone_message_rule", ""),
+            decision_pressure_rule=blocks.get("decision_pressure_rule", ""),
+            mary_identity_anchor=blocks.get("mary_identity_anchor", ""),
+            reasoning_scene_guidance_block=blocks.get("reasoning_scene_guidance_block", ""),
+        
             usuario_key=usuario_key,
             shared_key=shared_key,
-    
-            # scene
-            **scene_fields,
-    
-            # core
-            persona_text=persona_text,
-            canon_txt=canon_txt,
-            rel_block=blocks["rel_block"],
-            dynamic_rel_block=blocks["dynamic_rel_block"],
-            long_memory_block=long_memory_text,
-            tp_arc=tp_arc,
-    
-            # rules / blocks
-            **blocks,
+            prompt=prompt,
+            mem_spec=mem_spec,
+            facts=facts,
+            rel_state=rel_state,
+            autonomy_block=blocks.get("autonomy_block", ""),
         )
     
         # ==========================================================
