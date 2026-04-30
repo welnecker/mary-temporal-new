@@ -199,69 +199,72 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
     except Exception:
         pass 
 
-    assets = TurnAssets(
-        
-        persona_text=str(getattr(ctx, "persona_text", "") or ""),
-        mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
-        long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
-        rel_block=str(getattr(ctx, "rel_block", "") or ""),
-        dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
-        canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
+        assets = TurnAssets(
+            persona_text=str(getattr(ctx, "persona_text", "") or ""),
+            mary_identity_anchor=str(getattr(ctx, "mary_identity_anchor", "") or ""),
+            long_memory_block=str(getattr(ctx, "long_memory_block", "") or ""),
+            rel_block=str(getattr(ctx, "rel_block", "") or ""),
+            dynamic_rel_block=str(getattr(ctx, "dynamic_rel_block", "") or ""),
+            canon_txt=str(getattr(ctx, "canon_txt", "") or ""),
     
-        virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
-        intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
-        intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
+            # Mantidos: ainda são estado/continuidade sensível
+            virginity_rule=str(getattr(ctx, "virginity_rule", "") or ""),
+            intimacy_phase_rule=str(getattr(ctx, "intimacy_phase_rule", "") or ""),
+            intimacy_control_block=str(getattr(ctx, "intimacy_control_block", "") or ""),
     
-        topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
-        anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
-        user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
+            # Mantidos por enquanto: apoio sem migrar totalmente
+            topic_rule=str(getattr(ctx, "topic_rule", "") or ""),
+            anti_pattern_rule=str(getattr(ctx, "anti_pattern_rule", "") or ""),
+            user_finalizes_rule=str(getattr(ctx, "user_finalizes_rule", "") or ""),
+            emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
     
-        initiative_rule=str(getattr(ctx, "initiative_rule", "") or ""),
-        emotional_persistence_rule=str(getattr(ctx, "emotional_persistence_rule", "") or ""),
+            # Neutralizados: já existem como render_* novo/importado
+            initiative_rule="",
+            manipulation_block="",
+            conflict_block="",
+            third_party_initiative_rule="",
+            nsfw_hard_block="",
     
-        nsfw_hard_block=str(getattr(ctx, "nsfw_hard_block", "") or ""),
-        nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
+            # Mantidos
+            nsfw_block=str(getattr(ctx, "nsfw_block", "") or ""),
+            phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
+            decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
+            autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
+            behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
+        )
     
-        phone_message_rule=str(getattr(ctx, "phone_message_rule", "") or ""),
-        decision_pressure_rule=str(getattr(ctx, "decision_pressure_rule", "") or ""),
-        autonomy_block=str(getattr(ctx, "autonomy_block", "") or ""),
-        behavior_block=str(getattr(ctx, "behavior_block", "") or ""),
-    )
+        assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
+        assets.state_section = str(getattr(ctx, "state_section", "") or "")
+        assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
+        assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
+        assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
+        assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
     
-    assets.spatial_context = str(getattr(ctx, "spatial_context", "") or "")
-    assets.state_section = str(getattr(ctx, "state_section", "") or "")
-    assets.assunto_section = str(getattr(ctx, "assunto_section", "") or "")
-    assets.assunto_step_section = str(getattr(ctx, "assunto_step_section", "") or "")
-    assets.estado_micro_section = str(getattr(ctx, "estado_micro_section", "") or "")
-    assets.pending_event_section = str(getattr(ctx, "pending_event_section", "") or "")
+        assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
+        assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
+        assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
+        assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.rule_facts_present = ""
     
-    assets.rule_language = str(getattr(ctx, "language_rule", "") or "")
-    assets.rule_pov = str(getattr(ctx, "pov_rule", "") or "")
-    assets.rule_user_authorship = str(getattr(ctx, "user_authorship_rule", "") or "")
-    assets.rule_priority = str((raw_extra.get("priority_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.rule_facts_present = ""
-
-    assets.patterns_block = str(getattr(ctx, "patterns_block", "") or "")
-    assets.manipulation_block = str(getattr(ctx, "manipulation_block", "") or "")
-    assets.conflict_block = str(getattr(ctx, "conflict_block", "") or "")
-    assets.third_party_initiative_rule = str(getattr(ctx, "third_party_initiative_rule", "") or "")
-    assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
-
-    assets.continuity_hard_rule = str((raw_extra.get("continuity_hard_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.response_structure_rule = str((raw_extra.get("response_structure_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.reaction_priority_rule = str((raw_extra.get("reaction_priority_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.response_length_control = str((raw_extra.get("response_length_control") if isinstance(raw_extra, dict) else "") or "")
-    assets.orgasm_closure_rule = str((raw_extra.get("orgasm_closure_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.tp_arc_block = str((raw_extra.get("tp_arc_block") if isinstance(raw_extra, dict) else "") or "")
-    assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
-    assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
+        # Neutralizados: migrados para prompt_blocks.py / PROMPT_RULES
+        assets.patterns_block = ""
+        assets.manipulation_block = ""
+        assets.conflict_block = ""
+        assets.third_party_initiative_rule = ""
     
-    return PromptBuildContext(
-        state=state,
-        assets=assets,
-        legacy=ctx,
-        extra={}
-    )
+        # Mantido: ainda é orientação gerada pelo reasoning
+        assets.reasoning_scene_guidance_block = str(getattr(ctx, "reasoning_scene_guidance_block", "") or "")
+    
+        assets.continuity_hard_rule = str((raw_extra.get("continuity_hard_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.response_structure_rule = str((raw_extra.get("response_structure_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.reaction_priority_rule = str((raw_extra.get("reaction_priority_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.response_length_control = str((raw_extra.get("response_length_control") if isinstance(raw_extra, dict) else "") or "")
+    
+        # Estes vêm do pipeline novo via extra
+        assets.orgasm_closure_rule = str((raw_extra.get("orgasm_closure_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.tp_arc_block = str((raw_extra.get("tp_arc_block") if isinstance(raw_extra, dict) else "") or "")
+        assets.tp_arc_behavior_rule = str((raw_extra.get("tp_arc_behavior_rule") if isinstance(raw_extra, dict) else "") or "")
+        assets.mary_presence_engine_rule = str((raw_extra.get("mary_presence_engine_rule") if isinstance(raw_extra, dict) else "") or "")
     
 @dataclass
 class PromptFragment:
@@ -356,45 +359,64 @@ from .decision_engine import (
 )
 
 from characters.mary.modules.prompt_blocks import (
+    # ======================================================
+    # 1. Regras absolutas / identidade do turno
+    # ======================================================
     render_priority_rule,
-    render_continuity_hard_rule,
-    render_autonomy_rule,
-    render_response_structure_rule,
-    render_response_length_control,
-    render_behavior_rule,
-
-    render_timeline_behavior_block,
-    render_behavior_mode_block,
-    render_behavior_block,
-
-    render_continuity_rule,
-    render_anti_pattern_rule,
-    render_emotional_persistence_rule,
-    render_topic_rule,
-
-    render_memory_fidelity_rule,
-    render_user_finalizes_rule,
-
-    render_initiative_rule,
-    render_manipulation_block,
-
-    render_user_authorship_rule,
     render_language_rule,
     render_pov_rule,
-    render_conflict_block,
-    render_force_resolution_nsfw_block,
-    render_nsfw_hard_block,
+    render_user_authorship_rule,
+    render_user_finalizes_rule,
 
-    # 🔥 FALTAVAM
-    render_patterns_block,
-    render_orgasm_closure_rule,   
+    # ======================================================
+    # 2. Realidade, continuidade e cena
+    # ======================================================
+    render_continuity_hard_rule,
+    render_continuity_rule,
     render_inferred_scene_block,
-    render_anti_loop_recent_turns_block,
+    render_topic_rule,
+    render_memory_fidelity_rule,
+
+    # ======================================================
+    # 3. Estrutura da resposta
+    # ======================================================
+    render_response_structure_rule,
+    render_response_length_control,
     render_reaction_priority_rule,
+    render_anti_loop_recent_turns_block,
+    render_anti_pattern_rule,
+
+    # ======================================================
+    # 4. Presença, emoção e comportamento da Mary
+    # ======================================================
+    render_mary_presence_engine_rule,
+    render_autonomy_rule,
+    render_emotional_persistence_rule,
+    render_behavior_rule,
+    render_behavior_mode_block,
+    render_behavior_block,
+    render_timeline_behavior_block,
+
+    # ======================================================
+    # 5. Iniciativa e ação concreta
+    # ======================================================
+    render_initiative_rule,
+    render_manipulation_block,
+    render_patterns_block,
+
+    # ======================================================
+    # 6. Conflito, terceiros e limites dinâmicos
+    # ======================================================
+    render_conflict_block,
     render_tp_arc_block,
     render_tp_arc_behavior_rule,
-    render_mary_presence_engine_rule,
-)
+
+    # ======================================================
+    # 7. NSFW / clímax / resolução
+    # ======================================================
+    render_nsfw_hard_block,
+    render_force_resolution_nsfw_block,
+    render_orgasm_closure_rule,)
 
 logger = logging.getLogger(__name__)
 logger.warning("🔥 SERVICE_CORE CERTO CARREGADO")
@@ -2375,7 +2397,7 @@ def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="presence_rule",
         priority=35,
-        content=_clean_block(ctx.assets.mary_presence_engine_rule),
+        content=render_mary_presence_engine_rule(),
     )
 
 
@@ -2392,10 +2414,27 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_orgasm_closure(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
+    timeline = str(ctx.state.timeline_final or "").strip().lower()
+
+    orgasm_active = False
+    try:
+        orgasm = facts.get("orgasm") if isinstance(facts.get("orgasm"), dict) else {}
+        mary_orgasm = orgasm.get("mary") if isinstance(orgasm.get("mary"), dict) else {}
+
+        orgasm_active = bool(
+            mary_orgasm.get(f"active::{timeline}")
+            or mary_orgasm.get("active")
+            or facts.get(f"orgasm.mary.active::{timeline}")
+            or facts.get("orgasm.mary.active")
+        )
+    except Exception:
+        orgasm_active = False
+
     return _frag(
         key="orgasm_closure_rule",
         priority=41,
-        content=_clean_block(ctx.assets.orgasm_closure_rule),
+        content=render_orgasm_closure_rule() if orgasm_active else "",
     )
 
 
@@ -2503,7 +2542,7 @@ def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="patterns_rule",
         priority=62,
-        content=_clean_block(ctx.assets.patterns_block),
+        content=render_patterns_block(ctx.state.rel_state),
     )
 
 
@@ -2511,15 +2550,24 @@ def rule_manipulation(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="manipulation_rule",
         priority=63,
-        content=_clean_block(ctx.assets.manipulation_block),
+        content=render_manipulation_block(),
     )
 
 
 def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
+
+    conflict_mode = (
+        facts.get("conflict_mode")
+        or facts.get("mary.conflict_mode")
+        or facts.get("state.conflict_mode")
+        or "off"
+    )
+
     return _frag(
         key="conflict_rule",
         priority=64,
-        content=_clean_block(ctx.assets.conflict_block),
+        content=render_conflict_block(str(conflict_mode or "off")),
     )
 
 
@@ -2527,7 +2575,7 @@ def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="initiative_rule",
         priority=65,
-        content=_clean_block(ctx.assets.initiative_rule),
+        content=render_initiative_rule(),
     )
 
 
@@ -2540,7 +2588,6 @@ def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    nsfw_hard = _clean_block(ctx.assets.nsfw_hard_block)
     nsfw_style = _clean_block(ctx.assets.nsfw_block)
 
     nsfw_style = re.sub(
@@ -2553,7 +2600,10 @@ def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="nsfw_rule",
         priority=70,
-        content=_join_blocks(nsfw_hard, nsfw_style),
+        content=_join_blocks(
+            render_nsfw_hard_block(ctx.state.nsfw_on),
+            nsfw_style,
+        ),
     )
 
 
