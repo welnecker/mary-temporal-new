@@ -12403,13 +12403,35 @@ class MaryService(BaseCharacter):
     
         if not texto:
             try:
+                raw_exists = data is not None
+                raw_repr = repr(data)[:3000] if data is not None else "None"
+        
+                _ss_set(
+                    "mary_extract_text_failed",
+                    {
+                        "stage": "initial",
+                        "raw_exists": raw_exists,
+                        "raw_type": type(data).__name__ if data is not None else "None",
+                        "raw_keys": list(data.keys())[:30] if isinstance(data, dict) else None,
+                        "finish_reason": finish_reason,
+                        "usage": usage,
+                        "repr_preview": raw_repr,
+                    },
+                )
+        
                 diag.violations = list(
-                    dict.fromkeys((diag.violations or []) + ["vazio"])
+                    dict.fromkeys(
+                        (diag.violations or [])
+                        + (["parser_empty"] if raw_exists else ["provider_empty"])
+                    )
                 )
             except Exception:
                 pass
         
-            raise RuntimeError("LLM retornou vazio na geração inicial")
+            if data is not None:
+                raise RuntimeError("Payload recebido, mas sem texto extraível na geração inicial")
+        
+            raise RuntimeError("Provider retornou payload vazio na geração inicial")
     
         violations = _violations(
             texto=texto,
@@ -12605,27 +12627,39 @@ class MaryService(BaseCharacter):
     
         if not texto2:
             try:
-                diag.violations = list(
-                    dict.fromkeys((diag.violations or []) + ["repair_vazio"])
-                )
-            except Exception:
-                pass
+                raw_exists = data2 is not None
+                fr2, usage2 = _extract_finish_reason_and_usage(data2)
         
-            try:
+                diag.violations = list(
+                    dict.fromkeys(
+                        (diag.violations or [])
+                        + (["parser_empty_repair"] if raw_exists else ["provider_empty_repair"])
+                    )
+                )
+        
                 _debug_set(
                     "mary_repair_empty_response",
                     {
-                        "used_model": used_model,
+                        "used_model": used_model2,
                         "temperature": temperature,
                         "top_p": top_p,
                         "max_tokens": max_tokens,
+                        "finish_reason": fr2,
+                        "usage": usage2,
+                        "raw_exists": raw_exists,
+                        "raw_type": type(data2).__name__ if data2 is not None else "None",
+                        "raw_keys": list(data2.keys())[:30] if isinstance(data2, dict) else None,
+                        "repr_preview": repr(data2)[:3000] if data2 is not None else "None",
                         "original_text_preview": (texto or "")[:400],
                     },
                 )
             except Exception:
                 pass
         
-            raise RuntimeError("LLM retornou vazio no repair")
+            if data2 is not None:
+                raise RuntimeError("Payload recebido, mas sem texto extraível no repair")
+        
+            raise RuntimeError("Provider retornou payload vazio no repair")
     
         violations2 = _violations(
             texto=texto2,
@@ -12678,98 +12712,55 @@ class MaryService(BaseCharacter):
 
     # -------------------------
     # helpers
-    # -------------------------
+    # -------------------------   
     @staticmethod
     def _extract_text(resp: Any) -> str:
-        try:
-            if resp is None:
+        def walk(obj: Any) -> str:
+            if obj is None:
                 return ""
     
-            if isinstance(resp, str):
-                return resp.strip()
+            if isinstance(obj, str):
+                return obj.strip()
     
-            def _clean_text(v: Any) -> str:
-                if not isinstance(v, str):
-                    return ""
-                s = v.strip()
-                if not s:
-                    return ""
-                return s
-    
-            def _join_content_parts(content: Any) -> str:
-                if not isinstance(content, list):
-                    return ""
-    
-                parts: List[str] = []
-    
-                for it in content:
-                    if isinstance(it, str):
-                        s = it.strip()
-                        if s:
-                            parts.append(s)
-                        continue
-    
-                    if isinstance(it, dict):
-                        if str(it.get("type") or "").strip().lower() not in ("", "text", "output_text"):
-                            continue
-    
-                        t = it.get("text")
-                        if not isinstance(t, str) or not t.strip():
-                            t = it.get("content")
-    
-                        if isinstance(t, str) and t.strip():
-                            parts.append(t.strip())
-    
+            if isinstance(obj, list):
+                parts = []
+                for item in obj:
+                    text = walk(item)
+                    if text:
+                        parts.append(text)
                 return "\n".join(parts).strip()
     
-            if isinstance(resp, dict):
-                choices = resp.get("choices")
-                if isinstance(choices, list) and choices:
-                    c0 = choices[0] or {}
+            if isinstance(obj, dict):
+                priority_keys = (
+                    "output_text",
+                    "text",
+                    "content",
+                    "result",
+                    "message",
+                    "delta",
+                    "output",
+                    "response",
+                    "choices",
+                    "candidates",
+                    "parts",
+                    "messages",
+                )
     
-                    msg = c0.get("message")
-                    if isinstance(msg, dict):
-                        content = msg.get("content")
+                for key in priority_keys:
+                    if key in obj:
+                        text = walk(obj.get(key))
+                        if text:
+                            return text
     
-                        text_from_content = _clean_text(content)
-                        if text_from_content:
-                            return text_from_content
-    
-                        text_from_parts = _join_content_parts(content)
-                        if text_from_parts:
-                            return text_from_parts
-    
-                    txt = _clean_text(c0.get("text"))
-                    if txt:
-                        return txt
-    
-                for k in ("output_text", "text", "content", "result"):
-                    v = resp.get(k)
-    
-                    text_direct = _clean_text(v)
-                    if text_direct:
-                        return text_direct
-    
-                    text_parts = _join_content_parts(v)
-                    if text_parts:
-                        return text_parts
-    
-                msgs = resp.get("messages")
-                if isinstance(msgs, list) and msgs:
-                    last = msgs[-1] or {}
-                    if isinstance(last, dict):
-                        v = last.get("content")
-    
-                        text_direct = _clean_text(v)
-                        if text_direct:
-                            return text_direct
-    
-                        text_parts = _join_content_parts(v)
-                        if text_parts:
-                            return text_parts
+                for value in obj.values():
+                    text = walk(value)
+                    if text:
+                        return text
     
             return ""
     
+        try:
+            return walk(resp).strip()
         except Exception:
             return ""
     # ==============================
