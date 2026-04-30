@@ -12598,6 +12598,35 @@ class MaryService(BaseCharacter):
         diag: _Diag,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, str]:
+
+        # ==================================================
+        # MAX TOKENS DINÂMICO — NUNCA PARA BAIXO
+        # ==================================================
+        try:
+            base_max_tokens = int(max_tokens or 0)
+        except Exception:
+            base_max_tokens = 0
+
+        # mínimo absoluto para evitar resposta cortada
+        dynamic_min_tokens = 900
+
+        # aumenta conforme intensidade/contexto, mas nunca reduz
+        try:
+            if nsfw_on:
+                dynamic_min_tokens = max(dynamic_min_tokens, 1100)
+
+            if int(phase or 0) >= 3:
+                dynamic_min_tokens = max(dynamic_min_tokens, 1200)
+
+            if nsfw_profile in ("STRICT", "NSFW_RELAXED"):
+                dynamic_min_tokens = max(dynamic_min_tokens, 1200)
+
+            if allow_third_party_seduction:
+                dynamic_min_tokens = max(dynamic_min_tokens, 1300)
+        except Exception:
+            pass
+
+        max_tokens = max(base_max_tokens, dynamic_min_tokens)
     
         data, used_model, _provider_meta = self._chat(
             model,
