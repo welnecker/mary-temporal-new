@@ -186,6 +186,18 @@ def make_prompt_build_context(ctx: TurnPromptContext) -> PromptBuildContext:
         nsfw_on=bool(mary.get("nsfw")),
         behavior_mode=str(facts.get("behavior_mode") or ""),
     )
+     try:
+        active_interlocutor = sync_active_interlocutor_for_turn(
+            state.usuario_key,
+            state.facts,
+            state.history,
+            state.prompt,
+        )
+        if active_interlocutor:
+            state.facts["active_interlocutor"] = active_interlocutor
+            state.facts["cena.interlocutor"] = active_interlocutor
+    except Exception:
+        pass
 
     assets = TurnAssets(
         persona_text=str(getattr(ctx, "persona_text", "") or ""),
@@ -1561,6 +1573,149 @@ def nsfw_enabled(
 
     # 5) default
     return False if tl == "universitaria" else True
+
+def sync_active_interlocutor_for_turn(
+    usuario_key: str,
+    facts: dict,
+    history: list,
+    prompt: str,
+) -> str:
+    facts = facts if isinstance(facts, dict) else {}
+    history = history if isinstance(history, list) else []
+
+    cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+    state = facts.get("state") if isinstance(facts.get("state"), dict) else {}
+
+    current = (
+        facts.get("active_interlocutor")
+        or facts.get("interlocutor_ativo")
+        or facts.get("cena.interlocutor")
+        or facts.get("state.interlocutor")
+        or cena.get("interlocutor")
+        or cena.get("interlocutor_ativo")
+        or state.get("interlocutor")
+        or state.get("interlocutor_ativo")
+        or ""
+    )
+    current = str(current or "").strip()
+
+    def canonicalize_name(name: str) -> str:
+        n = str(name or "").strip()
+        aliases = {
+            "janio": "Janio",
+            "jânio": "Janio",
+            "janio donisete": "Janio Donisete",
+            "anthony": "Anthony",
+            "silvia": "Silvia",
+            "sílvia": "Silvia",
+        }
+        return aliases.get(n.lower(), n)
+
+    def extract_name_candidates(text: str) -> list[str]:
+        text = str(text or "").strip()
+        if not text:
+            return []
+
+        ignore = {
+            "Mary", "Carro", "Jeep", "Renegade", "Forró", "Sexta",
+            "Noite", "Anthony", "Janio", "Jânio", "Silvia", "Sílvia",
+        }
+
+        candidates = re.findall(
+            r"\b[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,}(?:\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{2,})?\b",
+            text,
+        )
+
+        return [
+            canonicalize_name(c)
+            for c in candidates
+            if c.strip() not in ignore
+        ]
+
+    known_names = {
+        "anthony": "Anthony",
+        "janio donisete": "Janio Donisete",
+        "janio": "Janio",
+        "jânio": "Janio",
+        "silvia": "Silvia",
+        "sílvia": "Silvia",
+    }
+
+    prompt_text = str(prompt or "")
+    prompt_blob = prompt_text.lower()
+
+    detected = ""
+
+    # 1. Detecção forte por nomes conhecidos no prompt atual
+    for raw_name, canonical_name in known_names.items():
+        if raw_name in prompt_blob:
+            detected = canonical_name
+            break
+
+    # 2. Detecção dinâmica por nomes próprios no prompt atual
+    if not detected:
+        candidates = extract_name_candidates(prompt_text)
+        if candidates:
+            detected = candidates[-1]
+
+    # 3. Fallback fraco: histórico só se ainda não houver interlocutor atual
+    if not detected and not current and history:
+        last = history[-1] if isinstance(history[-1], dict) else {}
+        weak_text = " ".join([
+            str(last.get("mensagem_usuario") or ""),
+            str(last.get("resposta_mary") or ""),
+        ])
+        weak_blob = weak_text.lower()
+
+        for raw_name, canonical_name in known_names.items():
+            if raw_name in weak_blob:
+                detected = canonical_name
+                break
+
+        if not detected:
+            candidates = extract_name_candidates(weak_text)
+            if candidates:
+                detected = candidates[-1]
+
+    final = detected or current
+
+    if not final:
+        return ""
+
+    if current and final != current:
+        try:
+            set_fact_safe(
+                usuario_key,
+                "previous_interlocutor",
+                current,
+                {"fonte": "sync_active_interlocutor"}
+            )
+            set_fact_safe(
+                usuario_key,
+                "cena.previous_interlocutor",
+                current,
+                {"fonte": "sync_active_interlocutor"}
+            )
+        except Exception:
+            pass
+
+    try:
+        set_fact_safe(
+            usuario_key,
+            "active_interlocutor",
+            final,
+            {"fonte": "sync_active_interlocutor"}
+        )
+        set_fact_safe(
+            usuario_key,
+            "cena.interlocutor",
+            final,
+            {"fonte": "sync_active_interlocutor"}
+        )
+    except Exception:
+        pass
+
+    return final
        
    
 def _get_nsfw_style_block(
@@ -1988,6 +2143,28 @@ def rule_active_interlocutor(ctx: PromptBuildContext) -> Optional[PromptFragment
 
     if not interlocutor:
         interlocutor = "não definido"
+
+    # 🔥 PERSISTÊNCIA DO INTERLOCUTOR
+    if interlocutor and interlocutor != "não definido":
+        try:
+            from utils.facts import set_fact_safe  # ajuste conforme seu projeto
+    
+            set_fact_safe(
+                ctx.state.usuario_key,
+                "active_interlocutor",
+                interlocutor,
+                {"fonte": "rule_active_interlocutor"}
+            )
+    
+            set_fact_safe(
+                ctx.state.usuario_key,
+                "cena.interlocutor",
+                interlocutor,
+                {"fonte": "rule_active_interlocutor"}
+            )
+    
+        except Exception:
+            pass
 
     content = f"""
 [INTERLOCUTOR ATIVO DA CENA]
