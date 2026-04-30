@@ -18,6 +18,28 @@ st.set_page_config(
     page_icon="💍💍",
     layout="centered",
 )
+
+import streamlit.components.v1 as components
+
+components.html("""
+<script>
+window.parent.document.addEventListener("keydown", function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        const el = window.parent.document.activeElement;
+        const tag = el && el.tagName ? el.tagName.toLowerCase() : "";
+        const editable = el && el.isContentEditable;
+
+        if (tag === "input" || tag === "textarea" || editable) {
+            return;
+        }
+
+        e.stopImmediatePropagation();
+        e.preventDefault();
+    }
+}, true);
+</script>
+""", height=0)
+
 from core.repositories import (
     list_memories,
     delete_last_memory,
