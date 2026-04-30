@@ -2396,7 +2396,7 @@ def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="presence_rule",
-        priority=35,
+        priority=30,
         content=render_mary_presence_engine_rule(),
     )
 
@@ -2529,7 +2529,7 @@ def rule_tp_arc_extra(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_progression(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="progression_rule",
-        priority=60,
+        priority=42,
         content=_join_blocks(
             ctx.assets.topic_rule,
             ctx.assets.anti_pattern_rule,
@@ -2541,7 +2541,7 @@ def rule_progression(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="patterns_rule",
-        priority=62,
+        priority=37,
         content=render_patterns_block(ctx.state.rel_state),
     )
 
@@ -2549,7 +2549,7 @@ def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_manipulation(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="manipulation_rule",
-        priority=63,
+        priority=36,
         content=render_manipulation_block(),
     )
 
@@ -2566,7 +2566,7 @@ def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
     return _frag(
         key="conflict_rule",
-        priority=64,
+        priority=55,
         content=render_conflict_block(str(conflict_mode or "off")),
     )
 
@@ -2574,7 +2574,7 @@ def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="initiative_rule",
-        priority=65,
+        priority=35,
         content=render_initiative_rule(),
     )
 
@@ -2582,7 +2582,7 @@ def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="emotion_rule",
-        priority=68,
+        priority=60,
         content=_clean_block(ctx.assets.emotional_persistence_rule),
     )
 
@@ -2626,7 +2626,7 @@ def rule_decision(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_autonomy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="autonomy_rule",
-        priority=95,
+        priority=80,
         content=_clean_block(ctx.assets.autonomy_block),
     )
 
@@ -2643,7 +2643,7 @@ def rule_behavior(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
     return _frag(
         key="behavior_rule",
-        priority=100,
+        priority=90,
         content=behavior,
     )
 
@@ -2651,7 +2651,7 @@ def rule_behavior(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="persona_rule",
-        priority=110,
+        priority=100,
         content=_join_blocks(
             ctx.assets.persona_text,
             ctx.assets.mary_identity_anchor,
@@ -2659,38 +2659,48 @@ def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     )
     
 PROMPT_RULES: list[PromptRule] = [
+    # 1. Absolutos
     rule_language,
     rule_pov,
     rule_user_authorship,
     rule_priority,
     rule_active_interlocutor,
-    rule_facts_present,
 
+    # 2. Realidade da cena
+    rule_facts_present,
     rule_continuity_hard,
     rule_continuity,
     rule_reasoning_scene_guidance,
+
+    # 3. Forma imediata da resposta
     rule_response_structure,
     rule_reaction_priority,
     rule_response_length,
 
+    # 4. Identidade/presença antes da ação
     rule_memory,
     rule_relationship,
     rule_presence,
+
+    # 5. MOTOR DE AÇÃO — precisa vir cedo
+    rule_initiative,
+    rule_manipulation,
+    rule_patterns,
+
+    # 6. Estado íntimo e resolução
     rule_intimacy,
     rule_orgasm_closure,
+    rule_progression,
 
+    # 7. Terceiros / conflito / limites dinâmicos
     rule_third_party,
     rule_third_party_initiative,
     rule_tp_arc_extra,
-
-    rule_progression,
-    rule_patterns,
-    rule_manipulation,
     rule_conflict,
-    rule_initiative,
+
+    # 8. Modulação final
     rule_emotion,
     rule_nsfw,
-
     rule_phone,
     rule_decision,
     rule_autonomy,
