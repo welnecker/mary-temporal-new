@@ -7623,7 +7623,7 @@ def _build_estado_micro_block(facts: Dict[str, Any]) -> str:
         return ""
 
     lines = ["[MICROCONTINUIDADE DO AGORA]"]
-    lines.append("Os detalhes abaixo devem contaminar a resposta de modo concreto e imediato.")
+    lines.append("Os elementos abaixo definem o estado atual da cena.")
     lines.append("")
 
     if local:
@@ -7639,9 +7639,11 @@ def _build_estado_micro_block(facts: Dict[str, Any]) -> str:
 
     lines.append("")
     lines.append("REGRAS:")
-    lines.append("- usar esses elementos no corpo da resposta, não só como referência abstrata.")
-    lines.append("- manter continuidade física fina: roupa, cabelo, posição, sensação, momento do dia.")
-    lines.append("- não apagar esses detalhes de um turno para outro.")
+    lines.append("- considerar esses elementos apenas quando necessários para a ação.")
+    lines.append("- não descrever automaticamente roupa, cabelo ou ambiente.")
+    lines.append("- não transformar esses elementos em narrativa ou sensação.")
+    lines.append("- usar apenas quando impactarem diretamente o que Mary faz.")
+    lines.append("- manter continuidade de posição e ação, não de descrição.")
     return "\n".join(lines).strip()
 
 
