@@ -1881,33 +1881,101 @@ REGRA FINAL:
 """.strip()
 
 # ==========================================================
-# PROMPT RULE ENGINE - FASE 2
-# Compatível com PromptBuildContext + legacy seguro
+# PROMPT RULE ENGINE - FASE 3
+# PROMPT_RULES é a única fonte textual do system
 # ==========================================================
-
-def _legacy(ctx: PromptBuildContext):
-    return getattr(ctx, "legacy", None)
-
-
-def _lget(ctx: PromptBuildContext, name: str, default: str = ""):
-    legacy = _legacy(ctx)
-    return getattr(legacy, name, default) if legacy is not None else default
-
-
-def _xget(ctx: PromptBuildContext, name: str, default: str = ""):
-    extra = getattr(ctx, "extra", {}) or {}
-    return extra.get(name, default) if isinstance(extra, dict) else default
-
 
 def _clean_block(text: str) -> str:
     return str(text or "").strip()
 
 
+def _join_blocks(*parts: str) -> str:
+    return "\n\n".join(
+        str(p or "").strip()
+        for p in parts
+        if str(p or "").strip()
+    ).strip()
+
+
+def _get_facts(ctx: PromptBuildContext) -> dict:
+    try:
+        return ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
+    except Exception:
+        return {}
+
+
+def _get_rel_state(ctx: PromptBuildContext) -> dict:
+    try:
+        return ctx.state.rel_state if isinstance(ctx.state.rel_state, dict) else {}
+    except Exception:
+        return {}
+
+
+def _get_timeline(ctx: PromptBuildContext) -> str:
+    try:
+        return str(ctx.state.timeline_final or "").strip()
+    except Exception:
+        return ""
+
+
+def _get_prompt(ctx: PromptBuildContext) -> str:
+    try:
+        return str(ctx.state.prompt or "").strip()
+    except Exception:
+        return ""
+
+
+def _get_nsfw_on(ctx: PromptBuildContext) -> bool:
+    try:
+        return str(ctx.state.nsfw_profile or "").strip().upper() != "SAFE"
+    except Exception:
+        return False
+
+
+def _get_intimacy_phase(ctx: PromptBuildContext) -> int:
+    facts = _get_facts(ctx)
+    timeline = _get_timeline(ctx)
+
+    candidates = [
+        facts.get(f"intimacy.phase::{timeline}"),
+        facts.get(f"intimacy_phase::{timeline}"),
+        facts.get(f"mary_intimacy_phase::{timeline}"),
+        facts.get("intimacy.phase"),
+        facts.get("intimacy_phase"),
+        facts.get("mary_intimacy_phase"),
+        facts.get("phase_intimacy"),
+        facts.get("phase"),
+    ]
+
+    intimacy_obj = facts.get("intimacy") if isinstance(facts.get("intimacy"), dict) else {}
+    candidates.extend([
+        intimacy_obj.get(f"phase::{timeline}"),
+        intimacy_obj.get("phase"),
+    ])
+
+    vals = []
+    for v in candidates:
+        try:
+            if v is not None and v != "":
+                vals.append(int(v))
+        except Exception:
+            pass
+
+    try:
+        return max(0, min(max(vals) if vals else 0, MAX_INTIMACY_PHASE))
+    except Exception:
+        return max(vals) if vals else 0
+
+
+# ==========================================================
+# 1. Regras absolutas
+# ==========================================================
+
 def rule_language(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="language_rule",
         priority=1,
-        content=ctx.assets.rule_language or render_language_rule(),
+        content=render_language_rule(),
     )
 
 
@@ -1915,7 +1983,7 @@ def rule_pov(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="pov_rule",
         priority=2,
-        content=ctx.assets.rule_pov or render_pov_rule(),
+        content=render_pov_rule(),
     )
 
 
@@ -1923,7 +1991,7 @@ def rule_user_authorship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="user_authorship_rule",
         priority=3,
-        content=ctx.assets.rule_user_authorship or render_user_authorship_rule(),
+        content=render_user_authorship_rule(),
     )
 
 
@@ -1931,35 +1999,33 @@ def rule_priority(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="priority_rule",
         priority=4,
-        content=ctx.assets.rule_priority or render_priority_rule(),
+        content=render_priority_rule(),
     )
 
+
+# ==========================================================
+# 2. Estado / facts / continuidade
+# ==========================================================
 
 def rule_facts_present(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     a = ctx.assets
 
-    content = "\n\n".join(
-        part.strip()
-        for part in [
+    return _frag(
+        key="facts_present_rule",
+        priority=5,
+        content=_join_blocks(
             a.spatial_context,
             a.state_section,
             a.assunto_section,
             a.assunto_step_section,
             a.estado_micro_section,
             a.pending_event_section,
-        ]
-        if str(part or "").strip()
-    )
-
-    return _frag(
-        key="facts_present_rule",
-        priority=5,
-        content=content,
+        ),
     )
 
 
 def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    facts = ctx.state.facts if isinstance(ctx.state.facts, dict) else {}
+    facts = _get_facts(ctx)
 
     cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
     state = facts.get("state") if isinstance(facts.get("state"), dict) else {}
@@ -1978,10 +2044,8 @@ def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         or cena.get("tempo")
         or facts.get("state.horarios")
         or facts.get("state.horario")
-        or facts.get("state.tempo")
         or state.get("horarios")
         or state.get("horario")
-        or state.get("tempo")
         or ""
     )
 
@@ -2050,62 +2114,139 @@ def rule_continuity(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     ])
 
     return _frag(
-        key="continuity_rule_smart",
+        key="continuity_rule",
         priority=10,
         content="\n".join(lines),
     )
 
 
+def rule_reasoning_scene_guidance(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="reasoning_scene_guidance_rule",
+        priority=11,
+        content=_clean_block(ctx.assets.reasoning_scene_guidance_block),
+    )
+
+
+# ==========================================================
+# 3. Memória / relacionamento / persona
+# ==========================================================
+
 def rule_memory(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    memory_fidelity = _clean_block(_lget(ctx, "memory_fidelity_rule"))
     canon = _clean_block(ctx.assets.canon_txt)
     long_memory = _clean_block(ctx.assets.long_memory_block)
+
+    memory_fidelity = ""
+    try:
+        memory_fidelity = render_memory_fidelity_rule(long_memory)
+    except Exception:
+        memory_fidelity = ""
 
     return _frag(
         key="memory_rule",
         priority=20,
-        content="\n\n".join([
-            memory_fidelity,
-            canon,
-            long_memory,
-        ]),
+        content=_join_blocks(memory_fidelity, canon, long_memory),
     )
 
 
 def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    rel = _clean_block(ctx.assets.rel_block)
-    dynamic = _clean_block(ctx.assets.dynamic_rel_block)
-
     return _frag(
         key="relationship_rule",
         priority=30,
-        content="\n\n".join([
-            rel,
-            dynamic,
-        ]),
+        content=_join_blocks(
+            ctx.assets.rel_block,
+            ctx.assets.dynamic_rel_block,
+        ),
     )
 
 
 def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    presence = _clean_block(_xget(ctx, "mary_presence_engine_rule"))
-
     return _frag(
         key="presence_rule",
         priority=35,
-        content=presence,
+        content=render_mary_presence_engine_rule(),
     )
 
 
+# ==========================================================
+# 4. Intimidade / progressão / terceiros
+# ==========================================================
+
 def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = _get_facts(ctx)
+    rel_state = _get_rel_state(ctx)
+    timeline = _get_timeline(ctx)
+    nsfw_on = _get_nsfw_on(ctx)
+    phase = _get_intimacy_phase(ctx)
+
+    virginity_rule = ""
+    try:
+        # Se existir função global equivalente
+        virginity_rule = render_virginity_rule(
+            facts=facts,
+            rel_state=rel_state,
+            timeline_final=timeline,
+        )
+    except Exception:
+        try:
+            # Fallback direto
+            virginity = str(rel_state.get("virginity") or "").strip()
+            consummated = bool(rel_state.get("consummated"))
+            virginity_rule = (
+                "[CONTINUIDADE ÍNTIMA]\n"
+                f"- Virgindade nesta timeline: {virginity or 'desconhecida'}.\n"
+                f"- Consumação registrada: {consummated}.\n"
+                "- Não regredir fatos íntimos já estabelecidos.\n"
+                "- Não inventar consumação sem fato explícito."
+            )
+        except Exception:
+            virginity_rule = ""
+
+    if nsfw_on:
+        try:
+            intimacy_phase_rule = _render_intimacy_phase_rule(phase)
+        except Exception:
+            intimacy_phase_rule = (
+                "[INTIMIDADE - FASES]\n"
+                f"FASE ATUAL: {phase}\n"
+                "- A fase regula ritmo e permissões.\n"
+                "- Não pular etapas sem base explícita."
+            )
+    else:
+        intimacy_phase_rule = """
+[RITMO DO TURNO - SAFE]
+
+- Priorizar fala, gesto leve e aproximação.
+- Evitar progressão física intensa.
+- Evitar linguagem explícita.
+
+REGRA:
+→ manter tensão leve e continuidade natural.
+""".strip()
+
+    intimacy_control_block = ""
+    try:
+        if nsfw_on:
+            intimacy_control_block = (
+                "[CONTROLE DE INTIMIDADE]\n"
+                "- A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.\n"
+                "- Fase íntima regula ritmo, não substitui a cena.\n"
+                "- Não reiniciar fases já superadas.\n"
+                "- Não pular para conclusão sem continuidade clara."
+            )
+    except Exception:
+        intimacy_control_block = ""
+
     return _frag(
         key="intimacy_rule",
         priority=40,
-        content="\n\n".join([
-            _clean_block(ctx.assets.virginity_rule),
-            _clean_block(ctx.assets.intimacy_phase_rule),
-            _clean_block(ctx.assets.intimacy_control_block),
-        ]),
+        content=_join_blocks(
+            virginity_rule,
+            intimacy_phase_rule,
+            intimacy_control_block,
+        ),
     )
+
 
 def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     tp_arc = ctx.state.tp_arc if isinstance(ctx.state.tp_arc, dict) else {}
@@ -2114,13 +2255,10 @@ def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     phase = int(tp_arc.get("phase", 0) or 0)
     signal = int(tp_arc.get("last_signal_level", 0) or 0)
     third_party_enabled = bool(tp_arc.get("third_party_enabled", False))
-    nsfw_on = bool(tp_arc.get("nsfw_on", ctx.state.nsfw_on))
+    nsfw_on = bool(tp_arc.get("nsfw_on", _get_nsfw_on(ctx)))
     allow_third_party = bool(tp_arc.get("allow_third_party_seduction", False))
 
-    if not third_party_enabled or not allow_third_party:
-        status = "TERCEIROS_CONTROLADOS"
-    else:
-        status = "TERCEIROS_PERMITIDOS"
+    status = "TERCEIROS_PERMITIDOS" if third_party_enabled and allow_third_party else "TERCEIROS_CONTROLADOS"
 
     lines = [
         "[COMPORTAMENTO GUIADO PELO ARCO DE TERCEIROS]",
@@ -2143,10 +2281,7 @@ def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     elif status == "TERCEIROS_CONTROLADOS":
         lines.extend([
             "- Terceiros podem existir como contexto social ou tensão controlada.",
-            "- Mary pode conversar, caminhar, sair do salão ou entrar no carro se a cena construir isso.",
-            "- Mary pode sustentar olhar, provocação e proximidade.",
-            "- Mary NÃO permite sexo.",
-            "- Mary NÃO permite escalada completa.",
+            "- Mary NÃO permite escalada completa com terceiros.",
             "- Mary NÃO cede por pressão externa.",
             "- O vínculo principal continua sendo o eixo.",
         ])
@@ -2175,15 +2310,108 @@ def rule_third_party(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     )
 
 
+def rule_third_party_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    tp_arc = ctx.state.tp_arc if isinstance(ctx.state.tp_arc, dict) else {}
+    nsfw_on = _get_nsfw_on(ctx)
+    third_party_enabled = bool(tp_arc.get("third_party_enabled", False))
+    allow_third_party = bool(tp_arc.get("allow_third_party_seduction", False))
+
+    if third_party_enabled and allow_third_party and nsfw_on:
+        content = """
+[TERCEIROS - CONTROLE DE INICIATIVA]
+
+- Mary NÃO cria abertura com terceiros espontaneamente sem gatilho real.
+- Se já existir interação ativa, continuar de forma coerente com facts e continuidade.
+- Terceiros modulam a cena; não viram vínculo principal.
+- Evitar moralização pesada ou repetitiva.
+
+REGRA:
+→ terceiros exigem gatilho real.
+→ terceiros modulam, não dominam a cena.
+""".strip()
+    else:
+        content = """
+[TERCEIROS - CONTROLE DE INTERAÇÃO]
+
+- Terceiros NÃO são via aberta nesta configuração.
+- Mary NÃO inicia progressão física ou íntima com terceiros.
+- Se terceiro provocar ou se aproximar, Mary reconhece, reage e controla.
+- Terceiros NÃO assumem o foco principal da cena.
+
+REGRA:
+→ Mary pode ser surpreendida, mas NÃO pode ser levada.
+""".strip()
+
+    return _frag(
+        key="third_party_initiative_rule",
+        priority=51,
+        content=content,
+    )
+
+
+# ==========================================================
+# 5. Progressão / padrões / ação
+# ==========================================================
+
 def rule_progression(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    force_resolution = False
+    try:
+        rel_state = _get_rel_state(ctx)
+        force_resolution = bool(rel_state.get("force_orgasm_resolution", False))
+    except Exception:
+        pass
+
+    topic_rule = render_topic_rule()
+    anti_pattern_rule = render_anti_pattern_rule()
+    user_finalizes_rule = render_user_finalizes_rule(force_resolution)
+
     return _frag(
         key="progression_rule",
         priority=60,
-        content="\n\n".join([
-            _clean_block(ctx.assets.topic_rule),
-            _clean_block(ctx.assets.anti_pattern_rule),
-            _clean_block(ctx.assets.user_finalizes_rule),
-        ]),
+        content=_join_blocks(
+            topic_rule,
+            anti_pattern_rule,
+            user_finalizes_rule,
+        ),
+    )
+
+
+def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    rel_state = _get_rel_state(ctx)
+
+    try:
+        content = render_patterns_block(rel_state)
+    except Exception:
+        content = ""
+
+    return _frag(
+        key="patterns_rule",
+        priority=62,
+        content=content,
+    )
+
+
+def rule_manipulation(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="manipulation_block",
+        priority=63,
+        content=render_manipulation_block(),
+    )
+
+
+def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    timeline = _get_timeline(ctx)
+
+    try:
+        conflict_mode = _resolve_conflict_mode(timeline)
+        content = render_conflict_block(conflict_mode)
+    except Exception:
+        content = ""
+
+    return _frag(
+        key="conflict_rule",
+        priority=64,
+        content=content,
     )
 
 
@@ -2191,7 +2419,7 @@ def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="initiative_rule",
         priority=65,
-        content=_clean_block(ctx.assets.initiative_rule),
+        content=render_initiative_rule(),
     )
 
 
@@ -2199,46 +2427,90 @@ def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="emotion_rule",
         priority=68,
-        content=_clean_block(ctx.assets.emotional_persistence_rule),
+        content=render_emotional_persistence_rule(),
     )
 
-def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    nsfw_hard = _clean_block(ctx.assets.nsfw_hard_block)
-    nsfw_style = _clean_block(ctx.assets.nsfw_block)
 
-    nsfw_style = re.sub(
-        r"\n?\[NSFW_ON - PROGRESSÃO ATIVA\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
-        "\n",
-        nsfw_style,
-        flags=re.IGNORECASE,
-    ).strip()
+# ==========================================================
+# 6. NSFW / telefone / decisão / autonomia / comportamento
+# ==========================================================
+
+def rule_nsfw(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    nsfw_on = _get_nsfw_on(ctx)
+
+    try:
+        nsfw_hard = render_nsfw_hard_block(nsfw_on)
+    except TypeError:
+        nsfw_hard = render_nsfw_hard_block()
+    except Exception:
+        nsfw_hard = ""
+
+    try:
+        # Se essa função existir sem args
+        nsfw_style = render_nsfw_block()
+    except Exception:
+        try:
+            # Se seu projeto usa essa função
+            nsfw_style = _get_nsfw_style_block(
+                ctx.state.usuario_key,
+                timeline=_get_timeline(ctx),
+                nsfw_override=nsfw_on,
+            )
+        except Exception:
+            nsfw_style = ""
 
     return _frag(
         key="nsfw_rule",
         priority=70,
-        content="\n\n".join([
-            nsfw_hard,
-            nsfw_style,
-        ]),
+        content=_join_blocks(nsfw_hard, nsfw_style),
     )
 
+
 def rule_phone(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    prompt = _get_prompt(ctx)
+    facts = _get_facts(ctx)
+
+    try:
+        content = _render_phone_message_rule(prompt, facts)
+    except Exception:
+        content = ""
+
     return _frag(
         key="phone_message_rule",
         priority=80,
-        content=_clean_block(ctx.assets.phone_message_rule),
+        content=content,
     )
 
 
 def rule_decision(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    facts = _get_facts(ctx)
+    rel_state = _get_rel_state(ctx)
+
+    try:
+        dynamic_rel_state = {}
+        decision_state = _resolve_decision_pressure_mode(
+            facts=facts,
+            rel_state=rel_state,
+            dynamic_rel_state=dynamic_rel_state,
+            tp_arc={},
+            prompt=_get_prompt(ctx),
+            texto="",
+            prev_decision_state=_load_decision_state(facts, _get_timeline(ctx)),
+        )
+        content = _render_decision_pressure_rule(decision_state)
+    except Exception:
+        content = ""
+
     return _frag(
         key="decision_rule",
         priority=90,
-        content=_clean_block(ctx.assets.decision_pressure_rule),
+        content=content,
     )
 
 
 def rule_autonomy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    # autonomy_block ainda é dado calculado, não regra duplicada.
+    # Se quiser 100% rules futuramente, migramos o cálculo do hook para cá.
     return _frag(
         key="autonomy_rule",
         priority=95,
@@ -2247,79 +2519,84 @@ def rule_autonomy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
 
 def rule_behavior(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    behavior = _clean_block(ctx.assets.behavior_block)
+    rel_state = _get_rel_state(ctx)
+    facts = _get_facts(ctx)
+    timeline = _get_timeline(ctx)
 
-    behavior = re.sub(
-        r"\n?\[FOCO DE CONTINUIDADE\][\s\S]*?(?=\n\[[A-ZÁÉÍÓÚÂÊÔÃÕÇ0-9 /+\-]+\]|\Z)",
-        "\n",
-        behavior,
-        flags=re.IGNORECASE,
-    ).strip()
+    mood = str(rel_state.get("mood", "intensa") or "intensa")
+    energy = str(rel_state.get("energy", "energetica") or "energetica")
+    attitude = str(rel_state.get("attitude", "equilibrada") or "equilibrada")
+    self_awareness = float(rel_state.get("self_awareness", 0.30) or 0.30)
+
+    try:
+        behavior_mode = "SAFE" if not _get_nsfw_on(ctx) else "NSFW_ONLY"
+        behavior_mode_block = render_behavior_mode_block(behavior_mode)
+    except Exception:
+        behavior_mode_block = ""
+
+    try:
+        timeline_behavior_block = render_timeline_behavior_block(timeline)
+    except Exception:
+        timeline_behavior_block = ""
+
+    try:
+        emotion_now = (
+            facts.get("mary", {}).get("emotion")
+            if isinstance(facts.get("mary"), dict)
+            else ""
+        ) or "neutro"
+    except Exception:
+        emotion_now = "neutro"
+
+    continuity_focus_block = "- continuar diretamente da ação em andamento"
+    reasoning_rules_txt = "- nenhuma regra adicional neste turno"
+
+    try:
+        content = render_behavior_block(
+            behavior_mode_block=behavior_mode_block,
+            timeline_behavior_block=timeline_behavior_block,
+            mood=mood,
+            energy=energy,
+            attitude=attitude,
+            self_awareness=self_awareness,
+            emotion_now=emotion_now,
+            continuity_focus_block=continuity_focus_block,
+            reasoning_rules_txt=reasoning_rules_txt,
+        )
+    except Exception:
+        content = _join_blocks(
+            behavior_mode_block,
+            timeline_behavior_block,
+            "[COMPORTAMENTO DO TURNO]\n"
+            "- Mary deve agir com presença, continuidade e coerência.\n"
+            "- Priorizar ação concreta, fala natural e consequência imediata.\n"
+            "- Evitar resposta genérica, passiva ou excessivamente explicativa."
+        )
 
     return _frag(
         key="behavior_rule",
         priority=100,
-        content=behavior,
+        content=content,
     )
 
 
 def rule_persona(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    persona = _clean_block(ctx.assets.persona_text)
-    anchor = _clean_block(ctx.assets.mary_identity_anchor)
-
     return _frag(
         key="persona_rule",
         priority=110,
-        content="\n\n".join([
-            persona,
-            anchor,
-        ]),
-    )
-
-def rule_reasoning_scene_guidance(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="reasoning_scene_guidance_rule",
-        priority=11,
-        content=_clean_block(ctx.assets.reasoning_scene_guidance_block),
+        content=_join_blocks(
+            ctx.assets.persona_text,
+            ctx.assets.mary_identity_anchor,
+        ),
     )
 
 
-def rule_third_party_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="third_party_initiative_rule",
-        priority=51,
-        content=_clean_block(ctx.assets.third_party_initiative_rule),
-    )
-
-
-def rule_patterns(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="patterns_rule",
-        priority=62,
-        content=_clean_block(ctx.assets.patterns_block),
-    )
-
-
-def rule_manipulation(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="manipulation_rule",
-        priority=63,
-        content=_clean_block(ctx.assets.manipulation_block),
-    )
-
-
-def rule_conflict(ctx: PromptBuildContext) -> Optional[PromptFragment]:
-    return _frag(
-        key="conflict_rule",
-        priority=64,
-        content=_clean_block(ctx.assets.conflict_block),
-    )
-    
 PROMPT_RULES: list[PromptRule] = [
     rule_language,
     rule_pov,
     rule_user_authorship,
     rule_priority,
+
     rule_facts_present,
     rule_continuity,
     rule_reasoning_scene_guidance,
@@ -2327,6 +2604,7 @@ PROMPT_RULES: list[PromptRule] = [
     rule_memory,
     rule_relationship,
     rule_presence,
+
     rule_intimacy,
     rule_third_party,
     rule_third_party_initiative,
