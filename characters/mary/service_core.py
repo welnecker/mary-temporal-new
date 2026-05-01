@@ -12,7 +12,6 @@ Ajustes aplicados aqui (estritamente necessários):
 Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-ffacts
 import re
 import random
 import datetime
