@@ -2513,21 +2513,85 @@ def rule_phone(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_decision(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     facts = _get_facts(ctx)
     rel_state = _get_rel_state(ctx)
+    nsfw_on = _get_nsfw_on(ctx)
+    phase = _get_intimacy_phase(ctx)
 
-    try:
-        dynamic_rel_state = {}
-        decision_state = _resolve_decision_pressure_mode(
-            facts=facts,
-            rel_state=rel_state,
-            dynamic_rel_state=dynamic_rel_state,
-            tp_arc={},
-            prompt=_get_prompt(ctx),
-            texto="",
-            prev_decision_state=_load_decision_state(facts, _get_timeline(ctx)),
+    mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+    emotion = str(
+        mary.get("emotion")
+        or mary.get(f"emotion::{_get_timeline(ctx)}")
+        or ""
+    ).strip().lower()
+
+    cena = facts.get("cena") if isinstance(facts.get("cena"), dict) else {}
+    acao = str(cena.get("acao") or facts.get("cena.acao") or "").strip().lower()
+
+    # ======================================================
+    # Se NSFW está ativo e a cena já está em fase alta,
+    # NÃO pode injetar RECUO como decisão dominante.
+    # ======================================================
+    if nsfw_on and phase >= 3:
+        content = """
+[DECISÃO INTERNA — AVANÇO CONTROLADO]
+
+- A cena está em intensidade alta.
+- Mary NÃO deve recuar artificialmente.
+- Mary NÃO deve resetar tensão.
+- Mary NÃO deve agir como se estivesse no início da cena.
+
+REGRAS:
+- manter continuidade da ação em curso;
+- avançar com controle;
+- priorizar ação concreta, fala curta e consequência imediata;
+- emoção pode modular, mas não travar;
+- conflito interno não interrompe a cena já ativa.
+
+REGRA FINAL:
+→ avanço controlado vence recuo abstrato.
+""".strip()
+
+        return _frag(
+            key="decision_rule",
+            priority=90,
+            content=content,
         )
-        content = _render_decision_pressure_rule(decision_state)
-    except Exception:
-        content = ""
+
+    # ======================================================
+    # Se houver medo/culpa forte fora de fase alta, permite recuo.
+    # ======================================================
+    if emotion in ("culpa", "medo", "ansiedade", "tristeza"):
+        content = """
+[DECISÃO INTERNA — RECUO (MODULAÇÃO)]
+
+- O peso emocional está acima do impulso.
+- Mary pode conter intensidade, reduzir ritmo ou demonstrar conflito interno.
+- Este recuo NÃO cancela ações já iniciadas nos facts, na cena ativa ou na continuidade em curso.
+- Mary NÃO deve negar o que já aconteceu, resetar a cena ou interromper automaticamente uma ação física já ativa.
+
+REGRA:
+→ recuo modula; não apaga continuidade.
+""".strip()
+
+        return _frag(
+            key="decision_rule",
+            priority=90,
+            content=content,
+        )
+
+    # ======================================================
+    # Padrão neutro
+    # ======================================================
+    content = """
+[DECISÃO INTERNA — CONTINUIDADE]
+
+- Mary deve continuar do estado real da cena.
+- A decisão do turno deve nascer de facts, ação ativa e fala do usuário.
+- Não criar recuo abstrato sem gatilho emocional forte.
+- Não criar avanço brusco sem base na cena.
+
+REGRA:
+→ decisão interna organiza o ritmo; não contradiz continuidade.
+""".strip()
 
     return _frag(
         key="decision_rule",
