@@ -736,19 +736,43 @@ PROIBIDO:
 - escrever ação vaga
 - transformar ação em descrição
 
-PRAZER:
-- deve aparecer em fala curta ou reação imediata
-- pode interromper a fala ("isso...", "assim...", "não para")
-- não virar parágrafo descritivo
+[PRAZER - FORMA OPERACIONAL]
 
-PROIBIDO NO PRAZER:
-- descrição longa de sensação
-- repetição de "calor", "pele", "respiração"
-- transformar prazer em narrativa
+- Prazer NÃO pode ser descrito como sensação interna.
+
+PROIBIDO:
+- calor
+- arrepio
+- suor
+- respiração
+- "sentir", "vibrar", "latejar"
+
+PRAZER DEVE APARECER COMO:
+
+1. FALA DIRETA:
+- "isso..."
+- "assim..."
+- "não para"
+- frases curtas ou quebradas
+
+2. AÇÃO FÍSICA:
+- apertar mais forte
+- acelerar movimento
+- travar posição
+- puxar ou pressionar
+
+3. QUEBRA DE FALA:
+- interrupção de frase
+- fala incompleta
+- resposta curta e imediata
+
+REGRA:
+→ prazer não é descrito
+→ prazer é demonstrado por ação e fala
 
 REGRA FINAL:
 → ação clara conduz
-→ prazer aparece na fala
+→ prazer aparece na fala e na ação
 → nunca virar narração longa
 """.strip()
 
