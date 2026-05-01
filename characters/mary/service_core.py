@@ -1927,7 +1927,25 @@ def _get_prompt(ctx: PromptBuildContext) -> str:
 
 def _get_nsfw_on(ctx: PromptBuildContext) -> bool:
     try:
-        return str(ctx.state.nsfw_profile or "").strip().upper() != "SAFE"
+        facts = _get_facts(ctx)
+        timeline = _get_timeline(ctx).strip().lower()
+
+        mary = facts.get("mary") if isinstance(facts.get("mary"), dict) else {}
+
+        # 1. Timeline específica vence
+        if timeline:
+            key_tl = f"nsfw::{timeline}"
+            if key_tl in mary:
+                return bool(mary.get(key_tl))
+
+        # 2. Valor global em mary
+        if "nsfw" in mary:
+            return bool(mary.get("nsfw"))
+
+        # 3. Fallback por profile
+        profile = str(getattr(ctx.state, "nsfw_profile", "") or "").strip().upper()
+        return profile not in ("", "SAFE", "OFF", "FALSE", "0")
+
     except Exception:
         return False
 
@@ -2180,8 +2198,8 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     phase = _get_intimacy_phase(ctx)
 
     virginity_rule = ""
+
     try:
-        # Se existir função global equivalente
         virginity_rule = render_virginity_rule(
             facts=facts,
             rel_state=rel_state,
@@ -2189,9 +2207,9 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         )
     except Exception:
         try:
-            # Fallback direto
             virginity = str(rel_state.get("virginity") or "").strip()
             consummated = bool(rel_state.get("consummated"))
+
             virginity_rule = (
                 "[CONTINUIDADE ÍNTIMA]\n"
                 f"- Virgindade nesta timeline: {virginity or 'desconhecida'}.\n"
@@ -2206,12 +2224,33 @@ def rule_intimacy(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         try:
             intimacy_phase_rule = _render_intimacy_phase_rule(phase)
         except Exception:
-            intimacy_phase_rule = (
-                "[INTIMIDADE - FASES]\n"
-                f"FASE ATUAL: {phase}\n"
-                "- A fase regula ritmo e permissões.\n"
-                "- Não pular etapas sem base explícita."
-            )
+            intimacy_phase_rule = f"""
+[INTIMIDADE - FASES]
+
+FASE ATUAL: {phase}
+
+- A fase regula ritmo e permissões.
+- A intensidade deve acompanhar facts, continuidade e ação em curso.
+- Não pular etapas sem base explícita.
+- Não contradizer o estado atual da cena.
+
+REGRA:
+→ intensidade acompanha fase + continuidade.
+""".strip()
+
+        intimacy_control_block = """
+[CONTROLE DE INTIMIDADE]
+
+- A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.
+- Fase íntima regula ritmo; não substitui a cena.
+- Não reiniciar fases já superadas.
+- Não pular para conclusão sem continuidade clara.
+- Não inserir SAFE quando NSFW estiver ativo.
+
+REGRA:
+→ se NSFW está ativo, não usar regra SAFE.
+""".strip()
+
     else:
         intimacy_phase_rule = """
 [RITMO DO TURNO - SAFE]
@@ -2224,17 +2263,6 @@ REGRA:
 → manter tensão leve e continuidade natural.
 """.strip()
 
-    intimacy_control_block = ""
-    try:
-        if nsfw_on:
-            intimacy_control_block = (
-                "[CONTROLE DE INTIMIDADE]\n"
-                "- A progressão deve respeitar facts ativos, continuidade, fase íntima e autoria do usuário.\n"
-                "- Fase íntima regula ritmo, não substitui a cena.\n"
-                "- Não reiniciar fases já superadas.\n"
-                "- Não pular para conclusão sem continuidade clara."
-            )
-    except Exception:
         intimacy_control_block = ""
 
     return _frag(
