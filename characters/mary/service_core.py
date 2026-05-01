@@ -424,6 +424,7 @@ from characters.mary.modules.prompt_blocks import (
     render_nsfw_hard_block,
     render_force_resolution_nsfw_block,
     render_orgasm_closure_rule,
+)
 
 logger = logging.getLogger(__name__)
 logger.warning("🔥 SERVICE_CORE CERTO CARREGADO")
