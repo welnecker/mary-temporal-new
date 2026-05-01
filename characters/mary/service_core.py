@@ -2695,7 +2695,6 @@ PROMPT_RULES: list[PromptRule] = [
     rule_user_authorship,
     rule_priority,
 
-    rule_facts_present,
     rule_continuity,
 
     rule_manipulation,
@@ -9569,7 +9568,9 @@ class MaryService(BaseCharacter):
                 if last_state:
                     content += (
                         "\nEstado atual da cena após o último turno:\n"
-                        f"{last_state}\n"
+                        "- Mary continua na mesma ação física iniciada.\n"
+                        "- A resposta deve partir da consequência imediata.\n"
+                        "- Não repetir descrição anterior.\n"
                     )
     
             messages.append({
@@ -12190,7 +12191,7 @@ class MaryService(BaseCharacter):
         elif phase == 5:
             base_tokens = 2100 if nsfw_on else 1700
         elif nsfw_on and phase >= 3:
-            base_tokens = 3200
+            base_tokens = 900
         else:
             base_tokens = 2200 if nsfw_on else 1900
     
@@ -12213,11 +12214,11 @@ class MaryService(BaseCharacter):
                 base_temp = 0.62 if nsfw_on else 0.58
                 base_top_p = 0.93
         elif phase >= 4:
-            base_temp = 0.90
-            base_top_p = 0.91
+            base_temp = 0.60
+            base_top_p = 0.85
         elif phase == 3:
-            base_temp = 0.80
-            base_top_p = 0.92
+            base_temp = 0.55
+            base_top_p = 0.85
         elif phase == 2:
             base_temp = 0.76
             base_top_p = 0.94
