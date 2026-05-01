@@ -10230,9 +10230,15 @@ class MaryService(BaseCharacter):
                 scene_time = _t_norm(str(facts_now.get("cena.tempo") or ""))
                 state_topic = _t_norm(str(facts_now.get("state.assunto") or ""))
     
-                for v in (scene_local, state_local, scene_time, state_topic):
-                    if v and v in t:
-                        return True
+                def _lm_conflicts_with_truth(mem_text: str) -> bool:
+                    t = _t_norm(mem_text or "")
+                    if not t:
+                        return False
+                
+                    # Não descartar memória só porque menciona local, assunto ou pessoa da cena.
+                    # Isso é relevância, não conflito.
+                
+                    return False
     
                 thematic_groups = (
                     ("mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "família", "familia"),
