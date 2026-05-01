@@ -9568,11 +9568,11 @@ class MaryService(BaseCharacter):
                     "content": last_user_real,
                 })
     
-            if last_mary_real:
-                messages.append({
-                    "role": "assistant",
-                    "content": last_mary_real,
-                })
+            #if last_mary_real:
+             #   messages.append({
+              #      "role": "assistant",
+               #     "content": last_mary_real,
+               # })
     
         # ==========================================================
         # 4) PROMPT ATUAL
