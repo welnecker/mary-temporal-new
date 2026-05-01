@@ -2696,6 +2696,7 @@ PROMPT_RULES: list[PromptRule] = [
     rule_priority,
 
     rule_continuity,
+    rule_memory,
 
     rule_manipulation,
     rule_initiative,
@@ -3738,19 +3739,15 @@ def _expand_memory_query(user_prompt: str) -> str:
     return " ".join(t for t in all_terms if t).strip()
 
 def _inject_long_memory_pins_always(
-    shared_key: str,
+    user_id: str,
     timeline: str,
     messages: List[Dict[str, str]],
     *,
     max_items: int = 12,
     dedupe_bucket: Optional[set] = None,
 ) -> None:
-    """
-     Injeta memórias FIXAS (pin/guide/fixed) em TODAS as respostas.
-    Compatível com pins marcados no TEXT (ex: [kind=pin]) mesmo quando meta.kind veio "memory".
-    """
     try:
-        long_key = _long_key(shared_key)
+        long_key = _long_key(user_id)
         rows = list_long_memory(long_key, limit=200) or []
     except Exception:
         rows = []
