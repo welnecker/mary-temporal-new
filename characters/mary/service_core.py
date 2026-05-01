@@ -8987,8 +8987,28 @@ class MaryService(BaseCharacter):
         except Exception:
             pass
 
-        return system     
-             
+        return system 
+
+    def _extract_last_mary_state(self, text: str) -> str:
+        if not text:
+            return ""
+    
+        text = str(text)
+    
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+    
+        tail = lines[-2:] if len(lines) >= 2 else lines
+    
+        cleaned = []
+        for l in tail:
+            if l.startswith("—"):
+                continue
+            cleaned.append(l)
+    
+        result = " ".join(cleaned)
+    
+        return result[:200].strip()
+                 
     def _build_messages_for_turn(
         self,
         *,
@@ -9171,11 +9191,13 @@ class MaryService(BaseCharacter):
                 content += f"\nÚltima ação/fala do usuário:\n{last_user_real}\n"
     
             if last_mary_real:
-                content += (
-                    "\nÚltima resposta da Mary registrada apenas como contexto factual, "
-                    "NÃO como modelo de estilo:\n"
-                    f"{last_mary_real}\n"
-                )
+                last_state = _extract_last_mary_state(last_mary_real)
+            
+                if last_state:
+                    content += (
+                        "\nEstado atual da cena após o último turno:\n"
+                        f"{last_state}\n"
+                    )
     
             messages.append({
                 "role": "system",
