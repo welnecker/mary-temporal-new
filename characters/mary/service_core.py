@@ -2450,6 +2450,13 @@ def rule_initiative(ctx: PromptBuildContext) -> Optional[PromptFragment]:
         content=render_initiative_rule(),
     )
 
+def rule_anti_sensory_narration(ctx: PromptBuildContext) -> Optional[PromptFragment]:
+    return _frag(
+        key="anti_sensory_narration_rule",
+        priority=66,
+        content=render_anti_sensory_narration_block(),
+    )
+
 
 def rule_emotion(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
@@ -2706,6 +2713,7 @@ PROMPT_RULES: list[PromptRule] = [
     rule_manipulation,
     rule_conflict,
     rule_initiative,
+    rule_anti_sensory_narration,
     rule_emotion,
     rule_nsfw,
 
