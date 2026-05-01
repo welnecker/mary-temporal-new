@@ -9305,7 +9305,17 @@ class MaryService(BaseCharacter):
         })
     
         build_ctx = make_prompt_build_context(ctx)
-        system = build_prompt_from_rules(build_ctx)
+        system = f"""
+        {render_priority_rule()}
+        
+        {render_continuity_hard_rule()}
+        
+        {render_initiative_rule()}
+        
+        {render_manipulation_block()}
+        
+        {render_nsfw_hard_block(True)}
+        """.strip()
     
         if not system.strip():
             raise RuntimeError(
