@@ -9005,7 +9005,9 @@ class MaryService(BaseCharacter):
     ) -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
     
-        # HISTÓRICO PRECISA VIR ANTES DE QUALQUER USO
+        # ==========================================================
+        # HISTÓRICO RECENTE
+        # ==========================================================
         try:
             history = cached_get_history(usuario_key, limit=6) or []
         except Exception:
@@ -9087,22 +9089,10 @@ class MaryService(BaseCharacter):
         )
     
         # ==========================================================
-        # 2) HISTÓRICO RECENTE / CENA INFERIDA / FORMA DO TURNO
+        # 2) CENA OPERACIONAL INFERIDA
+        # Mantém apenas dado operacional.
+        # Não injeta regras de estilo no system.
         # ==========================================================
-        style_seed = random.choice([
-            "fala_primeiro",
-            "acao_primeiro",
-            "reacao_primeiro",
-            "curta_direta",
-        ])
-    
-        turn_bridge_block = _build_turn_bridge_block(history)
-    
-        extra_system_parts: List[str] = []
-    
-        # ----------------------------------------------------------
-        # CENA OPERACIONAL INFERIDA
-        # ----------------------------------------------------------
         try:
             facts_now = facts if isinstance(facts, dict) else {}
     
@@ -9148,10 +9138,10 @@ class MaryService(BaseCharacter):
                 )
             except Exception:
                 inferred_scene_block = ""
-        
+    
             if inferred_scene_block:
                 base_system = str(messages[0].get("content") or "")
-        
+    
                 if "[CENA ATIVA]" in base_system:
                     base_system = base_system.replace(
                         "[CENA ATIVA]",
@@ -9160,75 +9150,37 @@ class MaryService(BaseCharacter):
                     )
                 else:
                     base_system = base_system + "\n\n" + inferred_scene_block
-        
+    
                 messages[0]["content"] = base_system.strip()
-        
-        # ----------------------------------------------------------
-        # BLOCOS COMPLEMENTARES (mantêm no final do system)
-        # ----------------------------------------------------------
-        
-        if autonomy_block and isinstance(autonomy_block, str) and autonomy_block.strip():
-            extra_system_parts.append(autonomy_block.strip())
-        
-        if turn_bridge_block:
-            extra_system_parts.append(turn_bridge_block)
-        
-        try:
-            anti_loop_block = render_anti_loop_recent_turns_block(history)
-        except Exception:
-            anti_loop_block = ""
-        
-        if anti_loop_block:
-            extra_system_parts.append(anti_loop_block)
-        
-        extra_system_parts.append(
-            "[ANTI-TEMPLATE — CONTROLE DE RESPOSTA]\n"
-            "- É PROIBIDO repetir estrutura entre turnos.\n"
-            "- É PROIBIDO seguir sequência automática: fala → gesto → reflexão → conclusão.\n"
-            "- Quebre o padrão esperado.\n"
-            "- Priorizar reação direta, subtexto, corte de frase, pausa viva ou ação curta.\n"
-            "- Se a resposta parecer bonita demais, organizada demais ou certinha demais: está errada.\n"
-            "- Se houver escolha: prefira o que soa mais humano, menos organizado e mais vivo.\n"
-        )
-        
-        extra_system_parts.append(
-            "[VARIAÇÃO DE ABERTURA]\n"
-            "- NÃO repetir forma de início do turno anterior.\n"
-            "- Se começou com fala antes → agora comece com ação curta, silêncio, reação ou detalhe físico.\n"
-        )
-        
-        if extra_system_parts:
-            base = str(messages[0].get("content") or "").rstrip()
-            messages[0]["content"] = (
-                base + "\n\n" + "\n\n".join(extra_system_parts).strip()
-            ).strip()
     
         # ==========================================================
         # 3) CONTINUIDADE REAL DO TURNO ANTERIOR
+        # Mantém contexto factual, mas NÃO injeta last_mary_real
+        # como assistant para não contaminar estilo.
         # ==========================================================
         if last_user_real or last_mary_real:
-            messages.append({
-                "role": "system",
-                "content": (
-                    "[CONTINUIDADE REAL DO TURNO ANTERIOR]\n"
-                    "- Continue da consequência prática imediata do último turno.\n"
-                    "- Não resumir.\n"
-                    "- Não reiniciar.\n"
-                    "- Se houver conflito entre abstração e turno real, o turno real vence.\n"
-                )
-            })
+            content = (
+                "[CONTINUIDADE REAL DO TURNO ANTERIOR]\n"
+                "- Continue da consequência prática imediata do último turno.\n"
+                "- Não resumir.\n"
+                "- Não reiniciar.\n"
+                "- Se houver conflito entre abstração e turno real, o turno real vence.\n"
+            )
     
             if last_user_real:
-                messages.append({
-                    "role": "user",
-                    "content": last_user_real,
-                })
+                content += f"\nÚltima ação/fala do usuário:\n{last_user_real}\n"
     
             if last_mary_real:
-                messages.append({
-                    "role": "assistant",
-                    "content": last_mary_real,
-                })
+                content += (
+                    "\nÚltima resposta da Mary registrada apenas como contexto factual, "
+                    "NÃO como modelo de estilo:\n"
+                    f"{last_mary_real}\n"
+                )
+    
+            messages.append({
+                "role": "system",
+                "content": content.strip(),
+            })
     
         # ==========================================================
         # 4) PROMPT ATUAL
