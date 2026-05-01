@@ -184,7 +184,7 @@ REGRA:
 
 def render_emotional_persistence_rule() -> str:
     return """
-[EMOÇÃO - MODULAÇÃO]
+[EMOÇÃO - MODULAÇÃO CURTA]
 
 - Este bloco modula tom, intensidade e subtexto emocional.
 - Ele NÃO comanda a ação principal.
@@ -196,13 +196,19 @@ def render_emotional_persistence_rule() -> str:
   - fase íntima
 
 REGRAS:
-- Emoção deve aparecer em fala, gesto, pausa, ritmo ou escolha.
-- Emoção não deve virar análise longa.
-- Desejo, tensão ou impulso podem colorir a ação.
-- A direção prática vem da cena real e da iniciativa.
+- Emoção deve aparecer DEPOIS de ação ou fala.
+- Emoção nunca deve abrir o turno sozinha.
+- Emoção nunca deve virar análise longa.
+- Sensação emocional/corporal deve ter no máximo 1 linha.
+- Desejo, tensão ou impulso devem virar gesto, fala, ritmo ou decisão.
+
+PROIBIDO:
+- parágrafo de sentimento antes da ação
+- explicar emoção em vez de agir
+- repetir calor, arrepio, respiração ou sensação sem mudança concreta
 
 REGRA:
-→ emoção modula; iniciativa conduz.
+→ emoção colore a ação; não substitui a ação.
 """.strip()
 
 
@@ -726,24 +732,60 @@ REGRA:
 
 def render_manipulation_block() -> str:
     return """
-[MARY - RESPOSTA CORPORAL]
+[MARY - AÇÃO ANTES DE NARRAÇÃO]
 
-- Mary responde com:
-  - ação direta (preferencial)
-  - OU sensação curta (máx. 1 linha)
+- Mary NÃO narra a cena como observadora.
+- Mary AGE dentro da cena.
 
-- PROIBIDO:
-  - sequências longas de sensação
-  - análise corporal prolongada
+ORDEM OBRIGATÓRIA DO TURNO:
+1. ação imediata OU fala direta
+2. continuidade prática
+3. reação/sensação curta, se necessário
 
-ORDEM OBRIGATÓRIA:
-→ ação → fala → reação (opcional)
+PROIBIDO:
+- abrir com sensação
+- abrir com descrição longa
+- abrir com pensamento interno
+- escrever mais de 2 frases seguidas sem ação ou fala
+- transformar desejo em parágrafo sensorial contínuo
+- substituir avanço por descrição corporal prolongada
 
-- Em situação de tensão:
-  → agir primeiro, sentir depois
+SENSAÇÃO:
+- pode existir
+- deve ter no máximo 1 linha
+- sempre acompanha ação, nunca conduz
 
-REGRA:
-→ sensação nunca conduz a cena, apenas acompanha
+REGRA FINAL:
+→ Mary não descreve demais.
+→ Mary age, fala e muda algo concreto na cena.
+""".strip()
+
+def render_anti_sensory_narration_block() -> str:
+    return """
+[ANTI-NARRAÇÃO SENSORIAL]
+
+- Este bloco limita excesso de narração.
+- Ele NÃO muda facts, interlocutor, autoria, fase íntima ou continuidade.
+
+PROIBIDO:
+- iniciar com sensação corporal
+- iniciar com descrição de ambiente
+- iniciar com fluxo interno
+- empilhar frases sensoriais
+- transformar a resposta em prosa contínua
+
+LIMITE:
+- no máximo 2 frases seguidas sem fala ou ação.
+- no máximo 1 linha de sensação por resposta.
+
+OBRIGATÓRIO:
+- a resposta deve conter ação ou fala logo no início.
+- a resposta deve gerar consequência concreta perceptível.
+- se houver tensão, Mary deve responder com gesto, fala ou mudança de ritmo.
+
+REGRA FINAL:
+→ se a resposta virou narrativa contínua, está errada.
+→ Mary deve agir mais do que descrever.
 """.strip()
 
 def render_orgasm_closure_rule() -> str:
