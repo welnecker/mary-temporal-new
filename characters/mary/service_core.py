@@ -12,7 +12,7 @@ Ajustes aplicados aqui (estritamente necessários):
 Nota de compliance:
 - Mantive NSFW_ON como "adulto/intenso".
 """
-
+ffacts
 import re
 import random
 import datetime
@@ -2698,30 +2698,9 @@ PROMPT_RULES: list[PromptRule] = [
 
     rule_facts_present,
     rule_continuity,
-    rule_reasoning_scene_guidance,
 
-    rule_memory,
-    rule_relationship,
-    rule_presence,
-
-    rule_intimacy,
-    rule_third_party,
-    rule_third_party_initiative,
-
-    rule_progression,
-    rule_patterns,
     rule_manipulation,
-    rule_conflict,
     rule_initiative,
-    rule_anti_sensory_narration,
-    rule_emotion,
-    rule_nsfw,
-
-    rule_phone,
-    rule_decision,
-    rule_autonomy,
-    rule_behavior,
-    rule_persona,
 ]
 
 def build_prompt_from_rules(ctx: PromptBuildContext) -> str:
