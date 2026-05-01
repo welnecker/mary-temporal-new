@@ -363,34 +363,45 @@ from .decision_engine import (
 
 from characters.mary.modules.prompt_blocks import (
     # ======================================================
-    # 1. Regras absolutas / identidade do turno
+    # 1. Regras absolutas / identidade
     # ======================================================
     render_priority_rule,
     render_language_rule,
     render_pov_rule,
     render_user_authorship_rule,
     render_user_finalizes_rule,
-
+    
     # ======================================================
-    # 2. Realidade, continuidade e cena
+    # 2. Realidade e continuidade (chão da cena)
     # ======================================================
     render_continuity_hard_rule,
     render_continuity_rule,
     render_inferred_scene_block,
     render_topic_rule,
     render_memory_fidelity_rule,
-
+    
     # ======================================================
-    # 3. Estrutura da resposta
+    # 3. AÇÃO PRIMEIRO (MUDANÇA CRÍTICA)
+    # ======================================================
+    render_initiative_rule,
+    render_manipulation_block,
+    
+    # 👉 INSIRA AQUI O NOVO BLOCO
+    render_anti_sensory_narration_block,
+    
+    render_patterns_block,
+    
+    # ======================================================
+    # 4. Estrutura (AGORA vem depois da ação)
     # ======================================================
     render_response_structure_rule,
     render_response_length_control,
     render_reaction_priority_rule,
     render_anti_loop_recent_turns_block,
     render_anti_pattern_rule,
-
+    
     # ======================================================
-    # 4. Presença, emoção e comportamento da Mary
+    # 5. Presença e comportamento
     # ======================================================
     render_mary_presence_engine_rule,
     render_autonomy_rule,
@@ -399,27 +410,20 @@ from characters.mary.modules.prompt_blocks import (
     render_behavior_mode_block,
     render_behavior_block,
     render_timeline_behavior_block,
-
+    
     # ======================================================
-    # 5. Iniciativa e ação concreta
-    # ======================================================
-    render_initiative_rule,
-    render_manipulation_block,
-    render_patterns_block,
-
-    # ======================================================
-    # 6. Conflito, terceiros e limites dinâmicos
+    # 6. Conflito e terceiros
     # ======================================================
     render_conflict_block,
     render_tp_arc_block,
     render_tp_arc_behavior_rule,
-
+    
     # ======================================================
-    # 7. NSFW / clímax / resolução
+    # 7. NSFW / resolução
     # ======================================================
     render_nsfw_hard_block,
     render_force_resolution_nsfw_block,
-    render_orgasm_closure_rule,)
+    render_orgasm_closure_rule,
 
 logger = logging.getLogger(__name__)
 logger.warning("🔥 SERVICE_CORE CERTO CARREGADO")
