@@ -2155,7 +2155,7 @@ def rule_memory(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 
     memory_fidelity = ""
     try:
-        memory_fidelity = render_memory_fidelity_rule(long_memory)
+        memory_fidelity = render_memory_fidelity_rule("")
     except Exception:
         memory_fidelity = ""
 
