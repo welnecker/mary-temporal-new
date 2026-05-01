@@ -9191,7 +9191,7 @@ class MaryService(BaseCharacter):
                 content += f"\nÚltima ação/fala do usuário:\n{last_user_real}\n"
     
             if last_mary_real:
-                last_state = _extract_last_mary_state(last_mary_real)
+                last_state = self._extract_last_mary_state(last_mary_real)
             
                 if last_state:
                     content += (
