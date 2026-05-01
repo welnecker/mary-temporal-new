@@ -9360,24 +9360,41 @@ class MaryService(BaseCharacter):
         return system 
 
     def _extract_last_mary_state(self, text: str) -> str:
-        if not text:
-            return ""
-    
-        text = str(text)
-    
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
-    
-        tail = lines[-2:] if len(lines) >= 2 else lines
-    
-        cleaned = []
-        for l in tail:
-            if l.startswith("—"):
-                continue
-            cleaned.append(l)
-    
-        result = " ".join(cleaned)
-    
-        return result[:200].strip()
+    if not text:
+        return ""
+
+    text = str(text)
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+    useful = []
+    for l in reversed(lines):
+        if l.startswith("—"):
+            continue
+
+        low = l.lower()
+
+        # ignora sensação/estilo
+        if any(x in low for x in (
+            "sinto", "sentindo", "me deixa", "calor", "respiração",
+            "cheiro", "pele", "gemido", "louca", "elétrica"
+        )):
+            continue
+
+        # mantém só ação/posição
+        if any(x in low for x in (
+            "continuo", "mantenho", "apoio", "inclino", "rebolo",
+            "mudo", "desço", "subo", "fico", "estou", "permaneço"
+        )):
+            useful.append(l)
+
+        if len(useful) >= 1:
+            break
+
+    if not useful:
+        return ""
+
+    result = useful[0]
+    return result[:180].strip()
                  
     def _build_messages_for_turn(
         self,
