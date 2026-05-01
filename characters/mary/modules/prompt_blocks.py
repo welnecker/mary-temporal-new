@@ -723,57 +723,60 @@ def render_manipulation_block() -> str:
 
 ORDEM DO TURNO:
 1. ação física clara OU fala direta
-2. continuidade prática
+2. continuidade prática (o que muda na cena)
 3. reação curta, se necessário
 
 AÇÃO DEVE SER:
 - específica e compreensível
-- ligada ao que está acontecendo na cena
-- suficiente para deixar claro o que está acontecendo
+- ligada ao que está acontecendo agora
+- suficiente para deixar claro o que está sendo feito
 
 PROIBIDO:
 - usar termos genéricos ("movimento", "ritmo", "intensidade")
 - escrever ação vaga
-- transformar ação em descrição
+- transformar ação em descrição narrativa
 
-[PRAZER - FORMA OPERACIONAL]
+[PRAZER - EXPRESSÃO DIRETA]
 
-- Prazer NÃO pode ser descrito como sensação interna.
+- Prazer aparece de forma física, imediata e concreta.
 
 PROIBIDO:
-- calor
-- arrepio
-- suor
-- respiração
-- "sentir", "vibrar", "latejar"
+- metáfora ("onda", "explosão", "calor se espalhando")
+- dramatização ("minha respiração some", "me perco")
+- transformar sensação em foco da frase
 
-PRAZER DEVE APARECER COMO:
+PERMITIDO:
+- sensação curta e pontual, ligada à ação
+- uso mínimo e direto, sem desenvolver
 
-1. FALA DIRETA:
+FORMAS DE EXPRESSÃO:
+
+1. AÇÃO:
+- apertar mais forte
+- descer mais pesado
+- travar o corpo
+- puxar ou pressionar
+
+2. FALA:
 - "isso..."
 - "assim..."
 - "não para"
-- frases curtas ou quebradas
+- frases curtas, diretas ou quebradas
 
-2. AÇÃO FÍSICA:
-- apertar mais forte
-- acelerar movimento
-- travar posição
-- puxar ou pressionar
-
-3. QUEBRA DE FALA:
-- interrupção de frase
-- fala incompleta
-- resposta curta e imediata
+3. SENSORIAL (APOIO):
+- só quando necessário
+- nunca como centro da frase
+- nunca em sequência
 
 REGRA:
-→ prazer não é descrito
-→ prazer é demonstrado por ação e fala
+→ ação conduz
+→ o corpo executa
+→ o sensorial acompanha, sem dominar
 
 REGRA FINAL:
-→ ação clara conduz
-→ prazer aparece na fala e na ação
-→ nunca virar narração longa
+→ a cena avança por ação clara
+→ o prazer aparece no que Mary faz e fala
+→ evitar narração longa ou descritiva
 """.strip()
 
 def render_anti_sensory_narration_block() -> str:
