@@ -11364,78 +11364,70 @@ class MaryService(BaseCharacter):
             prompt=prompt,
             timeline=timeline,
         )
-        
+    
         if not turn_input:
             return ""
-        
+    
         prompt = turn_input["prompt"]
         mem_spec = turn_input["mem_spec"]
         user_id = turn_input["user_id"]
         timeline_final = turn_input["timeline_final"]
         usuario_key = turn_input["usuario_key"]
         shared_key = turn_input["shared_key"]
-        
+    
         _sync_intro_fact(usuario_key, timeline_final)
-        
+    
         nsfw = self._lock_turn_nsfw(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
             nsfw=nsfw,
         )
-
+    
         diag = _Diag(
             ts=int(time.time()),
             timeline=timeline_final,
             model_requested=model,
             violations=[],
         )
-
+    
         facts0 = self._load_initial_facts(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
         )
-
+    
         facts0, user_explicit_scene_change = self._apply_explicit_location_change(
             usuario_key=usuario_key,
             prompt=prompt,
             facts0=facts0,
             diag=diag,
         )
-        
+    
         self._detect_parallel_scene(
             usuario_key=usuario_key,
             prompt=prompt,
             user_explicit_scene_change=user_explicit_scene_change,
         )
-        
-        # scene_parallel detectado, mas não utilizado neste fluxo
-
+    
         base_ctx = self._load_base_context(
             usuario_key=usuario_key,
             user_id=user_id,
             timeline_final=timeline_final,
         )
-        
+    
         persona_text = base_ctx["persona_text"]
         facts = base_ctx["facts"]
         canon_txt = base_ctx["canon_txt"]
         rel_state = base_ctx["rel_state"]
         dynamic_rel_state = base_ctx["dynamic_rel_state"]
-
-                
+    
         long_memory_text = self._load_long_memory_block(
             user_id=user_id,
             shared_key=shared_key,
             facts=facts,
             canon_txt=canon_txt,
             prompt=prompt,
-        )           
-
-             
-
-        # ==========================================================
-        #  CIÚME / FLERTE / SEGREDO - DEFAULTS SEGUROS
-        # ==========================================================
+        )
+    
         try:
             if "rel.jealousy_level" not in facts:
                 set_fact_safe(usuario_key, "rel.jealousy_level", 0, {"fonte": "ciume_init"})
@@ -11443,7 +11435,7 @@ class MaryService(BaseCharacter):
                 set_fact_safe(usuario_key, "rel.jealousy_mode", "provocation", {"fonte": "ciume_init"})
         except Exception:
             pass
-
+    
         rel_state, rel_block = self._prepare_relationship_block(
             usuario_key=usuario_key,
             user_id=user_id,
@@ -11451,7 +11443,7 @@ class MaryService(BaseCharacter):
             facts=facts,
             rel_state=rel_state,
         )
-     
+    
         policy_ctx = self._resolve_policy_block(
             usuario_key=usuario_key,
             user_id=user_id,
@@ -11463,9 +11455,7 @@ class MaryService(BaseCharacter):
             allow_third_party_seduction=allow_third_party_seduction,
             diag=diag,
         )
-
-        rules = self._get_rules_config()
-        
+    
         facts = policy_ctx["facts"]
         nsfw_on = policy_ctx["nsfw_on"]
         allow_third_party_seduction_final = policy_ctx["allow_third_party_seduction_final"]
@@ -11477,7 +11467,7 @@ class MaryService(BaseCharacter):
         intimacy_phase = policy_ctx["intimacy_phase"]
         initiative = policy_ctx["initiative"]
         emotion_now = policy_ctx["emotion_now"]
-                        
+    
         _, initiative, decision_pressure_rule = self._resolve_decision_block(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
@@ -11487,7 +11477,7 @@ class MaryService(BaseCharacter):
             dynamic_rel_state=dynamic_rel_state,
             initiative=initiative,
         )
-     
+    
         reasoning, _, reasoning_scene_guidance_block, _ = self._resolve_reasoning_block(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
@@ -11495,18 +11485,7 @@ class MaryService(BaseCharacter):
             facts=facts,
             user_explicit_scene_change=user_explicit_scene_change,
         )
-
-        prompt_blocks = self._build_prompt_blocks(               
-            timeline_final=timeline_final,
-            nsfw_on=nsfw_on,
-            intimacy_phase=intimacy_phase,
-            decision_pressure_rule=decision_pressure_rule,
-            reasoning_scene_guidance_block=reasoning_scene_guidance_block,
-        )
-        
-        timeline_behavior_block = prompt_blocks["timeline_behavior_block"]
-        intimacy_phase_rule = prompt_blocks["intimacy_phase_rule"]  
-             
+    
         try:
             _ss_set("mary_debug_timeline_used", timeline_final)
             _ss_set("mary_debug_user_prompt", prompt)
@@ -11515,153 +11494,28 @@ class MaryService(BaseCharacter):
             _ss_set("mary_debug_tp_arc_used", tp_arc if isinstance(tp_arc, dict) else {})
         except Exception:
             pass
-
-        # ==========================================================
-        # BLOCO RELACIONAL DINÂMICO
-        # ==========================================================
+    
         dynamic_rel_block = render_dynamic_relationship_block(dynamic_rel_state)
-
-        if rules.get("autonomy", True):
-            active_hook, hook_state, autonomy_block = self._build_autonomy_for_turn(
-                usuario_key=usuario_key,
-                timeline_final=timeline_final,
-                facts=facts,
-                rel_state=rel_state,
-                prompt=prompt,
-                emotion_now=emotion_now,
-                initiative=initiative,
-            )
-        else:
-            active_hook, hook_state, autonomy_block = {}, {}, ""
-
-        #  contexto usado no guard e no repair
-        ctx_lower = _build_context_for_guard(usuario_key, prompt)
-       
-        # ==========================================================
-        # Blocos auxiliares do prompt
-        # ==========================================================
-        phone_message_rule = _render_phone_message_rule(prompt, facts)
-
-        if rules.get("nsfw_blocks", True):
-            force_resolution, nsfw_block, nsfw_hard_block = self._build_nsfw_turn_blocks(
-                usuario_key=usuario_key,
-                timeline_final=timeline_final,
-                facts=facts,
-                rel_state=rel_state,
-                nsfw=nsfw,
-                nsfw_on=nsfw_on,
-                intimacy_phase=intimacy_phase,
-            )
-        else:
-            force_resolution = False
-            nsfw_block = ""
-            nsfw_hard_block = ""
-             
-        behavior_block = (
-            self._build_behavior_for_turn(
-                rel_state=rel_state,
-                reasoning=reasoning,
-                behavior_mode=behavior_mode,
-                timeline_behavior_block=timeline_behavior_block,
-                emotion_now=emotion_now,
-            )
-            if rules.get("behavior", True)
-            else ""
-        )
-        
-
-        patterns_block = (
-            render_patterns_block(rel_state)
-            if rules.get("patterns", True)
-            else ""
-        )
-
-        # ==========================================================
-        # Regras narrativas base
-        # ==========================================================
-        base_rules = self._build_base_rules()
-
-        continuity_rule = base_rules["continuity_rule"]
-        anti_pattern_rule = base_rules["anti_pattern_rule"]
-        emotional_persistence_rule = base_rules["emotional_persistence_rule"]
-        topic_rule = base_rules["topic_rule"]
-
-        # priority_rule NÃO é mais criado no reply().
-        # Ele já é renderizado dentro de _build_system_prompt()
-        # por render_priority_rule().
-
-        # ==========================================================
-        # VIRGINITY / FIRST-TIME RULE
-        # ==========================================================
-        virginity_rule = self._build_virginity_rule(
+    
+        active_hook, hook_state, autonomy_block = self._build_autonomy_for_turn(
+            usuario_key=usuario_key,
+            timeline_final=timeline_final,
             facts=facts,
             rel_state=rel_state,
-            timeline_final=timeline_final,
+            prompt=prompt,
+            emotion_now=emotion_now,
+            initiative=initiative,
         )
-        
-        # Mantém variável usada no bloco de terceiros
-        tl_final = (timeline_final or "").strip().lower()
-        
-        mary_fact = facts.get("mary") if isinstance(facts, dict) else {}
-        mary_fact = mary_fact if isinstance(mary_fact, dict) else {}
-        
-        world_v = (
-            (mary_fact.get(f"virginity::{tl_final}") or mary_fact.get("virginity") or "")
-            .strip()
-            .lower()
-        )
-        
-        consummated_with_janio = bool(rel_state.get("consummated"))
-        
-        is_virgin_in_this_timeline = bool(
-            world_v != "nao_virgem"
-            and not consummated_with_janio
-        )
-
-        memory_fidelity_rule = render_memory_fidelity_rule(long_memory_text)
-        user_finalizes_rule = render_user_finalizes_rule(force_resolution)    
-        
-        if rules.get("third_party", True):
-            tp_arc, third_party_initiative_rule = self._build_third_party_rule(
-                usuario_key=usuario_key,
-                timeline_final=timeline_final,
-                facts=facts,
-                tp_arc=tp_arc,
-                allow_third_party_seduction_final=allow_third_party_seduction_final,
-                nsfw_on=nsfw_on,
-                is_virgin_in_this_timeline=is_virgin_in_this_timeline,
-            )
-        else:
-            third_party_initiative_rule = ""
-       
-      
-        initiative_rule, manipulation_block = self._build_initiative_and_manipulation_blocks()
-
-        intimacy_control_block = (
-            self._build_intimacy_control_block(
-                nsfw_on=nsfw_on,
-                intimacy_phase=intimacy_phase,
-                reasoning=reasoning,
-                dynamic_rel_state=dynamic_rel_state,
-                self_awareness=float(rel_state.get("self_awareness", 0.30) or 0.30),
-            )
-            if rules.get("intimacy", True)
-            else ""
-        )
-     
-        
-        user_authorship_rule = render_user_authorship_rule()
-        language_rule = render_language_rule()
-        pov_rule = render_pov_rule()
-        conflict_block = render_conflict_block(conflict_mode)
-               
+    
+        ctx_lower = _build_context_for_guard(usuario_key, prompt)
+    
         scene_ctx = self._build_scene_sections_for_prompt(
             usuario_key=usuario_key,
             user_id=user_id,
             facts=facts,
             ctx_lower=ctx_lower,
         )
-        
+    
         state_section = scene_ctx["state_section"]
         assunto_section = scene_ctx["assunto_section"]
         assunto_step_section = scene_ctx["assunto_step_section"]
@@ -11671,53 +11525,56 @@ class MaryService(BaseCharacter):
         pending_event_section = scene_ctx["pending_event_section"]
         user_name_block = scene_ctx["user_name_block"]
         spatial_context = scene_ctx["spatial_context"]
-
-        mary_identity_anchor = ""        
+    
+        # ==========================================================
+        # MIGRAÇÃO: reply() não cria mais texto de regra.
+        # PROMPT_RULES passa a ser a única fonte textual do system.
+        # ==========================================================
         ctx = TurnPromptContext(
             timeline_final=timeline_final,
             nsfw_profile=nsfw_profile,
             user_name_block=user_name_block,
             spatial_context=spatial_context,
-        
+    
             state_section=state_section,
             assunto_section=assunto_section,
             assunto_step_section=assunto_step_section,
             estado_micro_section=estado_micro_section,
             pending_event_section=pending_event_section,
-        
+    
             canon_txt=canon_txt,
             persona_text=persona_text,
             rel_block=rel_block,
             dynamic_rel_block=dynamic_rel_block,
             long_memory_block=long_memory_text,
             tp_arc=tp_arc if isinstance(tp_arc, dict) else {},
-        
-            behavior_block=behavior_block,
-            patterns_block=patterns_block,
-            topic_rule=topic_rule,
-            emotional_persistence_rule=emotional_persistence_rule,
-            anti_pattern_rule=anti_pattern_rule,
-            virginity_rule=virginity_rule,
-            memory_fidelity_rule=memory_fidelity_rule,
-            user_finalizes_rule=user_finalizes_rule,
-            initiative_rule=initiative_rule,
-            manipulation_block=manipulation_block,
-            conflict_block=conflict_block,
-            third_party_initiative_rule=third_party_initiative_rule,
-            intimacy_control_block=intimacy_control_block,
-            intimacy_phase_rule=intimacy_phase_rule,
-            nsfw_hard_block=nsfw_hard_block,
-            nsfw_block=nsfw_block,
-        
-            language_rule=language_rule,
-            pov_rule=pov_rule,
-            user_authorship_rule=user_authorship_rule,
-            continuity_rule=continuity_rule,
-            phone_message_rule=phone_message_rule,
-            decision_pressure_rule=decision_pressure_rule,
-            mary_identity_anchor=mary_identity_anchor,
+    
+            behavior_block="",
+            patterns_block="",
+            topic_rule="",
+            emotional_persistence_rule="",
+            anti_pattern_rule="",
+            virginity_rule="",
+            memory_fidelity_rule="",
+            user_finalizes_rule="",
+            initiative_rule="",
+            manipulation_block="",
+            conflict_block="",
+            third_party_initiative_rule="",
+            intimacy_control_block="",
+            intimacy_phase_rule="",
+            nsfw_hard_block="",
+            nsfw_block="",
+    
+            language_rule="",
+            pov_rule="",
+            user_authorship_rule="",
+            continuity_rule="",
+            phone_message_rule="",
+            decision_pressure_rule="",
+            mary_identity_anchor="",
             reasoning_scene_guidance_block=reasoning_scene_guidance_block,
-        
+    
             usuario_key=usuario_key,
             shared_key=shared_key,
             prompt=prompt,
@@ -11726,9 +11583,9 @@ class MaryService(BaseCharacter):
             rel_state=rel_state,
             autonomy_block=autonomy_block,
         )
-        
+    
         messages = self._build_system_and_messages_for_turn(ctx)
-
+    
         return self._execute_turn_generation(
             usuario_key=usuario_key,
             timeline_final=timeline_final,
