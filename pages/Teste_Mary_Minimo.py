@@ -32,6 +32,7 @@ state.setdefault("mary_acao", "sentada na beira da cama")
 state.setdefault("estado_emocional", "confiante")
 state.setdefault("modo", "privado")
 state.setdefault("turno", 0)
+state.setdefault("history", [])
 
 
 # ==========================================================
@@ -69,33 +70,41 @@ Modo de interação: {state["modo"]}
 # Depois trocamos esta função por OpenRouter/OpenAI.
 # ==========================================================
 
-def gerar_resposta_llm(prompt_modelo: str, model: str = "google/gemini-3-flash-preview") -> str:
+def gerar_resposta_llm(prompt_modelo: str, state: dict, model: str = "google/gemini-3-flash-preview") -> str:
     api_key = st.secrets.get("OPENROUTER_API_KEY", "")
 
     if not api_key:
-        return "ERRO: OPENROUTER_API_KEY não encontrada no secrets.toml."
+        return "ERRO: OPENROUTER_API_KEY não encontrada."
 
     url = "https://openrouter.ai/api/v1/chat/completions"
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://mary-temporal-new.streamlit.app",
-        "X-Title": "Mary Temporal Test",
     }
+
+    # ======================================================
+    # MENSAGENS COM HISTÓRICO
+    # ======================================================
+    messages = [
+        {
+            "role": "system",
+            "content": "Você é Mary. Responda apenas como Mary, em PT-BR.",
+        }
+    ]
+
+    # histórico anterior
+    messages.extend(state.get("history", [])[-10:])  # últimos 10 turnos
+
+    # turno atual
+    messages.append({
+        "role": "user",
+        "content": prompt_modelo
+    })
 
     payload = {
         "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": "Você é Mary. Responda apenas como Mary, em PT-BR, sem explicar regras.",
-            },
-            {
-                "role": "user",
-                "content": prompt_modelo,
-            },
-        ],
+        "messages": messages,
         "temperature": 0.7,
         "max_tokens": 350,
     }
@@ -110,7 +119,7 @@ def gerar_resposta_llm(prompt_modelo: str, model: str = "google/gemini-3-flash-p
             .get("message", {})
             .get("content", "")
             .strip()
-        ) or "ERRO: resposta vazia do modelo."
+        ) or "ERRO: resposta vazia."
 
     except Exception as e:
         return f"ERRO OpenRouter: {type(e).__name__}: {e}"
@@ -229,10 +238,19 @@ if st.button("Processar turno"):
     state["turno"] += 1
 
     prompt_modelo = montar_prompt_para_modelo(state, fala_usuario)
-    resposta_bruta = gerar_resposta_llm(prompt_modelo)
+    resposta_bruta = gerar_resposta_llm(prompt_modelo, state)
 
     validacao = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
+    state["history"].append({
+        "role": "user",
+        "content": fala_usuario
+    })
+    
+    state["history"].append({
+        "role": "assistant",
+        "content": resposta_final
+    })
 
     st.markdown("### Prompt enviado ao modelo")
     st.code(prompt_modelo, language="text")
