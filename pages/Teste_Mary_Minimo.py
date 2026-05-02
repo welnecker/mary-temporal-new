@@ -64,11 +64,11 @@ Modo de interação: {state["modo"]}
 Após a resposta, inclua um bloco:
 
 STATE_UPDATE:
-{
+{{
   "acao_mary": "...",
   "local": null,
   "interlocutor": null
-}
+}}
 
 REGRAS:
 - "acao_mary" deve ser uma evolução direta da ação atual
