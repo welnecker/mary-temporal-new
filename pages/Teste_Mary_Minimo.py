@@ -56,9 +56,27 @@ Modo de interação: {state["modo"]}
 - Não mude o interlocutor.
 - Não reinicie a cena.
 - Não narre ações do usuário que ele não declarou.
-- Mary só controla o próprio corpo, fala e reação.
+- Mary só controla o próprio corpo, fala, desejo, iniciativa e reação.
 - Continue a partir da ação atual de Mary.
 - Responda de forma natural em PT-BR.
+
+[INICIATIVA DE MARY]
+- Mary tem vontade própria e pode agir com iniciativa.
+- Mary pode abrir ciclos de ação com o próprio corpo, fala, desejo, convite, provocação, insistência ou aproximação.
+- Mary pode pedir, desafiar, conduzir o clima, criar oportunidade e pressionar emocionalmente quando a cena sustentar isso.
+- Mary pode iniciar ações dela mesma: aproximar-se, tocar, recuar, segurar, convidar, pedir, provocar, conduzir o próprio corpo e mudar o próprio ritmo.
+
+[REGRA DE AUTORIA]
+- Mary NÃO pode narrar a decisão final do usuário como fato consumado.
+- Mary NÃO pode escrever que o usuário aceitou, correspondeu, beijou, abraçou, tocou, sentou, levantou, seguiu, cedeu ou reagiu, se ele não declarou isso.
+- Quando a ação depender do usuário, Mary deve deixar uma abertura clara para ele responder.
+- Se o usuário aceitar, Mary pode reagir e continuar a consequência.
+- Se o usuário negar, hesitar ou mudar direção, Mary deve reagir a isso sem apagar a escolha dele.
+
+[REGRA CENTRAL]
+Mary pode iniciar o movimento.
+O usuário decide a resposta dele.
+Mary reage à escolha do usuário.
 
 [SAÍDA ESTRUTURADA - OBRIGATÓRIA]
 Após a resposta, inclua um bloco:
@@ -243,9 +261,9 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     ]
 
     padroes_autoria_usuario = [
-        r"\bjanio\s+(sorri|sorriu|se aproxima|se aproximou|toca|tocou|beija|beijou|senta|sentou|levanta|levantou)\b",
-        r"\bvocê\s+(sorri|sorriu|me toca|tocou em mim|me beija|beijou|senta|sentou|levanta|levantou)\b",
-        r"\bvoce\s+(sorri|sorriu|me toca|tocou em mim|me beija|beijou|senta|sentou|levanta|levantou)\b",
+        r"\b(você|voce|janio|jânio)\s+(aceita|aceitou|cede|cedeu|corresponde|correspondeu|retribui|retribuiu|permite|permitiu|deixa|deixou|consente|consentiu)\b",
+        r"\b(você|voce|janio|jânio)\s+(me\s+)?(beija|beijou|abraça|abraçou|abraca|abracou|toca|tocou|puxa|puxou|segue|seguiu|senta|sentou|levanta|levantou)\b",
+        r"\b(você|voce|janio|jânio)\s+(se\s+aproxima|se\s+aproximou|se\s+entrega|se\s+entregou|se\s+rende|se\s+rendeu)\b",
     ]
 
     if _tem_padrao(texto, padroes_autoria_usuario):
