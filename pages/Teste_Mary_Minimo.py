@@ -1,80 +1,257 @@
 import streamlit as st
 
-st.title("Teste Mary Mínimo - Automático")
+st.title("Teste Mary Mínimo - Mundo por Eventos")
+
+# ==========================================================
+# 1) ESTADO INICIAL
+# ==========================================================
 
 if "mary_state_minimo" not in st.session_state:
     st.session_state.mary_state_minimo = {
         "personagem": "Mary",
         "timeline": "universitaria_creator",
-        "interlocutor": "Janio Donisete",
+
         "local": "quarto",
         "tempo": "noite",
+
+        "interlocutor": "Janio Donisete",
+        "presenca_usuario": True,
+
+        "personagens_presentes": ["Mary", "Janio Donisete"],
+        "objeto_foco": None,
+
         "mary_acao": "sentada na beira da cama",
         "estado_emocional": "confiante",
         "modo": "privado",
+
+        "ultimo_evento": "inicio",
         "turno": 0,
     }
 
 state = st.session_state.mary_state_minimo
 
+# Compatibilidade com sessão antiga
+state.setdefault("personagens_presentes", ["Mary", "Janio Donisete"])
+state.setdefault("presenca_usuario", True)
+state.setdefault("objeto_foco", None)
+state.setdefault("ultimo_evento", "inicio")
+state.setdefault("turno", 0)
 
-def decidir_acao_mary(state: dict, fala_usuario: str) -> str:
+
+# ==========================================================
+# 2) EVENTOS POSSÍVEIS
+# ==========================================================
+
+EVENTOS = {
+    "usuario_entrou": [
+        "entro no quarto",
+        "entrei no quarto",
+        "chego no quarto",
+        "cheguei no quarto",
+    ],
+
+    "usuario_saiu": [
+        "fui embora",
+        "vou embora",
+        "saio do quarto",
+        "saí do quarto",
+        "deixo o quarto",
+    ],
+
+    "usuario_aproximou": [
+        "me aproximo",
+        "chego perto",
+        "chego mais perto",
+        "me aproximo dela",
+    ],
+
+    "usuario_parou_perto": [
+        "paro na sua frente",
+        "fico na sua frente",
+        "paro diante dela",
+    ],
+
+    "usuario_falou_elogio": [
+        "você está linda",
+        "voce esta linda",
+        "você está diferente",
+        "voce esta diferente",
+        "te acho linda",
+    ],
+
+    "camera_mencionada": [
+        "câmera",
+        "camera",
+        "gravar",
+        "gravando",
+        "live",
+        "conteúdo",
+        "conteudo",
+    ],
+
+    "celular_mensagem": [
+        "mensagem",
+        "celular",
+        "notificação",
+        "notificacao",
+        "silvia mandou mensagem",
+        "mensagem da silvia",
+    ],
+
+    "terceiro_entrou_silvia": [
+        "silvia entra",
+        "silvia chegou",
+        "silvia aparece",
+        "silvia bate na porta",
+    ],
+
+    "mudanca_local_sala": [
+        "vamos para sala",
+        "vou para sala",
+        "saímos para sala",
+        "saimos para sala",
+    ],
+
+    "mudanca_local_rua": [
+        "vamos para rua",
+        "saímos para rua",
+        "saimos para rua",
+        "vou para rua",
+    ],
+}
+
+
+# ==========================================================
+# 3) CLASSIFICADOR SIMPLES DE EVENTO
+# ==========================================================
+
+def detectar_evento(fala_usuario: str) -> str:
     fala = (fala_usuario or "").lower().strip()
-    acao_atual = state.get("mary_acao", "")
 
     if not fala:
-        return acao_atual
+        return "sem_entrada"
 
-    regras = [
-        (("entro no quarto", "chego no quarto"), "sentada na beira da cama"),
-        (("me aproximo", "chego mais perto"), "levantando da cama lentamente"),
-        (("paro na sua frente", "fico na sua frente"), "parada diante de você"),
-        (("olho para você", "olho pra você"), "sustentando o olhar em silêncio"),
-        (("sorrio", "dou um sorriso"), "sorrindo de volta com confiança"),
-        (("pergunto se ela quer conversar", "quer conversar"), "olhando para você com atenção"),
-        (("aponto para a câmera", "mostro a câmera"), "dividida entre a câmera e você"),
-        (("saio pela porta", "vou embora"), "parada no quarto, observando sua saída"),
-        (("silvia manda mensagem", "mensagem da silvia"), "olhando para o celular por um instante"),
-    ]
+    for evento, gatilhos in EVENTOS.items():
+        if any(gatilho in fala for gatilho in gatilhos):
+            return evento
 
-    for gatilhos, nova_acao in regras:
-        if any(g in fala for g in gatilhos):
-            return nova_acao
+    return "evento_desconhecido"
 
-    # Entrada aberta/desconhecida: não inventa ação nova
-    return acao_atual
 
+# ==========================================================
+# 4) ATUALIZAÇÃO DO MUNDO
+# ==========================================================
+
+def aplicar_evento_no_estado(state: dict, evento: str) -> dict:
+    state["ultimo_evento"] = evento
+
+    if evento == "usuario_entrou":
+        state["presenca_usuario"] = True
+        if "Janio Donisete" not in state["personagens_presentes"]:
+            state["personagens_presentes"].append("Janio Donisete")
+        state["interlocutor"] = "Janio Donisete"
+        state["mary_acao"] = "sentada na beira da cama"
+
+    elif evento == "usuario_saiu":
+        state["presenca_usuario"] = False
+        if "Janio Donisete" in state["personagens_presentes"]:
+            state["personagens_presentes"].remove("Janio Donisete")
+        state["interlocutor"] = "nenhum"
+        state["mary_acao"] = "sentada na beira da cama, sozinha no quarto"
+
+    elif evento == "usuario_aproximou":
+        if state.get("presenca_usuario"):
+            state["mary_acao"] = "levantando da cama lentamente"
+
+    elif evento == "usuario_parou_perto":
+        if state.get("presenca_usuario"):
+            state["mary_acao"] = "parada diante de Janio"
+
+    elif evento == "usuario_falou_elogio":
+        if state.get("presenca_usuario"):
+            state["mary_acao"] = "sorrindo com confiança"
+            state["estado_emocional"] = "vaidosa e segura"
+
+    elif evento == "camera_mencionada":
+        state["objeto_foco"] = "câmera"
+        state["modo"] = "entre privado e persona pública"
+        state["mary_acao"] = "dividida entre olhar para Janio e para a câmera"
+
+    elif evento == "celular_mensagem":
+        state["objeto_foco"] = "celular"
+        state["mary_acao"] = "olhando para o celular por um instante"
+
+    elif evento == "terceiro_entrou_silvia":
+        if "Silvia" not in state["personagens_presentes"]:
+            state["personagens_presentes"].append("Silvia")
+        state["interlocutor"] = "Silvia"
+        state["mary_acao"] = "virando o rosto na direção de Silvia"
+
+    elif evento == "mudanca_local_sala":
+        state["local"] = "sala"
+        state["mary_acao"] = "chegando à sala com atenção ao ambiente"
+
+    elif evento == "mudanca_local_rua":
+        state["local"] = "rua"
+        state["mary_acao"] = "parada na rua, ajustando a postura"
+
+    elif evento == "evento_desconhecido":
+        # Regra central: se não sabe, não inventa.
+        state["mary_acao"] = state.get("mary_acao", "parada em silêncio")
+
+    return state
+
+
+# ==========================================================
+# 5) CONTEXTO
+# ==========================================================
 
 def montar_contexto(state: dict, fala_usuario: str) -> str:
     return f"""
 [ESTADO REAL DA CENA]
-Personagem: {state["personagem"]}
+Personagem principal: {state["personagem"]}
 Timeline: {state["timeline"]}
-Interlocutor ativo: {state["interlocutor"]}
-Local: {state["local"]}
+
+Local atual: {state["local"]}
 Tempo: {state["tempo"]}
+
+Interlocutor ativo: {state["interlocutor"]}
+Usuário presente: {state["presenca_usuario"]}
+Personagens presentes: {", ".join(state["personagens_presentes"])}
+
+Objeto em foco: {state["objeto_foco"]}
 Ação atual de Mary: {state["mary_acao"]}
-Estado emocional: {state["estado_emocional"]}
+Estado emocional de Mary: {state["estado_emocional"]}
 Modo de interação: {state["modo"]}
+
+Último evento detectado: {state["ultimo_evento"]}
 Turno: {state["turno"]}
 
 [REGRA]
-- Não trocar local.
-- Não trocar interlocutor.
-- Não reiniciar a cena.
+- O estado acima é a verdade da cena.
+- Se uma fala do usuário não gerar evento conhecido, manter o estado atual.
 - Mary só controla as próprias ações.
 - O usuário controla apenas as ações dele.
+- O modelo, quando existir, só escreverá texto; não atualizará estado.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
 """.strip()
 
 
+# ==========================================================
+# 6) INTERFACE
+# ==========================================================
+
 fala_usuario = st.text_area("Fala/Ação do usuário")
 
-if st.button("Gerar contexto automático"):
+if st.button("Processar turno"):
     state["turno"] += 1
-    state["mary_acao"] = decidir_acao_mary(state, fala_usuario)
+
+    evento = detectar_evento(fala_usuario)
+    state = aplicar_evento_no_estado(state, evento)
+
+    st.session_state.mary_state_minimo = state
 
     contexto = montar_contexto(state, fala_usuario)
 
@@ -82,12 +259,11 @@ if st.button("Gerar contexto automático"):
 
     st.markdown("### Resposta simulada da Mary")
     st.write(
-        f"{state['personagem']} continua {state['mary_acao']}, "
-        f"no {state['local']}, mantendo atenção em {state['interlocutor']}."
+        f"Mary permanece {state['mary_acao']}, "
+        f"em {state['local']}, com foco atual em {state['interlocutor']}."
     )
 
 st.markdown("---")
-
 st.subheader("Estado atual salvo")
 st.json(state)
 
