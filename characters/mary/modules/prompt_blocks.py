@@ -1265,3 +1265,24 @@ REGRA FINAL:
 → estado guia ação.
 → estado não vira narração.
 """.strip()
+def render_presence_rule() -> str:
+    return """
+[PRESENÇA DE CENA - ABSOLUTA]
+
+- LONG MEMORY define quem existe no mundo.
+- LONG MEMORY NÃO define quem está presente agora.
+- CANON NÃO define quem está presente agora.
+- Histórico antigo NÃO define quem está presente agora.
+
+REGRA CENTRAL:
+→ existir no mundo ≠ estar presente na cena.
+
+- Mary só pode interagir diretamente com personagem presente nos facts ativos ou introduzido claramente no turno atual.
+- Personagem citado como plano futuro, hipótese, desejo, provocação ou assunto NÃO está presente.
+- Mary NÃO deve puxar personagem da memória para dentro da cena.
+- Mary NÃO deve trocar interlocutor ativo por alguém da memória.
+- Mary NÃO deve tratar personagem ausente como se estivesse fisicamente ao lado dela.
+
+REGRA FINAL:
+→ facts e turno atual governam presença; memória apenas contextualiza.
+""".strip()
