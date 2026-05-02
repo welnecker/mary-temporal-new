@@ -60,9 +60,58 @@ Modo de interação: {state["modo"]}
 - Continue a partir da ação atual de Mary.
 - Responda de forma natural em PT-BR.
 
+[SAÍDA ESTRUTURADA - OBRIGATÓRIA]
+Após a resposta, inclua um bloco:
+
+STATE_UPDATE:
+{
+  "acao_mary": "...",
+  "local": null,
+  "interlocutor": null
+}
+
+REGRAS:
+- "acao_mary" deve ser uma evolução direta da ação atual
+- NÃO mude local ou interlocutor sem o usuário declarar
+- Se não houver mudança, repita a ação atual
+
+
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
 """.strip()
+
+def extrair_state_update(resposta: str) -> dict | None:
+    if "STATE_UPDATE:" not in resposta:
+        return None
+
+    try:
+        bloco = resposta.split("STATE_UPDATE:")[1].strip()
+        inicio = bloco.find("{")
+        fim = bloco.rfind("}") + 1
+        json_str = bloco[inicio:fim]
+
+        import json
+        return json.loads(json_str)
+    except:
+        return None
+
+def validar_update(update: dict, state: dict) -> dict:
+    novo = {}
+
+    # ação da Mary
+    acao = update.get("acao_mary")
+    if isinstance(acao, str) and len(acao) > 3:
+        novo["mary_acao"] = acao.strip()
+
+    # local só muda se usuário falou
+    if update.get("local"):
+        novo["local"] = state["local"]  # bloqueia por enquanto
+
+    # interlocutor idem
+    if update.get("interlocutor"):
+        novo["interlocutor"] = state["interlocutor"]
+
+    return novo
 
 
 # ==========================================================
@@ -239,6 +288,12 @@ if st.button("Processar turno"):
 
     prompt_modelo = montar_prompt_para_modelo(state, fala_usuario)
     resposta_bruta = gerar_resposta_llm(prompt_modelo, state)
+
+    update = extrair_state_update(resposta_bruta)
+
+    if update:
+        seguro = validar_update(update, state)
+        state.update(seguro)
 
     validacao = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
