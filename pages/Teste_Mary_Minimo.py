@@ -1,5 +1,6 @@
 import re
 import streamlit as st
+import requests
 
 st.title("Teste Mary Mínimo - Estado + Filtro")
 
@@ -68,20 +69,51 @@ Modo de interação: {state["modo"]}
 # Depois trocamos esta função por OpenRouter/OpenAI.
 # ==========================================================
 
-def gerar_resposta_mock(state: dict, fala_usuario: str) -> str:
-    fala = (fala_usuario or "").strip()
+def gerar_resposta_llm(prompt_modelo: str, model: str = "google/gemini-3-flash-preview") -> str:
+    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
 
-    if not fala:
+    if not api_key:
+        return "ERRO: OPENROUTER_API_KEY não encontrada no secrets.toml."
+
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://mary-temporal-new.streamlit.app",
+        "X-Title": "Mary Temporal Test",
+    }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "Você é Mary. Responda apenas como Mary, em PT-BR, sem explicar regras.",
+            },
+            {
+                "role": "user",
+                "content": prompt_modelo,
+            },
+        ],
+        "temperature": 0.7,
+        "max_tokens": 350,
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+
         return (
-            f"Mary permanece {state['mary_acao']}, em silêncio por um instante, "
-            f"mantendo a atenção em {state['interlocutor']}."
-        )
+            data.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        ) or "ERRO: resposta vazia do modelo."
 
-    return (
-        f"Mary continua {state['mary_acao']}, no {state['local']}, "
-        f"olhando para {state['interlocutor']} com {state['estado_emocional']}.\n\n"
-        f"— {fala}... entendi."
-    )
+    except Exception as e:
+        return f"ERRO OpenRouter: {type(e).__name__}: {e}"
 
 
 # ==========================================================
@@ -142,7 +174,7 @@ if st.button("Processar turno"):
     state["turno"] += 1
 
     prompt_modelo = montar_prompt_para_modelo(state, fala_usuario)
-    resposta_bruta = gerar_resposta_mock(state, fala_usuario)
+    resposta_bruta = gerar_resposta_llm(prompt_modelo)
 
     violacoes = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, violacoes)
