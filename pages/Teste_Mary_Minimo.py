@@ -119,56 +119,103 @@ def gerar_resposta_llm(prompt_modelo: str, model: str = "google/gemini-3-flash-p
 # ==========================================================
 # 4) FILTRO DE VIOLAÇÃO
 # ==========================================================
+# ==========================================================
+# 4) FILTRO DE VIOLAÇÃO
+# ==========================================================
 
-def resposta_viola_estado(resposta: str, state: dict) -> list[str]:
+def _tem_padrao(texto: str, padroes: list[str]) -> bool:
+    return any(re.search(p, texto, flags=re.IGNORECASE) for p in padroes)
+
+
+def resposta_viola_estado(resposta: str, state: dict) -> dict:
     texto = (resposta or "").lower()
-    violacoes = []
 
-    local = str(state.get("local", "")).lower()
-    interlocutor = str(state.get("interlocutor", "")).lower()
+    resultado = {
+        "bloqueios": [],
+        "alertas": [],
+    }
 
+    local = str(state.get("local", "") or "").lower()
+    interlocutor = str(state.get("interlocutor", "") or "").lower()
+
+    # ----------------------------------------------------------
+    # 1) Mudança indevida de local
+    # ----------------------------------------------------------
     locais_proibidos = ["sala", "rua", "banheiro", "cozinha", "varanda", "carro"]
+
     for loc in locais_proibidos:
         if loc != local and re.search(rf"\b{re.escape(loc)}\b", texto):
-            violacoes.append(f"Possível mudança indevida de local: {loc}")
+            resultado["bloqueios"].append(f"Mudança indevida de local: {loc}")
 
+    # ----------------------------------------------------------
+    # 2) Interlocutor ativo
+    # Agora é alerta leve, não bloqueio.
+    # ----------------------------------------------------------
     aliases_interlocutor = [
         interlocutor,
         "janio",
         "jânio",
         "você",
         "voce",
-    ]
-    
-    if interlocutor and not any(alias in texto for alias in aliases_interlocutor):
-        violacoes.append("A resposta pode ter perdido o interlocutor ativo.")
-
-    acoes_proibidas = [
-        "janio sorri",
-        "janio se aproxima",
-        "janio toca",
-        "janio beija",
-        "você sorri",
-        "você se aproxima",
-        "você toca",
-        "você beija",
+        "te",
+        "seu",
+        "sua",
     ]
 
-    for acao in acoes_proibidas:
-        if acao in texto:
-            violacoes.append(f"Possível autoria indevida do usuário: {acao}")
+    if interlocutor and not any(alias and alias in texto for alias in aliases_interlocutor):
+        resultado["alertas"].append("A resposta pode ter perdido o interlocutor ativo.")
 
-    return violacoes
+    # ----------------------------------------------------------
+    # 3) Autoria indevida do usuário
+    # Bloqueia quando o modelo narra ação nova do usuário.
+    # Permite quando Mary apenas percebe/reage ao que o usuário declarou.
+    # ----------------------------------------------------------
+
+    padroes_permitidos_percepcao = [
+        r"\bvejo você\b",
+        r"\bolho para você\b",
+        r"\bobservo você\b",
+        r"\bacompanho você\b",
+        r"\bte vejo\b",
+        r"\bte observo\b",
+        r"\bpercebo você\b",
+        r"\bvejo você se aproximando\b",
+        r"\bolho para você se aproximando\b",
+        r"\bacompanhando cada passo\b",
+    ]
+
+    padroes_autoria_usuario = [
+        r"\bjanio\s+(sorri|sorriu|se aproxima|se aproximou|toca|tocou|beija|beijou|senta|sentou|levanta|levantou)\b",
+        r"\bvocê\s+(sorri|sorriu|me toca|tocou em mim|me beija|beijou|senta|sentou|levanta|levantou)\b",
+        r"\bvoce\s+(sorri|sorriu|me toca|tocou em mim|me beija|beijou|senta|sentou|levanta|levantou)\b",
+    ]
+
+    if _tem_padrao(texto, padroes_autoria_usuario):
+        if not _tem_padrao(texto, padroes_permitidos_percepcao):
+            resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+
+    # ----------------------------------------------------------
+    # 4) Mary abandonando a ação atual
+    # Só alerta, porque pode ser variação narrativa aceitável.
+    # ----------------------------------------------------------
+    mary_acao = str(state.get("mary_acao", "") or "").lower()
+
+    if mary_acao and mary_acao not in texto:
+        resultado["alertas"].append("A resposta não mencionou claramente a ação atual de Mary.")
+
+    return resultado
 
 
-def corrigir_resposta_se_necessario(resposta: str, state: dict, violacoes: list[str]) -> str:
-    if not violacoes:
+def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict) -> str:
+    bloqueios = validacao.get("bloqueios", [])
+
+    if not bloqueios:
         return resposta
 
     return (
         f"Mary continua {state['mary_acao']}, no {state['local']}, "
         f"mantendo o foco em {state['interlocutor']}.\n\n"
-        "— Repete isso pra mim com calma."
+        "— Calma. Eu continuo aqui."
     )
 
 
@@ -184,8 +231,8 @@ if st.button("Processar turno"):
     prompt_modelo = montar_prompt_para_modelo(state, fala_usuario)
     resposta_bruta = gerar_resposta_llm(prompt_modelo)
 
-    violacoes = resposta_viola_estado(resposta_bruta, state)
-    resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, violacoes)
+    validacao = resposta_viola_estado(resposta_bruta, state)
+    resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
 
     st.markdown("### Prompt enviado ao modelo")
     st.code(prompt_modelo, language="text")
@@ -193,9 +240,11 @@ if st.button("Processar turno"):
     st.markdown("### Resposta bruta")
     st.write(resposta_bruta)
 
-    st.markdown("### Violações detectadas")
-    if violacoes:
-        st.error(violacoes)
+    st.markdown("### Validação")
+    if validacao["bloqueios"]:
+        st.error({"bloqueios": validacao["bloqueios"]})
+    elif validacao["alertas"]:
+        st.warning({"alertas": validacao["alertas"]})
     else:
         st.success("Nenhuma violação detectada.")
 
