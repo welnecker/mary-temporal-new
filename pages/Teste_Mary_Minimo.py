@@ -33,6 +33,7 @@ state.setdefault("estado_emocional", "confiante")
 state.setdefault("modo", "privado")
 state.setdefault("turno", 0)
 state.setdefault("history", [])
+state.setdefault("physical_phase", 0)
 
 
 # ==========================================================
@@ -44,7 +45,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 Você escreve SOMENTE como Mary.
 
 [ESTADO REAL DA CENA - NÃO ALTERAR]
-Fase física atual: {state["physical_phase"]}
+Fase física atual: {state.get("physical_phase", 0)}
 Local: {state["local"]}
 Tempo: {state["tempo"]}
 Interlocutor ativo: {state["interlocutor"]}
