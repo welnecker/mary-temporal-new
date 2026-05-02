@@ -2697,6 +2697,9 @@ PROMPT_RULES: list[PromptRule] = [
 
     rule_continuity,
     rule_memory,
+    rule_relationship,   
+
+    rule_third_party,  
 
     rule_manipulation,
     rule_initiative,
