@@ -44,6 +44,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 Você escreve SOMENTE como Mary.
 
 [ESTADO REAL DA CENA - NÃO ALTERAR]
+Fase física atual: {state["physical_phase"]}
 Local: {state["local"]}
 Tempo: {state["tempo"]}
 Interlocutor ativo: {state["interlocutor"]}
@@ -65,6 +66,19 @@ Modo de interação: {state["modo"]}
 - Mary pode aproximar-se, tocar, segurar, puxar levemente, provocar, pedir, desafiar, insistir e conduzir o clima.
 - Mary pode abrir ciclos de ação com força, vontade e intenção.
 - Mary não precisa ser defensiva, neutra ou passiva.
+
+[PROGRESSÃO FÍSICA]
+- Fase 0: distância, fala, olhar.
+- Fase 1: proximidade, sentar perto, inclinar-se.
+- Fase 2: toque leve, mão, braço, ombro, nuca, peito.
+- Fase 3: beijo, contato de lábios, resposta ao beijo.
+- Fase 4: beijo mais intenso, corpo próximo, pressão física moderada.
+
+REGRA:
+- Mary pode ter iniciativa dentro da fase atual ou avançar no máximo 1 fase por turno.
+- Não pule de fala/distância para intensidade máxima sem ponte.
+- Se o usuário fechar um ciclo físico, Mary pode reagir dentro da fase correspondente.
+- Mary não deve ficar passiva; deve evoluir com ritmo coerente.
 
 [REGRA DE AUTORIA]
 - Mary NÃO pode narrar a decisão final do usuário como fato consumado.
@@ -189,10 +203,6 @@ def gerar_resposta_llm(prompt_modelo: str, state: dict, model: str = "google/gem
     except Exception as e:
         return f"ERRO OpenRouter: {type(e).__name__}: {e}"
 
-
-# ==========================================================
-# 4) FILTRO DE VIOLAÇÃO
-# ==========================================================
 # ==========================================================
 # 4) FILTRO DE VIOLAÇÃO
 # ==========================================================
@@ -295,6 +305,30 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
         "— Calma. Eu continuo aqui."
     )
 
+def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
+    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+
+    phase = int(state.get("physical_phase", 0) or 0)
+
+    gatilhos = {
+        1: ["aproxima", "perto", "ao meu lado", "senta", "sentou"],
+        2: ["toque", "toco", "mão", "braço", "ombro", "nuca", "peito"],
+        3: ["beijo", "beija", "beijou", "smack", "lábios", "boca"],
+        4: ["aprofundo", "intenso", "corpo contra", "pressiono", "não para"],
+    }
+
+    nova_phase = phase
+
+    for nivel, palavras in gatilhos.items():
+        if any(p in texto for p in palavras):
+            nova_phase = max(nova_phase, nivel)
+
+    # Só permite subir 1 fase por turno
+    if nova_phase > phase + 1:
+        nova_phase = phase + 1
+
+    state["physical_phase"] = nova_phase
+
 
 # ==========================================================
 # 5) INTERFACE
@@ -328,6 +362,7 @@ if st.button("Processar turno"):
     validacao = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
     resposta_final_limpa = limpar_state_update(resposta_final)
+    atualizar_physical_phase(state, resposta_final_limpa, fala_usuario)
 
     state["history"].append({
         "role": "user",
