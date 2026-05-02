@@ -132,7 +132,15 @@ def resposta_viola_estado(resposta: str, state: dict) -> list[str]:
         if loc != local and re.search(rf"\b{re.escape(loc)}\b", texto):
             violacoes.append(f"Possível mudança indevida de local: {loc}")
 
-    if interlocutor and interlocutor not in texto:
+    aliases_interlocutor = [
+        interlocutor,
+        "janio",
+        "jânio",
+        "você",
+        "voce",
+    ]
+    
+    if interlocutor and not any(alias in texto for alias in aliases_interlocutor):
         violacoes.append("A resposta pode ter perdido o interlocutor ativo.")
 
     acoes_proibidas = [
