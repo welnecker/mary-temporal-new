@@ -283,6 +283,17 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
 
 fala_usuario = st.text_area("Fala/Ação do usuário")
 
+
+def limpar_state_update(resposta: str) -> str:
+    if not resposta:
+        return ""
+
+    if "STATE_UPDATE:" in resposta:
+        return resposta.split("STATE_UPDATE:", 1)[0].strip()
+
+    return resposta.strip()
+
+
 if st.button("Processar turno"):
     state["turno"] += 1
 
@@ -297,14 +308,16 @@ if st.button("Processar turno"):
 
     validacao = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
+    resposta_final_limpa = limpar_state_update(resposta_final)
+
     state["history"].append({
         "role": "user",
         "content": fala_usuario
     })
-    
+
     state["history"].append({
         "role": "assistant",
-        "content": resposta_final
+        "content": resposta_final_limpa
     })
 
     st.markdown("### Prompt enviado ao modelo")
@@ -321,8 +334,11 @@ if st.button("Processar turno"):
     else:
         st.success("Nenhuma violação detectada.")
 
+    st.markdown("### State update extraído")
+    st.json(update or {})
+
     st.markdown("### Resposta final")
-    st.write(resposta_final)
+    st.write(resposta_final_limpa)
 
 st.markdown("---")
 st.subheader("Estado real salvo")
