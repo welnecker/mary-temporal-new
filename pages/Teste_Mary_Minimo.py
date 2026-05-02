@@ -43,6 +43,10 @@ Modo de interação: {state["modo"]}
 
     st.code(contexto, language="text")
 
+    # SIMULA RESPOSTA (SEM IA AINDA)
+    st.markdown("### Resposta simulada da Mary")
+    st.write(f"{state['personagem']} continua {state['mary_acao']}, olhando para você.")
+
 nova_acao = st.text_input("Nova ação manual de Mary")
 if st.button("Atualizar ação"):
     if nova_acao.strip():
