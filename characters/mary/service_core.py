@@ -362,6 +362,7 @@ from characters.mary.modules.prompt_blocks import (
     render_tp_arc_block,
     render_tp_arc_behavior_rule,
     render_mary_presence_engine_rule,
+    render_presence_rule,
 )
 
 logger = logging.getLogger(__name__)
@@ -2180,8 +2181,8 @@ def rule_relationship(ctx: PromptBuildContext) -> Optional[PromptFragment]:
 def rule_presence(ctx: PromptBuildContext) -> Optional[PromptFragment]:
     return _frag(
         key="presence_rule",
-        priority=35,
-        content=render_mary_presence_engine_rule(),
+        priority=25,
+        content=render_presence_rule(),
     )
 
 
@@ -2697,6 +2698,7 @@ PROMPT_RULES: list[PromptRule] = [
 
     rule_continuity,
     rule_memory,
+    rule_presence, 
     rule_relationship,   
 
     rule_third_party,  
