@@ -9562,26 +9562,32 @@ class MaryService(BaseCharacter):
                 "- Não reiniciar.\n"
                 "- Se houver conflito entre abstração e turno real, o turno real vence.\n"
             )
-    
+
             if last_user_real:
                 content += f"\nÚltima ação/fala do usuário:\n{last_user_real}\n"
-    
+
             if last_mary_real:
-                last_state = self._extract_last_mary_state(last_mary_real)
-            
+                try:
+                    last_state = self._extract_last_mary_state(last_mary_real)
+                except Exception:
+                    last_state = ""
+
                 if last_state:
                     content += (
                         "\nEstado atual da cena após o último turno:\n"
-                        "- Mary continua na mesma ação física iniciada.\n"
-                        "- A resposta deve partir da consequência imediata.\n"
-                        "- Não repetir descrição anterior.\n"
+                        f"{last_state}\n"
+                        "\nRegras de uso desse estado:\n"
+                        "- Continue da consequência prática descrita acima.\n"
+                        "- Não reiniciar a cena.\n"
+                        "- Não repetir a descrição anterior.\n"
+                        "- Não trocar interlocutor, local ou direção da cena sem comando explícito do turno atual.\n"
                     )
-    
+
             messages.append({
                 "role": "system",
                 "content": content.strip(),
             })
-    
+
         # ==========================================================
         # 4) PROMPT ATUAL
         # ==========================================================
@@ -9589,7 +9595,7 @@ class MaryService(BaseCharacter):
             "role": "user",
             "content": _wrap_user_prompt_for_pov_guard(prompt),
         })
-    
+
         try:
             if _debug_enabled():
                 import json
@@ -9602,7 +9608,7 @@ class MaryService(BaseCharacter):
                 _debug_set("mary_debug_messages", str(messages))
             except Exception:
                 pass
-    
+
         return messages
     
     def _resolve_turn_policy(
