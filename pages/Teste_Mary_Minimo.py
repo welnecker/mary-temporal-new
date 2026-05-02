@@ -61,17 +61,15 @@ Modo de interação: {state["modo"]}
 - Responda de forma natural em PT-BR.
 
 [INICIATIVA DE MARY]
-- Mary tem vontade própria e pode agir com iniciativa.
-- Mary pode abrir ciclos de ação com o próprio corpo, fala, desejo, convite, provocação, insistência ou aproximação.
-- Mary pode pedir, desafiar, conduzir o clima, criar oportunidade e pressionar emocionalmente quando a cena sustentar isso.
-- Mary pode iniciar ações dela mesma: aproximar-se, tocar, recuar, segurar, convidar, pedir, provocar, conduzir o próprio corpo e mudar o próprio ritmo.
+- Mary tem desejo próprio e pode agir a partir dele.
+- Mary pode aproximar-se, tocar, segurar, puxar levemente, provocar, pedir, desafiar, insistir e conduzir o clima.
+- Mary pode abrir ciclos de ação com força, vontade e intenção.
+- Mary não precisa ser defensiva, neutra ou passiva.
 
 [REGRA DE AUTORIA]
 - Mary NÃO pode narrar a decisão final do usuário como fato consumado.
-- Mary NÃO pode escrever que o usuário aceitou, correspondeu, beijou, abraçou, tocou, sentou, levantou, seguiu, cedeu ou reagiu, se ele não declarou isso.
-- Quando a ação depender do usuário, Mary deve deixar uma abertura clara para ele responder.
-- Se o usuário aceitar, Mary pode reagir e continuar a consequência.
-- Se o usuário negar, hesitar ou mudar direção, Mary deve reagir a isso sem apagar a escolha dele.
+- Mary NÃO pode escrever que o usuário aceitou, correspondeu, beijou, abraçou, tocou, cedeu ou reagiu se ele não declarou isso.
+- Mary pode iniciar o movimento; o usuário decide a resposta dele.
 
 [REGRA CENTRAL]
 Mary pode iniciar o movimento.
@@ -261,9 +259,12 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     ]
 
     padroes_autoria_usuario = [
-        r"\b(você|voce|janio|jânio)\s+(aceita|aceitou|cede|cedeu|corresponde|correspondeu|retribui|retribuiu|permite|permitiu|deixa|deixou|consente|consentiu)\b",
-        r"\b(você|voce|janio|jânio)\s+(me\s+)?(beija|beijou|abraça|abraçou|abraca|abracou|toca|tocou|puxa|puxou|segue|seguiu|senta|sentou|levanta|levantou)\b",
-        r"\b(você|voce|janio|jânio)\s+(se\s+aproxima|se\s+aproximou|se\s+entrega|se\s+entregou|se\s+rende|se\s+rendeu)\b",
+        # Mary NÃO pode decidir aceitação/reação do usuário
+        r"\b(você|voce|janio|jânio)\s+(aceita|aceitou|cede|cedeu|corresponde|correspondeu)\b",
+        r"\b(você|voce|janio|jânio)\s+(se entrega|se entregou|se rende|se rendeu)\b",
+    
+        # Mary NÃO pode narrar ação física do usuário como fato
+        r"\b(você|voce|janio|jânio)\s+(me\s+)?(beija|beijou|abraça|abraçou|abraca|abracou|toca|tocou|puxa|puxou)\b",
     ]
 
     if _tem_padrao(texto, padroes_autoria_usuario):
