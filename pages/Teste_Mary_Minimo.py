@@ -25,21 +25,23 @@ def decidir_acao_mary(state: dict, fala_usuario: str) -> str:
     if not fala:
         return acao_atual
 
-    if "entro no quarto" in fala:
-        return "sentada na beira da cama"
+    regras = [
+        (("entro no quarto", "chego no quarto"), "sentada na beira da cama"),
+        (("me aproximo", "chego mais perto"), "levantando da cama lentamente"),
+        (("paro na sua frente", "fico na sua frente"), "parada diante de você"),
+        (("olho para você", "olho pra você"), "sustentando o olhar em silêncio"),
+        (("sorrio", "dou um sorriso"), "sorrindo de volta com confiança"),
+        (("pergunto se ela quer conversar", "quer conversar"), "olhando para você com atenção"),
+        (("aponto para a câmera", "mostro a câmera"), "dividida entre a câmera e você"),
+        (("saio pela porta", "vou embora"), "parada no quarto, observando sua saída"),
+        (("silvia manda mensagem", "mensagem da silvia"), "olhando para o celular por um instante"),
+    ]
 
-    if "me aproximo" in fala:
-        return "levantando da cama lentamente"
+    for gatilhos, nova_acao in regras:
+        if any(g in fala for g in gatilhos):
+            return nova_acao
 
-    if "paro na sua frente" in fala:
-        return "parada diante de você"
-
-    if "olho para você" in fala or "olho pra você" in fala:
-        return "sustentando o olhar em silêncio"
-
-    if "sorrio" in fala:
-        return "sorrindo de volta com confiança"
-
+    # Entrada aberta/desconhecida: não inventa ação nova
     return acao_atual
 
 
