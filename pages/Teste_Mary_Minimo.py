@@ -46,6 +46,53 @@ def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
         v = min_v
     return max(min_v, min(max_v, v))
 
+def reparar_estado_incoerente(state: dict) -> None:
+    fase = int(state.get("physical_phase", 0) or 0)
+    resolved = bool(state.get("resolution_done", False))
+
+    # Não existe desaceleração/aftercare antes da resolução.
+    if not resolved and fase >= 6:
+        state["physical_phase"] = 5
+        state["scene_stage"] = "pico"
+
+
+def preparar_resolution_engine(state: dict) -> None:
+    reparar_estado_incoerente(state)
+
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    fase = int(state.get("physical_phase", 0) or 0)
+    resolved = bool(state.get("resolution_done", False))
+
+    force = (not resolved and fase >= 4 and desejo >= 0.95 and tensao >= 0.90)
+
+    state["force_resolution_now"] = bool(force)
+
+    if force:
+        state["physical_phase"] = 5
+        state["scene_stage"] = "pico"
+        state["mary_intent"] = "resolver_pico"
+    else:
+        state["scene_stage"] = fase_para_stage(int(state.get("physical_phase", 0) or 0))
+
+
+def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
+    texto = (resposta_limpa or "").lower()
+
+    if state.get("force_resolution_now"):
+        state["resolution_done"] = True
+        state["physical_phase"] = 6
+        state["scene_stage"] = "desaceleracao"
+        state["mary_intent"] = "desacelerar"
+        state["force_resolution_now"] = False
+        return
+
+    if any(p in texto for p in ["auge", "clímax", "climax", "liberação", "me solto", "perco o controle"]):
+        state["resolution_done"] = True
+        state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
+        state["scene_stage"] = "desaceleracao"
+        state["mary_intent"] = "desacelerar"
+
 
 def _tem_padrao(texto: str, padroes: list[str]) -> bool:
     return any(re.search(p, texto, flags=re.IGNORECASE) for p in padroes)
@@ -72,6 +119,7 @@ def init_state() -> dict:
             "mary_intent": "observar",
             "resolution_done": False,
             "mary_physical_intent": None,
+            "force_resolution_now": False,
         }
 
     state = st.session_state.mary_state_minimo
@@ -94,6 +142,7 @@ def init_state() -> dict:
         "mary_intent": "observar",
         "resolution_done": False,
         "mary_physical_intent": None,
+        "force_resolution_now": False,
     }
     for k, v in defaults.items():
         state.setdefault(k, v)
@@ -200,6 +249,7 @@ Tensão da cena: {round(state.get('tension_level', 0.0), 2)}
 Conexão emocional: {round(state.get('connection_level', 0.0), 2)}
 Intenção interna de Mary: {state.get('mary_intent', 'observar')}
 Ação física interna de Mary: {state.get('mary_physical_intent') or 'nenhuma'}
+Resolução forçada neste turno: {state.get("force_resolution_now", False)}
 Local: {state['local']}
 Tempo: {state['tempo']}
 Interlocutor ativo: {state['interlocutor']}
@@ -270,6 +320,14 @@ REGRA:
 Mary pode iniciar o movimento.
 O usuário decide a resposta dele.
 Mary reage à escolha do usuário.
+
+[MOTOR DE RESOLUÇÃO DA CENA]
+- Se "Resolução forçada neste turno" for True:
+  - Este turno NÃO deve prolongar tensão.
+  - Este turno deve resolver o pico narrativo atual.
+  - Não use frases de espera como "quase", "não vou parar", "até onde você deixa".
+  - A resposta deve mostrar consequência clara, pausa, respiração e mudança de ritmo.
+  - Depois da resolução, Mary começa a desacelerar naturalmente.
 
 [SAÍDA ESTRUTURADA - OBRIGATÓRIA]
 Ao final, devolva somente o texto da Mary e, se possível, um bloco STATE_UPDATE em JSON com:
@@ -420,19 +478,22 @@ def limpar_state_update(resposta: str) -> str:
 
 def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+
     phase = int(state.get("physical_phase", 0) or 0)
+    resolved = bool(state.get("resolution_done", False))
 
     gatilhos = {
         1: ["aproxima", "perto", "ao meu lado", "senta", "sentou", "inclino"],
         2: ["toque", "toco", "mão", "braço", "ombro", "nuca", "peito", "seguro"],
         3: ["beijo", "beija", "beijou", "smack", "lábios", "boca"],
-        4: ["intenso", "corpo contra", "pressiono", "não para", "nao para", "colado", "calor"],
+        4: ["intenso", "corpo contra", "pressiono", "não para", "colado", "calor"],
         5: ["auge", "clímax", "climax", "perco o controle", "liberação", "me solto"],
         6: ["respiração", "respiro", "devagar", "tremor", "silêncio", "pausa"],
         7: ["fica comigo", "vem aqui", "abraço", "carinho", "descanso", "aftercare"],
     }
 
     nova_phase = phase
+
     for nivel, palavras in gatilhos.items():
         if any(p in texto for p in palavras):
             nova_phase = max(nova_phase, nivel)
@@ -440,15 +501,22 @@ def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str
     if nova_phase > phase + 1:
         nova_phase = phase + 1
 
+    # Bloqueio essencial: sem resolução, não pode ir para desaceleração.
+    if not resolved and nova_phase >= 6:
+        nova_phase = 5
+
     state["physical_phase"] = max(0, min(nova_phase, 7))
     state["scene_stage"] = fase_para_stage(state["physical_phase"])
-    state["mary_physical_intent"] = decidir_acao_fisica_mary(state)
 
 
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] += 1
+
+    preparar_resolution_engine(state)
+
     mensagens = montar_mensagens(state, fala_usuario)
     resposta_bruta = gerar_resposta_llm(mensagens, model=model)
+
     update = extrair_state_update(resposta_bruta)
 
     if update:
@@ -461,6 +529,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     atualizar_physical_phase(state, resposta_final_limpa, fala_usuario)
     atualizar_psique_mary(state, fala_usuario, resposta_final_limpa)
+    finalizar_resolution_engine(state, resposta_final_limpa)
+
     state["scene_stage"] = decidir_scene_stage(state, fala_usuario)
 
     state["history"].append({"role": "user", "content": fala_usuario})
