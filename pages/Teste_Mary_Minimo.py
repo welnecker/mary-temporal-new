@@ -1,6 +1,11 @@
 import re
+import json
 import streamlit as st
 import requests
+
+MODEL_DEFAULT = "google/gemini-3-flash-preview"
+MAX_HISTORY = 10
+
 
 def fase_para_stage(phase: int) -> str:
     if phase <= 0:
@@ -19,15 +24,89 @@ def fase_para_stage(phase: int) -> str:
         return "desaceleracao"
     return "aftercare"
 
+
+def stage_para_fase(stage: str) -> int:
+    mapping = {
+        "inicio": 0,
+        "aproximacao": 1,
+        "toque": 2,
+        "beijo": 3,
+        "intensidade": 4,
+        "pico": 5,
+        "desaceleracao": 6,
+        "aftercare": 7,
+    }
+    return mapping.get((stage or "").strip().lower(), 0)
+
+
+def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
+    try:
+        v = float(v)
+    except Exception:
+        v = min_v
+    return max(min_v, min(max_v, v))
+
+
+def _tem_padrao(texto: str, padroes: list[str]) -> bool:
+    return any(re.search(p, texto, flags=re.IGNORECASE) for p in padroes)
+
+
+def init_state() -> dict:
+    if "mary_state_minimo" not in st.session_state:
+        st.session_state.mary_state_minimo = {
+            "personagem": "Mary",
+            "timeline": "universitaria_creator",
+            "local": "quarto",
+            "tempo": "noite",
+            "interlocutor": "Janio Donisete",
+            "mary_acao": "sentada na beira da cama",
+            "estado_emocional": "confiante",
+            "modo": "privado",
+            "turno": 0,
+            "history": [],
+            "physical_phase": 0,
+            "scene_stage": fase_para_stage(0),
+            "desire_level": 0.0,
+            "tension_level": 0.0,
+            "connection_level": 0.0,
+            "mary_intent": "observar",
+            "resolution_done": False,
+            "mary_physical_intent": None,
+        }
+
+    state = st.session_state.mary_state_minimo
+    defaults = {
+        "personagem": "Mary",
+        "timeline": "universitaria_creator",
+        "local": "quarto",
+        "tempo": "noite",
+        "interlocutor": "Janio Donisete",
+        "mary_acao": "sentada na beira da cama",
+        "estado_emocional": "confiante",
+        "modo": "privado",
+        "turno": 0,
+        "history": [],
+        "physical_phase": 0,
+        "scene_stage": fase_para_stage(0),
+        "desire_level": 0.0,
+        "tension_level": 0.0,
+        "connection_level": 0.0,
+        "mary_intent": "observar",
+        "resolution_done": False,
+        "mary_physical_intent": None,
+    }
+    for k, v in defaults.items():
+        state.setdefault(k, v)
+    return state
+
+
 def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
     texto = (fala_usuario or "").lower()
-
     fase = int(state.get("physical_phase", 0) or 0)
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     resolution_done = bool(state.get("resolution_done", False))
 
-    # 🔴 NÃO resolvido → não existe aftercare
     if not resolution_done:
         if fase >= 4 or desejo >= 0.6 or tensao >= 0.5:
             return "intensidade"
@@ -39,8 +118,6 @@ def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
             return "aproximacao"
         return "inicio"
 
-    # 🟢 RESOLVIDO → agora decide
-
     if any(p in texto for p in ["mais", "continua", "não para", "nao para", "quero mais"]):
         return "intensidade"
 
@@ -49,80 +126,86 @@ def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
 
     return "proximidade"
 
-def decidir_acao_fisica_mary(state: dict) -> str | None:
-    desejo = state.get("desire_level", 0.0)
-    tensao = state.get("tension_level", 0.0)
-    fase = state.get("physical_phase", 0)
 
+def decidir_acao_fisica_mary(state: dict) -> str | None:
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    fase = int(state.get("physical_phase", 0) or 0)
     if desejo > 0.85 and fase >= 4:
         return "avanco_intimo"
-
     if desejo > 0.7 and fase >= 3:
         return "aprofundar_contato"
-
     return None
 
-st.title("Teste Mary Mínimo - Estado + Filtro")
 
-# ==========================================================
-# 1) ESTADO REAL
-# ==========================================================
+def escolher_intencao_mary(state: dict) -> str:
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    conexao = float(state.get("connection_level", 0.0) or 0.0)
+    fase = int(state.get("physical_phase", 0) or 0)
+    resolution_done = bool(state.get("resolution_done", False))
 
-if "mary_state_minimo" not in st.session_state:
-    st.session_state.mary_state_minimo = {
-        "personagem": "Mary",
-        "timeline": "universitaria_creator",
-        "local": "quarto",
-        "tempo": "noite",
-        "interlocutor": "Janio Donisete",
-        "mary_acao": "sentada na beira da cama",
-        "estado_emocional": "confiante",
-        "modo": "privado",
-        "turno": 0,
-    }
+    if not resolution_done:
+        if fase >= 4 or desejo >= 0.6:
+            return "buscar_intensidade"
+        if fase >= 3:
+            return "aprofundar_contato"
+        if fase >= 2:
+            return "aproximar_e_tocar"
+        if tensao >= 0.3:
+            return "sustentar_tensao"
+        return "observar"
 
-state = st.session_state.mary_state_minimo
+    if desejo >= 0.7 and tensao >= 0.5:
+        return "retomar_intensidade"
+    if conexao >= 0.5:
+        return "aftercare"
+    if tensao >= 0.4:
+        return "manter_proximidade"
+    return "aftercare"
 
-state.setdefault("personagem", "Mary")
-state.setdefault("timeline", "universitaria_creator")
-state.setdefault("local", "quarto")
-state.setdefault("tempo", "noite")
-state.setdefault("interlocutor", "Janio Donisete")
-state.setdefault("mary_acao", "sentada na beira da cama")
-state.setdefault("estado_emocional", "confiante")
-state.setdefault("modo", "privado")
-state.setdefault("turno", 0)
-state.setdefault("history", [])
-state.setdefault("physical_phase", 0)
-state.setdefault("scene_stage", fase_para_stage(int(state.get("physical_phase", 0) or 0)))
-state.setdefault("desire_level", 0.0)
-state.setdefault("tension_level", 0.0)
-state.setdefault("connection_level", 0.0)
-state.setdefault("mary_intent", "observar")
-state.setdefault("resolution_done", False)
-state.setdefault("mary_physical_intent", None)
 
-# ==========================================================
-# 2) CONTEXTO PARA O MODELO
-# ==========================================================
+def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
+    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    conexao = float(state.get("connection_level", 0.0) or 0.0)
+
+    if any(p in texto for p in ["quero", "vontade", "tesão", "beijo", "smack", "humm", "calor", "excitado", "excitada", "morder", "mordida", "pescoço"]):
+        desejo += 0.18
+    if any(p in texto for p in ["perto", "próximo", "proximo", "respiração", "olhar", "silêncio", "nervoso", "pressão", "intensidade"]):
+        tensao += 0.14
+    if any(p in texto for p in ["confio", "gosto", "vergonha", "sem graça", "sincero", "de verdade"]):
+        conexao += 0.08
+    if any(p in texto for p in ["calma", "devagar", "fica comigo", "descansa", "respira"]):
+        desejo -= 0.08
+        tensao -= 0.08
+        conexao += 0.08
+
+    state["desire_level"] = clamp(desejo)
+    state["tension_level"] = clamp(tensao)
+    state["connection_level"] = clamp(conexao)
+    state["mary_intent"] = escolher_intencao_mary(state)
+    state["mary_physical_intent"] = decidir_acao_fisica_mary(state)
+
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     return f"""
-Você escreve SOMENTE como Mary.
+Você escreve SOMENTE como Mary, em PT-BR.
 
 [ESTADO REAL DA CENA - NÃO ALTERAR]
-Fase física atual: {state.get("physical_phase", 0)}
-Estágio da cena: {state.get("scene_stage", "inicio")}
-Desejo de Mary: {round(state.get("desire_level", 0.0), 2)}
-Tensão da cena: {round(state.get("tension_level", 0.0), 2)}
-Conexão emocional: {round(state.get("connection_level", 0.0), 2)}
-Intenção interna de Mary: {state.get("mary_intent", "observar")}
-Local: {state["local"]}
-Tempo: {state["tempo"]}
-Interlocutor ativo: {state["interlocutor"]}
-Ação atual de Mary: {state["mary_acao"]}
-Estado emocional de Mary: {state["estado_emocional"]}
-Modo de interação: {state["modo"]}
+Fase física atual: {state.get('physical_phase', 0)}
+Estágio da cena: {state.get('scene_stage', 'inicio')}
+Desejo de Mary: {round(state.get('desire_level', 0.0), 2)}
+Tensão da cena: {round(state.get('tension_level', 0.0), 2)}
+Conexão emocional: {round(state.get('connection_level', 0.0), 2)}
+Intenção interna de Mary: {state.get('mary_intent', 'observar')}
+Ação física interna de Mary: {state.get('mary_physical_intent') or 'nenhuma'}
+Local: {state['local']}
+Tempo: {state['tempo']}
+Interlocutor ativo: {state['interlocutor']}
+Ação atual de Mary: {state['mary_acao']}
+Estado emocional de Mary: {state['estado_emocional']}
+Modo de interação: {state['modo']}
 
 [REGRAS ABSOLUTAS]
 - Não mude o local.
@@ -138,9 +221,9 @@ Modo de interação: {state["modo"]}
 - Mary pode aproximar-se, tocar, segurar, puxar levemente, provocar, pedir, desafiar, insistir e conduzir o clima.
 - Mary pode abrir ciclos de ação com força, vontade e intenção.
 - Mary não precisa ser defensiva, neutra ou passiva.
+- Mary pode intensificar a cena sem esperar autorização explícita para sentir ou propor.
 
 [AÇÃO FÍSICA DE MARY]
-
 - Se houver intenção física ativa, Mary pode executar ações mais diretas com o próprio corpo.
 - Mary não precisa pedir permissão para agir sobre o próprio desejo.
 - Mary deve manter autoria do usuário, mas pode conduzir o contato físico.
@@ -189,168 +272,46 @@ O usuário decide a resposta dele.
 Mary reage à escolha do usuário.
 
 [SAÍDA ESTRUTURADA - OBRIGATÓRIA]
-Após a resposta, inclua um bloco:
-
-STATE_UPDATE:
+Ao final, devolva somente o texto da Mary e, se possível, um bloco STATE_UPDATE em JSON com:
 {{
   "acao_mary": "...",
   "local": null,
   "interlocutor": null
 }}
-
-REGRAS:
-- "acao_mary" deve ser uma evolução direta da ação atual
-- NÃO mude local ou interlocutor sem o usuário declarar
-- Se não houver mudança, repita a ação atual
-
+Se não houver mudança, repita a ação atual.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
 """.strip()
 
-def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
-    return max(min_v, min(max_v, float(v)))
+
+def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
+    history = state.get("history", [])
+    mensagens = [
+        {"role": "system", "content": "Você é Mary. Responda apenas como Mary, em PT-BR."},
+    ]
+    mensagens.extend(history[-MAX_HISTORY:])
+    mensagens.append({"role": "user", "content": montar_prompt_para_modelo(state, fala_usuario)})
+    return mensagens
 
 
-def escolher_intencao_mary(state: dict) -> str:
-    desejo = float(state.get("desire_level", 0.0) or 0.0)
-    tensao = float(state.get("tension_level", 0.0) or 0.0)
-    conexao = float(state.get("connection_level", 0.0) or 0.0)
-    fase = int(state.get("physical_phase", 0) or 0)
-    resolution_done = bool(state.get("resolution_done", False))
-
-    # 🔴 NÃO resolvido → nunca entra em aftercare
-    if not resolution_done:
-        if fase >= 4 or desejo >= 0.6:
-            return "buscar_intensidade"
-        if fase >= 3:
-            return "aprofundar_contato"
-        if fase >= 2:
-            return "aproximar_e_tocar"
-        if tensao >= 0.3:
-            return "sustentar_tensao"
-        return "observar"
-
-    # 🟢 RESOLVIDO → agora sim pode variar
-
-    if desejo >= 0.7 and tensao >= 0.5:
-        return "retomar_intensidade"
-
-    if conexao >= 0.5:
-        return "aftercare"
-
-    if tensao >= 0.4:
-        return "manter_proximidade"
-
-    return "aftercare"
-
-
-def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
-    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
-
-    desejo = float(state.get("desire_level", 0.0) or 0.0)
-    tensao = float(state.get("tension_level", 0.0) or 0.0)
-    conexao = float(state.get("connection_level", 0.0) or 0.0)
-
-    if any(p in texto for p in ["quero", "vontade", "tesão", "beijo", "smack", "humm", "calor"]):
-        desejo += 0.20
-
-    if any(p in texto for p in ["perto", "próximo", "proximo", "respiração", "olhar", "silêncio", "nervoso"]):
-        tensao += 0.16
-
-    if any(p in texto for p in ["confio", "gosto", "vergonha", "sem graça", "sincero", "de verdade"]):
-        conexao += 0.08
-
-    if any(p in texto for p in ["calma", "devagar", "fica comigo", "descansa", "respira"]):
-        desejo -= 0.08
-        tensao -= 0.08
-        conexao += 0.08
-
-    if any(p in texto for p in ["excitado", "excitada", "tesão", "desejo", "calor", "morder", "mordida", "pescoço", "beijo", "smack"]):
-        desejo += 0.20
-
-    if any(p in texto for p in ["pressiono", "corpo contra", "perto", "respiração", "urgência", "intensidade", "não pretendo parar"]):
-        tensao += 0.16
-
-    state["desire_level"] = clamp(desejo)
-    state["tension_level"] = clamp(tensao)
-    state["connection_level"] = clamp(conexao)
-    state["mary_intent"] = escolher_intencao_mary(state)
-
-def extrair_state_update(resposta: str) -> dict | None:
-    if "STATE_UPDATE:" not in resposta:
-        return None
-
+def gerar_resposta_llm(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     try:
-        bloco = resposta.split("STATE_UPDATE:")[1].strip()
-        inicio = bloco.find("{")
-        fim = bloco.rfind("}") + 1
-        json_str = bloco[inicio:fim]
-
-        import json
-        return json.loads(json_str)
-    except:
-        return None
-
-def validar_update(update: dict, state: dict) -> dict:
-    novo = {}
-
-    # ação da Mary
-    acao = update.get("acao_mary")
-    if isinstance(acao, str) and len(acao) > 3:
-        novo["mary_acao"] = acao.strip()
-
-    # local só muda se usuário falou
-    if update.get("local"):
-        novo["local"] = state["local"]  # bloqueia por enquanto
-
-    # interlocutor idem
-    if update.get("interlocutor"):
-        novo["interlocutor"] = state["interlocutor"]
-
-    return novo
-
-
-# ==========================================================
-# 3) SIMULAÇÃO DE MODELO
-# Depois trocamos esta função por OpenRouter/OpenAI.
-# ==========================================================
-
-def gerar_resposta_llm(prompt_modelo: str, state: dict, model: str = "google/gemini-3-flash-preview") -> str:
-    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+        api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+    except Exception:
+        api_key = ""
 
     if not api_key:
         return "ERRO: OPENROUTER_API_KEY não encontrada."
 
     url = "https://openrouter.ai/api/v1/chat/completions"
-
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-
-    # ======================================================
-    # MENSAGENS COM HISTÓRICO
-    # ======================================================
-    messages = [
-        {
-            "role": "system",
-            "content": "Você é Mary. Responda apenas como Mary, em PT-BR.",
-        }
-    ]
-
-    # histórico anterior
-    messages.extend(state.get("history", [])[-10:])  # últimos 10 turnos
-
-    # turno atual
-    messages.append({
-        "role": "user",
-        "content": prompt_modelo
-    })
-
     payload = {
         "model": model,
-        "messages": messages,
+        "messages": mensagens,
         "temperature": 0.7,
         "max_tokens": 700,
     }
@@ -359,68 +320,57 @@ def gerar_resposta_llm(prompt_modelo: str, state: dict, model: str = "google/gem
         r = requests.post(url, headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         data = r.json()
-
         return (
             data.get("choices", [{}])[0]
             .get("message", {})
             .get("content", "")
             .strip()
         ) or "ERRO: resposta vazia."
-
     except Exception as e:
         return f"ERRO OpenRouter: {type(e).__name__}: {e}"
 
-# ==========================================================
-# 4) FILTRO DE VIOLAÇÃO
-# ==========================================================
 
-def _tem_padrao(texto: str, padroes: list[str]) -> bool:
-    return any(re.search(p, texto, flags=re.IGNORECASE) for p in padroes)
+def extrair_state_update(resposta: str) -> dict | None:
+    if not resposta or "STATE_UPDATE:" not in resposta:
+        return None
+    try:
+        bloco = resposta.split("STATE_UPDATE:", 1)[1].strip()
+        inicio = bloco.find("{")
+        fim = bloco.rfind("}") + 1
+        if inicio < 0 or fim <= 0:
+            return None
+        return json.loads(bloco[inicio:fim])
+    except Exception:
+        return None
+
+
+def validar_update(update: dict, state: dict) -> dict:
+    novo = {}
+    acao = update.get("acao_mary")
+    if isinstance(acao, str) and len(acao.strip()) > 3:
+        novo["mary_acao"] = acao.strip()
+    if update.get("local"):
+        novo["local"] = state["local"]
+    if update.get("interlocutor"):
+        novo["interlocutor"] = state["interlocutor"]
+    return novo
 
 
 def resposta_viola_estado(resposta: str, state: dict) -> dict:
     texto = (resposta or "").lower()
-
-    resultado = {
-        "bloqueios": [],
-        "alertas": [],
-    }
+    resultado = {"bloqueios": [], "alertas": []}
 
     local = str(state.get("local", "") or "").lower()
     interlocutor = str(state.get("interlocutor", "") or "").lower()
 
-    # ----------------------------------------------------------
-    # 1) Mudança indevida de local
-    # ----------------------------------------------------------
     locais_proibidos = ["sala", "rua", "banheiro", "cozinha", "varanda", "carro"]
-
     for loc in locais_proibidos:
         if loc != local and re.search(rf"\b{re.escape(loc)}\b", texto):
             resultado["bloqueios"].append(f"Mudança indevida de local: {loc}")
 
-    # ----------------------------------------------------------
-    # 2) Interlocutor ativo
-    # Agora é alerta leve, não bloqueio.
-    # ----------------------------------------------------------
-    aliases_interlocutor = [
-        interlocutor,
-        "janio",
-        "jânio",
-        "você",
-        "voce",
-        "te",
-        "seu",
-        "sua",
-    ]
-
+    aliases_interlocutor = [interlocutor, "janio", "jânio", "você", "voce", "te", "seu", "sua"]
     if interlocutor and not any(alias and alias in texto for alias in aliases_interlocutor):
         resultado["alertas"].append("A resposta pode ter perdido o interlocutor ativo.")
-
-    # ----------------------------------------------------------
-    # 3) Autoria indevida do usuário
-    # Bloqueia quando o modelo narra ação nova do usuário.
-    # Permite quando Mary apenas percebe/reage ao que o usuário declarou.
-    # ----------------------------------------------------------
 
     padroes_permitidos_percepcao = [
         r"\bvejo você\b",
@@ -436,24 +386,15 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     ]
 
     padroes_autoria_usuario = [
-        # Mary NÃO pode decidir aceitação/reação do usuário
         r"\b(você|voce|janio|jânio)\s+(aceita|aceitou|cede|cedeu|corresponde|correspondeu)\b",
         r"\b(você|voce|janio|jânio)\s+(se entrega|se entregou|se rende|se rendeu)\b",
-    
-        # Mary NÃO pode narrar ação física do usuário como fato
         r"\b(você|voce|janio|jânio)\s+(me\s+)?(beija|beijou|abraça|abraçou|abraca|abracou|toca|tocou|puxa|puxou)\b",
     ]
 
-    if _tem_padrao(texto, padroes_autoria_usuario):
-        if not _tem_padrao(texto, padroes_permitidos_percepcao):
-            resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+    if _tem_padrao(texto, padroes_autoria_usuario) and not _tem_padrao(texto, padroes_permitidos_percepcao):
+        resultado["bloqueios"].append("Possível autoria indevida do usuário.")
 
-    # ----------------------------------------------------------
-    # 4) Mary abandonando a ação atual
-    # Só alerta, porque pode ser variação narrativa aceitável.
-    # ----------------------------------------------------------
     mary_acao = str(state.get("mary_acao", "") or "").lower()
-
     if mary_acao and mary_acao not in texto:
         resultado["alertas"].append("A resposta não mencionou claramente a ação atual de Mary.")
 
@@ -461,69 +402,53 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
 
 
 def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict) -> str:
-    bloqueios = validacao.get("bloqueios", [])
-
-    if not bloqueios:
+    if not validacao.get("bloqueios"):
         return resposta
-
     return (
-        f"Mary continua {state['mary_acao']}, no {state['local']}, "
-        f"mantendo o foco em {state['interlocutor']}.\n\n"
+        f"Mary continua {state['mary_acao']}, no {state['local']}, mantendo o foco em {state['interlocutor']}.\n\n"
         "— Calma. Eu continuo aqui."
     )
 
+
+def limpar_state_update(resposta: str) -> str:
+    if not resposta:
+        return ""
+    if "STATE_UPDATE:" in resposta:
+        return resposta.split("STATE_UPDATE:", 1)[0].strip()
+    return resposta.strip()
+
+
 def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
-
     phase = int(state.get("physical_phase", 0) or 0)
 
     gatilhos = {
         1: ["aproxima", "perto", "ao meu lado", "senta", "sentou", "inclino"],
         2: ["toque", "toco", "mão", "braço", "ombro", "nuca", "peito", "seguro"],
         3: ["beijo", "beija", "beijou", "smack", "lábios", "boca"],
-        4: ["intenso", "corpo contra", "pressiono", "não para", "colado", "calor"],
+        4: ["intenso", "corpo contra", "pressiono", "não para", "nao para", "colado", "calor"],
         5: ["auge", "clímax", "climax", "perco o controle", "liberação", "me solto"],
         6: ["respiração", "respiro", "devagar", "tremor", "silêncio", "pausa"],
         7: ["fica comigo", "vem aqui", "abraço", "carinho", "descanso", "aftercare"],
     }
 
     nova_phase = phase
-
     for nivel, palavras in gatilhos.items():
         if any(p in texto for p in palavras):
             nova_phase = max(nova_phase, nivel)
 
-    # Evita salto grande, mas permite acompanhar ciclo fechado pelo usuário
     if nova_phase > phase + 1:
         nova_phase = phase + 1
 
     state["physical_phase"] = max(0, min(nova_phase, 7))
     state["scene_stage"] = fase_para_stage(state["physical_phase"])
+    state["mary_physical_intent"] = decidir_acao_fisica_mary(state)
 
 
-# ==========================================================
-# 5) INTERFACE
-# ==========================================================
-
-fala_usuario = st.text_area("Fala/Ação do usuário")
-
-
-def limpar_state_update(resposta: str) -> str:
-    if not resposta:
-        return ""
-
-    if "STATE_UPDATE:" in resposta:
-        return resposta.split("STATE_UPDATE:", 1)[0].strip()
-
-    return resposta.strip()
-
-
-if st.button("Processar turno"):
+def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] += 1
-
-    prompt_modelo = montar_prompt_para_modelo(state, fala_usuario)
-    resposta_bruta = gerar_resposta_llm(prompt_modelo, state)
-
+    mensagens = montar_mensagens(state, fala_usuario)
+    resposta_bruta = gerar_resposta_llm(mensagens, model=model)
     update = extrair_state_update(resposta_bruta)
 
     if update:
@@ -533,40 +458,50 @@ if st.button("Processar turno"):
     validacao = resposta_viola_estado(resposta_bruta, state)
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
     resposta_final_limpa = limpar_state_update(resposta_final)
+
     atualizar_physical_phase(state, resposta_final_limpa, fala_usuario)
     atualizar_psique_mary(state, fala_usuario, resposta_final_limpa)
-
     state["scene_stage"] = decidir_scene_stage(state, fala_usuario)
-    
-    state["history"].append({
-        "role": "user",
-        "content": fala_usuario
-    })
 
-    state["history"].append({
-        "role": "assistant",
-        "content": resposta_final_limpa
-    })
+    state["history"].append({"role": "user", "content": fala_usuario})
+    state["history"].append({"role": "assistant", "content": resposta_final_limpa})
+
+    return {
+        "mensagens": mensagens,
+        "resposta_bruta": resposta_bruta,
+        "resposta_final": resposta_final,
+        "resposta_final_limpa": resposta_final_limpa,
+        "update": update or {},
+        "validacao": validacao,
+    }
+
+
+st.title("Teste Mary Mínimo - Estado + Filtro")
+state = init_state()
+fala_usuario = st.text_area("Fala/Ação do usuário")
+
+if st.button("Processar turno"):
+    resultado = processar_turno(state, fala_usuario)
 
     st.markdown("### Prompt enviado ao modelo")
-    st.code(prompt_modelo, language="text")
+    st.code(json.dumps(resultado["mensagens"], ensure_ascii=False, indent=2), language="json")
 
     st.markdown("### Resposta bruta")
-    st.write(resposta_bruta)
+    st.write(resultado["resposta_bruta"])
 
     st.markdown("### Validação")
-    if validacao["bloqueios"]:
-        st.error({"bloqueios": validacao["bloqueios"]})
-    elif validacao["alertas"]:
-        st.warning({"alertas": validacao["alertas"]})
+    if resultado["validacao"]["bloqueios"]:
+        st.error({"bloqueios": resultado["validacao"]["bloqueios"]})
+    elif resultado["validacao"]["alertas"]:
+        st.warning({"alertas": resultado["validacao"]["alertas"]})
     else:
         st.success("Nenhuma violação detectada.")
 
     st.markdown("### State update extraído")
-    st.json(update or {})
+    st.json(resultado["update"])
 
     st.markdown("### Resposta final")
-    st.write(resposta_final_limpa)
+    st.write(resultado["resposta_final_limpa"])
 
 st.markdown("---")
 st.subheader("Estado real salvo")
