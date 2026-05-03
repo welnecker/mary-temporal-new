@@ -267,7 +267,7 @@ def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -
         conexao += 0.08
 
     if any(p in texto for p in ["excitado", "excitada", "tesão", "desejo", "calor", "morder", "mordida", "pescoço", "beijo", "smack"]):
-    desejo += 0.20
+        desejo += 0.20
 
     if any(p in texto for p in ["pressiono", "corpo contra", "perto", "respiração", "urgência", "intensidade", "não pretendo parar"]):
         tensao += 0.16
