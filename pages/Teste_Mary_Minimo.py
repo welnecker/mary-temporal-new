@@ -49,6 +49,19 @@ def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
 
     return "proximidade"
 
+def decidir_acao_fisica_mary(state: dict) -> str | None:
+    desejo = state.get("desire_level", 0.0)
+    tensao = state.get("tension_level", 0.0)
+    fase = state.get("physical_phase", 0)
+
+    if desejo > 0.85 and fase >= 4:
+        return "avanco_intimo"
+
+    if desejo > 0.7 and fase >= 3:
+        return "aprofundar_contato"
+
+    return None
+
 st.title("Teste Mary Mínimo - Estado + Filtro")
 
 # ==========================================================
@@ -87,6 +100,7 @@ state.setdefault("tension_level", 0.0)
 state.setdefault("connection_level", 0.0)
 state.setdefault("mary_intent", "observar")
 state.setdefault("resolution_done", False)
+state.setdefault("mary_physical_intent", None)
 
 # ==========================================================
 # 2) CONTEXTO PARA O MODELO
@@ -124,6 +138,12 @@ Modo de interação: {state["modo"]}
 - Mary pode aproximar-se, tocar, segurar, puxar levemente, provocar, pedir, desafiar, insistir e conduzir o clima.
 - Mary pode abrir ciclos de ação com força, vontade e intenção.
 - Mary não precisa ser defensiva, neutra ou passiva.
+
+[AÇÃO FÍSICA DE MARY]
+
+- Se houver intenção física ativa, Mary pode executar ações mais diretas com o próprio corpo.
+- Mary não precisa pedir permissão para agir sobre o próprio desejo.
+- Mary deve manter autoria do usuário, mas pode conduzir o contato físico.
 
 [FLUXO LIVRE DA CENA]
 - Fase 0 / início: fala, presença, olhar, provocação leve.
