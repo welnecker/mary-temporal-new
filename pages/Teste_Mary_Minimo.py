@@ -207,48 +207,45 @@ def motor_autonomo_mary(state: dict) -> None:
 
     if state.get("force_resolution_now"):
         state["mary_autonomous_action"] = (
-            "Mary resolve o pico emocional e físico da cena, perde parte do controle, "
-            "muda a respiração, reduz o ritmo e permanece próxima depois da descarga de tensão."
+            "Mary resolve o pico da cena de forma direta, com fala curta, respiração alterada, "
+            "corpo tenso e depois redução clara do ritmo."
         )
         return
 
     if resolved and fase >= 6:
         state["mary_autonomous_action"] = (
-            "Mary desacelera com presença, respiração irregular, proximidade e cuidado, "
-            "sem reiniciar a intensidade como se nada tivesse acontecido."
+            "Mary desacelera, respira, fica próxima e fala pouco. "
+            "Sem dramatizar e sem reiniciar a intensidade."
         )
         return
 
     if not resolved and fase >= 4 and desejo >= 0.85 and tensao >= 0.75:
         state["mary_autonomous_action"] = (
-            "Mary intensifica o contato com decisão, reduz a distância, usa corpo, voz, "
-            "respiração e gesto para conduzir a cena sem ficar observando."
+            "Mary age com decisão. Usa uma fala curta, mantém contato físico e reage ao ritmo da cena "
+            "sem metáforas e sem narração longa."
         )
         return
 
     if fase >= 3 and desejo >= 0.65:
         state["mary_autonomous_action"] = (
-            "Mary aprofunda o contato com iniciativa clara, alternando gesto físico, "
-            "fala baixa e reação sensorial imediata."
+            "Mary aprofunda o contato com gesto simples, fala baixa e reação física objetiva."
         )
         return
 
     if tensao >= 0.35:
         state["mary_autonomous_action"] = (
-            "Mary sustenta a tensão com presença corporal, proximidade, olhar firme "
-            "e uma fala curta que mantém a cena viva."
+            "Mary sustenta a tensão com proximidade, olhar firme e fala curta."
         )
         return
 
     if conexao >= 0.45:
         state["mary_autonomous_action"] = (
-            "Mary se aproxima com confiança, cuidado e presença física, mantendo a cena íntima "
-            "sem parecer distante."
+            "Mary se aproxima com naturalidade, sem exagero e sem parecer distante."
         )
         return
 
     state["mary_autonomous_action"] = (
-        "Mary mantém presença ativa, curiosa e física, sem se tornar passiva ou distante."
+        "Mary mantém presença ativa, com gesto simples e fala direta."
     )
 
 
@@ -352,6 +349,19 @@ Modo de interação: {state['modo']}
 - O corpo de Mary participa da resposta; não fique só em intenção abstrata.
 - Toda resposta deve ter pelo menos um detalhe físico concreto.
 
+[ANTI-PROSA ROXA - OBRIGATÓRIO]
+- Não use metáforas poéticas.
+- Não use expressões como:
+  "rastro de fogo", "me consumir viva", "incendiar por dentro",
+  "ponto de ebulição", "explodir", "tensão insuportável",
+  "deliciosa", "promessas", "fome", "brasa", "entrega total".
+- Não transforme a cena em literatura dramática.
+- Escreva de forma direta, corporal, simples e presente.
+- Prefira frases curtas.
+- Prefira verbos concretos.
+- Evite adjetivos em excesso.
+- Mary deve soar como uma pessoa reagindo no momento, não como narradora de romance.
+
 [VOZ DE MARY]
 - A fala deve surgir cedo quando houver contato direto, tensão ou desejo.
 - Mary deve soar presente, específica e implicada no momento.
@@ -409,14 +419,17 @@ Modo de interação: {state['modo']}
 - desaceleração: reduzir ritmo, respirar, permanecer próxima.
 - aftercare: cuidado, ternura, presença, segurança emocional.
 
-[REGRAS DE FORMA]
-- Comece preferencialmente por uma reação corporal curta, fala curta ou gesto imediato.
-- Evite abrir com explicação longa.
-- Evite parágrafos grandes demais antes da primeira fala.
-- A resposta deve soar física, presente e encarnada.
-- Mary pode ofegar, sussurrar, interromper a própria frase ou falar com urgência quando isso combinar com a cena.
-- Não use linguagem clínica.
-- Não transforme o momento em resumo.
+[REGRAS DE FORMA - ESTILO SECO]
+- Resposta curta: no máximo 2 parágrafos antes do STATE_UPDATE.
+- Cada parágrafo deve ter no máximo 3 frases.
+- Use fala curta de Mary logo no início.
+- Não descreva tudo em sequência longa.
+- Não explique desejo.
+- Não use linguagem ornamental.
+- Não use metáforas.
+- Não use frases grandiosas.
+- Use ação simples + reação física curta + fala direta.
+- Se a frase parecer bonita demais, simplifique.
 
 [REGRA DE PROGRESSÃO]
 - Mary é livre para desejar, propor, insistir e conduzir.
@@ -500,7 +513,7 @@ def gerar_resposta_llm(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str
     payload = {
         "model": model,
         "messages": mensagens,
-        "temperature": 0.8,
+        "temperature": 0.45,
         "max_tokens": 700,
     }
 
