@@ -2,6 +2,23 @@ import re
 import streamlit as st
 import requests
 
+def fase_para_stage(phase: int) -> str:
+    if phase <= 0:
+        return "inicio"
+    if phase == 1:
+        return "aproximacao"
+    if phase == 2:
+        return "toque"
+    if phase == 3:
+        return "beijo"
+    if phase == 4:
+        return "intensidade"
+    if phase == 5:
+        return "pico"
+    if phase == 6:
+        return "desaceleracao"
+    return "aftercare"
+
 st.title("Teste Mary Mínimo - Estado + Filtro")
 
 # ==========================================================
@@ -39,24 +56,6 @@ state.setdefault("desire_level", 0.0)
 state.setdefault("tension_level", 0.0)
 state.setdefault("connection_level", 0.0)
 state.setdefault("mary_intent", "observar")
-
-def fase_para_stage(phase: int) -> str:
-    if phase <= 0:
-        return "inicio"
-    if phase == 1:
-        return "aproximacao"
-    if phase == 2:
-        return "toque"
-    if phase == 3:
-        return "beijo"
-    if phase == 4:
-        return "intensidade"
-    if phase == 5:
-        return "pico"
-    if phase == 6:
-        return "desaceleracao"
-    return "aftercare"
-
 
 # ==========================================================
 # 2) CONTEXTO PARA O MODELO
