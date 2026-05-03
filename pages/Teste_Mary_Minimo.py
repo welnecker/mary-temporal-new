@@ -34,6 +34,11 @@ state.setdefault("modo", "privado")
 state.setdefault("turno", 0)
 state.setdefault("history", [])
 state.setdefault("physical_phase", 0)
+state.setdefault("scene_stage", fase_para_stage(int(state.get("physical_phase", 0) or 0)))
+state.setdefault("desire_level", 0.0)
+state.setdefault("tension_level", 0.0)
+state.setdefault("connection_level", 0.0)
+state.setdefault("mary_intent", "observar")
 
 
 # ==========================================================
@@ -46,6 +51,11 @@ Você escreve SOMENTE como Mary.
 
 [ESTADO REAL DA CENA - NÃO ALTERAR]
 Fase física atual: {state.get("physical_phase", 0)}
+Estágio da cena: {state.get("scene_stage", "inicio")}
+Desejo de Mary: {round(state.get("desire_level", 0.0), 2)}
+Tensão da cena: {round(state.get("tension_level", 0.0), 2)}
+Conexão emocional: {round(state.get("connection_level", 0.0), 2)}
+Intenção interna de Mary: {state.get("mary_intent", "observar")}
 Local: {state["local"]}
 Tempo: {state["tempo"]}
 Interlocutor ativo: {state["interlocutor"]}
@@ -68,12 +78,32 @@ Modo de interação: {state["modo"]}
 - Mary pode abrir ciclos de ação com força, vontade e intenção.
 - Mary não precisa ser defensiva, neutra ou passiva.
 
-[PROGRESSÃO FÍSICA]
-- Fase 0: distância, fala, olhar.
-- Fase 1: proximidade, sentar perto, inclinar-se.
-- Fase 2: toque leve, mão, braço, ombro, nuca, peito.
-- Fase 3: beijo, contato de lábios, resposta ao beijo.
-- Fase 4: beijo mais intenso, corpo próximo, pressão física moderada.
+[FLUXO LIVRE DA CENA]
+- Fase 0 / início: fala, presença, olhar, provocação leve.
+- Fase 1 / aproximação: proximidade, convite, sentar perto, inclinar-se.
+- Fase 2 / toque: contato físico leve, mão, braço, ombro, nuca, peito.
+- Fase 3 / beijo: contato de lábios, resposta ao beijo, continuidade afetiva.
+- Fase 4 / intensidade: maior proximidade, corpo próximo, desejo claro, condução mais firme.
+- Fase 5 / pico: auge emocional e físico da cena, sem deixar dúvida de que Mary atingiu o clímax da tensão.
+- Fase 6 / desaceleração: respiração, pausa, tremor, silêncio, relaxamento progressivo.
+- Fase 7 / aftercare: cuidado, carinho, proximidade emocional, acolhimento e presença.
+
+[LINGUAGEM POR ESTÁGIO]
+- início: leve, curiosa, provocativa.
+- aproximação: sugestiva, íntima, convidativa.
+- toque: sensorial, próxima, mais direta.
+- beijo: intensa, emocional, responsiva.
+- intensidade: clara sobre desejo, sem ambiguidade emocional.
+- pico: resolver a tensão; Mary deve expressar claramente que chegou ao auge, com foco em respiração, pausa, liberação emocional e perda momentânea de controle.
+- desaceleração: reduzir ritmo, respirar, permanecer próxima.
+- aftercare: cuidado, ternura, presença, segurança emocional.
+
+REGRA:
+- Mary é livre para desejar, propor, insistir e conduzir.
+- Mary não precisa esperar comandos manuais para evoluir.
+- Mary deve respeitar o ritmo da cena e o estágio atual.
+- Mary pode avançar no máximo 1 fase por turno, salvo quando o usuário fechar claramente um ciclo físico.
+- Após o pico, Mary deve naturalmente caminhar para desaceleração e aftercare.
 
 REGRA:
 - Mary pode ter iniciativa dentro da fase atual ou avançar no máximo 1 fase por turno.
@@ -110,6 +140,59 @@ REGRAS:
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
 """.strip()
+
+def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
+    return max(min_v, min(max_v, float(v)))
+
+
+def escolher_intencao_mary(state: dict) -> str:
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    conexao = float(state.get("connection_level", 0.0) or 0.0)
+    fase = int(state.get("physical_phase", 0) or 0)
+
+    if fase >= 7:
+        return "aftercare"
+    if fase >= 6:
+        return "desacelerar"
+    if fase >= 5:
+        return "resolver_pico"
+    if desejo >= 0.75 and tensao >= 0.65 and fase >= 3:
+        return "buscar_intensidade"
+    if desejo >= 0.55 and tensao >= 0.45:
+        return "provocar_e_aproximar"
+    if conexao >= 0.45 and tensao >= 0.35:
+        return "aprofundar_vinculo"
+    if tensao >= 0.35:
+        return "sustentar_tensao"
+    return "observar"
+
+
+def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
+    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    conexao = float(state.get("connection_level", 0.0) or 0.0)
+
+    if any(p in texto for p in ["quero", "vontade", "tesão", "beijo", "smack", "humm", "calor"]):
+        desejo += 0.12
+
+    if any(p in texto for p in ["perto", "próximo", "proximo", "respiração", "olhar", "silêncio", "nervoso"]):
+        tensao += 0.10
+
+    if any(p in texto for p in ["confio", "gosto", "vergonha", "sem graça", "sincero", "de verdade"]):
+        conexao += 0.08
+
+    if any(p in texto for p in ["calma", "devagar", "fica comigo", "descansa", "respira"]):
+        desejo -= 0.08
+        tensao -= 0.08
+        conexao += 0.08
+
+    state["desire_level"] = clamp(desejo)
+    state["tension_level"] = clamp(tensao)
+    state["connection_level"] = clamp(conexao)
+    state["mary_intent"] = escolher_intencao_mary(state)
 
 def extrair_state_update(resposta: str) -> dict | None:
     if "STATE_UPDATE:" not in resposta:
@@ -306,16 +389,36 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
         "— Calma. Eu continuo aqui."
     )
 
+def fase_para_stage(phase: int) -> str:
+    if phase <= 0:
+        return "inicio"
+    if phase == 1:
+        return "aproximacao"
+    if phase == 2:
+        return "toque"
+    if phase == 3:
+        return "beijo"
+    if phase == 4:
+        return "intensidade"
+    if phase == 5:
+        return "pico"
+    if phase == 6:
+        return "desaceleracao"
+    return "aftercare"
+
 def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
 
     phase = int(state.get("physical_phase", 0) or 0)
 
     gatilhos = {
-        1: ["aproxima", "perto", "ao meu lado", "senta", "sentou"],
-        2: ["toque", "toco", "mão", "braço", "ombro", "nuca", "peito"],
+        1: ["aproxima", "perto", "ao meu lado", "senta", "sentou", "inclino"],
+        2: ["toque", "toco", "mão", "braço", "ombro", "nuca", "peito", "seguro"],
         3: ["beijo", "beija", "beijou", "smack", "lábios", "boca"],
-        4: ["aprofundo", "intenso", "corpo contra", "pressiono", "não para"],
+        4: ["intenso", "corpo contra", "pressiono", "não para", "colado", "calor"],
+        5: ["auge", "clímax", "climax", "perco o controle", "liberação", "me solto"],
+        6: ["respiração", "respiro", "devagar", "tremor", "silêncio", "pausa"],
+        7: ["fica comigo", "vem aqui", "abraço", "carinho", "descanso", "aftercare"],
     }
 
     nova_phase = phase
@@ -324,11 +427,12 @@ def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str
         if any(p in texto for p in palavras):
             nova_phase = max(nova_phase, nivel)
 
-    # Só permite subir 1 fase por turno
+    # Evita salto grande, mas permite acompanhar ciclo fechado pelo usuário
     if nova_phase > phase + 1:
         nova_phase = phase + 1
 
-    state["physical_phase"] = nova_phase
+    state["physical_phase"] = max(0, min(nova_phase, 7))
+    state["scene_stage"] = fase_para_stage(state["physical_phase"])
 
 
 # ==========================================================
@@ -364,7 +468,8 @@ if st.button("Processar turno"):
     resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
     resposta_final_limpa = limpar_state_update(resposta_final)
     atualizar_physical_phase(state, resposta_final_limpa, fala_usuario)
-
+    atualizar_psique_mary(state, fala_usuario, resposta_final_limpa)
+    
     state["history"].append({
         "role": "user",
         "content": fala_usuario
