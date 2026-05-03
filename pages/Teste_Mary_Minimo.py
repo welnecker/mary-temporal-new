@@ -233,10 +233,10 @@ def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -
     conexao = float(state.get("connection_level", 0.0) or 0.0)
 
     if any(p in texto for p in ["quero", "vontade", "tesão", "beijo", "smack", "humm", "calor"]):
-        desejo += 0.12
+        desejo += 0.20
 
     if any(p in texto for p in ["perto", "próximo", "proximo", "respiração", "olhar", "silêncio", "nervoso"]):
-        tensao += 0.10
+        tensao += 0.16
 
     if any(p in texto for p in ["confio", "gosto", "vergonha", "sem graça", "sincero", "de verdade"]):
         conexao += 0.08
@@ -245,6 +245,12 @@ def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -
         desejo -= 0.08
         tensao -= 0.08
         conexao += 0.08
+
+    if any(p in texto for p in ["excitado", "excitada", "tesão", "desejo", "calor", "morder", "mordida", "pescoço", "beijo", "smack"]):
+    desejo += 0.20
+
+    if any(p in texto for p in ["pressiono", "corpo contra", "perto", "respiração", "urgência", "intensidade", "não pretendo parar"]):
+        tensao += 0.16
 
     state["desire_level"] = clamp(desejo)
     state["tension_level"] = clamp(tensao)
@@ -326,7 +332,7 @@ def gerar_resposta_llm(prompt_modelo: str, state: dict, model: str = "google/gem
         "model": model,
         "messages": messages,
         "temperature": 0.7,
-        "max_tokens": 350,
+        "max_tokens": 700,
     }
 
     try:
