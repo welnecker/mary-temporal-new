@@ -19,6 +19,36 @@ def fase_para_stage(phase: int) -> str:
         return "desaceleracao"
     return "aftercare"
 
+def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
+    texto = (fala_usuario or "").lower()
+
+    fase = int(state.get("physical_phase", 0) or 0)
+    desejo = float(state.get("desire_level", 0.0) or 0.0)
+    tensao = float(state.get("tension_level", 0.0) or 0.0)
+    resolution_done = bool(state.get("resolution_done", False))
+
+    # 🔴 NÃO resolvido → não existe aftercare
+    if not resolution_done:
+        if fase >= 4 or desejo >= 0.6 or tensao >= 0.5:
+            return "intensidade"
+        if fase == 3:
+            return "beijo"
+        if fase == 2:
+            return "toque"
+        if fase == 1:
+            return "aproximacao"
+        return "inicio"
+
+    # 🟢 RESOLVIDO → agora decide
+
+    if any(p in texto for p in ["mais", "continua", "não para", "nao para", "quero mais"]):
+        return "intensidade"
+
+    if tensao < 0.3 and desejo < 0.5:
+        return "aftercare"
+
+    return "proximidade"
+
 st.title("Teste Mary Mínimo - Estado + Filtro")
 
 # ==========================================================
@@ -56,6 +86,7 @@ state.setdefault("desire_level", 0.0)
 state.setdefault("tension_level", 0.0)
 state.setdefault("connection_level", 0.0)
 state.setdefault("mary_intent", "observar")
+state.setdefault("resolution_done", False)
 
 # ==========================================================
 # 2) CONTEXTO PARA O MODELO
@@ -166,22 +197,32 @@ def escolher_intencao_mary(state: dict) -> str:
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     conexao = float(state.get("connection_level", 0.0) or 0.0)
     fase = int(state.get("physical_phase", 0) or 0)
+    resolution_done = bool(state.get("resolution_done", False))
 
-    if fase >= 7:
+    # 🔴 NÃO resolvido → nunca entra em aftercare
+    if not resolution_done:
+        if fase >= 4 or desejo >= 0.6:
+            return "buscar_intensidade"
+        if fase >= 3:
+            return "aprofundar_contato"
+        if fase >= 2:
+            return "aproximar_e_tocar"
+        if tensao >= 0.3:
+            return "sustentar_tensao"
+        return "observar"
+
+    # 🟢 RESOLVIDO → agora sim pode variar
+
+    if desejo >= 0.7 and tensao >= 0.5:
+        return "retomar_intensidade"
+
+    if conexao >= 0.5:
         return "aftercare"
-    if fase >= 6:
-        return "desacelerar"
-    if fase >= 5:
-        return "resolver_pico"
-    if desejo >= 0.75 and tensao >= 0.65 and fase >= 3:
-        return "buscar_intensidade"
-    if desejo >= 0.55 and tensao >= 0.45:
-        return "provocar_e_aproximar"
-    if conexao >= 0.45 and tensao >= 0.35:
-        return "aprofundar_vinculo"
-    if tensao >= 0.35:
-        return "sustentar_tensao"
-    return "observar"
+
+    if tensao >= 0.4:
+        return "manter_proximidade"
+
+    return "aftercare"
 
 
 def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
@@ -468,6 +509,8 @@ if st.button("Processar turno"):
     resposta_final_limpa = limpar_state_update(resposta_final)
     atualizar_physical_phase(state, resposta_final_limpa, fala_usuario)
     atualizar_psique_mary(state, fala_usuario, resposta_final_limpa)
+
+    state["scene_stage"] = decidir_scene_stage(state, fala_usuario)
     
     state["history"].append({
         "role": "user",
