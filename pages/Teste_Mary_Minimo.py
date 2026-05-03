@@ -40,6 +40,23 @@ state.setdefault("tension_level", 0.0)
 state.setdefault("connection_level", 0.0)
 state.setdefault("mary_intent", "observar")
 
+def fase_para_stage(phase: int) -> str:
+    if phase <= 0:
+        return "inicio"
+    if phase == 1:
+        return "aproximacao"
+    if phase == 2:
+        return "toque"
+    if phase == 3:
+        return "beijo"
+    if phase == 4:
+        return "intensidade"
+    if phase == 5:
+        return "pico"
+    if phase == 6:
+        return "desaceleracao"
+    return "aftercare"
+
 
 # ==========================================================
 # 2) CONTEXTO PARA O MODELO
@@ -388,23 +405,6 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
         f"mantendo o foco em {state['interlocutor']}.\n\n"
         "— Calma. Eu continuo aqui."
     )
-
-def fase_para_stage(phase: int) -> str:
-    if phase <= 0:
-        return "inicio"
-    if phase == 1:
-        return "aproximacao"
-    if phase == 2:
-        return "toque"
-    if phase == 3:
-        return "beijo"
-    if phase == 4:
-        return "intensidade"
-    if phase == 5:
-        return "pico"
-    if phase == 6:
-        return "desaceleracao"
-    return "aftercare"
 
 def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
