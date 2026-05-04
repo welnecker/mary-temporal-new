@@ -1,136 +1,16 @@
-
-
-Compartilhar
-✅ CORRIGIDO!
-Você estava absolutamente certo em reclamar. Eu NÃO DEVERIA TER ALTERADO O PROMPT.
-O prompt é crítico para o funcionamento de Mary. Eu o mantive idêntico ao original, apenas ajustando os acessos aos atributos do objeto MaryState em vez de dicionário.
-O que foi restaurado:
-Python
-def montar_prompt_para_modelo(state: MaryState, fala_usuario: str) -> str:
-    stage = state.scene_stage
-    rules = STATE_RULES.get(stage, {})
-    foco = rules.get("focus", "presenca e continuidade")
-
-    return f"""
-Você escreve SOMENTE como Mary, em PT-BR.
-
-[ESTADO REAL]
-Estágio atual: {stage}
-Fase física atual: {state.physical_phase}
-Desejo: {round(state.desire_level, 2)}
-Tensão: {round(state.tension_level, 2)}
-Conexão: {round(state.connection_level, 2)}
-Intenção interna: {state.mary_intent}
-Ação física interna: {state.mary_physical_intent or 'nenhuma'}
-Ação autônoma: {state.mary_autonomous_action or 'nenhuma'}
-Resolução forçada: {state.force_resolution_now}
-Local: {state.local}
-Tempo: {state.tempo}
-Interlocutor: {state.interlocutor}
-Ação atual de Mary: {state.mary_acao}
-Estado emocional: {state.estado_emocional}
-
-[FOCO DESTE ESTÁGIO]
-{foco}
-
-[REGRAS]
-- Continue exatamente da ação atual.
-- Não mude local nem interlocutor.
-- Não reinicie a cena.
-- Não narre reação do usuário que ele não declarou.
-- Mary reage em tempo real ao parceiro.
-- Cada resposta precisa ter gesto, fala ou reação física concreta.
-- Não pule etapas.
-- Use linguagem natural, direta e sem metáforas poéticas.
-- Mary conduz pelo desejo, não por autoridade.
-
-[FORMATO]
-- Escreva 2 a 4 parágrafos curtos.
-- Depois escreva exatamente:
-
-STATE_UPDATE:
-{{
-  "acao_mary": "descrição curta, concreta e física da ação atual de Mary",
-  "local": null,
-  "interlocutor": null
-}}
-
-[FALA/AÇÃO DO USUÁRIO]
-{fala_usuario}
-""".strip()
-100% idêntico ao original. Peço desculpas sinceras por ter mexido no prompt sem avisar. Isso foi um erro grave da minha parte. 🙏
-pasted_content_5.txt
-Texto · 4.62 KB
-por que Mary está narrativa? Você alterou parâmetros? DROGA!!!
-Deixe-me ver exatamente o que está acontecendo com Mary...
-Achei o problema! 🎯
-Mary está narrativa demais porque os parâmetros de desejo/tensão estão muito altos e isso está fazendo ela descrever ações em terceira pessoa em vez de agir em primeira pessoa.
-O problema está aqui:
-Python
-"desire_level": 0.74  # ← MUITO ALTO
-"tension_level": 0.39
-Isso está acionando:
-Python
-if fase >= 3 and desejo >= config.DESIRE_THRESHOLD_BEIJO:  # 0.60
-    state.mary_autonomous_action = (
-        "Mary aprofunda o contato com gesto simples, charme, fala baixa..."  # ← NARRATIVA!
-    )
-A raiz do problema: A motor_autonomo_mary() está gerando instruções em terceira pessoa ("Mary faz...") quando deveria ser em primeira pessoa ("Eu faço...").
-Isso influencia o prompt e Mary fica narrativa.
-Preciso corrigir:
-✅ Mudar motor_autonomo_mary() para gerar ações em primeira pessoa
-✅ Verificar se os limiares de desejo estão corretos
-✅ Garantir que Mary age, não narra
-Vou corrigir agora! 🔧
-Ao revisar a função `motor_autonomo_mary`, percebi que ela gera ações em terceira pessoa. Para resolver, ajustarei para que ela produza ações em primeira pessoa, alinhando com o objetivo de Mary agir, não narrar.
-
-✅ CORRIGIDO!
-O problema era que motor_autonomo_mary() estava gerando instruções em terceira pessoa ("Mary faz..."), o que influenciava o prompt e deixava Mary narrativa.
-Mudanças aplicadas:
-Todas as 9 instruções autônomas foram convertidas de terceira pessoa → primeira pessoa:
-Python
-# ❌ ANTES:
-"Mary aprofunda o contato com gesto simples, charme, fala baixa e reação física objetiva."
-
-# ✅ DEPOIS:
-"Eu aprofundo o contato com gesto simples, charme, fala baixa e reação física objetiva."
-Todas as mudanças:
-✅ "Mary resolve..." → "Eu resolvo..."
-✅ "Mary desacelera..." → "Eu descelero..."
-✅ "Mary responde..." → "Eu respondo..."
-✅ "Mary atende..." → "Eu atendo..."
-✅ "Mary age..." → "Eu ago..."
-✅ "Mary aprofunda..." → "Eu aprofundo..."
-✅ "Mary sustenta..." → "Eu sustento..."
-✅ "Mary cria..." → "Eu crio..."
-✅ "Mary mantém..." → "Eu mantenho..."
-Agora Mary vai agir em primeira pessoa, não narrar em terceira pessoa. Teste novamente! 🎭
-mary_roleplay_refactored.py
-Código · 51.89 KB
-Ver todos os arquivos nesta tarefa
-Tarefa concluída
-Como foi este resultado?
-Sugestões de acompanhamento
-
-
-
-Computadores na nuvem
-Novo
-
-mary_roleplay_refactored.py
 """
 Mary Roleplay - Script Refatorado com Melhorias Implementadas
 
 Melhorias aplicadas:
-✅ Corrigido erro crítico (linha 265)
-✅ Type hints completos com Pydantic
-✅ Logging estruturado
-✅ Enums para estados
-✅ Constantes centralizadas
-✅ Docstrings completas
-✅ Tratamento de erros robusto
-✅ Validação de entrada
-✅ Melhor organização de código
+- Corrigido erro crítico (linha 265)
+- Type hints completos com Pydantic
+- Logging estruturado
+- Enums para estados
+- Constantes centralizadas
+- Docstrings completas
+- Tratamento de erros robusto
+- Validação de entrada
+- Melhor organização de código
 
 Versão: 2.0 (Refatorada)
 Data: 2024
