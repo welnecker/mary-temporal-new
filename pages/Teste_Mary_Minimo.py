@@ -471,6 +471,76 @@ def escolher_intencao_mary(state: MaryState, config: MaryConfig = None) -> str:
     return "observar"
 
 
+def motor_variacoes_mary_generico(state: MaryState, fala_usuario: str, history: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Motor generico de variacoes que escala com o nivel de intimidade.
+    Funciona para qualquer contexto: camisa, calca, etc.
+    """
+    texto = (fala_usuario or "").lower()
+    desejo = state.desire_level
+    fase = state.physical_phase
+    
+    # Detecta nivel de desvestimento
+    tem_camisa_fora = any(p in texto for p in ["tirar camisa", "camisa fora", "sem camisa", "pele", "peito", "seios", "mamilo", "abdomem", "torso"])
+    tem_calca_fora = any(p in texto for p in ["tirar calca", "calca fora", "sem calca", "calcinha", "slip", "cueca", "nua", "nu", "intimo"])
+    
+    # Conta repeticoes no historico recente
+    historico_recente = history[-8:] if len(history) > 8 else history
+    texto_historico = " ".join([msg.get("content", "").lower() for msg in historico_recente])
+    
+    beijos = texto_historico.count("beijo") + texto_historico.count("beija")
+    mordidas = texto_historico.count("muerdo") + texto_historico.count("mordo")
+    lambidas = texto_historico.count("lambo") + texto_historico.count("lingua")
+    acaricia = texto_historico.count("acaricia") + texto_historico.count("desliza")
+    
+    repeticoes = beijos + mordidas + lambidas + acaricia
+    
+    # NIVEL 1: Sem camisa (fase 3-4, desejo 0.60+)
+    if tem_camisa_fora and not tem_calca_fora and desejo >= 0.60 and repeticoes >= 3:
+        variacoes_nivel1 = [
+            "Eu muerdo seu pescoço com força, deixando marcas que você vai sentir depois.",
+            "Eu deslizo minha boca para o seu mamilo e muerdo de leve.",
+            "Eu passo minha lingua pelo seu abdômen, deixando um rastro de beijos.",
+            "Eu muerdo seu ombro enquanto minha mão desce pela sua cintura.",
+            "Eu lambo seu pescoço lentamente, depois muerdo com mais força.",
+            "Eu beijo seu peito, depois seu abdômen, descendo devagar.",
+            "Minha boca explora seu torso enquanto minha mão aperta sua cintura.",
+            "Eu muerdo a linha do seu queixo e depois desço para seu pescoço.",
+        ]
+        return variacoes_nivel1[repeticoes % len(variacoes_nivel1)]
+    
+    # NIVEL 2: Sem calca (fase 4-5, desejo 0.80+)
+    elif tem_calca_fora and desejo >= 0.80 and repeticoes >= 4:
+        variacoes_nivel2 = [
+            "Eu deslizo minha boca para baixo, deixando beijos na sua barriga e depois mais perto.",
+            "Eu muerdo a parte interna da sua coxa, deixando marcas que você vai lembrar depois.",
+            "Minha lingua percorre seu corpo enquanto minha mão aperta sua cintura.",
+            "Eu sussurro contra sua pele: 'Voce e meu agora' e continuo descendo.",
+            "Eu beijo a linha do seu abdômen, descendo devagar enquanto sinto você reagir.",
+            "Minha boca encontra a sua novamente, mas dessa vez meu corpo esta completamente colado no seu.",
+            "Eu muerdo seu lábio inferior e puxo levemente enquanto minha mão desce.",
+            "Eu sussurro 'Eu quero voce agora' e deslizo minha boca pelo seu corpo.",
+        ]
+        return variacoes_nivel2[repeticoes % len(variacoes_nivel2)]
+    
+    # NIVEL 3: Ambos nus (fase 5+, desejo 0.90+)
+    elif tem_camisa_fora and tem_calca_fora and desejo >= 0.90 and repeticoes >= 5:
+        variacoes_nivel3 = [
+            "Eu me posiciono sobre voce e sussurro: 'Agora e sua vez de me tocar'.",
+            "Meu corpo se move contra o seu enquanto eu sussurro seu nome no seu ouvido.",
+            "Eu guio sua mao para onde eu quero que voce me toque.",
+            "Eu me entrego completamente a voce, deixando meu corpo falar tudo que minha boca nao consegue.",
+            "Eu sussurro: 'Voce esta me deixando louca' enquanto meu corpo se move.",
+            "Eu aperto voce contra mim e sussurro: 'Nao para, por favor'.",
+        ]
+        return variacoes_nivel3[repeticoes % len(variacoes_nivel3)]
+    
+    return None
+
+
+
+
+
 def motor_autonomo_mary(state: MaryState, fala_usuario: str = "", config: MaryConfig = None) -> None:
     if config is None:
         config = MaryConfig()
