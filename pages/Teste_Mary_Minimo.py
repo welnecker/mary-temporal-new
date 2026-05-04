@@ -331,15 +331,20 @@ def reparar_estado_incoerente(state: MaryState) -> None:
 def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config: MaryConfig = None) -> None:
     if config is None:
         config = MaryConfig()
-    
+
     reparar_estado_incoerente(state)
 
     texto_user = (fala_usuario or "").lower()
 
+    desejo = state.desire_level
+    tensao = state.tension_level
+    conexao = state.connection_level
+    fase = state.physical_phase
+    resolved = state.resolution_done
+
     # ==========================================================
-    # PICO DO USUÁRIO / RESOLUÇÃO COMPARTILHADA
-    # Impede que o motor pule direto para desaceleração quando
-    # o usuário anuncia o próprio ápice.
+    # 1) USUÁRIO ANUNCIA O PRÓPRIO PICO
+    # Impede que o motor pule direto para desaceleração/aftercare.
     # ==========================================================
     usuario_anuncia_pico = any(p in texto_user for p in [
         "vou gozar",
@@ -351,7 +356,9 @@ def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config:
         "vem junto",
     ])
 
-    if usuario_anuncia_pico and state.scene_stage in {"pico", "desaceleracao"}:
+    if usuario_anuncia_pico and state.scene_stage in {"pico", "desaceleracao", "intensidade"}:
+        logger.info("Usuario anunciou pico; mantendo cena em pico compartilhado")
+
         state.force_resolution_now = True
         state.physical_phase = 5
         state.scene_stage = "pico"
@@ -359,14 +366,59 @@ def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config:
         state.mary_physical_intent = "resolver_pico"
         return
 
-    desejo = state.desire_level
-    tensao = state.tension_level
-    fase = state.physical_phase
-    resolved = state.resolution_done
+    # ==========================================================
+    # 2) ESTADO INTERNO PEDE AVANÇO
+    # Mary não deve ficar presa em intensidade quando os níveis
+    # já estão altos e o usuário está receptivo.
+    # ==========================================================
+    estado_pede_avanco = (
+        not resolved
+        and fase >= 4
+        and desejo >= 0.90
+        and tensao >= 0.70
+        and conexao >= 0.55
+    )
 
+    usuario_receptivo = any(p in texto_user for p in [
+        "delicia",
+        "delícia",
+        "humm",
+        "ahh",
+        "ahhh",
+        "smack",
+        "chup",
+        "continua",
+        "assim",
+        "gostoso",
+        "gostosa",
+        "tesao",
+        "tesão",
+    ])
+
+    if estado_pede_avanco and usuario_receptivo:
+        logger.info("Estado interno pede avanço; elevando para pico")
+
+        state.force_resolution_now = True
+        state.physical_phase = 5
+        state.scene_stage = "pico"
+        state.mary_intent = "resolver_pico"
+        state.mary_physical_intent = "resolver_pico"
+        return
+
+    # ==========================================================
+    # 3) GATILHOS EXPLÍCITOS DE RESOLUÇÃO
+    # Mantém compatibilidade com sua lógica anterior.
+    # ==========================================================
     gatilhos_resolucao_do_usuario = [
-        "agora resolve", "chega ao auge", "pode finalizar", "finaliza",
-        "vai ate o fim", "termina", "nao segura",
+        "agora resolve",
+        "chega ao auge",
+        "pode finalizar",
+        "finaliza",
+        "vai ate o fim",
+        "vai até o fim",
+        "termina",
+        "nao segura",
+        "não segura",
     ]
 
     usuario_pediu_resolucao = any(p in texto_user for p in gatilhos_resolucao_do_usuario)
@@ -386,17 +438,19 @@ def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config:
         state.physical_phase = 5
         state.scene_stage = "pico"
         state.mary_intent = "resolver_pico"
-    else:
-        state.scene_stage = fase_para_stage(state.physical_phase)
-        if not resolved and fase >= 4:
-            state.mary_intent = "resolver_pico"
+        state.mary_physical_intent = "resolver_pico"
+        return
 
+    # ==========================================================
+    # 4) FALLBACK NORMAL
+    # Não deixa a função quebrar nem depender de variável ausente.
+    # ==========================================================
     state.force_resolution_now = False
     state.scene_stage = fase_para_stage(state.physical_phase)
 
-    if not resolved and estado_pede_avanco:
-        state.mary_intent = "buscar_intensidade"
-        state.mary_physical_intent = "intensificar_contato"
+    if not resolved and fase >= 4:
+        state.mary_intent = "resolver_pico"
+        state.mary_physical_intent = decidir_acao_fisica_mary(state, config)
 
 
 def finalizar_resolution_engine(state: MaryState, resposta_limpa: str) -> None:
