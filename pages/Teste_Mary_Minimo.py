@@ -1,3 +1,4 @@
+mary_roleplay_clean.py
 import re
 import json
 import logging
@@ -1112,11 +1113,14 @@ def main():
             st.markdown("### Validacao")
             validacao = resultado["validacao"]
             if validacao["bloqueios"]:
-                st.error(f"Bloqueios: {validacao['bloqueios']}")
-            elif validacao["alertas"]:
-                st.warning(f"Alertas: {validacao['alertas']}")
-            else:
+                st.error(f"BLOQUEIOS: {validacao['bloqueios']}")
+            if validacao["alertas"]:
+                st.warning(f"ALERTAS: {validacao['alertas']}")
+            if not validacao["bloqueios"] and not validacao["alertas"]:
                 st.success("Nenhuma violacao detectada")
+            st.markdown("---")
+            st.markdown("### Detalhes Completos")
+            st.json(validacao)
 
         with tab3:
             st.markdown("### Estado Atual")
@@ -1142,3 +1146,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+How to Remove Facts Text from JSON Data - Manus
