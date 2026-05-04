@@ -1241,6 +1241,53 @@ def limpar_state_update(resposta: str) -> str:
         return resposta.split("STATE_UPDATE:", 1)[0].strip()
     return resposta.strip()
 
+def detectar_consequencia_da_resposta(state: MaryState, resposta_limpa: str) -> bool:
+    """
+    Lê a resposta final da Mary e consolida o estado real.
+    Retorna True quando encontrou uma consequência forte que deve travar o estado.
+    """
+    texto = (resposta_limpa or "").lower()
+
+    sinais_pico_mary = [
+        "começo a gozar",
+        "comecei a gozar",
+        "estou gozando",
+        "gozo",
+        "gozei",
+        "espasmos",
+        "meu corpo inteiro entra em colapso",
+        "meu corpo inteiro entrar em colapso",
+        "desabo",
+        "desabei",
+        "corpo continua tremendo",
+        "ondas lentas",
+        "perco totalmente o controle",
+        "perdi totalmente o controle",
+        "travo contra o seu",
+        "travo o corpo",
+        "meu corpo trava",
+    ]
+
+    if any(s in texto for s in sinais_pico_mary):
+        logger.info("Detector pos-resposta: pico de Mary consolidado")
+
+        state.shared_resolution_done = True
+        state.resolution_done = True
+        state.force_resolution_now = False
+
+        state.physical_phase = 6
+        state.scene_stage = "desaceleracao"
+        state.mary_intent = "desacelerar"
+        state.mary_physical_intent = "desacelerar_com_contato"
+
+        state.mary_acao = (
+            "Mary permanece colada a Janio, tremendo depois do ápice enquanto recupera o fôlego."
+        )
+
+        return True
+
+    return False
+
 
 def processar_turno(state: MaryState, fala_usuario: str, model: str = None, config: MaryConfig = None) -> Dict[str, Any]:
     if config is None:
@@ -1264,6 +1311,10 @@ def processar_turno(state: MaryState, fala_usuario: str, model: str = None, conf
 
         resposta_final = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
         resposta_final_limpa = limpar_state_update(resposta_final)
+        
+        consequencia_travada = detectar_consequencia_da_resposta(state, resposta_final_limpa)
+        
+        update_final = {}
 
         update_final = {}
 
@@ -1283,12 +1334,15 @@ def processar_turno(state: MaryState, fala_usuario: str, model: str = None, conf
                 update_final = update_corrigido
                 logger.info("STATE_UPDATE corrigido aplicado")
 
-        atualizar_psique_mary(state, fala_usuario, resposta_final_limpa, config)
-        finalizar_resolution_engine(state, resposta_final_limpa)
-        sync_state_machine(state, fala_usuario, resposta_final_limpa)
-        state.mary_physical_intent = decidir_acao_fisica_mary(state, config)
-        state.mary_intent = escolher_intencao_mary(state, config)
-        motor_autonomo_mary(state, fala_usuario, config)
+        if not consequencia_travada:
+            atualizar_psique_mary(state, fala_usuario, resposta_final_limpa, config)
+            finalizar_resolution_engine(state, resposta_final_limpa)
+            sync_state_machine(state, fala_usuario, resposta_final_limpa)
+            state.mary_physical_intent = decidir_acao_fisica_mary(state, config)
+            state.mary_intent = escolher_intencao_mary(state, config)
+            motor_autonomo_mary(state, fala_usuario, config)
+        else:
+            logger.info("Estado travado por consequência; pulando atualização/sync do turno")
 
         state.history.append({"role": "user", "content": fala_usuario})
         state.history.append({"role": "assistant", "content": resposta_final_limpa})
