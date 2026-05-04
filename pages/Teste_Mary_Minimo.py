@@ -1349,25 +1349,25 @@ def processar_turno(state: MaryState, fala_usuario: str, model: str = None, conf
     state.turno += 1
 
     if detectar_reacendimento_pos_aftercare(state, fala_usuario):
-    logger.info("Reacendimento pos-aftercare detectado; iniciando novo ciclo fisico")
-
-    state.resolution_done = False
-    state.shared_resolution_done = False
-    state.force_resolution_now = False
-
-    state.physical_phase = 2
-    state.scene_stage = "toque"
-    state.mary_intent = "aprofundar_toque"
-    state.mary_physical_intent = "explorar_toque"
-
-    state.desire_level = max(state.desire_level, 0.55)
-    state.tension_level = max(state.tension_level, 0.35)
-    state.connection_level = max(state.connection_level, 0.80)
-
-    state.mary_autonomous_action = (
-        "Eu percebo que o clima reacendeu depois do aftercare. "
-        "Não trato como primeira vez; volto ao contato com intimidade, provocação leve e memória do que acabou de acontecer."
-    )
+        logger.info("Reacendimento pos-aftercare detectado; iniciando novo ciclo fisico")
+    
+        state.resolution_done = False
+        state.shared_resolution_done = False
+        state.force_resolution_now = False
+    
+        state.physical_phase = 2
+        state.scene_stage = "toque"
+        state.mary_intent = "aprofundar_toque"
+        state.mary_physical_intent = "explorar_toque"
+    
+        state.desire_level = max(state.desire_level, 0.55)
+        state.tension_level = max(state.tension_level, 0.35)
+        state.connection_level = max(state.connection_level, 0.80)
+    
+        state.mary_autonomous_action = (
+            "Eu percebo que o clima reacendeu depois do aftercare. "
+            "Não trato como primeira vez; volto ao contato com intimidade, provocação leve e memória do que acabou de acontecer."
+        )
 
     try:
         preparar_resolution_engine(state, fala_usuario, config)
