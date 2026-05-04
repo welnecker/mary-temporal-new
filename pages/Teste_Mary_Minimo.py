@@ -1,4 +1,3 @@
-mary_roleplay_clean.py
 import re
 import json
 import logging
@@ -1146,4 +1145,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-How to Remove Facts Text from JSON Data - Manus
