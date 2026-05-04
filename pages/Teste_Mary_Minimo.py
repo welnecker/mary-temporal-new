@@ -66,6 +66,8 @@ class PhysicalIntent(str, Enum):
     RESOLVER_PICO = "resolver_pico"
     MANTER_INTENSIDADE = "manter_intensidade"
     DESACELERAR_COM_CONTATO = "desacelerar_com_contato"
+    MANTER_PROXIMIDADE = "manter_proximidade"
+    DESACELERAR = "desacelerar"
 
 
 # ==========================================================
