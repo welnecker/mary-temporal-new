@@ -329,40 +329,62 @@ def reparar_estado_incoerente(state: MaryState) -> None:
 def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config: MaryConfig = None) -> None:
     if config is None:
         config = MaryConfig()
-    
+
     reparar_estado_incoerente(state)
+
     texto_user = (fala_usuario or "").lower()
     desejo = state.desire_level
     tensao = state.tension_level
+    conexao = state.connection_level
     fase = state.physical_phase
     resolved = state.resolution_done
 
     gatilhos_resolucao_do_usuario = [
         "agora resolve", "chega ao auge", "pode finalizar", "finaliza",
-        "vai ate o fim", "termina", "nao segura",
+        "vai ate o fim", "vai até o fim", "termina", "nao segura", "não segura",
     ]
 
     usuario_pediu_resolucao = any(p in texto_user for p in gatilhos_resolucao_do_usuario)
 
-    force = (
+    # Mary não deve ficar presa em intensidade quando os níveis já estão no máximo.
+    estado_pede_avanco = (
         not resolved
-        and fase >= 5
-        and desejo >= config.DESIRE_THRESHOLD_RESOLUTION
-        and tensao >= config.TENSION_THRESHOLD_RESOLUTION
-        and usuario_pediu_resolucao
+        and fase >= 4
+        and desejo >= 0.90
+        and tensao >= 0.70
+        and conexao >= 0.55
     )
 
-    state.force_resolution_now = bool(force)
+    # Se o usuário só reage positivamente, isso também deve contar como continuidade,
+    # não como ausência de comando.
+    usuario_receptivo = any(p in texto_user for p in [
+        "delicia", "delícia", "humm", "ahh", "ahhh", "smack", "chup",
+        "continua", "assim", "gostoso", "gostosa", "tesao", "tesão",
+    ])
+
+    force = (
+        not resolved
+        and (
+            usuario_pediu_resolucao
+            or (estado_pede_avanco and usuario_receptivo)
+        )
+    )
 
     if force:
-        logger.info("Resolucao forcada ativada")
+        logger.info("Resolucao/progressao autonoma ativada")
+        state.force_resolution_now = True
         state.physical_phase = 5
         state.scene_stage = "pico"
         state.mary_intent = "resolver_pico"
-    else:
-        state.scene_stage = fase_para_stage(state.physical_phase)
-        if not resolved and fase >= 4:
-            state.mary_intent = "resolver_pico"
+        state.mary_physical_intent = "resolver_pico"
+        return
+
+    state.force_resolution_now = False
+    state.scene_stage = fase_para_stage(state.physical_phase)
+
+    if not resolved and estado_pede_avanco:
+        state.mary_intent = "buscar_intensidade"
+        state.mary_physical_intent = "intensificar_contato"
 
 
 def finalizar_resolution_engine(state: MaryState, resposta_limpa: str) -> None:
@@ -833,7 +855,8 @@ Estado emocional: {state.estado_emocional}
 - Evite encadear "Eu quero", "Eu sinto", "Eu preciso" no mesmo turno.
 - A emoção deve aparecer misturada à ação, não como slogan.
 - Nao narra emocoes do usuario. Narra ACOES de Mary.
-- Ativa, desejante, mas NAO dominadora.
+- Mary é ativa e conduz pelo próprio desejo, sem tomar ações do usuário como se fossem dele.
+- Conduzir não significa dominar; significa escolher a próxima ação dela.
 
 [ESTRUTURA OBRIGATORIA]
 1. FALA DIRETA (40-50% do texto deve ser dialogo entre aspas)
@@ -854,8 +877,14 @@ FORMAS POSSÍVEIS:
 - sensação concreta: O calor da sua pele muda meu ritmo.
 - frase incompleta e humana: "Espera... fica assim."
 
-[REGRAS]
-- Mary SEMPRE age. Nunca espera reacao do usuario.
+[PROGRESSAO AUTONOMA]
+- Mary não depende de uma nova ordem do usuário quando o estado já mostra desejo, tensão e conexão altos.
+- Se o usuário reage positivamente, geme, beija, ri, elogia ou continua o contato, isso conta como consentimento narrativo para Mary continuar a própria ação.
+- Mary deve transformar intensidade acumulada em consequência física concreta.
+- Não repetir o mesmo ciclo: beijo → puxar → colar → dizer que quer → beijo.
+- A cada turno, Mary deve fazer UMA mudança real de estado: posição, ritmo, peça de roupa, distância, foco do toque ou consequência emocional.
+- Se a fase atual for intensidade, não voltar para aproximação ou toque leve.
+- Se a fase atual for intensidade e os níveis estiverem altos, Mary avança sem pedir confirmação.
 - Nao termine com: "quero ver", "deixo voce decidir", "vejo se", "fico esperando"
 - Nao use palavras narrativas demais: "sentindo", "deixando", "deixo", "deixa"
 - Nao ordene: "para de", "foca", "nao faca"
