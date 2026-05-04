@@ -327,6 +327,47 @@ def reparar_estado_incoerente(state: MaryState) -> None:
         state.physical_phase = 5
         state.scene_stage = "pico"
 
+def detectar_reacendimento_pos_aftercare(state: MaryState, fala_usuario: str) -> bool:
+    """
+    Detecta quando a cena já passou por resolução/aftercare,
+    mas o usuário reacende o clima.
+
+    Não apaga memória.
+    Apenas inicia um novo ciclo físico.
+    """
+    texto = (fala_usuario or "").lower()
+
+    if state.scene_stage not in {"aftercare", "desaceleracao"}:
+        return False
+
+    if not state.resolution_done:
+        return False
+
+    gatilhos_reacendimento = [
+        "tesão voltou",
+        "tesao voltou",
+        "fogo voltando",
+        "de novo",
+        "mais uma vez",
+        "quero de novo",
+        "não acabou",
+        "nao acabou",
+        "continua",
+        "vem cá",
+        "vem ca",
+        "me beija",
+        "smack",
+        "humm",
+        "tô ficando",
+        "to ficando",
+        "tá vendo",
+        "ta vendo",
+        "me arrepia",
+        "adoro quando",
+    ]
+
+    return any(g in texto for g in gatilhos_reacendimento)
+
 
 def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config: MaryConfig = None) -> None:
     if config is None:
@@ -1005,6 +1046,15 @@ FORMAS POSSÍVEIS:
 - Não pedir confirmação.
 - Não devolver a iniciativa ao usuário.
 
+[NOVO CICLO APOS AFTERCARE]
+- Se a cena já teve aftercare, mas o usuário reacende o clima, Mary não deve agir como se fosse a primeira aproximação.
+- Mary lembra do que acabou de acontecer.
+- O novo ciclo começa com intimidade acumulada, não com timidez inicial.
+- Mary pode reagir com surpresa, provocação leve ou carinho antes de voltar ao contato.
+- Não repetir a mesma coreografia do ciclo anterior.
+- Não ficar presa em abraço, pescoço e quadril colado se o clima está reacendendo.
+- A progressão deve parecer natural: aftercare quente → novo toque → beijo/intensidade, conforme a reação do usuário.
+
 [EXEMPLOS BOM - EQUILIBRIO]
 BOM: "Voce me deixa louca. Eu quero mais de voce." + Eu puxo voce para perto.
 BOM: "Meu corpo ja esta dizendo o que eu quero." + Minha mao desliza para sua cintura.
@@ -1297,6 +1347,27 @@ def processar_turno(state: MaryState, fala_usuario: str, model: str = None, conf
     
     logger.info(f"=== TURNO {state.turno + 1} INICIADO ===")
     state.turno += 1
+
+    if detectar_reacendimento_pos_aftercare(state, fala_usuario):
+    logger.info("Reacendimento pos-aftercare detectado; iniciando novo ciclo fisico")
+
+    state.resolution_done = False
+    state.shared_resolution_done = False
+    state.force_resolution_now = False
+
+    state.physical_phase = 2
+    state.scene_stage = "toque"
+    state.mary_intent = "aprofundar_toque"
+    state.mary_physical_intent = "explorar_toque"
+
+    state.desire_level = max(state.desire_level, 0.55)
+    state.tension_level = max(state.tension_level, 0.35)
+    state.connection_level = max(state.connection_level, 0.80)
+
+    state.mary_autonomous_action = (
+        "Eu percebo que o clima reacendeu depois do aftercare. "
+        "Não trato como primeira vez; volto ao contato com intimidade, provocação leve e memória do que acabou de acontecer."
+    )
 
     try:
         preparar_resolution_engine(state, fala_usuario, config)
