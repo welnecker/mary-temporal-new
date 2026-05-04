@@ -262,7 +262,7 @@ def preparar_resolution_engine(state: dict, fala_usuario: str = "") -> None:
     if force:
         state["physical_phase"] = 5
         state["scene_stage"] = "pico"
-        state["mary_intent"] = "resolver_pico"
+        "mary_intent": "sustentar_pico",
     else:
         state["scene_stage"] = fase_para_stage(int(state.get("physical_phase", 0) or 0))
 
