@@ -127,6 +127,7 @@ class MaryState:
     mary_intent: str = "observar"
     mary_physical_intent: str = "aproximar_devagar"
     resolution_done: bool = False
+    shared_resolution_done: bool = False
     force_resolution_now: bool = False
     mary_autonomous_action: str = ""
 
@@ -149,6 +150,7 @@ class MaryState:
             "connection_level": self.connection_level,
             "mary_intent": self.mary_intent,
             "resolution_done": self.resolution_done,
+            "shared_resolution_done": self.shared_resolution_done,
             "mary_physical_intent": self.mary_physical_intent,
             "force_resolution_now": self.force_resolution_now,
             "mary_autonomous_action": self.mary_autonomous_action,
@@ -329,55 +331,65 @@ def reparar_estado_incoerente(state: MaryState) -> None:
 def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config: MaryConfig = None) -> None:
     if config is None:
         config = MaryConfig()
-
+    
     reparar_estado_incoerente(state)
 
     texto_user = (fala_usuario or "").lower()
-    desejo = state.desire_level
-    tensao = state.tension_level
-    conexao = state.connection_level
-    fase = state.physical_phase
-    resolved = state.resolution_done
 
-    gatilhos_resolucao_do_usuario = [
-        "agora resolve", "chega ao auge", "pode finalizar", "finaliza",
-        "vai ate o fim", "vai até o fim", "termina", "nao segura", "não segura",
-    ]
-
-    usuario_pediu_resolucao = any(p in texto_user for p in gatilhos_resolucao_do_usuario)
-
-    # Mary não deve ficar presa em intensidade quando os níveis já estão no máximo.
-    estado_pede_avanco = (
-        not resolved
-        and fase >= 4
-        and desejo >= 0.90
-        and tensao >= 0.70
-        and conexao >= 0.55
-    )
-
-    # Se o usuário só reage positivamente, isso também deve contar como continuidade,
-    # não como ausência de comando.
-    usuario_receptivo = any(p in texto_user for p in [
-        "delicia", "delícia", "humm", "ahh", "ahhh", "smack", "chup",
-        "continua", "assim", "gostoso", "gostosa", "tesao", "tesão",
+    # ==========================================================
+    # PICO DO USUÁRIO / RESOLUÇÃO COMPARTILHADA
+    # Impede que o motor pule direto para desaceleração quando
+    # o usuário anuncia o próprio ápice.
+    # ==========================================================
+    usuario_anuncia_pico = any(p in texto_user for p in [
+        "vou gozar",
+        "vou chegar",
+        "estou gozando",
+        "tô gozando",
+        "to gozando",
+        "vou explodir",
+        "vem junto",
     ])
 
-    force = (
-        not resolved
-        and (
-            usuario_pediu_resolucao
-            or (estado_pede_avanco and usuario_receptivo)
-        )
-    )
-
-    if force:
-        logger.info("Resolucao/progressao autonoma ativada")
+    if usuario_anuncia_pico and state.scene_stage in {"pico", "desaceleracao"}:
         state.force_resolution_now = True
         state.physical_phase = 5
         state.scene_stage = "pico"
         state.mary_intent = "resolver_pico"
         state.mary_physical_intent = "resolver_pico"
         return
+
+    desejo = state.desire_level
+    tensao = state.tension_level
+    fase = state.physical_phase
+    resolved = state.resolution_done
+
+    gatilhos_resolucao_do_usuario = [
+        "agora resolve", "chega ao auge", "pode finalizar", "finaliza",
+        "vai ate o fim", "termina", "nao segura",
+    ]
+
+    usuario_pediu_resolucao = any(p in texto_user for p in gatilhos_resolucao_do_usuario)
+
+    force = (
+        not resolved
+        and fase >= 5
+        and desejo >= config.DESIRE_THRESHOLD_RESOLUTION
+        and tensao >= config.TENSION_THRESHOLD_RESOLUTION
+        and usuario_pediu_resolucao
+    )
+
+    state.force_resolution_now = bool(force)
+
+    if force:
+        logger.info("Resolucao forcada ativada")
+        state.physical_phase = 5
+        state.scene_stage = "pico"
+        state.mary_intent = "resolver_pico"
+    else:
+        state.scene_stage = fase_para_stage(state.physical_phase)
+        if not resolved and fase >= 4:
+            state.mary_intent = "resolver_pico"
 
     state.force_resolution_now = False
     state.scene_stage = fase_para_stage(state.physical_phase)
@@ -388,14 +400,47 @@ def preparar_resolution_engine(state: MaryState, fala_usuario: str = "", config:
 
 
 def finalizar_resolution_engine(state: MaryState, resposta_limpa: str) -> None:
+    """
+    Finaliza a resolução sem cortar o pico compartilhado cedo demais.
+
+    Ideia:
+    - Se force_resolution_now veio de um anúncio de pico do usuário,
+      mantém a cena em PICO por mais um turno.
+    - Só depois permite ir para desaceleração.
+    """
+
     if state.force_resolution_now:
-        logger.info("Finalizando resolucao forcada")
+        logger.info("Finalizando resolucao forcada / compartilhada")
+
+        # ==========================================================
+        # 1) PRIMEIRA PASSAGEM: segura a cena no pico
+        # ==========================================================
+        if not getattr(state, "shared_resolution_done", False):
+            setattr(state, "shared_resolution_done", True)
+
+            state.resolution_done = False
+            state.physical_phase = 5
+            state.scene_stage = "pico"
+            state.mary_intent = "resolver_pico"
+            state.mary_physical_intent = "resolver_pico"
+            state.force_resolution_now = False
+
+            logger.info("Resolucao compartilhada mantida em pico por mais um turno")
+            return
+
+        # ==========================================================
+        # 2) SEGUNDA PASSAGEM: agora sim desacelera
+        # ==========================================================
         state.resolution_done = True
         state.physical_phase = 6
         state.scene_stage = "desaceleracao"
         state.mary_intent = "desacelerar"
+        state.mary_physical_intent = "desacelerar_com_contato"
         state.force_resolution_now = False
+
+        logger.info("Resolucao concluida; indo para desaceleracao")
         return
+
     state.force_resolution_now = False
 
 
@@ -895,6 +940,16 @@ FORMAS POSSÍVEIS:
 - Mary reage em tempo real ao parceiro.
 - Use linguagem natural, direta e sem metaforas poeticas.
 - Mary conduz pelo desejo, nao por autoridade.
+
+[RESOLUCAO COMPARTILHADA]
+- Se o usuário anuncia o próprio ápice, Mary NÃO deve pular direto para aftercare.
+- Primeiro descreva a culminação emocional e física da cena de forma intensa, mas sem encerrar rápido demais.
+- Mary deve manter a ação por alguns instantes, reagir ao que acontece e só depois desacelerar.
+- Não transformar o ápice em uma frase curta seguida de descanso.
+- A resposta deve ter: impacto imediato, reação de Mary, continuidade por alguns segundos e só então queda de ritmo.
+- Não reiniciar a cena.
+- Não pedir confirmação.
+- Não devolver a iniciativa ao usuário.
 
 [EXEMPLOS BOM - EQUILIBRIO]
 BOM: "Voce me deixa louca. Eu quero mais de voce." + Eu puxo voce para perto.
