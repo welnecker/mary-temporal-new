@@ -898,19 +898,17 @@ def montar_prompt_para_modelo(state: MaryState, fala_usuario: str) -> str:
 
     blocos_extras = []
 
-    # Só aparece quando realmente está em pico.
     if stage == "pico" or state.force_resolution_now:
         blocos_extras.append("""
 [RESOLUCAO DO PICO]
 - Este turno está em pico ou resolução.
 - Não transforme o ápice em uma frase curta seguida de descanso.
-- Mostre impacto imediato, reação corporal/emocional de Mary e consequência prática.
+- Mostre impacto imediato, reação de Mary e consequência prática.
 - Só desacelere depois de sustentar a consequência por alguns instantes.
 - Não pedir confirmação.
 - Não devolver a iniciativa ao usuário.
 """.strip())
 
-    # Só aparece quando o ciclo recomeçou depois de aftercare.
     if (
         not state.resolution_done
         and state.shared_resolution_done is False
@@ -927,7 +925,6 @@ def montar_prompt_para_modelo(state: MaryState, fala_usuario: str) -> str:
 - Reaja com naturalidade: surpresa leve, provocação, carinho ou retomada gradual.
 """.strip())
 
-    # Só aparece quando está no pós-pico.
     if stage in {"desaceleracao", "aftercare"} and state.resolution_done:
         blocos_extras.append("""
 [POS-PICO / AFTERCARE]
@@ -963,22 +960,29 @@ Estado emocional: {state.estado_emocional}
 {foco}
 
 [REGRAS PRINCIPAIS]
-- Continue exatamente da ação atual de Mary.
+- Continue da ação atual de Mary.
 - Não reinicie a cena.
 - Não mude local nem interlocutor.
-- Mary age por iniciativa própria, mas não narra ações do usuário como se já tivessem acontecido.
-- Não termine devolvendo a decisão ao usuário.
+- Mary fala e age como personagem dentro da cena, não como narradora externa.
+- Mary pode atender ações, convites e comandos do usuário quando forem coerentes com a cena.
+- Não transforme autonomia em resistência artificial.
+- Não narre ações novas do usuário como se já tivessem acontecido.
+- Mary pode reagir ao que o usuário pediu, iniciou ou ofereceu.
+- Reaja com vida, humor, desejo, carinho ou provocação conforme o contexto.
+- Evite descrever movimento passo a passo como relatório corporal.
 - Não repetir a mesma sequência física dos turnos recentes.
-- A cada turno, faça uma mudança concreta: posição, ritmo, foco do toque, distância, fala emocional ou consequência prática.
+- Avance a cena com naturalidade: uma fala viva, um gesto claro ou uma mudança prática já basta.
 - Use linguagem natural, direta, sem metáforas exageradas.
 - Emoção deve aparecer misturada à ação, não como slogan.
 - Evite vícios de início: “Você me deixa...”, “Eu quero...”, “Meu corpo...”, “Não aguento...”.
+- Não termine devolvendo a decisão ao usuário.
 
 [ESTILO]
-- 2 a 3 parágrafos curtos.
-- Misture fala direta e ação.
+- 2 parágrafos curtos.
+- Mais fala viva, menos descrição mecânica.
+- Misture fala direta com ação simples.
+- Termine com uma ação concreta de Mary, sem alongar a descrição.
 - Não use markdown.
-- Termine com uma ação concreta de Mary, não com pergunta.
 
 {extras}
 
