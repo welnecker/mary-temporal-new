@@ -107,9 +107,9 @@ STATE_RULES = {
     },
     "pico": {
         "phase": 5,
-        "intent_default": "resolver_pico",
-        "physical_default": "resolver_pico",
-        "focus": "reacao fisica imediata, frases curtas, resolver sem enrolar",
+        "intent_default": "sustentar_pico",
+        "physical_default": "manter_intensidade",
+        "focus": "intensidade alta, reação física imediata, frases curtas, sem resolver automaticamente",
     },
     "desaceleracao": {
         "phase": 6,
@@ -223,15 +223,40 @@ def reparar_estado_incoerente(state: dict) -> None:
         state["scene_stage"] = "pico"
 
 
-def preparar_resolution_engine(state: dict) -> None:
+def preparar_resolution_engine(state: dict, fala_usuario: str = "") -> None:
     reparar_estado_incoerente(state)
+
+    texto_user = (fala_usuario or "").lower()
 
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     fase = int(state.get("physical_phase", 0) or 0)
     resolved = bool(state.get("resolution_done", False))
 
-    force = not resolved and fase >= 5 and desejo >= 0.88 and tensao >= 0.72
+    gatilhos_resolucao_do_usuario = [
+        "agora resolve",
+        "chega ao auge",
+        "pode finalizar",
+        "finaliza",
+        "vai até o fim",
+        "vai ate o fim",
+        "termina",
+        "não segura",
+        "nao segura",
+    ]
+
+    usuario_pediu_resolucao = any(p in texto_user for p in gatilhos_resolucao_do_usuario)
+
+    # Números altos NÃO resolvem sozinhos.
+    # Eles apenas mantêm intensidade.
+    force = (
+        not resolved
+        and fase >= 5
+        and desejo >= 0.88
+        and tensao >= 0.72
+        and usuario_pediu_resolucao
+    )
+
     state["force_resolution_now"] = bool(force)
 
     if force:
@@ -241,10 +266,11 @@ def preparar_resolution_engine(state: dict) -> None:
     else:
         state["scene_stage"] = fase_para_stage(int(state.get("physical_phase", 0) or 0))
 
+        if not resolved and fase >= 4:
+            state["mary_intent"] = "sustentar_intensidade"
+
 
 def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
-    texto = (resposta_limpa or "").lower()
-
     if state.get("force_resolution_now"):
         state["resolution_done"] = True
         state["physical_phase"] = 6
@@ -253,22 +279,8 @@ def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
         state["force_resolution_now"] = False
         return
 
-    gatilhos_resolucao = [
-        "auge",
-        "clímax",
-        "climax",
-        "me solto",
-        "perco o controle",
-        "minha respiração quebra",
-        "meu corpo cede",
-        "meu corpo relaxa",
-    ]
-
-    if any(p in texto for p in gatilhos_resolucao):
-        state["resolution_done"] = True
-        state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
-        state["scene_stage"] = "desaceleracao"
-        state["mary_intent"] = "desacelerar"
+    # Sem resolução forçada, o texto do modelo NÃO decide encerramento.
+    state["force_resolution_now"] = False
 
 
 # ==========================================================
@@ -883,7 +895,7 @@ def limpar_state_update(resposta: str) -> str:
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] += 1
 
-    preparar_resolution_engine(state)
+    preparar_resolution_engine(state, fala_usuario)
     state["mary_physical_intent"] = decidir_acao_fisica_mary(state)
     motor_autonomo_mary(state, fala_usuario)
 
