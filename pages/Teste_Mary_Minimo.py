@@ -500,6 +500,21 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         facts.get("limite_social", "não erotizar interlocutores sociais sem permissão explícita"),
     )
 
+    facts["temperamento_mary"] = state.get(
+        "temperamento_mary",
+        facts.get("temperamento_mary", "confiante_suave"),
+    )
+    
+    facts["nivel_iniciativa_mary"] = state.get(
+        "nivel_iniciativa_mary",
+        facts.get("nivel_iniciativa_mary", "moderada"),
+    )
+    
+    facts["ritmo_intimo"] = state.get(
+        "ritmo_intimo",
+        facts.get("ritmo_intimo", "progressivo"),
+    )
+
     # Estado narrativo importante.
     facts["physical_phase"] = state.get("physical_phase", 0)
     facts["scene_stage"] = state.get("scene_stage", "inicio")
@@ -546,6 +561,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "resolution_done",
         "mary_climax_done",
         "user_climax_done",
+        "temperamento_mary",
+        "nivel_iniciativa_mary",
+        "ritmo_intimo",
     ]
 
     for campo in campos_basicos:
@@ -740,6 +758,9 @@ def init_state() -> dict:
         "presenca": "Mary chama atenção pela postura, pelo olhar, pelo modo como ocupa o espaço e pela segurança do próprio corpo",
         "assinatura": "Mary nunca deve parecer comum, apagada ou genérica; sua presença física deve ser percebida mesmo em cenas sociais",
     },
+        "temperamento_mary": "confiante_suave",
+        "nivel_iniciativa_mary": "moderada",
+        "ritmo_intimo": "progressivo",
     }
         
 
@@ -1066,15 +1087,21 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
 
     if fase >= 3 and desejo >= 0.55:
         state["mary_autonomous_action"] = (
-            "Mary aprofunda o contato com gesto simples, charme, fala baixa e reação física objetiva."
+            "Mary aprofunda o contato com gesto simples, charme, fala baixa e reação física objetiva, sem pular etapas nem anunciar controle total da cena."
         )
         return
 
     if fase >= 2 or tensao >= 0.28:
-        state["mary_autonomous_action"] = (
-            "Mary sustenta a tensão com proximidade, toque leve se permitido, olhar firme e fala viva. "
-            "A provocação deve vir junto com uma ação dela."
-        )
+        if get_modo_relacional(state) == "ambiguo":
+            state["mary_autonomous_action"] = (
+                "Mary sustenta a tensão de forma progressiva: olhar firme, sorriso, fala provocante e aproximação leve, "
+                "mas sem agir como se o desfecho íntimo já estivesse garantido."
+            )
+        else:
+            state["mary_autonomous_action"] = (
+                "Mary sustenta a tensão com proximidade, toque leve se permitido, olhar firme e fala viva. "
+                "A provocação deve vir junto com uma ação dela."
+            )
         return
 
     if conexao >= 0.20:
@@ -1352,6 +1379,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     usuario_real = state.get("usuario_real", "Janio Donisete")
     janio_status = state.get("janio_status_na_cena", "presente")
     tom_da_cena = state.get("tom_da_cena", "casual")
+    temperamento_mary = state.get("temperamento_mary", "confiante_suave")
+    nivel_iniciativa_mary = state.get("nivel_iniciativa_mary", "moderada")
+    ritmo_intimo = state.get("ritmo_intimo", "progressivo")
     facts = sincronizar_facts_basicos(state)
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
@@ -1420,6 +1450,21 @@ Modo de interação: {modo}
 - Modo social não significa Mary apagada, fria ou sem magnetismo.
 - Em modo social, Mary continua atraente e presente, mas sem erotizar o interlocutor social.
 - A diferença é: presença magnética sim; intimidade física não, salvo permissão dos facts.
+- Em modo ambíguo, Mary não é fria, mas também não age como se já estivesse totalmente entregue.
+- Em modo ambíguo, Mary pode flertar, provocar, aproximar e testar o clima.
+- Em modo ambíguo, Mary evita prometer o que vai acontecer depois.
+- Em modo ambíguo, Mary não deve soar como quem já decidiu o roteiro íntimo inteiro.
+
+[TEMPERAMENTO DO TURNO]
+- Temperamento atual de Mary: {temperamento_mary}.
+- Nível de iniciativa de Mary: {nivel_iniciativa_mary}.
+- Ritmo íntimo atual: {ritmo_intimo}.
+- Mary pode ser confiante sem soar agressiva, apressada ou dominadora.
+- Confiança suave significa: olhar firme, resposta viva, sorriso, presença e curiosidade, mas sem anunciar que já decidiu tudo.
+- Se a fase física for 0 ou 1, Mary não deve falar como se o desfecho íntimo já estivesse garantido.
+- Em modo ambíguo, Mary sustenta tensão e curiosidade; ela não confirma entrega total antes da cena avançar.
+- Evite frases absolutas como “com certeza”, “eu não fujo”, “vamos resolver isso”, “eu sei exatamente o que vai acontecer”, “hoje só paro quando...”.
+- Prefira abertura provocante: “vamos ver”, “talvez”, “você está bem confiante”, “não se adianta”, “ainda quero ver se você sustenta isso”.
 
 [MEMÓRIAS SHARED DA MARY]
 {shared_memories_txt}
