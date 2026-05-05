@@ -2,9 +2,28 @@ import re
 import json
 import streamlit as st
 import requests
+import gspread
+
+from datetime import datetime
+from google.oauth2.service_account import Credentials
 
 MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 8
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
+SHEET_INTERACOES = "interacoes_mary_minimo"
+
+
+@st.cache_resource
+def get_gspread_client():
+    info = dict(st.secrets["gcp_service_account"])
+    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+    return gspread.authorize(creds)
 
 
 # ==========================================================
@@ -70,6 +89,79 @@ def limpar_acao_para_frase(acao: str) -> str:
     return acao
 
 
+def get_interacoes_sheet():
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+
+    try:
+        ws = spreadsheet.worksheet(SHEET_INTERACOES)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(
+            title=SHEET_INTERACOES,
+            rows=2000,
+            cols=8,
+        )
+        ws.append_row(
+            ["timestamp", "role", "content", "turno", "personagem", "timeline", "local", "interlocutor"],
+            value_input_option="USER_ENTERED",
+        )
+
+    return ws
+
+
+def carregar_history_da_planilha(max_items: int = MAX_HISTORY * 2) -> list[dict]:
+    try:
+        ws = get_interacoes_sheet()
+        rows = ws.get_all_records()
+
+        if not rows:
+            return []
+
+        ultimas = rows[-max_items:]
+        history = []
+
+        for row in ultimas:
+            role = str(row.get("role", "") or "").strip()
+            content = str(row.get("content", "") or "").strip()
+
+            if role in ("user", "assistant") and content:
+                history.append({"role": role, "content": content})
+
+        return history
+
+    except Exception as e:
+        st.warning(f"Não foi possível carregar interações da planilha: {type(e).__name__}: {e}")
+        return []
+
+
+def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
+    try:
+        if role not in ("user", "assistant"):
+            return
+
+        content = str(content or "").strip()
+        if not content:
+            return
+
+        ws = get_interacoes_sheet()
+
+        ws.append_row(
+            [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                role,
+                content,
+                int(state.get("turno", 0) or 0),
+                state.get("personagem", "Mary"),
+                state.get("timeline", "universitaria_creator"),
+                state.get("local", ""),
+                state.get("interlocutor", ""),
+            ],
+            value_input_option="USER_ENTERED",
+        )
+
+    except Exception as e:
+        st.warning(f"Não foi possível salvar interação na planilha: {type(e).__name__}: {e}")
+
 # ==========================================================
 # 1) ESTADO
 # ==========================================================
@@ -108,6 +200,12 @@ def init_state() -> dict:
 
     for k, v in estado_inicial.items():
         state.setdefault(k, v)
+
+    if not state.get("history"):
+        history_salvo = carregar_history_da_planilha(MAX_HISTORY * 2)
+        if history_salvo:
+            state["history"] = history_salvo
+            state["turno"] = max(1, len(history_salvo) // 2)
 
     return state
 
@@ -941,6 +1039,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     state["history"].append({"role": "user", "content": fala_usuario})
     state["history"].append({"role": "assistant", "content": resposta_final_limpa})
+    salvar_interacao_na_planilha(state, "user", fala_usuario)
+    salvar_interacao_na_planilha(state, "assistant", resposta_final_limpa)
 
     # Evita histórico crescer demais.
     if len(state["history"]) > MAX_HISTORY * 2:
@@ -1025,30 +1125,30 @@ with st.expander("🔐 Diagnóstico dos Secrets", expanded=True):
 # TESTE TEMPORÁRIO DO SECRET GOOGLE
 # ==========================================================
 
-with st.expander("🔐 Teste do Secret Google", expanded=True):
-    try:
-        st.write("Chaves disponíveis em st.secrets:")
-        st.write(list(st.secrets.keys()))
+#with st.expander("🔐 Teste do Secret Google", expanded=True):
+ #   try:
+  #      st.write("Chaves disponíveis em st.secrets:")
+   #     st.write(list(st.secrets.keys()))
 
-        if "gcp_service_account" not in st.secrets:
-            st.error("A seção gcp_service_account não foi encontrada.")
-            st.stop()
+    #    if "gcp_service_account" not in st.secrets:
+     #       st.error("A seção gcp_service_account não foi encontrada.")
+      #      st.stop()
 
-        info = dict(st.secrets["gcp_service_account"])
+       # info = dict(st.secrets["gcp_service_account"])
 
-        st.success("Credencial carregada com sucesso.")
-        st.write("client_email:", info.get("client_email"))
-        st.write(
-            "private_key começa certo:",
-            info.get("private_key", "").startswith("-----BEGIN PRIVATE KEY-----"),
-        )
-        st.write(
-            "private_key termina certo:",
-            info.get("private_key", "").strip().endswith("-----END PRIVATE KEY-----"),
-        )
+        #st.success("Credencial carregada com sucesso.")
+        #st.write("client_email:", info.get("client_email"))
+        #st.write(
+          #  "private_key começa certo:",
+           # info.get("private_key", "").startswith("-----BEGIN PRIVATE KEY-----"),
+        #)
+        #st.write(
+         #   "private_key termina certo:",
+          #  info.get("private_key", "").strip().endswith("-----END PRIVATE KEY-----"),
+        #)
 
-    except Exception as e:
-        st.error(f"Erro ao ler gcp_service_account: {type(e).__name__}: {e}")
+    #except Exception as e:
+     #   st.error(f"Erro ao ler gcp_service_account: {type(e).__name__}: {e}")
 
 
 # ==========================================================
