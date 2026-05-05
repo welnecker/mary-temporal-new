@@ -18,6 +18,7 @@ SCOPES = [
 SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
 SHEET_INTERACOES = "interacoes_mary_minimo"
 SHEET_FACTS = "facts_mary_minimo"
+SHEET_SHARED_MEMORIES = "shared_memories_mary_minimo"
 
 
 @st.cache_resource
@@ -183,6 +184,136 @@ def salvar_facts_na_planilha(facts: dict) -> None:
             values=linhas,
             value_input_option="USER_ENTERED",
         )
+
+    def get_shared_memories_sheet():
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+
+    try:
+        ws = spreadsheet.worksheet(SHEET_SHARED_MEMORIES)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(
+            title=SHEET_SHARED_MEMORIES,
+            rows=1000,
+            cols=6,
+        )
+        ws.append_row(
+            ["id", "tipo", "memoria", "ativa", "peso", "timestamp"],
+            value_input_option="USER_ENTERED",
+        )
+
+    return ws
+
+
+def carregar_shared_memories_da_planilha(apenas_ativas: bool = True) -> list[dict]:
+    try:
+        ws = get_shared_memories_sheet()
+        rows = ws.get_all_records()
+
+        memories = []
+
+        for row in rows:
+            memoria = str(row.get("memoria", "") or "").strip()
+            if not memoria:
+                continue
+
+            ativa_raw = str(row.get("ativa", "TRUE") or "TRUE").strip().lower()
+            ativa = ativa_raw in ("true", "1", "sim", "yes", "ativa")
+
+            if apenas_ativas and not ativa:
+                continue
+
+            try:
+                peso = float(row.get("peso", 1.0) or 1.0)
+            except Exception:
+                peso = 1.0
+
+            memories.append(
+                {
+                    "id": str(row.get("id", "") or "").strip(),
+                    "tipo": str(row.get("tipo", "shared") or "shared").strip(),
+                    "memoria": memoria,
+                    "ativa": ativa,
+                    "peso": peso,
+                    "timestamp": str(row.get("timestamp", "") or "").strip(),
+                }
+            )
+
+        memories.sort(key=lambda m: float(m.get("peso", 1.0) or 1.0), reverse=True)
+        return memories
+
+    except Exception as e:
+        st.warning(f"Não foi possível carregar memórias shared: {type(e).__name__}: {e}")
+        return []
+
+
+def salvar_shared_memory_na_planilha(memoria: str, tipo: str = "shared", peso: float = 1.0) -> bool:
+    try:
+        memoria = str(memoria or "").strip()
+        tipo = str(tipo or "shared").strip() or "shared"
+
+        if not memoria:
+            return False
+
+        ws = get_shared_memories_sheet()
+        rows = ws.get_all_values()
+        next_id = max(1, len(rows))
+
+        ws.append_row(
+            [
+                f"mem_{next_id}",
+                tipo,
+                memoria,
+                "TRUE",
+                float(peso or 1.0),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ],
+            value_input_option="USER_ENTERED",
+        )
+
+        return True
+
+    except Exception as e:
+        st.warning(f"Não foi possível salvar memória shared: {type(e).__name__}: {e}")
+        return False
+
+
+def apagar_shared_memory_por_id(memory_id: str) -> bool:
+    try:
+        memory_id = str(memory_id or "").strip()
+        if not memory_id:
+            return False
+
+        ws = get_shared_memories_sheet()
+        values = ws.get_all_values()
+
+        for row_idx, row in enumerate(values[1:], start=2):
+            row_id = str(row[0] if len(row) > 0 else "").strip()
+            if row_id == memory_id:
+                ws.delete_rows(row_idx)
+                return True
+
+        return False
+
+    except Exception as e:
+        st.warning(f"Não foi possível apagar memória shared: {type(e).__name__}: {e}")
+        return False
+
+
+def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20) -> str:
+    if not memories:
+        return "Nenhuma memória shared ativa."
+
+    linhas = []
+
+    for m in memories[:limite]:
+        tipo = str(m.get("tipo", "shared") or "shared").strip()
+        memoria = str(m.get("memoria", "") or "").strip()
+
+        if memoria:
+            linhas.append(f"- [{tipo}] {memoria}")
+
+    return "\n".join(linhas) if linhas else "Nenhuma memória shared ativa."
 
     except Exception as e:
         st.warning(f"Não foi possível salvar facts na planilha: {type(e).__name__}: {e}")
@@ -400,6 +531,7 @@ def init_state() -> dict:
         "mary_autonomous_action": "",
         "style_profile": "natural_viva_direta",
         "facts": {},
+        "shared_memories": [],
     }
 
     if "mary_state_minimo" not in st.session_state:
@@ -422,6 +554,9 @@ def init_state() -> dict:
             aplicar_facts_no_state(state, facts_salvos)
     
     sincronizar_facts_basicos(state)
+    if not state.get("shared_memories"):
+        state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+
     
     return state
 
@@ -796,6 +931,11 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     mary_acao = state.get("mary_acao", "parada, olhando para Janio")
     estado_emocional = state.get("estado_emocional", "confiante")
     modo = state.get("modo", "privado")
+    facts = sincronizar_facts_basicos(state)
+    facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
+    shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
+    state["shared_memories"] = shared_memories
+    shared_memories_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
 
     return f"""
 Você escreve SOMENTE como Mary, em PT-BR.
@@ -831,6 +971,19 @@ Modo de interação: {modo}
 - Não contradiga facts ativos.
 - Se houver conflito entre estilo e facts, os facts vencem.
 - Se houver conflito entre histórico antigo e facts atuais, os facts atuais vencem.
+
+[MEMÓRIAS SHARED DA MARY]
+{shared_memories_txt}
+
+[REGRA DAS MEMÓRIAS SHARED]
+- As memórias shared fazem parte da vida persistente de Mary.
+- Use essas memórias como identidade, passado, vínculos, preferências e continuidade emocional.
+- Não trate memórias shared como ações acontecendo agora.
+- Não contradiga memórias shared sem motivo explícito.
+- Se houver conflito entre facts atuais e memórias shared, os facts atuais vencem.
+- Se houver conflito entre fala atual do usuário e memórias antigas, responda ao presente sem apagar a memória.
+- Não invente memórias novas como se fossem fatos salvos.
+- Long memory está desativada; use apenas shared memories.
 
 [ESTILO OBRIGATÓRIO]
 - Linguagem natural, viva, direta e corporal.
@@ -1265,10 +1418,14 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     state["history"].append({"role": "user", "content": fala_usuario})
     state["history"].append({"role": "assistant", "content": resposta_final_limpa})
+
     salvar_interacao_na_planilha(state, "user", fala_usuario)
     salvar_interacao_na_planilha(state, "assistant", resposta_final_limpa)
+
     sincronizar_facts_basicos(state)
     salvar_facts_na_planilha(state["facts"])
+
+    st.session_state.mary_state_minimo = state
 
     # Evita histórico crescer demais.
     if len(state["history"]) > MAX_HISTORY * 2:
@@ -1461,6 +1618,98 @@ with st.sidebar:
             st.error(f"Erro ao salvar facts: {type(e).__name__}: {e}")
 
     st.divider()
+    
+    # ======================================================
+    # MEMÓRIAS SHARED
+    # ======================================================
+
+    st.subheader("🧠 Memórias shared")
+
+    if st.button("🔄 Recarregar memórias", use_container_width=True):
+        state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+        st.session_state.mary_state_minimo = state
+        st.success("Memórias recarregadas.")
+        st.rerun()
+
+    nova_memoria = st.text_area(
+        "Nova memória shared",
+        value="",
+        height=90,
+        placeholder="Ex: Mary lembra que Silvia é sua amiga próxima e costuma aparecer em conversas sobre festas.",
+    )
+
+    col_mem_1, col_mem_2 = st.columns([2, 1])
+
+    with col_mem_1:
+        tipo_memoria = st.text_input(
+            "Tipo",
+            value="shared",
+            help="Use shared para memórias gerais da vida da Mary.",
+        )
+
+    with col_mem_2:
+        peso_memoria = st.number_input(
+            "Peso",
+            min_value=0.1,
+            max_value=5.0,
+            value=1.0,
+            step=0.1,
+        )
+
+    if st.button("💾 Salvar memória shared", use_container_width=True):
+        ok = salvar_shared_memory_na_planilha(
+            memoria=nova_memoria,
+            tipo=tipo_memoria,
+            peso=float(peso_memoria),
+        )
+
+        if ok:
+            state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+            st.session_state.mary_state_minimo = state
+            st.success("Memória shared salva.")
+            st.rerun()
+        else:
+            st.warning("Nenhuma memória foi salva.")
+
+    with st.expander("📚 Ver memórias ativas", expanded=False):
+        memories = state.get("shared_memories") or []
+
+        if not memories:
+            st.info("Nenhuma memória shared ativa.")
+        else:
+            for m in memories:
+                st.markdown(
+                    f"**{m.get('id', '')}** · `{m.get('tipo', 'shared')}` · peso `{m.get('peso', 1.0)}`"
+                )
+                st.write(m.get("memoria", ""))
+                st.divider()
+
+    with st.expander("🗑️ Apagar memória por ID", expanded=False):
+        memory_id_apagar = st.text_input(
+            "ID da memória",
+            value="",
+            placeholder="Ex: mem_3",
+        )
+
+        confirmar_apagar_memoria = st.checkbox(
+            "Confirmar apagar memória",
+            value=False,
+        )
+
+        if st.button(
+            "Apagar memória shared",
+            use_container_width=True,
+            disabled=not confirmar_apagar_memoria,
+        ):
+            ok = apagar_shared_memory_por_id(memory_id_apagar)
+
+            if ok:
+                state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+                st.session_state.mary_state_minimo = state
+                st.success("Memória apagada.")
+                st.rerun()
+            else:
+                st.warning("Memória não encontrada.")
 
     # ======================================================
     # ESTADO INTERNO
