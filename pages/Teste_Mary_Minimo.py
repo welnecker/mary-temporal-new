@@ -957,51 +957,171 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
 
 # ==========================================================
-# 9) INTERFACE STREAMLIT
+# 9) INTERFACE STREAMLIT - ROLEPLAY
 # ==========================================================
 
-st.title("Teste Mary Mínimo - Estado + Filtro")
+st.set_page_config(
+    page_title="Mary Roleplay",
+    page_icon="🌙",
+    layout="centered",
+)
+
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 850px;
+        padding-top: 1.5rem;
+        padding-bottom: 6rem;
+    }
+
+    .mary-title {
+        text-align: center;
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+
+    .mary-subtitle {
+        text-align: center;
+        opacity: 0.75;
+        margin-bottom: 1.5rem;
+    }
+
+    .stChatMessage {
+        border-radius: 18px;
+        padding: 0.4rem;
+    }
+
+    div[data-testid="stChatMessageContent"] {
+        font-size: 1rem;
+        line-height: 1.55;
+    }
+
+    section[data-testid="stSidebar"] {
+        width: 330px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div class="mary-title">Mary</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="mary-subtitle">Roleplay contínuo · memória de sessão ativa · resposta natural</div>',
+    unsafe_allow_html=True,
+)
 
 state = init_state()
 
-fala_usuario = st.text_area("Fala/Ação do usuário")
 
-col1, col2 = st.columns(2)
+# ==========================================================
+# SIDEBAR - CONTROLES
+# ==========================================================
 
-with col1:
-    processar = st.button("Processar turno")
+with st.sidebar:
+    st.header("🎛️ Controles")
 
-with col2:
-    resetar = st.button("Resetar teste")
+    model = st.text_input(
+        "Modelo",
+        value=MODEL_DEFAULT,
+        help="Modelo usado na chamada OpenRouter.",
+    )
 
-if resetar:
-    if "mary_state_minimo" in st.session_state:
-        del st.session_state.mary_state_minimo
-    st.rerun()
+    st.divider()
 
-if processar:
-    resultado = processar_turno(state, fala_usuario)
+    st.subheader("📍 Estado da cena")
 
-    st.markdown("### Prompt enviado ao modelo")
-    st.code(json.dumps(resultado["mensagens"], ensure_ascii=False, indent=2), language="json")
+    state["local"] = st.text_input("Local", value=state.get("local", "quarto"))
+    state["tempo"] = st.text_input("Tempo", value=state.get("tempo", "noite"))
+    state["interlocutor"] = st.text_input(
+        "Interlocutor ativo",
+        value=state.get("interlocutor", "Janio Donisete"),
+    )
+    state["estado_emocional"] = st.text_input(
+        "Estado emocional de Mary",
+        value=state.get("estado_emocional", "confiante"),
+    )
 
-    st.markdown("### Resposta bruta")
-    st.write(resultado["resposta_bruta"])
+    st.divider()
 
-    st.markdown("### Validação")
-    if resultado["validacao"]["bloqueios"]:
-        st.error({"bloqueios": resultado["validacao"]["bloqueios"]})
-    elif resultado["validacao"]["alertas"]:
-        st.warning({"alertas": resultado["validacao"]["alertas"]})
-    else:
-        st.success("Nenhuma violação detectada.")
+    st.subheader("🧠 Estado interno")
 
-    st.markdown("### State update extraído")
-    st.json(resultado["update"])
+    st.write(f"**Fase física:** {state.get('physical_phase')}")
+    st.write(f"**Estágio:** {state.get('scene_stage')}")
+    st.write(f"**Desejo:** {round(float(state.get('desire_level', 0)), 2)}")
+    st.write(f"**Tensão:** {round(float(state.get('tension_level', 0)), 2)}")
+    st.write(f"**Conexão:** {round(float(state.get('connection_level', 0)), 2)}")
+    st.write(f"**Intenção:** {state.get('mary_intent')}")
 
-    st.markdown("### Resposta final")
-    st.write(resultado["resposta_final_limpa"])
+    st.divider()
 
-st.markdown("---")
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        if st.button("🧹 Limpar chat", use_container_width=True):
+            state["history"] = []
+            state["turno"] = 0
+            st.rerun()
+
+    with col_b:
+        if st.button("🔄 Reset total", use_container_width=True):
+            if "mary_state_minimo" in st.session_state:
+                del st.session_state.mary_state_minimo
+            st.rerun()
+
+    st.divider()
+
+    with st.expander("🧪 Debug técnico"):
+        st.json(state)
+
+
+# ==========================================================
+# ÁREA DO CHAT
+# ==========================================================
+
+history = state.get("history", [])
+
+if not history:
+    with st.chat_message("assistant", avatar="🌙"):
+        st.write(
+            "Estou aqui, Janio. Pode começar a cena do jeito que quiser."
+        )
+
+for msg in history:
+    role = msg.get("role")
+    content = str(msg.get("content", "") or "").strip()
+
+    if not content:
+        continue
+
+    if role == "user":
+        with st.chat_message("user", avatar="👤"):
+            st.write(content)
+
+    elif role == "assistant":
+        with st.chat_message("assistant", avatar="🌙"):
+            st.write(content)
+
+
+# ==========================================================
+# INPUT FIXO EMBAIXO
+# ==========================================================
+
+fala_usuario = st.chat_input("Escreva sua fala ou ação...")
+
+if fala_usuario:
+    fala_usuario = fala_usuario.strip()
+
+    if fala_usuario:
+        with st.chat_message("user", avatar="👤"):
+            st.write(fala_usuario)
+
+        with st.chat_message("assistant", avatar="🌙"):
+            with st.spinner("Mary está respondendo..."):
+                resultado = processar_turno(state, fala_usuario, model=model)
+                st.write(resultado["resposta_final_limpa"])
+
+        st.rerun()
 st.subheader("Estado real salvo")
 st.json(state)
