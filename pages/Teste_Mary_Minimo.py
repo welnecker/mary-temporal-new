@@ -1027,10 +1027,16 @@ with st.expander("🔐 Diagnóstico dos Secrets", expanded=True):
 
 with st.expander("🔐 Teste do Secret Google", expanded=True):
     try:
-        raw = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
-        info = json.loads(raw)
+        st.write("Chaves disponíveis em st.secrets:")
+        st.write(list(st.secrets.keys()))
 
-        st.success("JSON carregado com sucesso.")
+        if "gcp_service_account" not in st.secrets:
+            st.error("A seção gcp_service_account não foi encontrada.")
+            st.stop()
+
+        info = dict(st.secrets["gcp_service_account"])
+
+        st.success("Credencial carregada com sucesso.")
         st.write("client_email:", info.get("client_email"))
         st.write(
             "private_key começa certo:",
@@ -1042,7 +1048,7 @@ with st.expander("🔐 Teste do Secret Google", expanded=True):
         )
 
     except Exception as e:
-        st.error(f"Erro ao ler GOOGLE_SERVICE_ACCOUNT_JSON: {type(e).__name__}: {e}")
+        st.error(f"Erro ao ler gcp_service_account: {type(e).__name__}: {e}")
 
 
 # ==========================================================
