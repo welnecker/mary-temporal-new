@@ -1105,6 +1105,41 @@ for msg in history:
 
 
 # ==========================================================
+# ÚLTIMA ANÁLISE TÉCNICA PERSISTENTE
+# ==========================================================
+
+if "mary_last_debug" in st.session_state:
+    resultado_debug = st.session_state["mary_last_debug"]
+
+    with st.expander("🧪 Última análise técnica", expanded=False):
+        st.markdown("### Prompt enviado ao modelo")
+        st.code(
+            json.dumps(resultado_debug["mensagens"], ensure_ascii=False, indent=2),
+            language="json",
+        )
+
+        st.markdown("### Resposta bruta")
+        st.write(resultado_debug["resposta_bruta"])
+
+        st.markdown("### Validação")
+        if resultado_debug["validacao"]["bloqueios"]:
+            st.error({"bloqueios": resultado_debug["validacao"]["bloqueios"]})
+        elif resultado_debug["validacao"]["alertas"]:
+            st.warning({"alertas": resultado_debug["validacao"]["alertas"]})
+        else:
+            st.success("Nenhuma violação detectada.")
+
+        st.markdown("### State update extraído")
+        st.json(resultado_debug["update"])
+
+        st.markdown("### Resposta final limpa")
+        st.write(resultado_debug["resposta_final_limpa"])
+
+        st.markdown("### Estado real salvo")
+        st.json(state)
+
+
+# ==========================================================
 # INPUT FIXO EMBAIXO
 # ==========================================================
 
@@ -1120,8 +1155,43 @@ if fala_usuario:
         with st.chat_message("assistant", avatar="🌙"):
             with st.spinner("Mary está respondendo..."):
                 resultado = processar_turno(state, fala_usuario, model=model)
+                st.session_state["mary_last_debug"] = resultado
+
+            st.write(resultado["resposta_final_limpa"])
+
+            with st.expander("🧪 Análise técnica deste turno", expanded=False):
+                st.markdown("### Prompt enviado ao modelo")
+                st.code(
+                    json.dumps(resultado["mensagens"], ensure_ascii=False, indent=2),
+                    language="json",
+                )
+
+                st.markdown("### Resposta bruta")
+                st.write(resultado["resposta_bruta"])
+
+                st.markdown("### Validação")
+                if resultado["validacao"]["bloqueios"]:
+                    st.error({"bloqueios": resultado["validacao"]["bloqueios"]})
+                elif resultado["validacao"]["alertas"]:
+                    st.warning({"alertas": resultado["validacao"]["alertas"]})
+                else:
+                    st.success("Nenhuma violação detectada.")
+
+                st.markdown("### State update extraído")
+                st.json(resultado["update"])
+
+                st.markdown("### Resposta final limpa")
                 st.write(resultado["resposta_final_limpa"])
 
+                st.markdown("### Estado real salvo")
+                st.json(state)
+
         st.rerun()
+
+
+# ==========================================================
+# ESTADO REAL SALVO
+# ==========================================================
+
 st.subheader("Estado real salvo")
 st.json(state)
