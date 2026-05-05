@@ -299,41 +299,75 @@ def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
     except Exception as e:
         st.warning(f"Não foi possível salvar interação na planilha: {type(e).__name__}: {e}")
 
-def apagar_ultimas_interacoes_da_planilha(n: int) -> int:
+def apagar_ultimos_turnos_da_planilha(qtd_turnos: int) -> int:
     """
-    Apaga as N últimas linhas de interação da aba da planilha.
-    Não apaga o cabeçalho.
-    Retorna quantas linhas foram apagadas.
+    Apaga os últimos turnos completos da aba de interações.
+    Um turno completo = 1 fala do usuário + 1 resposta da assistant.
+    Retorna a quantidade de interações/linhas apagadas.
     """
     try:
-        n = int(n or 0)
+        qtd_turnos = int(qtd_turnos or 0)
 
-        if n <= 0:
+        if qtd_turnos <= 0:
             return 0
 
         ws = get_interacoes_sheet()
         values = ws.get_all_values()
 
-        # Linha 1 é cabeçalho. As interações começam na linha 2.
-        total_linhas = len(values)
-
-        if total_linhas <= 1:
+        # Linha 1 é cabeçalho.
+        if len(values) <= 1:
             return 0
 
-        total_interacoes = total_linhas - 1
-        qtd_apagar = min(n, total_interacoes)
+        # Pares de (row_index, row_values), começando na linha 2.
+        linhas = list(enumerate(values[1:], start=2))
 
-        primeira_linha_apagar = total_linhas - qtd_apagar + 1
-        ultima_linha_apagar = total_linhas
+        linhas_para_apagar = []
+        turnos_apagados = 0
+        i = len(linhas) - 1
 
-        # Apaga de baixo para cima para evitar deslocamento de linhas.
-        for row_index in range(ultima_linha_apagar, primeira_linha_apagar - 1, -1):
-            ws.delete_rows(row_index)
+        while i >= 0 and turnos_apagados < qtd_turnos:
+            row_idx, row = linhas[i]
+            role = str(row[1] if len(row) > 1 else "").strip().lower()
 
-        return qtd_apagar
+            # Caso normal: última linha é assistant; apaga assistant + user anterior.
+            if role == "assistant":
+                linhas_para_apagar.append(row_idx)
+
+                if i - 1 >= 0:
+                    prev_idx, prev_row = linhas[i - 1]
+                    prev_role = str(prev_row[1] if len(prev_row) > 1 else "").strip().lower()
+
+                    if prev_role == "user":
+                        linhas_para_apagar.append(prev_idx)
+                        i -= 2
+                    else:
+                        i -= 1
+                else:
+                    i -= 1
+
+                turnos_apagados += 1
+                continue
+
+            # Caso órfão: última linha é user sem resposta da assistant.
+            # Apaga esse user também, para não deixar ponta solta.
+            if role == "user":
+                linhas_para_apagar.append(row_idx)
+                i -= 1
+                turnos_apagados += 1
+                continue
+
+            # Qualquer linha estranha no final: apaga para limpar inconsistência.
+            linhas_para_apagar.append(row_idx)
+            i -= 1
+
+        # Apaga de baixo para cima para não deslocar índices.
+        for row_idx in sorted(set(linhas_para_apagar), reverse=True):
+            ws.delete_rows(row_idx)
+
+        return len(set(linhas_para_apagar))
 
     except Exception as e:
-        st.warning(f"Não foi possível apagar interações da planilha: {type(e).__name__}: {e}")
+        st.warning(f"Não foi possível apagar turnos da planilha: {type(e).__name__}: {e}")
         return 0
 
 # ==========================================================
@@ -1474,13 +1508,13 @@ with st.sidebar:
 
     st.subheader("🗑️ Apagar interações")
 
-    n_apagar = st.number_input(
-        "Quantidade de interações para apagar",
+    n_turnos_apagar = st.number_input(
+        "Quantidade de turnos para apagar",
         min_value=1,
-        max_value=100,
-        value=2,
+        max_value=50,
+        value=1,
         step=1,
-        help="Cada fala conta como 1 interação. Exemplo: user + Mary = 2 interações.",
+        help="Cada turno apaga a dupla: fala do usuário + resposta da Mary.",
     )
 
     confirmar_apagar = st.checkbox(
@@ -1490,30 +1524,28 @@ with st.sidebar:
     )
 
     if st.button(
-        "Apagar últimas interações",
+        "Apagar últimos turnos",
         use_container_width=True,
         disabled=not confirmar_apagar,
     ):
-        qtd = apagar_ultimas_interacoes_da_planilha(int(n_apagar))
-
-        if qtd > 0:
-            state["history"] = state.get("history", [])[:-qtd]
-            state["turno"] = max(0, len(state.get("history", [])) // 2)
-
+        qtd_linhas = apagar_ultimos_turnos_da_planilha(int(n_turnos_apagar))
+    
+        if qtd_linhas > 0:
+            # Recarrega o histórico diretamente da planilha depois da exclusão.
+            # Isso evita sobrar user órfão ou dessincronizar sessão/planilha.
+            history_recarregado = carregar_history_da_planilha(MAX_HISTORY * 2)
+            state["history"] = history_recarregado
+            state["turno"] = max(0, len(history_recarregado) // 2)
+    
             st.session_state.mary_state_minimo = state
-
+    
             if "mary_last_debug" in st.session_state:
                 del st.session_state["mary_last_debug"]
-
-            st.success(f"{qtd} interação(ões) apagada(s).")
+    
+            st.success(f"{qtd_linhas} linha(s) apagada(s), equivalente a {int(n_turnos_apagar)} turno(s).")
             st.rerun()
         else:
-            st.warning("Nenhuma interação foi apagada.")
-
-    st.divider()
-
-    with st.expander("🧪 Debug técnico", expanded=False):
-        st.json(state)
+            st.warning("Nenhum turno foi apagado.")
 
 
 # ==========================================================
