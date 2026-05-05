@@ -93,6 +93,8 @@ def init_state() -> dict:
         "connection_level": 0.22,
         "mary_intent": "aproximar_com_charme",
         "resolution_done": False,
+        "mary_climax_done": False,
+        "user_climax_done": False,
         "mary_physical_intent": None,
         "force_resolution_now": False,
         "mary_autonomous_action": "",
@@ -148,14 +150,16 @@ def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
 
     if state.get("force_resolution_now"):
         state["resolution_done"] = True
+        state["mary_climax_done"] = True
+        state.setdefault("user_climax_done", False)
+
         state["physical_phase"] = 6
-        state["scene_stage"] = "desaceleracao"
-        state["mary_intent"] = "desacelerar"
+        state["scene_stage"] = "pos_pico_mary"
+        state["mary_intent"] = "desacelerar_sem_encerrar"
         state["force_resolution_now"] = False
         return
 
-    gatilhos_resolucao = [
-        "auge",
+    gatilhos_resolucao_mary = [
         "clímax",
         "climax",
         "me solto",
@@ -163,13 +167,18 @@ def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
         "minha respiração quebra",
         "meu corpo cede",
         "meu corpo relaxa",
+        "eu gozo",
+        "gozo",
     ]
 
-    if any(p in texto for p in gatilhos_resolucao):
+    if any(p in texto for p in gatilhos_resolucao_mary):
         state["resolution_done"] = True
+        state["mary_climax_done"] = True
+        state.setdefault("user_climax_done", False)
+
         state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
-        state["scene_stage"] = "desaceleracao"
-        state["mary_intent"] = "desacelerar"
+        state["scene_stage"] = "pos_pico_mary"
+        state["mary_intent"] = "desacelerar_sem_encerrar"
 
 
 # ==========================================================
@@ -183,6 +192,16 @@ def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     resolved = bool(state.get("resolution_done", False))
+    mary_done = bool(state.get("mary_climax_done", False))
+    user_done = bool(state.get("user_climax_done", False))
+    
+    if mary_done and not user_done:
+        if any(p in texto for p in ["mais", "continua", "não para", "nao para", "quero mais"]):
+            return "intensidade"
+        return "pos_pico_mary"
+    
+    if mary_done and user_done:
+        return "aftercare"
 
     if not resolved:
         if fase >= 5:
@@ -232,6 +251,16 @@ def escolher_intencao_mary(state: dict) -> str:
     conexao = float(state.get("connection_level", 0.0) or 0.0)
     fase = int(state.get("physical_phase", 0) or 0)
     resolved = bool(state.get("resolution_done", False))
+    mary_done = bool(state.get("mary_climax_done", False))
+    user_done = bool(state.get("user_climax_done", False))
+    
+    if mary_done and not user_done:
+        if desejo >= 0.55 or tensao >= 0.40:
+            return "desacelerar_sem_encerrar"
+        return "manter_proximidade"
+    
+    if mary_done and user_done:
+        return "aftercare"
 
     if state.get("force_resolution_now"):
         return "resolver_pico"
@@ -295,17 +324,20 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
     )
 
     if state.get("force_resolution_now"):
-        state["mary_autonomous_action"] = (
-            "Mary resolve o pico da cena de forma direta e humana: fala curta, respiração alterada, "
-            "corpo tenso, uma reação emocional clara e depois redução do ritmo."
-        )
-        return
+    state["mary_autonomous_action"] = (
+        "Mary resolve somente o próprio pico de forma direta e humana: fala curta, respiração alterada, "
+        "corpo tenso, reação física clara e depois redução do ritmo dela. "
+        "A cena não termina. Mary não narra o clímax, finalização ou reação conclusiva do usuário."
+    )
+    return
 
     if resolved and fase >= 6:
-        state["mary_autonomous_action"] = (
-            "Mary desacelera com proximidade, cuidado e fala baixa. Ela não fica fria e não reinicia a intensidade."
-        )
-        return
+    state["mary_autonomous_action"] = (
+        "Mary desacelera o próprio corpo sem encerrar a cena: respira irregular, fica sensível, "
+        "permanece próxima e deixa espaço para Janio conduzir a própria reação. "
+        "Ela continua viva e presente, sem narrar o clímax do usuário."
+    )
+    return
 
     if perguntou_emocao:
         state["mary_autonomous_action"] = (
@@ -568,16 +600,29 @@ Modo de interação: {modo}
 - Fase 6 / desaceleração: respiração, pausa, corpo mole, proximidade, mas sem esfriar artificialmente.
 - Fase 7 / aftercare: cuidado, carinho, permanência, presença.
 
-[MOTOR DE RESOLUÇÃO]
+[MOTOR DE RESOLUÇÃO DA MARY]
 - Se "Resolução forçada neste turno" for True:
-  - Não prolongue.
+  - Resolva SOMENTE o pico físico/emocional de Mary.
+  - Não prolongue o pico de Mary.
   - Não diga "quase".
   - Não suspenda a ação.
-  - Resolva o pico narrativo atual neste turno.
-  - Mostre consequência física clara.
-  - Depois mostre mudança de ritmo.
-- Se a fase for 5, prefira frases mais curtas e mais físicas.
-- Se a fase for 6, Mary continua presente, quente e próxima; ela só reduz o ritmo.
+  - Mostre consequência física clara em Mary.
+  - Depois reduza apenas o ritmo dela: respiração, tremor, pausa, corpo sensível ou fala baixa.
+  - NÃO encerre a cena inteira.
+  - NÃO narre clímax, finalização, descarga, perda de controle ou reação conclusiva do usuário.
+  - O turno deve terminar deixando espaço para o usuário conduzir a própria reação.
+
+[AUTORIA DO CLÍMAX DO USUÁRIO]
+- O usuário controla o próprio corpo, prazer, clímax, finalização e reação.
+- Mary só pode reagir ao clímax do usuário se o usuário declarar explicitamente que isso aconteceu.
+- Se o usuário ainda não declarou o próprio clímax, Mary mantém a cena aberta.
+- Mary pode pedir, provocar, sentir, reagir e continuar, mas não pode concluir pelo usuário.
+- Proibido escrever frases equivalentes a:
+  "enquanto você termina",
+  "quando você goza",
+  "sentindo você descarregar",
+  "até você chegar ao fim",
+  "você perde o controle".
 
 [REGRAS DE FORMATO]
 - Escreva de 2 a 4 parágrafos curtos.
@@ -782,7 +827,19 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     ]
 
     if _tem_padrao(texto, padroes_autoria_usuario):
-        resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+    resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+
+    padroes_climax_usuario = [
+        r"\b(você|voce|janio|jânio)\s+(goza|gozou|termina|terminou|descarrega|descarregou)\b",
+        r"\b(você|voce|janio|jânio)\s+(chega|chegou)\s+ao\s+fim\b",
+        r"\b(você|voce|janio|jânio)\s+(perde|perdeu)\s+o\s+controle\b",
+        r"\bsentindo\s+(você|voce|janio|jânio)\s+(gozar|descarregar|terminar)\b",
+        r"\bquando\s+(você|voce|janio|jânio)\s+(goza|gozar|termina|terminar|descarrega|descarregar)\b",
+        r"\benquanto\s+(você|voce|janio|jânio)\s+(termina|terminar|descarrega|descarregar)\b",
+    ]
+
+    if _tem_padrao(texto, padroes_climax_usuario):
+        resultado["bloqueios"].append("Autoria indevida do clímax/reação conclusiva do usuário.")
 
     frases_muleta = [
         "me mostra",
