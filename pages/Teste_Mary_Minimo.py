@@ -324,20 +324,20 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
     )
 
     if state.get("force_resolution_now"):
-    state["mary_autonomous_action"] = (
-        "Mary resolve somente o próprio pico de forma direta e humana: fala curta, respiração alterada, "
-        "corpo tenso, reação física clara e depois redução do ritmo dela. "
-        "A cena não termina. Mary não narra o clímax, finalização ou reação conclusiva do usuário."
-    )
-    return
+        state["mary_autonomous_action"] = (
+            "Mary resolve somente o próprio pico de forma direta e humana: fala curta, respiração alterada, "
+            "corpo tenso, reação física clara e depois redução do ritmo dela. "
+            "A cena não termina. Mary não narra o clímax, finalização ou reação conclusiva do usuário."
+        )
+        return
 
     if resolved and fase >= 6:
-    state["mary_autonomous_action"] = (
-        "Mary desacelera o próprio corpo sem encerrar a cena: respira irregular, fica sensível, "
-        "permanece próxima e deixa espaço para Janio conduzir a própria reação. "
-        "Ela continua viva e presente, sem narrar o clímax do usuário."
-    )
-    return
+        state["mary_autonomous_action"] = (
+            "Mary desacelera o próprio corpo sem encerrar a cena: respira irregular, fica sensível, "
+            "permanece próxima e deixa espaço para Janio conduzir a própria reação. "
+            "Ela continua viva e presente, sem narrar o clímax do usuário."
+        )
+        return
 
     if perguntou_emocao:
         state["mary_autonomous_action"] = (
@@ -827,7 +827,7 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     ]
 
     if _tem_padrao(texto, padroes_autoria_usuario):
-    resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+        resultado["bloqueios"].append("Possível autoria indevida do usuário.")
 
     padroes_climax_usuario = [
         r"\b(você|voce|janio|jânio)\s+(goza|gozou|termina|terminou|descarrega|descarregou)\b",
