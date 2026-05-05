@@ -1014,6 +1014,29 @@ st.markdown(
 
 state = init_state()
 
+# ==========================================================
+# TESTE TEMPORÁRIO DO SECRET GOOGLE
+# ==========================================================
+
+with st.expander("🔐 Teste do Secret Google", expanded=True):
+    try:
+        raw = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+        info = json.loads(raw)
+
+        st.success("JSON carregado com sucesso.")
+        st.write("client_email:", info.get("client_email"))
+        st.write(
+            "private_key começa certo:",
+            info.get("private_key", "").startswith("-----BEGIN PRIVATE KEY-----"),
+        )
+        st.write(
+            "private_key termina certo:",
+            info.get("private_key", "").strip().endswith("-----END PRIVATE KEY-----"),
+        )
+
+    except Exception as e:
+        st.error(f"Erro ao ler GOOGLE_SERVICE_ACCOUNT_JSON: {type(e).__name__}: {e}")
+
 
 # ==========================================================
 # SIDEBAR - CONTROLES
