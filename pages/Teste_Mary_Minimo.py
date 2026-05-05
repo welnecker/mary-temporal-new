@@ -185,12 +185,17 @@ def salvar_facts_na_planilha(facts: dict) -> None:
             value_input_option="USER_ENTERED",
         )
 
-    def get_shared_memories_sheet():
+    except Exception as e:
+        st.warning(f"Não foi possível salvar facts na planilha: {type(e).__name__}: {e}")
+
+
+def get_shared_memories_sheet():
     client = get_gspread_client()
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
 
     try:
         ws = spreadsheet.worksheet(SHEET_SHARED_MEMORIES)
+
     except gspread.WorksheetNotFound:
         ws = spreadsheet.add_worksheet(
             title=SHEET_SHARED_MEMORIES,
