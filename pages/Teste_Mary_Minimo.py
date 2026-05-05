@@ -17,6 +17,7 @@ SCOPES = [
 
 SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
 SHEET_INTERACOES = "interacoes_mary_minimo"
+SHEET_FACTS = "facts_mary_minimo"
 
 
 @st.cache_resource
@@ -107,6 +108,142 @@ def get_interacoes_sheet():
         )
 
     return ws
+
+def get_facts_sheet():
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+
+    try:
+        ws = spreadsheet.worksheet(SHEET_FACTS)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(
+            title=SHEET_FACTS,
+            rows=500,
+            cols=2,
+        )
+        ws.append_row(
+            ["chave", "valor"],
+            value_input_option="USER_ENTERED",
+        )
+
+    return ws
+
+
+def carregar_facts_da_planilha() -> dict:
+    try:
+        ws = get_facts_sheet()
+        rows = ws.get_all_records()
+
+        facts = {}
+
+        for row in rows:
+            chave = str(row.get("chave", "") or "").strip()
+            valor = row.get("valor", "")
+
+            if not chave:
+                continue
+
+            if isinstance(valor, str):
+                valor_limpo = valor.strip()
+
+                try:
+                    facts[chave] = json.loads(valor_limpo)
+                except Exception:
+                    facts[chave] = valor_limpo
+            else:
+                facts[chave] = valor
+
+        return facts
+
+    except Exception as e:
+        st.warning(f"Não foi possível carregar facts da planilha: {type(e).__name__}: {e}")
+        return {}
+
+
+def salvar_facts_na_planilha(facts: dict) -> None:
+    try:
+        if not isinstance(facts, dict):
+            return
+
+        ws = get_facts_sheet()
+        ws.clear()
+
+        linhas = [["chave", "valor"]]
+
+        for chave, valor in facts.items():
+            if isinstance(valor, (dict, list, bool, int, float)) or valor is None:
+                valor_final = json.dumps(valor, ensure_ascii=False)
+            else:
+                valor_final = str(valor)
+
+            linhas.append([str(chave), valor_final])
+
+        ws.update(
+            range_name="A1",
+            values=linhas,
+            value_input_option="USER_ENTERED",
+        )
+
+    except Exception as e:
+        st.warning(f"Não foi possível salvar facts na planilha: {type(e).__name__}: {e}")
+
+def sincronizar_facts_basicos(state: dict) -> dict:
+    """
+    Mantém compatibilidade entre campos antigos do state
+    e o novo bloco state["facts"].
+    """
+    facts = state.get("facts")
+
+    if not isinstance(facts, dict):
+        facts = {}
+
+    # Campos centrais da cena.
+    facts["local"] = state.get("local", "quarto")
+    facts["tempo"] = state.get("tempo", "noite")
+    facts["interlocutor"] = state.get("interlocutor", "Janio Donisete")
+    facts["mary_acao"] = state.get("mary_acao", "")
+    facts["estado_emocional"] = state.get("estado_emocional", "confiante")
+    facts["modo"] = state.get("modo", "privado")
+
+    # Estado narrativo importante.
+    facts["physical_phase"] = state.get("physical_phase", 0)
+    facts["scene_stage"] = state.get("scene_stage", "inicio")
+    facts["mary_intent"] = state.get("mary_intent", "")
+    facts["resolution_done"] = state.get("resolution_done", False)
+    facts["mary_climax_done"] = state.get("mary_climax_done", False)
+    facts["user_climax_done"] = state.get("user_climax_done", False)
+
+    state["facts"] = facts
+    return facts
+
+
+def aplicar_facts_no_state(state: dict, facts: dict) -> None:
+    """
+    Aplica facts carregados da planilha nos campos principais do state.
+    """
+    if not isinstance(facts, dict):
+        return
+
+    state["facts"] = facts
+
+    campos_basicos = [
+        "local",
+        "tempo",
+        "interlocutor",
+        "mary_acao",
+        "estado_emocional",
+        "modo",
+        "physical_phase",
+        "scene_stage",
+        "mary_intent",
+        "resolution_done",
+        "mary_climax_done",
+        "user_climax_done",
+    ]
+
+    for campo in campos_basicos:
+        if campo in facts and facts[campo] not in ("", None):
+            state[campo] = facts[campo]
 
 
 def carregar_history_da_planilha(max_items: int = MAX_HISTORY * 2) -> list[dict]:
@@ -228,6 +365,7 @@ def init_state() -> dict:
         "force_resolution_now": False,
         "mary_autonomous_action": "",
         "style_profile": "natural_viva_direta",
+        "facts": {},
     }
 
     if "mary_state_minimo" not in st.session_state:
@@ -243,7 +381,14 @@ def init_state() -> dict:
         if history_salvo:
             state["history"] = history_salvo
             state["turno"] = max(1, len(history_salvo) // 2)
-
+    
+    if not state.get("facts"):
+        facts_salvos = carregar_facts_da_planilha()
+        if facts_salvos:
+            aplicar_facts_no_state(state, facts_salvos)
+    
+    sincronizar_facts_basicos(state)
+    
     return state
 
 
@@ -642,6 +787,16 @@ Interlocutor ativo: {interlocutor}
 Ação atual de Mary: {mary_acao}
 Estado emocional de Mary: {estado_emocional}
 Modo de interação: {modo}
+
+[FACTS ATIVOS DO PRESENTE]
+{facts_txt}
+
+[REGRA DOS FACTS]
+- Os facts ativos representam o presente da cena.
+- Local, tempo, interlocutor e ação atual devem obedecer aos facts.
+- Não contradiga facts ativos.
+- Se houver conflito entre estilo e facts, os facts vencem.
+- Se houver conflito entre histórico antigo e facts atuais, os facts atuais vencem.
 
 [ESTILO OBRIGATÓRIO]
 - Linguagem natural, viva, direta e corporal.
@@ -1078,6 +1233,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     state["history"].append({"role": "assistant", "content": resposta_final_limpa})
     salvar_interacao_na_planilha(state, "user", fala_usuario)
     salvar_interacao_na_planilha(state, "assistant", resposta_final_limpa)
+    sincronizar_facts_basicos(state)
+    salvar_facts_na_planilha(state["facts"])
 
     # Evita histórico crescer demais.
     if len(state["history"]) > MAX_HISTORY * 2:
@@ -1217,6 +1374,56 @@ with st.sidebar:
     )
 
     st.divider()
+st.subheader("📌 Facts do presente")
+
+state["local"] = st.text_input("Local", value=state.get("local", "quarto"))
+state["tempo"] = st.text_input("Tempo", value=state.get("tempo", "noite"))
+state["interlocutor"] = st.text_input(
+    "Interlocutor ativo",
+    value=state.get("interlocutor", "Janio Donisete"),
+)
+state["mary_acao"] = st.text_area(
+    "Ação atual de Mary",
+    value=state.get("mary_acao", ""),
+    height=90,
+)
+state["estado_emocional"] = st.text_input(
+    "Estado emocional de Mary",
+    value=state.get("estado_emocional", "confiante"),
+)
+state["modo"] = st.text_input(
+    "Modo de interação",
+    value=state.get("modo", "privado"),
+)
+
+sincronizar_facts_basicos(state)
+
+facts_editaveis = st.text_area(
+    "Facts livres em JSON",
+    value=json.dumps(state.get("facts", {}), ensure_ascii=False, indent=2),
+    height=260,
+    help="Você pode acrescentar facts como roupa, clima, posição, objeto em cena, relação, etc.",
+)
+
+if st.button("💾 Salvar facts", use_container_width=True):
+    try:
+        novos_facts = json.loads(facts_editaveis)
+
+        if not isinstance(novos_facts, dict):
+            st.error("Os facts precisam estar em formato JSON de objeto: { ... }")
+        else:
+            state["facts"] = novos_facts
+            aplicar_facts_no_state(state, novos_facts)
+            sincronizar_facts_basicos(state)
+
+            st.session_state.mary_state_minimo = state
+            salvar_facts_na_planilha(state["facts"])
+
+            st.success("Facts salvos com sucesso.")
+            st.rerun()
+
+    except Exception as e:
+        st.error(f"Erro ao salvar facts: {type(e).__name__}: {e}")
 
     st.subheader("🧠 Estado interno")
 
