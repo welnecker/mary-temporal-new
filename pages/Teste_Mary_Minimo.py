@@ -1683,12 +1683,21 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     local = str(state.get("local", "") or "").lower()
     interlocutor = str(state.get("interlocutor", "") or "").lower()
 
-    locais_proibidos = ["sala", "rua", "banheiro", "cozinha", "varanda", "carro"]
+    # ======================================================
+    # LOCAL — alerta, não bloqueio
+    # ======================================================
+    locais_incompativeis = ["rua", "banheiro", "cozinha", "varanda", "carro"]
 
-    for loc in locais_proibidos:
-        if loc != local and re.search(rf"\b{re.escape(loc)}\b", texto):
-            resultado["bloqueios"].append(f"Mudança indevida de local: {loc}")
+    for loc in locais_incompativeis:
+        if loc in local:
+            continue
 
+        if re.search(rf"\b{re.escape(loc)}\b", texto):
+            resultado["alertas"].append(f"Possível menção a outro local: {loc}")
+
+    # ======================================================
+    # INTERLOCUTOR — alerta
+    # ======================================================
     aliases_interlocutor = [
         interlocutor,
         "você",
@@ -1704,6 +1713,9 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     if interlocutor and not any(alias and alias in texto for alias in aliases_interlocutor):
         resultado["alertas"].append("A resposta pode ter perdido o interlocutor ativo.")
 
+    # ======================================================
+    # AUTORIA INDEVIDA DO USUÁRIO — bloqueio real
+    # ======================================================
     padroes_autoria_usuario = [
         r"\b(você|voce|janio|jânio)\s+(me\s+)?puxa\b",
         r"\b(você|voce|janio|jânio)\s+(me\s+)?puxou\b",
@@ -1720,6 +1732,9 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     if _tem_padrao(texto, padroes_autoria_usuario):
         resultado["bloqueios"].append("Possível autoria indevida do usuário.")
 
+    # ======================================================
+    # CLÍMAX DO USUÁRIO — bloqueio real
+    # ======================================================
     padroes_climax_usuario = [
         r"\b(você|voce|janio|jânio)\s+(goza|gozou|termina|terminou|descarrega|descarregou)\b",
         r"\b(você|voce|janio|jânio)\s+(chega|chegou)\s+ao\s+fim\b",
@@ -1732,6 +1747,9 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
     if _tem_padrao(texto, padroes_climax_usuario):
         resultado["bloqueios"].append("Autoria indevida do clímax/reação conclusiva do usuário.")
 
+    # ======================================================
+    # FRASES-MULETA — alerta
+    # ======================================================
     frases_muleta = [
         "me mostra",
         "me prova",
