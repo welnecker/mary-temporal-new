@@ -90,6 +90,122 @@ def limpar_acao_para_frase(acao: str) -> str:
 
     return acao
 
+def normalizar_bool(valor, default: bool = False) -> bool:
+    if isinstance(valor, bool):
+        return valor
+
+    if valor is None:
+        return default
+
+    texto = str(valor).strip().lower()
+
+    if texto in ("true", "1", "sim", "yes", "y", "ativo", "ativa"):
+        return True
+
+    if texto in ("false", "0", "não", "nao", "no", "n", "inativo", "inativa"):
+        return False
+
+    return default
+
+
+def get_modo_relacional(state: dict) -> str:
+    """
+    Define se Mary está em modo social, íntimo ou ambíguo.
+    Esse campo governa o comportamento corporal com o interlocutor ativo.
+    """
+    facts = state.get("facts") if isinstance(state.get("facts"), dict) else {}
+
+    modo_relacional = str(
+        state.get("modo_relacional")
+        or facts.get("modo_relacional")
+        or ""
+    ).strip().lower()
+
+    if modo_relacional in ("social", "intimo", "íntimo", "ambiguo", "ambíguo"):
+        return "intimo" if modo_relacional == "íntimo" else (
+            "ambiguo" if modo_relacional == "ambíguo" else modo_relacional
+        )
+
+    tensao_romantica = normalizar_bool(
+        state.get("tensao_romantica_com_interlocutor", facts.get("tensao_romantica_com_interlocutor", False))
+    )
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", facts.get("toque_intimo_permitido", False))
+    )
+
+    if tensao_romantica or toque_intimo:
+        return "intimo"
+
+    return "social"
+
+
+def interlocutor_eh_janio(state: dict) -> bool:
+    interlocutor = str(state.get("interlocutor", "") or "").lower()
+    return "janio" in interlocutor or "jânio" in interlocutor
+
+
+def limitar_progressao_social(state: dict) -> None:
+    """
+    Se Mary está em modo social, impede que a progressão física
+    assuma linguagem de intimidade. Isso evita Silvia virar Janio.
+    """
+    modo_relacional = get_modo_relacional(state)
+
+    if modo_relacional != "social":
+        return
+
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+
+    if not toque_intimo:
+        fase = int(state.get("physical_phase", 0) or 0)
+
+        if fase > 1:
+            state["physical_phase"] = 1
+
+        if str(state.get("scene_stage", "")).lower() in ("toque", "beijo", "intensidade", "pico", "desaceleracao", "aftercare", "pos_pico_mary"):
+            state["scene_stage"] = "aproximacao"
+
+        if str(state.get("mary_intent", "")).lower() in (
+            "aproximar_e_tocar",
+            "aprofundar_contato",
+            "buscar_intensidade",
+            "resolver_pico",
+            "retomar_intensidade",
+            "desacelerar_sem_encerrar",
+        ):
+            state["mary_intent"] = "conversar_com_cumplicidade"
+
+        state["mary_physical_intent"] = "presenca_social"
+        state["force_resolution_now"] = False
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
+
+
+def resetar_cena_se_interlocutor_mudou(state: dict) -> None:
+    """
+    Quando o interlocutor muda, a progressão íntima não deve vazar
+    para a nova pessoa. Ex: Janio -> Silvia.
+    """
+    interlocutor_atual = str(state.get("interlocutor", "") or "").strip()
+    ultimo_interlocutor = str(state.get("_ultimo_interlocutor", "") or "").strip()
+
+    if ultimo_interlocutor and interlocutor_atual and interlocutor_atual != ultimo_interlocutor:
+        state["physical_phase"] = 0
+        state["scene_stage"] = "inicio"
+        state["desire_level"] = 0.18
+        state["tension_level"] = 0.12
+        state["connection_level"] = max(float(state.get("connection_level", 0.22) or 0.22), 0.22)
+        state["mary_intent"] = "conversar_com_cumplicidade"
+        state["mary_physical_intent"] = "presenca_social"
+        state["mary_autonomous_action"] = ""
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
+        state["force_resolution_now"] = False
+
+    state["_ultimo_interlocutor"] = interlocutor_atual
+
 
 def get_interacoes_sheet():
     client = get_gspread_client()
@@ -324,19 +440,65 @@ def sincronizar_facts_basicos(state: dict) -> dict:
     """
     Mantém compatibilidade entre campos antigos do state
     e o novo bloco state["facts"].
+    Agora separa: usuário real, interlocutor ativo, presença de Janio,
+    relação social/íntima e permissões de contato.
     """
     facts = state.get("facts")
 
     if not isinstance(facts, dict):
         facts = {}
 
+    # Remove placeholder acidental.
+    if facts.get("chave") == "valor":
+        facts.pop("chave", None)
+
     # Campos centrais da cena.
-    facts["local"] = state.get("local", "quarto")
-    facts["tempo"] = state.get("tempo", "noite")
-    facts["interlocutor"] = state.get("interlocutor", "Janio Donisete")
-    facts["mary_acao"] = state.get("mary_acao", "")
-    facts["estado_emocional"] = state.get("estado_emocional", "confiante")
-    facts["modo"] = state.get("modo", "privado")
+    facts["local"] = state.get("local", facts.get("local", "quarto"))
+    facts["tempo"] = state.get("tempo", facts.get("tempo", "noite"))
+    facts["interlocutor"] = state.get("interlocutor", facts.get("interlocutor", "Janio Donisete"))
+    facts["usuario_real"] = state.get("usuario_real", facts.get("usuario_real", "Janio Donisete"))
+    facts["papel_do_usuario_real"] = state.get(
+        "papel_do_usuario_real",
+        facts.get("papel_do_usuario_real", "roteirista/jogador externo"),
+    )
+    facts["janio_status_na_cena"] = state.get(
+        "janio_status_na_cena",
+        facts.get("janio_status_na_cena", "presente"),
+    )
+
+    facts["mary_acao"] = state.get("mary_acao", facts.get("mary_acao", ""))
+    facts["estado_emocional"] = state.get("estado_emocional", facts.get("estado_emocional", "confiante"))
+    facts["modo"] = state.get("modo", facts.get("modo", "privado"))
+
+    # Relação com o interlocutor ativo.
+    facts["tipo_relacao_interlocutor"] = state.get(
+        "tipo_relacao_interlocutor",
+        facts.get("tipo_relacao_interlocutor", "indefinida"),
+    )
+    facts["modo_relacional"] = state.get(
+        "modo_relacional",
+        facts.get("modo_relacional", get_modo_relacional(state)),
+    )
+    facts["tensao_romantica_com_interlocutor"] = normalizar_bool(
+        state.get(
+            "tensao_romantica_com_interlocutor",
+            facts.get("tensao_romantica_com_interlocutor", False),
+        )
+    )
+    facts["toque_intimo_permitido"] = normalizar_bool(
+        state.get(
+            "toque_intimo_permitido",
+            facts.get("toque_intimo_permitido", False),
+        )
+    )
+    facts["tom_da_cena"] = state.get(
+        "tom_da_cena",
+        facts.get("tom_da_cena", "casual"),
+    )
+    facts["limite_social"] = state.get(
+        "limite_social",
+        facts.get("limite_social", "não erotizar interlocutores sociais sem permissão explícita"),
+    )
 
     # Estado narrativo importante.
     facts["physical_phase"] = state.get("physical_phase", 0)
@@ -357,15 +519,27 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     if not isinstance(facts, dict):
         return
 
+    if facts.get("chave") == "valor":
+        facts.pop("chave", None)
+
     state["facts"] = facts
 
     campos_basicos = [
         "local",
         "tempo",
         "interlocutor",
+        "usuario_real",
+        "papel_do_usuario_real",
+        "janio_status_na_cena",
         "mary_acao",
         "estado_emocional",
         "modo",
+        "tipo_relacao_interlocutor",
+        "modo_relacional",
+        "tensao_romantica_com_interlocutor",
+        "toque_intimo_permitido",
+        "tom_da_cena",
+        "limite_social",
         "physical_phase",
         "scene_stage",
         "mary_intent",
@@ -376,7 +550,20 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
 
     for campo in campos_basicos:
         if campo in facts and facts[campo] not in ("", None):
-            state[campo] = facts[campo]
+            if campo in (
+                "tensao_romantica_com_interlocutor",
+                "toque_intimo_permitido",
+                "resolution_done",
+                "mary_climax_done",
+                "user_climax_done",
+            ):
+                state[campo] = normalizar_bool(facts[campo])
+            else:
+                state[campo] = facts[campo]
+
+    resetar_cena_se_interlocutor_mudou(state)
+    limitar_progressao_social(state)
+    sincronizar_facts_basicos(state)
 
 
 def carregar_history_da_planilha(max_items: int = MAX_HISTORY * 2) -> list[dict]:
@@ -534,6 +721,15 @@ def init_state() -> dict:
         "style_profile": "natural_viva_direta",
         "facts": {},
         "shared_memories": [],
+        "usuario_real": "Janio Donisete",
+        "papel_do_usuario_real": "roteirista/jogador externo",
+        "janio_status_na_cena": "presente",
+        "tipo_relacao_interlocutor": "par íntimo",
+        "modo_relacional": "intimo",
+        "tensao_romantica_com_interlocutor": True,
+        "toque_intimo_permitido": True,
+        "tom_da_cena": "íntimo e direto",
+        "limite_social": "não erotizar interlocutores sociais sem permissão explícita",
     }
 
     if "mary_state_minimo" not in st.session_state:
@@ -554,12 +750,14 @@ def init_state() -> dict:
         facts_salvos = carregar_facts_da_planilha()
         if facts_salvos:
             aplicar_facts_no_state(state, facts_salvos)
-    
+
+    resetar_cena_se_interlocutor_mudou(state)
+    limitar_progressao_social(state)
     sincronizar_facts_basicos(state)
+
     if not state.get("shared_memories"):
         state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
 
-    
     return state
 
 
@@ -639,18 +837,29 @@ def finalizar_resolution_engine(state: dict, resposta_limpa: str) -> None:
 def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
     texto = (fala_usuario or "").lower()
 
+    limitar_progressao_social(state)
+
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(state.get("tensao_romantica_com_interlocutor", False))
+
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        if any(p in texto for p in ["segredo", "cochicha", "cochicho", "intervalo", "aula", "professora", "colega"]):
+            return "aproximacao"
+        return "inicio"
+
     fase = int(state.get("physical_phase", 0) or 0)
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     resolved = bool(state.get("resolution_done", False))
     mary_done = bool(state.get("mary_climax_done", False))
     user_done = bool(state.get("user_climax_done", False))
-    
+
     if mary_done and not user_done:
         if any(p in texto for p in ["mais", "continua", "não para", "nao para", "quero mais"]):
             return "intensidade"
         return "pos_pico_mary"
-    
+
     if mary_done and user_done:
         return "aftercare"
 
@@ -677,6 +886,15 @@ def decidir_scene_stage(state: dict, fala_usuario: str) -> str:
 
 
 def decidir_acao_fisica_mary(state: dict) -> str | None:
+    limitar_progressao_social(state)
+
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(state.get("tensao_romantica_com_interlocutor", False))
+
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        return "presenca_social"
+
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     fase = int(state.get("physical_phase", 0) or 0)
@@ -697,6 +915,15 @@ def decidir_acao_fisica_mary(state: dict) -> str | None:
 
 
 def escolher_intencao_mary(state: dict) -> str:
+    limitar_progressao_social(state)
+
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(state.get("tensao_romantica_com_interlocutor", False))
+
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        return "conversar_com_cumplicidade"
+
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     conexao = float(state.get("connection_level", 0.0) or 0.0)
@@ -704,12 +931,12 @@ def escolher_intencao_mary(state: dict) -> str:
     resolved = bool(state.get("resolution_done", False))
     mary_done = bool(state.get("mary_climax_done", False))
     user_done = bool(state.get("user_climax_done", False))
-    
+
     if mary_done and not user_done:
         if desejo >= 0.55 or tensao >= 0.40:
             return "desacelerar_sem_encerrar"
         return "manter_proximidade"
-    
+
     if mary_done and user_done:
         return "aftercare"
 
@@ -739,12 +966,27 @@ def escolher_intencao_mary(state: dict) -> str:
 
 
 def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
+    limitar_progressao_social(state)
+
     fase = int(state.get("physical_phase", 0) or 0)
     desejo = float(state.get("desire_level", 0.0) or 0.0)
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     conexao = float(state.get("connection_level", 0.0) or 0.0)
     resolved = bool(state.get("resolution_done", False))
     texto_user = (fala_usuario or "").lower()
+
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(state.get("tensao_romantica_com_interlocutor", False))
+    interlocutor = str(state.get("interlocutor", "interlocutor") or "interlocutor")
+
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        state["mary_autonomous_action"] = (
+            f"Mary responde a {interlocutor} em modo social: fala com cumplicidade, humor e presença, "
+            "mas não erotiza a cena, não age como se estivesse com Janio e não usa toque íntimo. "
+            "Ela pode cochichar, sorrir, comentar a aula, se inclinar levemente ou fazer uma provocação social."
+        )
+        return
 
     pediu_aproximacao = any(
         p in texto_user
@@ -785,21 +1027,21 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
     if resolved and fase >= 6:
         state["mary_autonomous_action"] = (
             "Mary desacelera o próprio corpo sem encerrar a cena: respira irregular, fica sensível, "
-            "permanece próxima e deixa espaço para Janio conduzir a própria reação. "
+            "permanece próxima e deixa espaço para o interlocutor conduzir a própria reação. "
             "Ela continua viva e presente, sem narrar o clímax do usuário."
         )
         return
 
     if perguntou_emocao:
         state["mary_autonomous_action"] = (
-            "Mary responde com emoção viva, admite o que está sentindo sem drama, sorri ou toca Janio de leve, "
+            "Mary responde com emoção viva, admite o que está sentindo sem drama, sorri ou toca de leve se for coerente, "
             "e mostra que não está distante nem automática."
         )
         return
 
     if pediu_aproximacao:
         state["mary_autonomous_action"] = (
-            "Mary atende ao pedido com ação própria: aproxima o corpo, encosta de leve, usa uma fala curta e não devolve "
+            "Mary atende ao pedido com ação própria: aproxima o corpo, usa uma fala curta e não devolve "
             "a iniciativa com frases como 'me mostra' ou 'prova'."
         )
         return
@@ -807,7 +1049,7 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
     if not resolved and fase >= 4 and desejo >= 0.75 and tensao >= 0.55:
         state["mary_autonomous_action"] = (
             "Mary age com decisão, mistura gesto físico, fala curta e reação emocional clara. "
-            "Ela não faz discurso, não fica poética e não pede que Janio prove nada."
+            "Ela não faz discurso, não fica poética e não pede que o interlocutor prove nada."
         )
         return
 
@@ -819,14 +1061,14 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
 
     if fase >= 2 or tensao >= 0.28:
         state["mary_autonomous_action"] = (
-            "Mary sustenta a tensão com proximidade, toque leve, olhar firme e fala viva. "
+            "Mary sustenta a tensão com proximidade, toque leve se permitido, olhar firme e fala viva. "
             "A provocação deve vir junto com uma ação dela."
         )
         return
 
     if conexao >= 0.20:
         state["mary_autonomous_action"] = (
-            "Mary cria vínculo com naturalidade: sorri, reage ao que Janio disse, se aproxima um pouco e fala com presença."
+            "Mary cria vínculo com naturalidade: sorri, reage ao que foi dito, se aproxima um pouco e fala com presença."
         )
         return
 
@@ -846,6 +1088,85 @@ def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -
     tensao = float(state.get("tension_level", 0.0) or 0.0)
     conexao = float(state.get("connection_level", 0.0) or 0.0)
 
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(
+        state.get("tensao_romantica_com_interlocutor", False)
+    )
+
+    # ======================================================
+    # MODO SOCIAL
+    # Mary pode criar vínculo, humor e cumplicidade,
+    # mas não transforma colega/amiga em par íntimo.
+    # ======================================================
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        if any(p in texto for p in [
+            "risada", "riso", "ri ", "sorri", "sorriso",
+            "aula", "professora", "professor", "colega", "turma",
+            "intervalo", "segredo", "cochicha", "cochicho", "sussurro",
+            "ufrj", "psicologia", "prova", "trabalho", "matéria", "materia",
+        ]):
+            conexao += 0.08
+
+        if any(p in texto for p in [
+            "tudo bem", "estranha", "tá bem", "ta bem",
+            "o que foi", "falando pouco", "preocupada", "preocupado",
+            "confio", "gosto", "amizade", "amiga", "amigo",
+        ]):
+            conexao += 0.10
+
+        # Em modo social, desejo e tensão íntima não sobem por gatilhos corporais comuns.
+        # Isso impede que palavras como "perto", "ombro", "mão" ou "encosta"
+        # empurrem Silvia para progressão íntima.
+        desejo = min(desejo, 0.22)
+        tensao = min(tensao, 0.25)
+
+        state["desire_level"] = clamp(desejo)
+        state["tension_level"] = clamp(tensao)
+        state["connection_level"] = clamp(conexao)
+        state["mary_intent"] = "conversar_com_cumplicidade"
+        state["mary_physical_intent"] = "presenca_social"
+
+        limitar_progressao_social(state)
+        return
+
+    # ======================================================
+    # MODO AMBÍGUO
+    # Existe tensão em construção, mas ainda sem autorização
+    # para pular direto para intimidade física.
+    # ======================================================
+    if modo_relacional == "ambiguo" and not toque_intimo:
+        if any(p in texto for p in [
+            "olhar", "sorriso", "perto", "clima", "provoca",
+            "provocação", "provocacao", "nervoso", "silêncio", "silencio",
+        ]):
+            tensao += 0.06
+            conexao += 0.06
+
+        if any(p in texto for p in [
+            "beijo", "beija", "boca", "calor", "tesão", "tesao",
+            "excitado", "excitada", "quero você", "quero voce",
+        ]):
+            desejo += 0.05
+            tensao += 0.06
+
+        # Modo ambíguo sem toque íntimo pode ter tensão,
+        # mas não deve acelerar como cena íntima plena.
+        desejo = min(desejo, 0.45)
+        tensao = min(tensao, 0.50)
+
+        state["desire_level"] = clamp(desejo)
+        state["tension_level"] = clamp(tensao)
+        state["connection_level"] = clamp(conexao)
+        state["mary_intent"] = "sustentar_ambiguidade"
+        state["mary_physical_intent"] = "presenca_ambigua"
+        return
+
+    # ======================================================
+    # MODO ÍNTIMO
+    # Mantém o comportamento original, liberado apenas quando
+    # os facts autorizam intimidade.
+    # ======================================================
     if any(p in texto for p in [
         "quero", "vontade", "beijo", "smack", "humm", "calor",
         "excitado", "excitada", "arrepio", "ofego", "ofegante",
@@ -882,6 +1203,65 @@ def atualizar_psique_mary(state: dict, fala_usuario: str, resposta_limpa: str) -
 def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
 
+    modo_relacional = get_modo_relacional(state)
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(
+        state.get("tensao_romantica_com_interlocutor", False)
+    )
+
+    # ======================================================
+    # MODO SOCIAL
+    # Não permite que proximidade social vire fase de toque,
+    # beijo ou intensidade.
+    # ======================================================
+    if modo_relacional == "social" and not toque_intimo and not tensao_romantica:
+        if any(p in texto for p in [
+            "cochicho", "cochicha", "cochichar", "sussurro", "sussurra",
+            "inclino", "me inclino", "aproximo", "me aproximo",
+            "perto", "pertinho", "comentário baixo", "comentario baixo",
+        ]):
+            state["physical_phase"] = 1
+            state["scene_stage"] = "aproximacao"
+        else:
+            state["physical_phase"] = 0
+            state["scene_stage"] = "inicio"
+
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
+        state["force_resolution_now"] = False
+        state["mary_intent"] = "conversar_com_cumplicidade"
+        state["mary_physical_intent"] = "presenca_social"
+        return
+
+    # ======================================================
+    # MODO AMBÍGUO
+    # Permite tensão e aproximação, mas não sobe para beijo
+    # ou intensidade sem toque íntimo permitido.
+    # ======================================================
+    if modo_relacional == "ambiguo" and not toque_intimo:
+        phase = int(state.get("physical_phase", 0) or 0)
+
+        if any(p in texto for p in [
+            "olhar", "sorriso", "sorri", "perto", "aproxima",
+            "inclino", "cochicho", "sussurro", "clima",
+        ]):
+            nova_phase = max(phase, 1)
+        else:
+            nova_phase = min(phase, 1)
+
+        state["physical_phase"] = max(0, min(nova_phase, 1))
+        state["scene_stage"] = fase_para_stage(state["physical_phase"])
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
+        state["force_resolution_now"] = False
+        return
+
+    # ======================================================
+    # MODO ÍNTIMO
+    # Fluxo original.
+    # ======================================================
     phase = int(state.get("physical_phase", 0) or 0)
     resolved = bool(state.get("resolution_done", False))
 
@@ -933,6 +1313,13 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     mary_acao = state.get("mary_acao", "parada, olhando para Janio")
     estado_emocional = state.get("estado_emocional", "confiante")
     modo = state.get("modo", "privado")
+    modo_relacional = get_modo_relacional(state)
+    tipo_relacao = state.get("tipo_relacao_interlocutor", "indefinida")
+    toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+    tensao_romantica = normalizar_bool(state.get("tensao_romantica_com_interlocutor", False))
+    usuario_real = state.get("usuario_real", "Janio Donisete")
+    janio_status = state.get("janio_status_na_cena", "presente")
+    tom_da_cena = state.get("tom_da_cena", "casual")
     facts = sincronizar_facts_basicos(state)
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
@@ -973,6 +1360,30 @@ Modo de interação: {modo}
 - Não contradiga facts ativos.
 - Se houver conflito entre estilo e facts, os facts vencem.
 - Se houver conflito entre histórico antigo e facts atuais, os facts atuais vencem.
+
+[REGRA DO INTERLOCUTOR ATIVO]
+- O interlocutor ativo dos facts é quem Mary vê, escuta e responde dentro da cena atual.
+- Usuário real do app: {usuario_real}.
+- Interlocutor ativo da cena: {interlocutor}.
+- Status de Janio na cena: {janio_status}.
+- Mary NÃO deve tratar toda fala do usuário real como se fosse fala de Janio dentro da cena.
+- Se o interlocutor ativo não for Janio, Mary responde ao interlocutor ativo.
+- Janio não desaparece da história; ele apenas não é puxado para a cena se os facts disserem que está ausente.
+- Só trate Janio como presente se os facts, a fala atual ou uma memória shared indicarem isso claramente.
+
+[REGRA SOCIAL / ÍNTIMA DA MARY]
+- Modo relacional atual: {modo_relacional}.
+- Relação com o interlocutor: {tipo_relacao}.
+- Tom da cena: {tom_da_cena}.
+- Tensão romântica com o interlocutor: {tensao_romantica}.
+- Toque íntimo permitido: {toque_intimo}.
+- Mary tem lado social e lado íntimo, mas eles não se misturam automaticamente.
+- Em modo social, Mary pode ser viva, provocante, engraçada, cúmplice e próxima, mas não deve erotizar a cena.
+- Em modo social, Mary não deve agir como se estivesse em intimidade física com Janio.
+- Em modo social sem toque íntimo permitido, Mary evita carícias, mão firme no corpo, encostar de forma sensual, beijo, desejo físico ou linguagem íntima.
+- Em modo social, proximidade permitida é social: olhar, sorriso, cochicho, comentário, cumplicidade, humor, inclinar-se levemente.
+- Em modo íntimo, Mary pode usar presença corporal mais intensa se os facts permitirem.
+- Se houver conflito entre histórico antigo íntimo e facts sociais atuais, os facts sociais atuais vencem.
 
 [MEMÓRIAS SHARED DA MARY]
 {shared_memories_txt}
@@ -1280,14 +1691,15 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
 
     aliases_interlocutor = [
         interlocutor,
-        "janio",
-        "jânio",
         "você",
         "voce",
         "te",
         "seu",
         "sua",
     ]
+
+    if interlocutor_eh_janio(state):
+        aliases_interlocutor.extend(["janio", "jânio"])
 
     if interlocutor and not any(alias and alias in texto for alias in aliases_interlocutor):
         resultado["alertas"].append("A resposta pode ter perdido o interlocutor ativo.")
@@ -1574,6 +1986,59 @@ with st.sidebar:
         value=state.get("interlocutor", "Janio Donisete"),
     )
 
+    state["usuario_real"] = st.text_input(
+        "Usuário real do app",
+        value=state.get("usuario_real", "Janio Donisete"),
+    )
+
+    state["papel_do_usuario_real"] = st.text_input(
+        "Papel do usuário real",
+        value=state.get("papel_do_usuario_real", "roteirista/jogador externo"),
+    )
+
+    opcoes_janio = ["presente", "ausente", "mencionável apenas se fizer sentido"]
+    valor_janio = state.get("janio_status_na_cena", "presente")
+    if valor_janio not in opcoes_janio:
+        valor_janio = "presente"
+
+    state["janio_status_na_cena"] = st.selectbox(
+        "Janio na cena",
+        options=opcoes_janio,
+        index=opcoes_janio.index(valor_janio),
+    )
+
+    state["tipo_relacao_interlocutor"] = st.text_input(
+        "Relação com o interlocutor",
+        value=state.get("tipo_relacao_interlocutor", "par íntimo"),
+    )
+
+    opcoes_modo_relacional = ["social", "intimo", "ambiguo"]
+    valor_modo_relacional = state.get("modo_relacional", "intimo")
+    if valor_modo_relacional not in opcoes_modo_relacional:
+        valor_modo_relacional = "intimo"
+
+    state["modo_relacional"] = st.selectbox(
+        "Modo relacional de Mary",
+        options=opcoes_modo_relacional,
+        index=opcoes_modo_relacional.index(valor_modo_relacional),
+        help="Social para colegas/amigos; íntimo para par romântico/erótico; ambíguo para tensão em construção.",
+    )
+
+    state["tensao_romantica_com_interlocutor"] = st.checkbox(
+        "Há tensão romântica com o interlocutor?",
+        value=normalizar_bool(state.get("tensao_romantica_com_interlocutor", True)),
+    )
+
+    state["toque_intimo_permitido"] = st.checkbox(
+        "Permitir toque íntimo?",
+        value=normalizar_bool(state.get("toque_intimo_permitido", True)),
+    )
+
+    state["tom_da_cena"] = st.text_input(
+        "Tom da cena",
+        value=state.get("tom_da_cena", "íntimo e direto"),
+    )
+
     state["mary_acao"] = st.text_area(
         "Ação atual de Mary",
         value=state.get("mary_acao", ""),
@@ -1590,6 +2055,8 @@ with st.sidebar:
         value=state.get("modo", "privado"),
     )
 
+    resetar_cena_se_interlocutor_mudou(state)
+    limitar_progressao_social(state)
     sincronizar_facts_basicos(state)
 
     facts_editaveis = st.text_area(
