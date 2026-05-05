@@ -1360,70 +1360,77 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("📍 Estado da cena")
+    # ======================================================
+    # FACTS DO PRESENTE
+    # ======================================================
 
-    state["local"] = st.text_input("Local", value=state.get("local", "quarto"))
-    state["tempo"] = st.text_input("Tempo", value=state.get("tempo", "noite"))
+    st.subheader("📌 Facts do presente")
+
+    state["local"] = st.text_input(
+        "Local",
+        value=state.get("local", "quarto"),
+    )
+
+    state["tempo"] = st.text_input(
+        "Tempo",
+        value=state.get("tempo", "noite"),
+    )
+
     state["interlocutor"] = st.text_input(
         "Interlocutor ativo",
         value=state.get("interlocutor", "Janio Donisete"),
     )
+
+    state["mary_acao"] = st.text_area(
+        "Ação atual de Mary",
+        value=state.get("mary_acao", ""),
+        height=90,
+    )
+
     state["estado_emocional"] = st.text_input(
         "Estado emocional de Mary",
         value=state.get("estado_emocional", "confiante"),
     )
 
+    state["modo"] = st.text_input(
+        "Modo de interação",
+        value=state.get("modo", "privado"),
+    )
+
+    sincronizar_facts_basicos(state)
+
+    facts_editaveis = st.text_area(
+        "Facts livres em JSON",
+        value=json.dumps(state.get("facts", {}), ensure_ascii=False, indent=2),
+        height=260,
+        help="Você pode acrescentar facts como roupa, clima, posição, objeto em cena, relação, etc.",
+    )
+
+    if st.button("💾 Salvar facts", use_container_width=True):
+        try:
+            novos_facts = json.loads(facts_editaveis)
+
+            if not isinstance(novos_facts, dict):
+                st.error("Os facts precisam estar em formato JSON de objeto: { ... }")
+            else:
+                state["facts"] = novos_facts
+                aplicar_facts_no_state(state, novos_facts)
+                sincronizar_facts_basicos(state)
+
+                st.session_state.mary_state_minimo = state
+                salvar_facts_na_planilha(state["facts"])
+
+                st.success("Facts salvos com sucesso.")
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"Erro ao salvar facts: {type(e).__name__}: {e}")
+
     st.divider()
-st.subheader("📌 Facts do presente")
 
-state["local"] = st.text_input("Local", value=state.get("local", "quarto"))
-state["tempo"] = st.text_input("Tempo", value=state.get("tempo", "noite"))
-state["interlocutor"] = st.text_input(
-    "Interlocutor ativo",
-    value=state.get("interlocutor", "Janio Donisete"),
-)
-state["mary_acao"] = st.text_area(
-    "Ação atual de Mary",
-    value=state.get("mary_acao", ""),
-    height=90,
-)
-state["estado_emocional"] = st.text_input(
-    "Estado emocional de Mary",
-    value=state.get("estado_emocional", "confiante"),
-)
-state["modo"] = st.text_input(
-    "Modo de interação",
-    value=state.get("modo", "privado"),
-)
-
-sincronizar_facts_basicos(state)
-
-facts_editaveis = st.text_area(
-    "Facts livres em JSON",
-    value=json.dumps(state.get("facts", {}), ensure_ascii=False, indent=2),
-    height=260,
-    help="Você pode acrescentar facts como roupa, clima, posição, objeto em cena, relação, etc.",
-)
-
-if st.button("💾 Salvar facts", use_container_width=True):
-    try:
-        novos_facts = json.loads(facts_editaveis)
-
-        if not isinstance(novos_facts, dict):
-            st.error("Os facts precisam estar em formato JSON de objeto: { ... }")
-        else:
-            state["facts"] = novos_facts
-            aplicar_facts_no_state(state, novos_facts)
-            sincronizar_facts_basicos(state)
-
-            st.session_state.mary_state_minimo = state
-            salvar_facts_na_planilha(state["facts"])
-
-            st.success("Facts salvos com sucesso.")
-            st.rerun()
-
-    except Exception as e:
-        st.error(f"Erro ao salvar facts: {type(e).__name__}: {e}")
+    # ======================================================
+    # ESTADO INTERNO
+    # ======================================================
 
     st.subheader("🧠 Estado interno")
 
@@ -1436,21 +1443,34 @@ if st.button("💾 Salvar facts", use_container_width=True):
 
     st.divider()
 
+    # ======================================================
+    # BOTÕES DE LIMPEZA
+    # ======================================================
+
     col_a, col_b = st.columns(2)
 
     with col_a:
         if st.button("🧹 Limpar chat", use_container_width=True):
             state["history"] = []
             state["turno"] = 0
+            st.session_state.mary_state_minimo = state
             st.rerun()
 
     with col_b:
         if st.button("🔄 Reset total", use_container_width=True):
             if "mary_state_minimo" in st.session_state:
                 del st.session_state.mary_state_minimo
+
+            if "mary_last_debug" in st.session_state:
+                del st.session_state["mary_last_debug"]
+
             st.rerun()
 
-        st.divider()
+    st.divider()
+
+    # ======================================================
+    # APAGAR INTERAÇÕES
+    # ======================================================
 
     st.subheader("🗑️ Apagar interações")
 
@@ -1469,20 +1489,19 @@ if st.button("💾 Salvar facts", use_container_width=True):
         help="Marque para liberar o botão de apagar.",
     )
 
-    if st.button("Apagar últimas interações", use_container_width=True, disabled=not confirmar_apagar):
+    if st.button(
+        "Apagar últimas interações",
+        use_container_width=True,
+        disabled=not confirmar_apagar,
+    ):
         qtd = apagar_ultimas_interacoes_da_planilha(int(n_apagar))
 
         if qtd > 0:
-            # Remove também da sessão atual.
             state["history"] = state.get("history", [])[:-qtd]
-
-            # Recalcula turno aproximado.
             state["turno"] = max(0, len(state.get("history", [])) // 2)
 
-            # Garante persistência em sessão.
             st.session_state.mary_state_minimo = state
 
-            # Limpa o último debug, porque ele pode se referir a uma interação apagada.
             if "mary_last_debug" in st.session_state:
                 del st.session_state["mary_last_debug"]
 
@@ -1491,7 +1510,9 @@ if st.button("💾 Salvar facts", use_container_width=True):
         else:
             st.warning("Nenhuma interação foi apagada.")
 
-    with st.expander("🧪 Debug técnico"):
+    st.divider()
+
+    with st.expander("🧪 Debug técnico", expanded=False):
         st.json(state)
 
 
