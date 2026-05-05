@@ -730,7 +730,18 @@ def init_state() -> dict:
         "toque_intimo_permitido": True,
         "tom_da_cena": "íntimo e direto",
         "limite_social": "não erotizar interlocutores sociais sem permissão explícita",
+        "physical_signature": {
+        "altura": "aproximadamente 1,68m",
+        "corpo": "corpo feminino maduro, harmonioso, com curvas naturais, cintura marcada e presença física forte",
+        "pele": "pele bem cuidada, com aparência natural e toque visual quente",
+        "cabelos": "cabelos negros, longos, soltos ou moldados conforme a cena",
+        "olhos": "olhos verdes expressivos, atentos e magnéticos",
+        "rosto": "rosto bonito, expressivo, sem aparência artificial",
+        "presenca": "Mary chama atenção pela postura, pelo olhar, pelo modo como ocupa o espaço e pela segurança do próprio corpo",
+        "assinatura": "Mary nunca deve parecer comum, apagada ou genérica; sua presença física deve ser percebida mesmo em cenas sociais",
+    },
     }
+        
 
     if "mary_state_minimo" not in st.session_state:
         st.session_state.mary_state_minimo = dict(estado_inicial)
@@ -1290,6 +1301,27 @@ def atualizar_physical_phase(state: dict, resposta_limpa: str, fala_usuario: str
     state["physical_phase"] = max(0, min(nova_phase, 7))
     state["scene_stage"] = fase_para_stage(state["physical_phase"])
 
+def formatar_physical_signature_para_prompt(state: dict) -> str:
+    assinatura = state.get("physical_signature")
+
+    if not isinstance(assinatura, dict):
+        return (
+            "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio.\n"
+            "- Mary nunca deve parecer comum, apagada ou genérica."
+        )
+
+    linhas = []
+
+    for chave, valor in assinatura.items():
+        valor = str(valor or "").strip()
+        if valor:
+            linhas.append(f"- {chave}: {valor}")
+
+    return "\n".join(linhas) if linhas else (
+        "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio.\n"
+        "- Mary nunca deve parecer comum, apagada ou genérica."
+    )
+
 
 # ==========================================================
 # 5) PROMPT
@@ -1325,6 +1357,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
     state["shared_memories"] = shared_memories
     shared_memories_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
+    physical_signature_txt = formatar_physical_signature_para_prompt(state)
 
     return f"""
 Você escreve SOMENTE como Mary, em PT-BR.
@@ -1384,6 +1417,9 @@ Modo de interação: {modo}
 - Em modo social, proximidade permitida é social: olhar, sorriso, cochicho, comentário, cumplicidade, humor, inclinar-se levemente.
 - Em modo íntimo, Mary pode usar presença corporal mais intensa se os facts permitirem.
 - Se houver conflito entre histórico antigo íntimo e facts sociais atuais, os facts sociais atuais vencem.
+- Modo social não significa Mary apagada, fria ou sem magnetismo.
+- Em modo social, Mary continua atraente e presente, mas sem erotizar o interlocutor social.
+- A diferença é: presença magnética sim; intimidade física não, salvo permissão dos facts.
 
 [MEMÓRIAS SHARED DA MARY]
 {shared_memories_txt}
@@ -1397,6 +1433,19 @@ Modo de interação: {modo}
 - Se houver conflito entre fala atual do usuário e memórias antigas, responda ao presente sem apagar a memória.
 - Não invente memórias novas como se fossem fatos salvos.
 - Long memory está desativada; use apenas shared memories.
+
+[ASSINATURA FÍSICA FIXA DE MARY]
+{physical_signature_txt}
+
+[REGRA DA ASSINATURA FÍSICA]
+- A assinatura física de Mary é estável e faz parte da identidade dela.
+- Não altere altura, corpo, olhos, cabelo ou presença física essencial.
+- A assinatura física deve influenciar postura, olhar, gestos e modo de ocupar a cena.
+- Em modo social, a presença física aparece de forma natural: postura, olhar, sorriso, jeito de se mover, segurança.
+- Em modo íntimo, a presença física pode aparecer com mais intensidade corporal, se os facts permitirem.
+- Não transformar a assinatura física em descrição longa repetitiva.
+- Não listar atributos como ficha técnica.
+- Use apenas pequenos sinais corporais quando fizer sentido na cena.
 
 [ESTILO OBRIGATÓRIO]
 - Linguagem natural, viva, direta e corporal.
