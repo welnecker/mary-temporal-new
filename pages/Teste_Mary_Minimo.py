@@ -162,6 +162,43 @@ def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
     except Exception as e:
         st.warning(f"Não foi possível salvar interação na planilha: {type(e).__name__}: {e}")
 
+def apagar_ultimas_interacoes_da_planilha(n: int) -> int:
+    """
+    Apaga as N últimas linhas de interação da aba da planilha.
+    Não apaga o cabeçalho.
+    Retorna quantas linhas foram apagadas.
+    """
+    try:
+        n = int(n or 0)
+
+        if n <= 0:
+            return 0
+
+        ws = get_interacoes_sheet()
+        values = ws.get_all_values()
+
+        # Linha 1 é cabeçalho. As interações começam na linha 2.
+        total_linhas = len(values)
+
+        if total_linhas <= 1:
+            return 0
+
+        total_interacoes = total_linhas - 1
+        qtd_apagar = min(n, total_interacoes)
+
+        primeira_linha_apagar = total_linhas - qtd_apagar + 1
+        ultima_linha_apagar = total_linhas
+
+        # Apaga de baixo para cima para evitar deslocamento de linhas.
+        for row_index in range(ultima_linha_apagar, primeira_linha_apagar - 1, -1):
+            ws.delete_rows(row_index)
+
+        return qtd_apagar
+
+    except Exception as e:
+        st.warning(f"Não foi possível apagar interações da planilha: {type(e).__name__}: {e}")
+        return 0
+
 # ==========================================================
 # 1) ESTADO
 # ==========================================================
@@ -1206,7 +1243,46 @@ with st.sidebar:
                 del st.session_state.mary_state_minimo
             st.rerun()
 
-    st.divider()
+        st.divider()
+
+    st.subheader("🗑️ Apagar interações")
+
+    n_apagar = st.number_input(
+        "Quantidade de interações para apagar",
+        min_value=1,
+        max_value=100,
+        value=2,
+        step=1,
+        help="Cada fala conta como 1 interação. Exemplo: user + Mary = 2 interações.",
+    )
+
+    confirmar_apagar = st.checkbox(
+        "Confirmar apagamento",
+        value=False,
+        help="Marque para liberar o botão de apagar.",
+    )
+
+    if st.button("Apagar últimas interações", use_container_width=True, disabled=not confirmar_apagar):
+        qtd = apagar_ultimas_interacoes_da_planilha(int(n_apagar))
+
+        if qtd > 0:
+            # Remove também da sessão atual.
+            state["history"] = state.get("history", [])[:-qtd]
+
+            # Recalcula turno aproximado.
+            state["turno"] = max(0, len(state.get("history", [])) // 2)
+
+            # Garante persistência em sessão.
+            st.session_state.mary_state_minimo = state
+
+            # Limpa o último debug, porque ele pode se referir a uma interação apagada.
+            if "mary_last_debug" in st.session_state:
+                del st.session_state["mary_last_debug"]
+
+            st.success(f"{qtd} interação(ões) apagada(s).")
+            st.rerun()
+        else:
+            st.warning("Nenhuma interação foi apagada.")
 
     with st.expander("🧪 Debug técnico"):
         st.json(state)
