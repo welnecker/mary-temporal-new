@@ -320,9 +320,6 @@ def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20)
 
     return "\n".join(linhas) if linhas else "Nenhuma memória shared ativa."
 
-    except Exception as e:
-        st.warning(f"Não foi possível salvar facts na planilha: {type(e).__name__}: {e}")
-
 def sincronizar_facts_basicos(state: dict) -> dict:
     """
     Mantém compatibilidade entre campos antigos do state
