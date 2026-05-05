@@ -1014,6 +1014,13 @@ st.markdown(
 
 state = init_state()
 
+with st.expander("🔐 Diagnóstico dos Secrets", expanded=True):
+    try:
+        st.write("Chaves encontradas:")
+        st.write(list(st.secrets.keys()))
+    except Exception as e:
+        st.error(f"Erro ao listar secrets: {type(e).__name__}: {e}")
+
 # ==========================================================
 # TESTE TEMPORÁRIO DO SECRET GOOGLE
 # ==========================================================
