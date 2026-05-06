@@ -994,7 +994,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     # 1) TIPO DE CENA AUTOMÁTICO
     # ======================================================
     if relacao_social:
-    tipo_cena = "social"
+        tipo_cena = "social"
 
     elif relacao_rival or relacao_interesse_ambigua:
         tipo_cena = "flerte leve"
