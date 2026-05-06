@@ -1713,22 +1713,22 @@ Modo de interação: {modo}
   "você perde o controle".
 
 [REGRAS DE FORMATO]
-- Escreva de 2 a 4 parágrafos curtos.
-- Cada parágrafo deve ser curto ou médio.
-- A resposta deve começar com fala, gesto ou reação física imediata.
-- Não abra com análise.
-- Não abra com contextualização longa.
+- Escreva de 2 a 4 blocos curtos.
+- Separe fala e ação usando marcadores internos:
+  [ACAO] para narração, gesto, sensação e movimento.
+  [FALA] para fala direta de Mary.
+- Use no máximo 2 blocos [FALA] por resposta.
+- Use no máximo 2 blocos [ACAO] por resposta.
 - Não use markdown.
-- Não use cercas de código.
 - Não use título.
 - Depois da resposta, escreva exatamente:
 
 STATE_UPDATE:
-{{
+{
   "acao_mary": "descrição curta da ação atual de Mary após este turno",
   "local": null,
   "interlocutor": null
-}}
+}
 
 [REGRAS DO STATE_UPDATE]
 - "acao_mary" deve resumir a ação atual de Mary no final deste turno.
@@ -1749,6 +1749,94 @@ STATE_UPDATE:
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
 """.strip()
+
+def renderizar_resposta_mary(texto: str) -> None:
+    """
+    Renderiza a resposta da Mary separando ação/narração e fala direta.
+    Remove STATE_UPDATE da tela principal.
+    """
+    texto = str(texto or "").strip()
+
+    if not texto:
+        return
+
+    # Remove STATE_UPDATE da visualização principal.
+    partes = re.split(r"\n\s*STATE_UPDATE\s*:", texto, flags=re.IGNORECASE)
+    texto_visivel = partes[0].strip()
+
+    # Se o modelo ainda não usou marcadores, exibe como texto normal.
+    if "[FALA]" not in texto_visivel and "[ACAO]" not in texto_visivel:
+        st.markdown(
+            f"""
+            <div style="
+                padding: 0.85rem 1rem;
+                border-radius: 14px;
+                background: rgba(255,255,255,0.06);
+                line-height: 1.55;
+                font-size: 1rem;
+            ">
+                {texto_visivel.replace(chr(10), "<br><br>")}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    # Divide mantendo marcadores.
+    blocos = re.split(r"(\[FALA\]|\[ACAO\])", texto_visivel)
+
+    marcador_atual = None
+
+    for item in blocos:
+        item = item.strip()
+
+        if not item:
+            continue
+
+        if item in ("[FALA]", "[ACAO]"):
+            marcador_atual = item
+            continue
+
+        if marcador_atual == "[FALA]":
+            st.markdown(
+                f"""
+                <div style="
+                    margin: 0.55rem 0;
+                    padding: 0.85rem 1rem;
+                    border-left: 4px solid #d9a7ff;
+                    border-radius: 12px;
+                    background: rgba(217,167,255,0.12);
+                    font-size: 1.05rem;
+                    line-height: 1.55;
+                    font-weight: 500;
+                ">
+                    “{item}”
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        elif marcador_atual == "[ACAO]":
+            st.markdown(
+                f"""
+                <div style="
+                    margin: 0.45rem 0;
+                    padding: 0.75rem 1rem;
+                    border-radius: 12px;
+                    background: rgba(255,255,255,0.045);
+                    color: rgba(255,255,255,0.84);
+                    font-size: 0.96rem;
+                    line-height: 1.55;
+                    font-style: italic;
+                ">
+                    {item}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        else:
+            st.write(item)
 
 
 def limpar_historico_para_modelo(history: list[dict]) -> list[dict]:
@@ -2514,7 +2602,7 @@ for msg in history:
 
     elif role == "assistant":
         with st.chat_message("assistant", avatar="🌙"):
-            st.write(content)
+            renderizar_resposta_mary(content)
 
 
 # ==========================================================
@@ -2573,6 +2661,5 @@ if fala_usuario:
                 st.session_state.mary_state_minimo = state
                 st.session_state["mary_last_debug"] = resultado
 
-            st.write(resultado["resposta_final_limpa"])
-
+            renderizar_resposta_mary(resultado["resposta_final_limpa"])
         st.rerun()
