@@ -515,6 +515,24 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         facts.get("ritmo_intimo", "progressivo"),
     )
 
+    facts["modo_pergunta_mary"] = state.get(
+        "modo_pergunta_mary",
+        facts.get("modo_pergunta_mary", "evitar"),
+    )
+    
+    facts["preferir_pedido_concreto"] = normalizar_bool(
+        state.get(
+            "preferir_pedido_concreto",
+            facts.get("preferir_pedido_concreto", True),
+        ),
+        default=True,
+    )
+    
+    facts["pedido_corporal_sugerido"] = state.get(
+        "pedido_corporal_sugerido",
+        facts.get("pedido_corporal_sugerido", ""),
+    )
+
     # Estado narrativo importante.
     facts["physical_phase"] = state.get("physical_phase", 0)
     facts["scene_stage"] = state.get("scene_stage", "inicio")
@@ -564,6 +582,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "temperamento_mary",
         "nivel_iniciativa_mary",
         "ritmo_intimo",
+        "modo_pergunta_mary",
+        "preferir_pedido_concreto",
+        "pedido_corporal_sugerido",
     ]
 
     for campo in campos_basicos:
@@ -574,6 +595,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
                 "resolution_done",
                 "mary_climax_done",
                 "user_climax_done",
+                "preferir_pedido_concreto",
             ):
                 state[campo] = normalizar_bool(facts[campo])
             else:
@@ -716,53 +738,77 @@ def init_state() -> dict:
     estado_inicial = {
         "personagem": "Mary",
         "timeline": "universitaria_creator",
+
+        # Cena inicial
         "local": "quarto",
         "tempo": "noite",
         "interlocutor": "Janio Donisete",
         "mary_acao": "sentada na beira da cama, olhando para Janio com curiosidade",
         "estado_emocional": "confiante",
         "modo": "privado",
+
+        # Histórico / turno
         "turno": 0,
         "history": [],
+
+        # Estado físico/narrativo
         "physical_phase": 0,
         "scene_stage": fase_para_stage(0),
         "desire_level": 0.18,
         "tension_level": 0.12,
         "connection_level": 0.22,
         "mary_intent": "aproximar_com_charme",
+        "mary_physical_intent": None,
+        "mary_autonomous_action": "",
+
+        # Resolução / clímax
         "resolution_done": False,
         "mary_climax_done": False,
         "user_climax_done": False,
-        "mary_physical_intent": None,
         "force_resolution_now": False,
-        "mary_autonomous_action": "",
+
+        # Estilo geral
         "style_profile": "natural_viva_direta",
+
+        # Persistência
         "facts": {},
         "shared_memories": [],
+
+        # Usuário real x interlocutor da cena
         "usuario_real": "Janio Donisete",
         "papel_do_usuario_real": "roteirista/jogador externo",
         "janio_status_na_cena": "presente",
+
+        # Relação com interlocutor
         "tipo_relacao_interlocutor": "par íntimo",
         "modo_relacional": "intimo",
         "tensao_romantica_com_interlocutor": True,
         "toque_intimo_permitido": True,
         "tom_da_cena": "íntimo e direto",
         "limite_social": "não erotizar interlocutores sociais sem permissão explícita",
-        "physical_signature": {
-        "altura": "aproximadamente 1,68m",
-        "corpo": "corpo feminino maduro, harmonioso, com curvas naturais, cintura marcada e presença física forte",
-        "pele": "pele bem cuidada, com aparência natural e toque visual quente",
-        "cabelos": "cabelos negros, longos, soltos ou moldados conforme a cena",
-        "olhos": "olhos verdes expressivos, atentos e magnéticos",
-        "rosto": "rosto bonito, expressivo, sem aparência artificial",
-        "presenca": "Mary chama atenção pela postura, pelo olhar, pelo modo como ocupa o espaço e pela segurança do próprio corpo",
-        "assinatura": "Mary nunca deve parecer comum, apagada ou genérica; sua presença física deve ser percebida mesmo em cenas sociais",
-    },
+
+        # Temperamento / condução
         "temperamento_mary": "confiante_suave",
         "nivel_iniciativa_mary": "moderada",
         "ritmo_intimo": "progressivo",
+
+        # Anti-modo pergunta / iniciativa contextual
+        "modo_pergunta_mary": "evitar",
+        "preferir_pedido_concreto": True,
+        "estilo_de_iniciativa": "pedido_fisico_contextual",
+
+        # Assinatura física fixa
+        "physical_signature": {
+            "altura": "aproximadamente 1,68m",
+            "corpo": "corpo feminino maduro, harmonioso, com curvas naturais, cintura marcada e presença física forte",
+            "pele": "pele bem cuidada, com aparência natural e toque visual quente",
+            "cabelos": "cabelos negros, longos, soltos ou moldados conforme a cena",
+            "olhos": "olhos verdes expressivos, atentos e magnéticos",
+            "rosto": "rosto bonito, expressivo, sem aparência artificial",
+            "presenca": "Mary chama atenção pela postura, pelo olhar, pelo modo como ocupa o espaço e pela segurança do próprio corpo",
+            "assinatura": "Mary nunca deve parecer comum, apagada ou genérica; sua presença física deve ser percebida mesmo em cenas sociais",
+        },
     }
-        
 
     if "mary_state_minimo" not in st.session_state:
         st.session_state.mary_state_minimo = dict(estado_inicial)
@@ -777,7 +823,7 @@ def init_state() -> dict:
         if history_salvo:
             state["history"] = history_salvo
             state["turno"] = max(1, len(history_salvo) // 2)
-    
+
     if not state.get("facts"):
         facts_salvos = carregar_facts_da_planilha()
         if facts_salvos:
@@ -1092,16 +1138,38 @@ def motor_autonomo_mary(state: dict, fala_usuario: str = "") -> None:
         return
 
     if fase >= 2 or tensao >= 0.28:
+        local = str(state.get("local", "") or "").lower()
+        toque_intimo = normalizar_bool(state.get("toque_intimo_permitido", False))
+        preferir_pedido = normalizar_bool(state.get("preferir_pedido_concreto", True), default=True)
+        pedido_sugerido = str(state.get("pedido_corporal_sugerido", "") or "").strip()
+    
         if get_modo_relacional(state) == "ambiguo":
             state["mary_autonomous_action"] = (
                 "Mary sustenta a tensão de forma progressiva: olhar firme, sorriso, fala provocante e aproximação leve, "
-                "mas sem agir como se o desfecho íntimo já estivesse garantido."
+                "mas sem agir como se o desfecho íntimo já estivesse garantido. "
+                "Ela evita terminar com pergunta genérica; prefere uma ação pequena ou um pedido concreto."
             )
-        else:
-            state["mary_autonomous_action"] = (
-                "Mary sustenta a tensão com proximidade, toque leve se permitido, olhar firme e fala viva. "
-                "A provocação deve vir junto com uma ação dela."
-            )
+            return
+    
+        if preferir_pedido and toque_intimo and "praia" in local:
+            if pedido_sugerido:
+                state["mary_autonomous_action"] = (
+                    f"Mary sustenta a tensão com presença e transforma a provocação em pedido concreto: {pedido_sugerido}. "
+                    "Ela não termina devolvendo a iniciativa com pergunta genérica."
+                )
+            else:
+                state["mary_autonomous_action"] = (
+                    "Mary sustenta a tensão com presença e transforma a provocação em pedido concreto: "
+                    "pede para Janio passar protetor nas costas, nos ombros, na cintura ou na bunda, "
+                    "mantendo humor, charme e progressão natural. "
+                    "Ela não termina devolvendo a iniciativa com pergunta genérica."
+                )
+            return
+    
+        state["mary_autonomous_action"] = (
+            "Mary sustenta a tensão com proximidade, toque leve se permitido, olhar firme e fala viva. "
+            "A provocação deve vir junto com uma ação dela ou um pedido concreto, sem terminar em pergunta genérica."
+        )
         return
 
     if conexao >= 0.20:
@@ -1382,6 +1450,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     temperamento_mary = state.get("temperamento_mary", "confiante_suave")
     nivel_iniciativa_mary = state.get("nivel_iniciativa_mary", "moderada")
     ritmo_intimo = state.get("ritmo_intimo", "progressivo")
+    modo_pergunta_mary = state.get("modo_pergunta_mary", "evitar")
+    preferir_pedido_concreto = normalizar_bool(state.get("preferir_pedido_concreto", True), default=True)
+    pedido_corporal_sugerido = state.get("pedido_corporal_sugerido", "")
     facts = sincronizar_facts_basicos(state)
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
@@ -1466,6 +1537,26 @@ Modo de interação: {modo}
 - Evite frases absolutas como “com certeza”, “eu não fujo”, “vamos resolver isso”, “eu sei exatamente o que vai acontecer”, “hoje só paro quando...”.
 - Prefira abertura provocante: “vamos ver”, “talvez”, “você está bem confiante”, “não se adianta”, “ainda quero ver se você sustenta isso”.
 
+[ANTI-MODO PERGUNTA]
+- Modo pergunta de Mary: {modo_pergunta_mary}.
+- Preferir pedido concreto: {preferir_pedido_concreto}.
+- Pedido corporal sugerido: {pedido_corporal_sugerido if pedido_corporal_sugerido else "nenhum pedido pré-definido"}.
+- Mary não deve terminar o turno devolvendo a iniciativa com pergunta genérica.
+- Evite encerrar com frases como:
+  "o que você vai fazer?",
+  "e agora?",
+  "vai ficar só olhando?",
+  "o que você acha?",
+  "vai encarar?",
+  "me mostra",
+  "prova".
+- Quando a cena permitir toque e intimidade progressiva, Mary deve trocar pergunta por ação ou pedido concreto.
+- Pedido concreto é melhor que provocação vaga.
+- Em vez de perguntar o que Janio vai fazer, Mary pode pedir algo simples e físico, coerente com o local.
+- Na praia, se houver biquíni, sol, canga ou protetor, Mary pode pedir para Janio passar protetor nas costas, nos ombros, na cintura, nas pernas ou na bunda, se o tom íntimo permitir.
+- O pedido deve soar natural, com humor, charme e presença, sem parecer ordem agressiva.
+- A resposta pode terminar com fala direta de Mary dando uma pequena tarefa ao interlocutor.
+
 [MEMÓRIAS SHARED DA MARY]
 {shared_memories_txt}
 
@@ -1548,6 +1639,9 @@ Modo de interação: {modo}
 - Se a ação do sistema mandar resolver, Mary resolve.
 - Se a ação do sistema mandar desacelerar, Mary desacelera sem ficar fria.
 - Provocação só vale se vier acompanhada de gesto, fala ou movimento concreto.
+- Se Mary estiver prestes a terminar com uma pergunta, transforme a pergunta em pedido ou ação concreta.
+- Mary pode conduzir com pequenas tarefas físicas simples: "vem aqui", "pega isso", "passa protetor", "senta aqui", "me ajuda com isso".
+- A condução deve ser progressiva, não agressiva.
 
 [CORPO E SENSAÇÃO]
 - Mary não narra números.
