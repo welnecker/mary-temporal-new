@@ -1495,29 +1495,83 @@ def renderizar_resposta_mary(texto: str) -> None:
     if not texto:
         return
 
-    # Remove STATE_UPDATE da visualização principal.
-    texto = re.split(r"\n\s*STATE_UPDATE\s*:", texto, flags=re.IGNORECASE)[0].strip()
+    # Remove STATE_UPDATE da tela principal.
+    texto = re.split(
+        r"\n\s*STATE_UPDATE\s*:",
+        texto,
+        flags=re.IGNORECASE
+    )[0].strip()
 
-    # Se não houver marcadores, exibe como texto comum em bloco legível.
-    if "[FALA]" not in texto and "[ACAO]" not in texto:
-        safe = html.escape(texto).replace("\n", "<br><br>")
+    # CSS robusto para não cortar conteúdo.
+    st.markdown(
+        """
+        <style>
+        .mary-block {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow: visible !important;
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            display: block;
+        }
+
+        .mary-action {
+            margin: .55rem 0;
+            padding: .85rem 1rem;
+            border-left: 5px solid #64748b;
+            border-radius: 12px;
+            background: #f8fafc;
+            color: #334155;
+            font-size: .98rem;
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        .mary-speech {
+            margin: .55rem 0;
+            padding: .85rem 1rem;
+            border-left: 5px solid #7c3aed;
+            border-radius: 12px;
+            background: #ede9fe;
+            color: #1f2937;
+            font-size: 1.05rem;
+            line-height: 1.6;
+            font-weight: 600;
+        }
+
+        .mary-plain {
+            margin: .55rem 0;
+            padding: .85rem 1rem;
+            border-radius: 12px;
+            background: #f3f4f6;
+            color: #111827;
+            border: 1px solid #d1d5db;
+            font-size: 1rem;
+            line-height: 1.6;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    def bloco_html(classe: str, conteudo: str) -> None:
+        safe = html.escape(str(conteudo or "").strip())
+        safe = safe.replace("\n", "<br>")
 
         st.markdown(
             f"""
-            <div style="
-                padding: .85rem 1rem;
-                border-radius: 14px;
-                background: #f3f4f6;
-                color: #111827;
-                border: 1px solid #d1d5db;
-                line-height: 1.55;
-                font-size: 1rem;
-            ">
+            <div class="mary-block {classe}">
                 {safe}
             </div>
             """,
             unsafe_allow_html=True,
         )
+
+    # Se o modelo não usou marcadores, renderiza inteiro.
+    if "[FALA]" not in texto and "[ACAO]" not in texto:
+        bloco_html("mary-plain", texto)
         return
 
     blocos = re.split(r"(\[FALA\]|\[ACAO\])", texto)
@@ -1533,64 +1587,12 @@ def renderizar_resposta_mary(texto: str) -> None:
             marcador = item
             continue
 
-        safe = html.escape(item).replace("\n", "<br>")
-
         if marcador == "[FALA]":
-            st.markdown(
-                f"""
-                <div style="
-                    margin: .55rem 0;
-                    padding: .85rem 1rem;
-                    border-left: 5px solid #7c3aed;
-                    border-radius: 12px;
-                    background: #ede9fe;
-                    color: #1f2937;
-                    font-size: 1.05rem;
-                    line-height: 1.55;
-                    font-weight: 600;
-                ">
-                    “{safe}”
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
+            bloco_html("mary-speech", f"“{item}”")
         elif marcador == "[ACAO]":
-            st.markdown(
-                f"""
-                <div style="
-                    margin: .45rem 0;
-                    padding: .75rem 1rem;
-                    border-left: 5px solid #64748b;
-                    border-radius: 12px;
-                    background: #f8fafc;
-                    color: #334155;
-                    font-size: .98rem;
-                    line-height: 1.55;
-                    font-style: italic;
-                ">
-                    {safe}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
+            bloco_html("mary-action", item)
         else:
-            st.markdown(
-                f"""
-                <div style="
-                    margin: .45rem 0;
-                    padding: .75rem 1rem;
-                    border-radius: 12px;
-                    background: #f3f4f6;
-                    color: #111827;
-                    line-height: 1.55;
-                ">
-                    {safe}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            bloco_html("mary-plain", item)
 
 # ==========================================================
 # PROCESSAMENTO DO TURNO
@@ -1773,7 +1775,7 @@ if fala_usuario:
                 resultado = processar_turno(state, fala_usuario, model=model)
                 st.session_state["mary_last_debug"] = resultado
             renderizar_resposta_mary(resultado["resposta_final_limpa"])
-        st.rerun()
+        st.stop()
 
 if "mary_last_debug" in st.session_state:
     with st.expander("🧪 Última análise técnica", expanded=False):
