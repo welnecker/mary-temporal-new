@@ -1979,7 +1979,16 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
     if not bloqueios:
         return resposta
 
-    return criar_fallback_humano(state, motivo="; ".join(bloqueios))
+    bloqueios_graves = [
+        b for b in bloqueios
+        if "clímax/reação conclusiva do usuário" in b
+    ]
+
+    # Autoria duvidosa não deve destruir resposta boa automaticamente.
+    if not bloqueios_graves:
+        return resposta
+
+    return criar_fallback_humano(state, motivo="; ".join(bloqueios_graves))
 
 
 def limpar_state_update(resposta: str) -> str:
