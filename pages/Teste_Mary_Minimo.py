@@ -27,6 +27,38 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+def exigir_senha_app() -> None:
+    """
+    Bloqueia o acesso ao app até a senha correta ser informada.
+    Deve ser chamada antes de carregar state, planilhas e chat.
+    """
+    senha_correta = str(st.secrets.get("MARY_APP_PASSWORD", "") or "").strip()
+
+    if not senha_correta:
+        st.error("Senha do app não configurada em st.secrets['MARY_APP_PASSWORD'].")
+        st.stop()
+
+    if st.session_state.get("mary_app_autenticado") is True:
+        return
+
+    st.title("🔐 Acesso restrito")
+    st.caption("Digite a senha para acessar o app da Mary.")
+
+    senha_digitada = st.text_input(
+        "Senha",
+        type="password",
+        placeholder="Digite a senha de acesso",
+    )
+
+    if st.button("Entrar", use_container_width=True):
+        if senha_digitada.strip() == senha_correta:
+            st.session_state["mary_app_autenticado"] = True
+            st.rerun()
+        else:
+            st.error("Senha incorreta.")
+
+    st.stop()
+
 
 # ==========================================================
 # GOOGLE SHEETS
@@ -1799,11 +1831,20 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 # ==========================================================
 
 st.set_page_config(page_title="Mary - Roleplay", page_icon="🌙", layout="wide")
+
+exigir_senha_app()
+
 st.title("🌙 Mary")
-st.caption("Roleplay contínuo com facts humanos, memórias shared e controle real de ambiente.")
+st.caption("Roleplay contínuo com facts humanos, memórias shared e controle de ambiente.")
+
 state = init_state()
 
 with st.sidebar:
+
+    if st.button("🚪 Sair", use_container_width=True):
+    st.session_state["mary_app_autenticado"] = False
+    st.rerun()
+    
     st.header("🎛️ Cena")
     model = st.text_input("Modelo", value=MODEL_DEFAULT)
     
