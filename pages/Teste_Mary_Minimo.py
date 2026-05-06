@@ -20,6 +20,7 @@ SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
 SHEET_INTERACOES = "interacoes_mary_minimo"
 SHEET_FACTS = "facts_mary_minimo"
 SHEET_SHARED_MEMORIES = "shared_memories_mary_minimo"
+SHEET_CANON_MARY = "canon_mary"
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -125,6 +126,123 @@ def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
 
     except Exception as e:
         st.warning(f"Não foi possível salvar interação: {type(e).__name__}: {e}")
+
+def get_canon_mary_sheet():
+    client = get_gspread_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+
+    try:
+        ws = spreadsheet.worksheet(SHEET_CANON_MARY)
+    except gspread.WorksheetNotFound:
+        ws = spreadsheet.add_worksheet(
+            title=SHEET_CANON_MARY,
+            rows=1000,
+            cols=6,
+        )
+        ws.append_row(
+            ["id", "categoria", "fato", "ativo", "peso", "timestamp"],
+            value_input_option="USER_ENTERED",
+        )
+
+    return ws
+
+
+def carregar_canon_mary_da_planilha(apenas_ativos: bool = True) -> list[dict]:
+    try:
+        ws = get_canon_mary_sheet()
+        rows = ws.get_all_records()
+
+        canon = []
+
+        for row in rows:
+            fato = str(row.get("fato", "") or "").strip()
+
+            if not fato:
+                continue
+
+            ativo_raw = str(row.get("ativo", "TRUE") or "TRUE").strip().lower()
+            ativo = ativo_raw in ("true", "1", "sim", "yes", "ativo", "ativa")
+
+            if apenas_ativos and not ativo:
+                continue
+
+            try:
+                peso = float(row.get("peso", 1.0) or 1.0)
+            except Exception:
+                peso = 1.0
+
+            canon.append(
+                {
+                    "id": str(row.get("id", "") or "").strip(),
+                    "categoria": str(row.get("categoria", "geral") or "geral").strip(),
+                    "fato": fato,
+                    "ativo": ativo,
+                    "peso": peso,
+                    "timestamp": str(row.get("timestamp", "") or "").strip(),
+                }
+            )
+
+        canon.sort(key=lambda c: float(c.get("peso", 1.0) or 1.0), reverse=True)
+        return canon
+
+    except Exception as e:
+        st.warning(f"Não foi possível carregar cânone da Mary: {type(e).__name__}: {e}")
+        return []
+
+
+def salvar_canon_mary_na_planilha(fato: str, categoria: str = "geral", peso: float = 1.0) -> bool:
+    try:
+        fato = str(fato or "").strip()
+        categoria = str(categoria or "geral").strip() or "geral"
+
+        if not fato:
+            return False
+
+        ws = get_canon_mary_sheet()
+        rows = ws.get_all_values()
+        next_id = max(1, len(rows))
+
+        ws.append_row(
+            [
+                f"canon_{next_id}",
+                categoria,
+                fato,
+                "TRUE",
+                float(peso or 1.0),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            ],
+            value_input_option="USER_ENTERED",
+        )
+
+        return True
+
+    except Exception as e:
+        st.warning(f"Não foi possível salvar cânone: {type(e).__name__}: {e}")
+        return False
+
+
+def apagar_canon_mary_por_id(canon_id: str) -> bool:
+    try:
+        canon_id = str(canon_id or "").strip()
+
+        if not canon_id:
+            return False
+
+        ws = get_canon_mary_sheet()
+        values = ws.get_all_values()
+
+        for row_idx, row in enumerate(values[1:], start=2):
+            row_id = str(row[0] if len(row) > 0 else "").strip()
+
+            if row_id == canon_id:
+                ws.delete_rows(row_idx)
+                return True
+
+        return False
+
+    except Exception as e:
+        st.warning(f"Não foi possível apagar cânone: {type(e).__name__}: {e}")
+        return False
 
 
 def apagar_ultimos_turnos_da_planilha(qtd_turnos: int) -> int:
@@ -1020,6 +1138,21 @@ def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20)
             linhas.append(f"- [{tipo}] {memoria}")
     return "\n".join(linhas) if linhas else "Nenhuma memória shared ativa."
 
+def formatar_canon_mary_para_prompt(canon: list[dict], limite: int = 30) -> str:
+    if not canon:
+        return "Nenhum cânone fixo cadastrado."
+
+    linhas = []
+
+    for item in canon[:limite]:
+        categoria = str(item.get("categoria", "geral") or "geral").strip()
+        fato = str(item.get("fato", "") or "").strip()
+
+        if fato:
+            linhas.append(f"- [{categoria}] {fato}")
+
+    return "\n".join(linhas) if linhas else "Nenhum cânone fixo cadastrado."
+
 
 def formatar_physical_signature_para_prompt(state: dict) -> str:
     assinatura = state.get("physical_signature")
@@ -1056,6 +1189,7 @@ def init_state() -> dict:
         "modo": "privado",
         "turno": 0,
         "history": [],
+        "canon_mary": [],
         "facts": {},
         "shared_memories": [],
         "physical_phase": 0,
@@ -1099,6 +1233,10 @@ def init_state() -> dict:
     sincronizar_facts_basicos(state)
     if not state.get("shared_memories"):
         state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+    
+    if not state.get("canon_mary"):
+        state["canon_mary"] = carregar_canon_mary_da_planilha(apenas_ativos=True)
+    
     return state
 
 
@@ -1173,8 +1311,12 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
-    physical_txt = formatar_physical_signature_para_prompt(state)
-    return f"""
+    
+    canon_mary = state.get("canon_mary") or carregar_canon_mary_da_planilha(apenas_ativos=True)
+    state["canon_mary"] = canon_mary
+    canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=30)
+    
+    physical_txt = formatar_physical_signature_para_prompt(state)    return f"""
 Você escreve SOMENTE como Mary, em PT-BR.
 
 [PRINCÍPIO CENTRAL]
@@ -1214,6 +1356,16 @@ Você escreve SOMENTE como Mary, em PT-BR.
 
 [MEMÓRIAS SHARED]
 {shared_txt}
+
+[CÂNONE DA HISTÓRIA]
+- Estes fatos fazem parte do mundo persistente da Mary.
+- Use como contexto de identidade, passado, relações e tensão dramática.
+- Não transforme todos os fatos em assunto do turno.
+- Só mencione um fato quando ele for relevante para a cena atual.
+- O cânone não substitui os facts do presente.
+- Se houver conflito entre cânone e facts do presente, os facts do presente vencem na cena atual.
+
+{canon_txt}
 
 [ESTILO]
 - Natural, vivo, direto.
@@ -1727,6 +1879,90 @@ with st.sidebar:
                 st.rerun()
             else:
                 st.warning("Memória não encontrada.")
+
+    st.divider()
+    st.subheader("📖 Cânone da história")
+    
+    novo_fato_canon = st.text_area(
+        "Novo fato fixo do enredo",
+        value="",
+        height=90,
+        placeholder="Ex: Mary estuda Psicologia na UFRJ.",
+    )
+    
+    col_can_1, col_can_2 = st.columns([2, 1])
+    
+    with col_can_1:
+        categoria_canon = st.text_input(
+            "Categoria do cânone",
+            value="geral",
+            placeholder="Ex: identidade, relação, rival, família",
+        )
+    
+    with col_can_2:
+        peso_canon = st.number_input(
+            "Peso do cânone",
+            min_value=0.1,
+            max_value=5.0,
+            value=1.0,
+            step=0.1,
+            key="peso_canon_mary",
+        )
+    
+    if st.button("💾 Salvar fato no cânone", use_container_width=True):
+        ok = salvar_canon_mary_na_planilha(
+            fato=novo_fato_canon,
+            categoria=categoria_canon,
+            peso=peso_canon,
+        )
+    
+        if ok:
+            state["canon_mary"] = carregar_canon_mary_da_planilha(apenas_ativos=True)
+            st.session_state.mary_state_minimo = state
+            st.success("Fato salvo no cânone.")
+            st.rerun()
+        else:
+            st.warning("Nenhum fato foi salvo.")
+    
+    with st.expander("📚 Ver cânone atual", expanded=False):
+        canon_atual = state.get("canon_mary", [])
+    
+        if not canon_atual:
+            st.info("Nenhum fato de cânone ativo.")
+        else:
+            for item in canon_atual:
+                st.markdown(
+                    f"**{item.get('id', '')}** · `{item.get('categoria', 'geral')}` · peso `{item.get('peso', 1.0)}`"
+                )
+                st.write(item.get("fato", ""))
+                st.divider()
+    
+    with st.expander("🗑️ Apagar fato do cânone", expanded=False):
+        canon_id = st.text_input(
+            "ID do fato",
+            value="",
+            placeholder="Ex: canon_3",
+            key="canon_id_delete",
+        )
+    
+        confirmar_apagar_canon = st.checkbox(
+            "Confirmar apagar fato do cânone",
+            value=False,
+            key="confirmar_apagar_canon",
+        )
+    
+        if st.button(
+            "Apagar fato do cânone",
+            use_container_width=True,
+            disabled=not confirmar_apagar_canon,
+        ):
+            if apagar_canon_mary_por_id(canon_id):
+                state["canon_mary"] = carregar_canon_mary_da_planilha(apenas_ativos=True)
+                st.session_state.mary_state_minimo = state
+                st.success("Fato do cânone apagado.")
+                st.rerun()
+            else:
+                st.warning("Fato não encontrado.")
     st.divider()
     st.subheader("🗑️ Apagar turnos")
     n_turnos = st.number_input("Turnos para apagar", min_value=1, max_value=50, value=1, step=1)
