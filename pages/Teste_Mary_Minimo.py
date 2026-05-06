@@ -381,60 +381,128 @@ def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
 
 
 def derivar_controles_de_cena(state: dict) -> None:
-    local = str(state.get("local", "") or "").strip()
-    privacidade = normalizar_opcao(state.get("privacidade", ""), ["publico", "semiprivado", "privado"], get_privacidade_por_local(local))
-    tipo_cena = normalizar_opcao(state.get("tipo_de_cena", ""), ["social", "flerte leve", "intima discreta", "intima privada"], "flerte leve")
-    iniciativa = normalizar_opcao(state.get("estilo_de_iniciativa", ""), ["contextual", "ação social", "flerte progressivo", "convite suave", "responder sem conduzir"], "contextual")
+    """
+    Deriva automaticamente privacidade, tipo de cena, iniciativa e tom.
+    O usuário NÃO precisa configurar isso manualmente.
+    Local manda.
+    """
+    local = str(state.get("local", "") or "").strip().lower()
+    relacao = str(state.get("relacao", "") or "").strip().lower()
+
+    # ======================================================
+    # 1) PRIVACIDADE AUTOMÁTICA PELO LOCAL
+    # ======================================================
+    if any(p in local for p in ["praia", "rua", "shopping", "sala de aula", "faculdade", "ufrj", "bar", "restaurante", "parque"]):
+        privacidade = "publico"
+
+    elif any(p in local for p in ["carro", "cinema", "corredor", "elevador"]):
+        privacidade = "semiprivado"
+
+    elif any(p in local for p in ["quarto", "motel", "casa", "apartamento", "hotel"]):
+        privacidade = "privado"
+
+    else:
+        privacidade = "publico"
 
     state["privacidade"] = privacidade
-    state["tipo_de_cena"] = tipo_cena
-    state["estilo_de_iniciativa"] = iniciativa
 
+    # ======================================================
+    # 2) TIPO DE CENA AUTOMÁTICO
+    # ======================================================
+    if any(p in relacao for p in ["amiga", "amigo", "colega", "amizade", "professora", "professor"]):
+        tipo_cena = "social"
+
+    elif privacidade == "publico":
+        # Praia + romance não vira íntima privada.
+        if any(p in relacao for p in ["romance", "casal", "namoro", "par íntimo", "par intimo"]):
+            tipo_cena = "intima discreta"
+        else:
+            tipo_cena = "flerte leve"
+
+    elif privacidade == "semiprivado":
+        tipo_cena = "intima discreta"
+
+    else:
+        if any(p in relacao for p in ["romance", "casal", "namoro", "par íntimo", "par intimo"]):
+            tipo_cena = "intima privada"
+        else:
+            tipo_cena = "flerte leve"
+
+    state["tipo_de_cena"] = tipo_cena
+
+    # ======================================================
+    # 3) INICIATIVA E TOM AUTOMÁTICOS
+    # ======================================================
     if tipo_cena == "social":
+        state["estilo_de_iniciativa"] = "ação social"
+        state["tom_da_cena"] = "cumplicidade social"
         state["modo_relacional"] = "social"
         state["tensao_romantica_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
-        state["tom_da_cena"] = state.get("tom_da_cena") or "cumplicidade social"
-        state["limite_ambiente"] = "Cena social: Mary pode ser viva, engraçada, cúmplice e magnética, mas não deve erotizar o interlocutor nem usar intimidade física."
+        state["limite_ambiente"] = (
+            "Cena social: Mary pode ser viva, engraçada, cúmplice e magnética, "
+            "mas não deve erotizar o interlocutor nem usar intimidade física."
+        )
         state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 1)
         state["scene_stage"] = "aproximacao" if state["physical_phase"] >= 1 else "inicio"
         state["mary_intent"] = "conversar_com_cumplicidade"
         return
 
     if tipo_cena == "flerte leve":
+        state["estilo_de_iniciativa"] = "flerte progressivo"
+        state["tom_da_cena"] = "flerte com tensão progressiva"
         state["modo_relacional"] = "ambiguo"
         state["tensao_romantica_com_interlocutor"] = True
-        state["toque_intimo_permitido"] = privacidade in ("semiprivado", "privado")
-        state["tom_da_cena"] = state.get("tom_da_cena") or "flerte com tensão progressiva"
-        state["limite_ambiente"] = "Flerte leve: Mary pode provocar, sorrir, se aproximar e demonstrar interesse, mas sem agir como se o desfecho íntimo já estivesse decidido."
+        state["toque_intimo_permitido"] = privacidade != "publico"
+        state["limite_ambiente"] = (
+            "Flerte leve: Mary pode provocar, sorrir, se aproximar e demonstrar interesse, "
+            "mas sem agir como se o desfecho íntimo já estivesse decidido."
+        )
         state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 2)
         state["scene_stage"] = "toque" if state["physical_phase"] >= 2 else "aproximacao"
         state["mary_intent"] = "sustentar_tensao"
         return
 
     if tipo_cena == "intima discreta":
+        state["estilo_de_iniciativa"] = "convite suave"
+        state["tom_da_cena"] = "sensual carinhoso"
         state["modo_relacional"] = "intimo"
         state["tensao_romantica_com_interlocutor"] = True
         state["toque_intimo_permitido"] = True
-        state["tom_da_cena"] = state.get("tom_da_cena") or "sensual carinhoso"
-        state["limite_ambiente"] = "Intimidade discreta: Mary pode ser sensual, carinhosa e fisicamente próxima, mas deve respeitar o ambiente. Em público, evitar exposição explícita, sexo, clímax, mão dentro da roupa ou ações que chamem atenção."
+
         if privacidade == "publico":
+            state["limite_ambiente"] = (
+                "Local público: Mary pode ser sensual, carinhosa e provocante, "
+                "mas deve evitar exposição explícita, sexo, clímax, mão dentro da roupa, nudez "
+                "ou ações que chamem atenção."
+            )
             state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 3)
             state["scene_stage"] = "beijo" if state["physical_phase"] >= 3 else "toque"
             state["mary_intent"] = "flerte_intimo_discreto"
-        elif privacidade == "semiprivado":
+        else:
+            state["limite_ambiente"] = (
+                "Intimidade discreta: Mary pode ser sensual, carinhosa e fisicamente próxima, "
+                "mas sem atropelar a progressão."
+            )
             state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 4)
             state["scene_stage"] = "intensidade" if state["physical_phase"] >= 4 else "toque"
             state["mary_intent"] = "aprofundar_com_cuidado"
-        else:
-            state["mary_intent"] = "aprofundar_com_cuidado"
+
         return
 
+    # intima privada
+    state["estilo_de_iniciativa"] = "contextual"
+    state["tom_da_cena"] = "íntimo e direto"
     state["modo_relacional"] = "intimo"
     state["tensao_romantica_com_interlocutor"] = True
     state["toque_intimo_permitido"] = True
-    state["tom_da_cena"] = state.get("tom_da_cena") or "íntimo e direto"
-    state["limite_ambiente"] = "Intimidade privada: Mary pode expressar desejo com mais liberdade, mantendo autoria do usuário, progressão emocional e cuidado."
+    state["limite_ambiente"] = (
+        "Intimidade privada: Mary pode expressar desejo com mais liberdade, "
+        "mantendo autoria do usuário, progressão emocional e cuidado. "
+        "Quando houver receio ou cuidado do usuário, Mary acolhe primeiro, mas não esfria: "
+        "ela mantém contato, orienta com carinho e pode aprofundar gradualmente. "
+        "Carinho não significa passividade; desejo não significa agressividade."
+    )
     state["mary_intent"] = state.get("mary_intent") or "aprofundar_com_cuidado"
 
 
@@ -954,27 +1022,53 @@ state = init_state()
 with st.sidebar:
     st.header("🎛️ Cena")
     model = st.text_input("Modelo", value=MODEL_DEFAULT)
+    
     st.divider()
-    state["local"] = st.text_input("Local", value=state.get("local", "quarto"))
-    state["tempo"] = st.text_input("Tempo", value=state.get("tempo", "noite"))
-    state["interlocutor"] = st.text_input("Interlocutor ativo", value=state.get("interlocutor", "Janio Donisete"))
-    state["usuario_real"] = st.text_input("Usuário real", value=state.get("usuario_real", "Janio Donisete"))
-    opcoes_janio = ["presente", "ausente", "mencionável apenas se fizer sentido"]
-    valor_janio = normalizar_opcao(state.get("janio_status_na_cena"), opcoes_janio, "presente")
-    state["janio_status_na_cena"] = st.selectbox("Janio na cena", opcoes_janio, index=opcoes_janio.index(valor_janio))
-    state["relacao"] = st.text_input("Relação", value=state.get("relacao", "romance"))
-    opcoes_tipo = ["social", "flerte leve", "intima discreta", "intima privada"]
-    valor_tipo = normalizar_opcao(state.get("tipo_de_cena"), opcoes_tipo, "flerte leve")
-    state["tipo_de_cena"] = st.selectbox("Tipo de cena", opcoes_tipo, index=opcoes_tipo.index(valor_tipo))
-    opcoes_privacidade = ["publico", "semiprivado", "privado"]
-    valor_priv = normalizar_opcao(state.get("privacidade"), opcoes_privacidade, get_privacidade_por_local(state.get("local", "")))
-    state["privacidade"] = st.selectbox("Privacidade", opcoes_privacidade, index=opcoes_privacidade.index(valor_priv))
-    opcoes_iniciativa = ["contextual", "ação social", "flerte progressivo", "convite suave", "responder sem conduzir"]
-    valor_iniciativa = normalizar_opcao(state.get("estilo_de_iniciativa"), opcoes_iniciativa, "contextual")
-    state["estilo_de_iniciativa"] = st.selectbox("Iniciativa da Mary", opcoes_iniciativa, index=opcoes_iniciativa.index(valor_iniciativa))
-    state["tom_da_cena"] = st.text_input("Tom da cena", value=state.get("tom_da_cena", "sensual carinhoso"))
-    state["mary_acao"] = st.text_area("Ação atual de Mary", value=state.get("mary_acao", ""), height=90)
-    state["estado_emocional"] = st.text_input("Estado emocional", value=state.get("estado_emocional", "confiante"))
+    st.subheader("📌 Cena")
+    
+    state["local"] = st.text_input(
+        "Local",
+        value=state.get("local", "quarto"),
+    )
+    
+    state["tempo"] = st.text_input(
+        "Tempo",
+        value=state.get("tempo", "noite"),
+    )
+    
+    state["interlocutor"] = st.text_input(
+        "Interlocutor ativo",
+        value=state.get("interlocutor", "Janio Donisete"),
+    )
+    
+    state["relacao"] = st.text_input(
+        "Relação",
+        value=state.get("relacao", "romance"),
+    )
+    
+    state["mary_acao"] = st.text_area(
+        "Ação atual de Mary",
+        value=state.get("mary_acao", ""),
+        height=90,
+    )
+    
+    state["estado_emocional"] = st.text_input(
+        "Estado emocional",
+        value=state.get("estado_emocional", "confiante"),
+    )
+    
+    normalizar_estado(state)
+    sincronizar_facts_basicos(state)
+    
+    st.info(
+        f"""
+        **Privacidade detectada:** {state.get("privacidade")}  
+        **Tipo de cena:** {state.get("tipo_de_cena")}  
+        **Iniciativa:** {state.get("estilo_de_iniciativa")}  
+        **Tom:** {state.get("tom_da_cena")}
+        """
+    )
+    
     if st.button("💾 Salvar cena", use_container_width=True):
         normalizar_estado(state)
         sincronizar_facts_basicos(state)
