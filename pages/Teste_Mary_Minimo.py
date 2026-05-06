@@ -1110,28 +1110,106 @@ def aplicar_state_update(state: dict, update: dict) -> None:
 
 def renderizar_resposta_mary(texto: str) -> None:
     texto = str(texto or "").strip()
+
     if not texto:
         return
+
+    # Remove STATE_UPDATE da visualização principal.
     texto = re.split(r"\n\s*STATE_UPDATE\s*:", texto, flags=re.IGNORECASE)[0].strip()
+
+    # Se não houver marcadores, exibe como texto comum em bloco legível.
     if "[FALA]" not in texto and "[ACAO]" not in texto:
         safe = html.escape(texto).replace("\n", "<br><br>")
-        st.markdown(f"""<div style="padding:.85rem 1rem;border-radius:14px;background:rgba(255,255,255,.06);line-height:1.55;">{safe}</div>""", unsafe_allow_html=True)
+
+        st.markdown(
+            f"""
+            <div style="
+                padding: .85rem 1rem;
+                border-radius: 14px;
+                background: #f3f4f6;
+                color: #111827;
+                border: 1px solid #d1d5db;
+                line-height: 1.55;
+                font-size: 1rem;
+            ">
+                {safe}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         return
+
     blocos = re.split(r"(\[FALA\]|\[ACAO\])", texto)
     marcador = None
+
     for item in blocos:
         item = item.strip()
+
         if not item:
             continue
+
         if item in ("[FALA]", "[ACAO]"):
             marcador = item
             continue
-        safe = html.escape(item).replace("\n", "<br>")
-        if marcador == "[FALA]":
-            st.markdown(f"""<div style="margin:.55rem 0;padding:.85rem 1rem;border-left:4px solid #d9a7ff;border-radius:12px;background:rgba(217,167,255,.12);font-size:1.05rem;line-height:1.55;font-weight:500;">“{safe}”</div>""", unsafe_allow_html=True)
-        else:
-            st.markdown(f"""<div style="margin:.45rem 0;padding:.75rem 1rem;border-radius:12px;background:rgba(255,255,255,.045);color:rgba(255,255,255,.84);font-size:.96rem;line-height:1.55;font-style:italic;">{safe}</div>""", unsafe_allow_html=True)
 
+        safe = html.escape(item).replace("\n", "<br>")
+
+        if marcador == "[FALA]":
+            st.markdown(
+                f"""
+                <div style="
+                    margin: .55rem 0;
+                    padding: .85rem 1rem;
+                    border-left: 5px solid #7c3aed;
+                    border-radius: 12px;
+                    background: #ede9fe;
+                    color: #1f2937;
+                    font-size: 1.05rem;
+                    line-height: 1.55;
+                    font-weight: 600;
+                ">
+                    “{safe}”
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        elif marcador == "[ACAO]":
+            st.markdown(
+                f"""
+                <div style="
+                    margin: .45rem 0;
+                    padding: .75rem 1rem;
+                    border-left: 5px solid #64748b;
+                    border-radius: 12px;
+                    background: #f8fafc;
+                    color: #334155;
+                    font-size: .98rem;
+                    line-height: 1.55;
+                    font-style: italic;
+                ">
+                    {safe}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        else:
+            st.markdown(
+                f"""
+                <div style="
+                    margin: .45rem 0;
+                    padding: .75rem 1rem;
+                    border-radius: 12px;
+                    background: #f3f4f6;
+                    color: #111827;
+                    line-height: 1.55;
+                ">
+                    {safe}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 # ==========================================================
 # PROCESSAMENTO DO TURNO
