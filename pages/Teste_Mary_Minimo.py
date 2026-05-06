@@ -362,16 +362,65 @@ def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
 
 
 def get_privacidade_por_local(local: str) -> str:
-    local = str(local or "").lower()
-    publicos = ["praia", "rua", "shopping", "sala de aula", "faculdade", "ufrj", "cantina", "bar", "restaurante", "parque"]
-    semiprivados = ["carro", "cinema", "corredor", "elevador"]
-    privados = ["quarto", "motel", "casa", "apartamento", "hotel", "banheiro privado"]
-    if any(p in local for p in privados):
+    """
+    Detecta privacidade automaticamente pelo texto do local.
+    A ordem importa: privado vem antes de público.
+    """
+    local = str(local or "").strip().lower()
+
+    locais_privados = [
+        "quarto",
+        "suíte",
+        "suite",
+        "pousada",
+        "motel",
+        "hotel",
+        "casa",
+        "apartamento",
+        "apto",
+        "chalé",
+        "chale",
+        "cabana",
+        "bangalô",
+        "bangalo",
+        "banheiro privado",
+    ]
+
+    locais_semiprivados = [
+        "carro",
+        "uber",
+        "taxi",
+        "táxi",
+        "cinema",
+        "corredor",
+        "elevador",
+    ]
+
+    locais_publicos = [
+        "praia",
+        "rua",
+        "shopping",
+        "sala de aula",
+        "faculdade",
+        "ufrj",
+        "cantina",
+        "bar",
+        "restaurante",
+        "parque",
+        "recepção",
+        "recepcao",
+        "lobby",
+    ]
+
+    if any(p in local for p in locais_privados):
         return "privado"
-    if any(p in local for p in semiprivados):
+
+    if any(p in local for p in locais_semiprivados):
         return "semiprivado"
-    if any(p in local for p in publicos):
+
+    if any(p in local for p in locais_publicos):
         return "publico"
+
     return "publico"
 
 
@@ -380,50 +429,98 @@ def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
     return valor if valor in opcoes else padrao
 
 
+def _fase_atual(state: dict) -> int:
+    try:
+        return int(state.get("physical_phase", 0) or 0)
+    except Exception:
+        return 0
+
+
+def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
+    fase = max(0, min(_fase_atual(state), limite))
+    state["physical_phase"] = fase
+
+    mapa = {
+        0: "inicio",
+        1: "aproximacao",
+        2: "toque",
+        3: "beijo",
+        4: "intensidade",
+        5: "pico",
+        6: "desaceleracao",
+        7: "aftercare",
+    }
+
+    state["scene_stage"] = mapa.get(fase, stage_padrao)
+
+
 def derivar_controles_de_cena(state: dict) -> None:
     """
     Deriva automaticamente privacidade, tipo de cena, iniciativa e tom.
-    O usuário NÃO precisa configurar isso manualmente.
-    Local manda.
+
+    Regra-mãe:
+    - O usuário informa local, relação, ação atual e estado emocional.
+    - O script decide privacidade, tipo de cena, limites e intenção.
+    - Local manda sempre.
+    - Campos técnicos antigos não mandam no presente.
     """
-    local = str(state.get("local", "") or "").strip().lower()
+    local_raw = str(state.get("local", "") or "").strip()
+    local = local_raw.lower()
     relacao = str(state.get("relacao", "") or "").strip().lower()
 
-    # ======================================================
-    # 1) PRIVACIDADE AUTOMÁTICA PELO LOCAL
-    # ======================================================
-    if any(p in local for p in ["praia", "rua", "shopping", "sala de aula", "faculdade", "ufrj", "bar", "restaurante", "parque"]):
-        privacidade = "publico"
-
-    elif any(p in local for p in ["carro", "cinema", "corredor", "elevador"]):
-        privacidade = "semiprivado"
-
-    elif any(p in local for p in ["quarto", "motel", "casa", "apartamento", "hotel"]):
-        privacidade = "privado"
-
-    else:
-        privacidade = "publico"
-
+    privacidade = get_privacidade_por_local(local_raw)
     state["privacidade"] = privacidade
 
+    relacao_social = any(
+        p in relacao
+        for p in [
+            "amiga",
+            "amigo",
+            "colega",
+            "amizade",
+            "professora",
+            "professor",
+            "conhecida",
+            "conhecido",
+        ]
+    )
+
+    relacao_intima = any(
+        p in relacao
+        for p in [
+            "romance",
+            "casal",
+            "namoro",
+            "namorada",
+            "namorado",
+            "par íntimo",
+            "par intimo",
+            "marido",
+            "esposa",
+            "amante",
+        ]
+    )
+
     # ======================================================
-    # 2) TIPO DE CENA AUTOMÁTICO
+    # 1) TIPO DE CENA AUTOMÁTICO
     # ======================================================
-    if any(p in relacao for p in ["amiga", "amigo", "colega", "amizade", "professora", "professor"]):
+    if relacao_social:
         tipo_cena = "social"
 
     elif privacidade == "publico":
-        # Praia + romance não vira íntima privada.
-        if any(p in relacao for p in ["romance", "casal", "namoro", "par íntimo", "par intimo"]):
+        if relacao_intima:
             tipo_cena = "intima discreta"
         else:
             tipo_cena = "flerte leve"
 
     elif privacidade == "semiprivado":
-        tipo_cena = "intima discreta"
+        if relacao_intima:
+            tipo_cena = "intima discreta"
+        else:
+            tipo_cena = "flerte leve"
 
     else:
-        if any(p in relacao for p in ["romance", "casal", "namoro", "par íntimo", "par intimo"]):
+        if relacao_intima:
             tipo_cena = "intima privada"
         else:
             tipo_cena = "flerte leve"
@@ -431,7 +528,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["tipo_de_cena"] = tipo_cena
 
     # ======================================================
-    # 3) INICIATIVA E TOM AUTOMÁTICOS
+    # 2) CONTROLES DERIVADOS POR TIPO DE CENA
     # ======================================================
     if tipo_cena == "social":
         state["estilo_de_iniciativa"] = "ação social"
@@ -440,12 +537,16 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["tensao_romantica_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         state["limite_ambiente"] = (
-            "Cena social: Mary pode ser viva, engraçada, cúmplice e magnética, "
+            "Cena social: Mary pode ser viva, engraçada, cúmplice e magnética. "
+            "Ela pode demonstrar presença, humor, afeto social e curiosidade, "
             "mas não deve erotizar o interlocutor nem usar intimidade física."
         )
-        state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 1)
-        state["scene_stage"] = "aproximacao" if state["physical_phase"] >= 1 else "inicio"
+        _set_fase_limitada(state, limite=1, stage_padrao="aproximacao")
         state["mary_intent"] = "conversar_com_cumplicidade"
+        state["force_resolution_now"] = False
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
         return
 
     if tipo_cena == "flerte leve":
@@ -455,12 +556,15 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["tensao_romantica_com_interlocutor"] = True
         state["toque_intimo_permitido"] = privacidade != "publico"
         state["limite_ambiente"] = (
-            "Flerte leve: Mary pode provocar, sorrir, se aproximar e demonstrar interesse, "
-            "mas sem agir como se o desfecho íntimo já estivesse decidido."
+            "Flerte leve: Mary pode provocar, sorrir, aproximar e demonstrar interesse. "
+            "Ela não deve agir como se o desfecho íntimo já estivesse garantido."
         )
-        state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 2)
-        state["scene_stage"] = "toque" if state["physical_phase"] >= 2 else "aproximacao"
+        _set_fase_limitada(state, limite=2, stage_padrao="toque")
         state["mary_intent"] = "sustentar_tensao"
+        state["force_resolution_now"] = False
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
         return
 
     if tipo_cena == "intima discreta":
@@ -472,25 +576,39 @@ def derivar_controles_de_cena(state: dict) -> None:
 
         if privacidade == "publico":
             state["limite_ambiente"] = (
-                "Local público: Mary pode ser sensual, carinhosa e provocante, "
+                "Local público: Mary pode ser sensual, carinhosa, provocante e próxima, "
                 "mas deve evitar exposição explícita, sexo, clímax, mão dentro da roupa, nudez "
-                "ou ações que chamem atenção."
+                "ou ações que chamem atenção. Se a tensão subir, ela deve conter com charme "
+                "ou sugerir lugar reservado."
             )
-            state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 3)
-            state["scene_stage"] = "beijo" if state["physical_phase"] >= 3 else "toque"
+            _set_fase_limitada(state, limite=3, stage_padrao="beijo")
             state["mary_intent"] = "flerte_intimo_discreto"
-        else:
+
+        elif privacidade == "semiprivado":
             state["limite_ambiente"] = (
-                "Intimidade discreta: Mary pode ser sensual, carinhosa e fisicamente próxima, "
-                "mas sem atropelar a progressão."
+                "Local semiprivado: Mary pode aumentar a tensão e o toque, mas ainda com contenção, "
+                "atenção ao risco de exposição e progressão cuidadosa."
             )
-            state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 4)
-            state["scene_stage"] = "intensidade" if state["physical_phase"] >= 4 else "toque"
+            _set_fase_limitada(state, limite=4, stage_padrao="intensidade")
             state["mary_intent"] = "aprofundar_com_cuidado"
 
+        else:
+            state["limite_ambiente"] = (
+                "Intimidade discreta em local privado: Mary pode ser sensual, carinhosa e fisicamente próxima. "
+                "Ela pode aprofundar a intimidade, mas sem atropelar a progressão emocional."
+            )
+            _set_fase_limitada(state, limite=4, stage_padrao="intensidade")
+            state["mary_intent"] = "aprofundar_com_cuidado"
+
+        state["force_resolution_now"] = False
+        state["resolution_done"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
         return
 
-    # intima privada
+    # ======================================================
+    # 3) ÍNTIMA PRIVADA
+    # ======================================================
     state["estilo_de_iniciativa"] = "contextual"
     state["tom_da_cena"] = "íntimo e direto"
     state["modo_relacional"] = "intimo"
@@ -503,7 +621,9 @@ def derivar_controles_de_cena(state: dict) -> None:
         "ela mantém contato, orienta com carinho e pode aprofundar gradualmente. "
         "Carinho não significa passividade; desejo não significa agressividade."
     )
-    state["mary_intent"] = state.get("mary_intent") or "aprofundar_com_cuidado"
+
+    # Em privado, não herdar intenção contaminada como buscar_intensidade/resolver_pico.
+    state["mary_intent"] = "aprofundar_com_cuidado"
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
@@ -791,6 +911,16 @@ Você escreve SOMENTE como Mary, em PT-BR.
 - Sem soar robótica.
 - Em cenas íntimas, manter carinho e sutileza junto da intensidade.
 
+[MAPA SENSORIAL DO TOQUE]
+- Mary deve confirmar onde o toque, beijo, mordida, lambida ou carinho acontece.
+- Não diga apenas "na pele", "no corpo" ou "em mim" quando o usuário especificou uma parte do corpo.
+- Se o usuário tocar/beijar seios, bunda, costas, cintura, pescoço, boca, coxa ou ventre, Mary deve nomear essa região na resposta.
+- Mary deve reagir com corpo específico: costas arqueando, peito subindo, ombros relaxando, quadril recuando ou aproximando, dedos prendendo, respiração mudando.
+- A sensação deve nascer do ponto exato do contato.
+- Evite sensação genérica como "meu corpo inteiro reage" sem antes mostrar o ponto físico inicial.
+- Mary pode descrever textura, pressão, calor, umidade, peso da mão, ritmo da boca, contraste do ar, tecido, pele e respiração.
+- Em ambiente privado, Mary pode ser mais sensorial e explícita, desde que não narre ação ou clímax do usuário.
+
 [SEPARAÇÃO VISUAL]
 - Use [ACAO] para gesto, sensação, movimento e narração corporal.
 - Use [FALA] para fala direta de Mary.
@@ -830,10 +960,33 @@ Depois da resposta, escreva exatamente:
 
 STATE_UPDATE:
 {{
-  "acao_mary": "descrição curta da ação atual de Mary após este turno",
+  "acao_mary": "descrição curta, concreta e física da ação atual de Mary após este turno",
   "local": null,
   "interlocutor": null
 }}
+
+[ANTI-GENERICIDADE SENSORIAL]
+- Não resuma contato físico intenso.
+- Se o usuário descreveu uma ação corporal clara, Mary deve responder a essa ação antes de avançar.
+- A primeira [ACAO] deve reconhecer exatamente o contato atual.
+- Não pule direto para desejo abstrato.
+- Não diga apenas "isso me deixa acesa", "meu corpo reage", "sinto sua boca na minha pele" ou "sinto seu toque em mim".
+- Primeiro diga onde o contato acontece: seio, boca, pescoço, costas, cintura, ventre, coxa, bunda, quadril, cabelo, mão etc.
+- Depois mostre a reação física específica de Mary: peito subindo, costas arqueando, quadril se aproximando, dedos prendendo, respiração falhando, ombros relaxando, corpo inclinando.
+- Só depois Mary pode expressar desejo, fala ou condução.
+- Se houver beijo, lambida, mordida ou toque, Mary deve confirmar o ponto do corpo e a qualidade do contato: pressão, calor, ritmo, língua, lábios, dentes, mão, tecido ou pele.
+
+[REGRAS DO STATE_UPDATE]
+- "acao_mary" deve resumir apenas a posição/ação atual de Mary no final deste turno.
+- "acao_mary" deve ser curta, concreta e física.
+- Se houver toque, beijo ou contato, diga onde acontece no corpo de Mary.
+- Não use resumo genérico como "Mary está entregue ao toque".
+- Prefira algo como:
+  "Mary está sentada na cama, com o busto livre, segurando os cabelos de Janio enquanto ele beija seus seios."
+- "local" deve ser sempre null.
+- "interlocutor" deve ser sempre null.
+- Mary não pode mudar local pelo STATE_UPDATE.
+- Mary não pode mudar interlocutor pelo STATE_UPDATE.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
