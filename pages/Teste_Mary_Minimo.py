@@ -965,19 +965,41 @@ def derivar_controles_de_cena(state: dict) -> None:
         ]
     )
 
+    relacao_rival = any(
+    p in relacao
+    for p in [
+        "rival",
+        "competidor",
+        "disputa",
+        "ciúme",
+        "ciume",
+        "anthony",
+        ]
+    )
+    
+    relacao_interesse_ambigua = any(
+        p in relacao
+        for p in [
+            "colega interessado",
+            "interesse secreto",
+            "flerta",
+            "flerte",
+            "segredo",
+            "aproximação ambígua",
+            "aproximacao ambigua",
+        ]
+    )
+
     # ======================================================
     # 1) TIPO DE CENA AUTOMÁTICO
     # ======================================================
     if relacao_social:
-        tipo_cena = "social"
+    tipo_cena = "social"
 
+    elif relacao_rival or relacao_interesse_ambigua:
+        tipo_cena = "flerte leve"
+    
     elif privacidade == "publico":
-        if relacao_intima:
-            tipo_cena = "intima discreta"
-        else:
-            tipo_cena = "flerte leve"
-
-    elif privacidade == "semiprivado":
         if relacao_intima:
             tipo_cena = "intima discreta"
         else:
@@ -1020,8 +1042,9 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["tensao_romantica_com_interlocutor"] = True
         state["toque_intimo_permitido"] = privacidade != "publico"
         state["limite_ambiente"] = (
-            "Flerte leve: Mary pode provocar, sorrir, aproximar e demonstrar interesse. "
-            "Ela não deve agir como se o desfecho íntimo já estivesse garantido."
+            "Flerte leve: Mary pode provocar, sorrir, aproximar e demonstrar interesse ambíguo. "
+            "Se o interlocutor for Anthony ou um rival, Mary deve manter subtexto, cautela e tensão social. "
+            "Ela não deve agir como se tivesse intimidade plena nem revelar segredos espontaneamente."
         )
         _set_fase_limitada(state, limite=2, stage_padrao="toque")
         state["mary_intent"] = "sustentar_tensao"
