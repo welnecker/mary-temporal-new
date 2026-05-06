@@ -1842,8 +1842,8 @@ state = init_state()
 with st.sidebar:
 
     if st.button("🚪 Sair", use_container_width=True):
-    st.session_state["mary_app_autenticado"] = False
-    st.rerun()
+        st.session_state["mary_app_autenticado"] = False
+        st.rerun()
     
     st.header("🎛️ Cena")
     model = st.text_input("Modelo", value=MODEL_DEFAULT)
