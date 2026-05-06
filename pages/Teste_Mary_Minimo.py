@@ -1316,7 +1316,8 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     state["canon_mary"] = canon_mary
     canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=30)
     
-    physical_txt = formatar_physical_signature_para_prompt(state)    return f"""
+    physical_txt = formatar_physical_signature_para_prompt(state)
+    return f"""
 Você escreve SOMENTE como Mary, em PT-BR.
 
 [PRINCÍPIO CENTRAL]
