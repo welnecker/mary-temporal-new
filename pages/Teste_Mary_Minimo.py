@@ -1724,11 +1724,11 @@ Modo de interação: {modo}
 - Depois da resposta, escreva exatamente:
 
 STATE_UPDATE:
-{
+{{
   "acao_mary": "descrição curta da ação atual de Mary após este turno",
   "local": null,
   "interlocutor": null
-}
+}}
 
 [REGRAS DO STATE_UPDATE]
 - "acao_mary" deve resumir a ação atual de Mary no final deste turno.
