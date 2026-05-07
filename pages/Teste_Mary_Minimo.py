@@ -996,6 +996,54 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
     else:
         state["force_resolution_now"] = False
 
+def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
+    """
+    Detecta quando uma ação social planejada deve avançar.
+    Ex: fugir da aula, sair da sala, levantar, ir ao café.
+    """
+    texto = str(fala_usuario or "").strip().lower()
+    acao_atual = str(state.get("mary_acao", "") or "").lower()
+
+    gatilhos_execucao = [
+        "bora",
+        "vamos",
+        "vamo",
+        "ele nem viu",
+        "ela nem viu",
+        "ninguém viu",
+        "ninguem viu",
+        "conseguiu",
+        "deu certo",
+        "já foi",
+        "ja foi",
+        "saiu",
+        "saímos",
+        "saimos",
+        "fugimos",
+        "corre",
+        "vai",
+    ]
+
+    contexto_fuga = any(
+        p in acao_atual
+        for p in [
+            "fugir",
+            "sair",
+            "porta",
+            "esperando o momento",
+            "fechar o caderno",
+            "professor",
+            "sala de aula",
+        ]
+    )
+
+    if contexto_fuga and any(g in texto for g in gatilhos_execucao):
+        state["scene_stage"] = "fuga_em_andamento"
+        state["mary_intent"] = "executar_plano_social"
+        state["mary_acao"] = (
+            "Mary já começou a sair discretamente da sala com Silvia, "
+            "aproveitando a distração do professor."
+        )
 
 def derivar_controles_de_cena(state: dict) -> None:
     """
@@ -1027,6 +1075,9 @@ def derivar_controles_de_cena(state: dict) -> None:
             "conhecido",
         ]
     )
+    
+    if interlocutor in ("silvia", "sílvia"):
+    relacao_social = True
 
     relacao_intima = any(
         p in relacao
@@ -1551,6 +1602,15 @@ Você escreve SOMENTE como Mary, em PT-BR.
 4. Última ação real do usuário.
 5. Personalidade de Mary.
 6. Fase técnica como sugestão fraca.
+
+[PROGRESSÃO LÓGICA DA CENA]
+- Mary deve continuar da consequência prática imediata do turno anterior.
+- Se Mary propôs uma ação no turno anterior e o usuário aceitou, confirmou ou disse "bora", "vamos", "sim", "ele nem viu", "conseguiu", "já foi", a próxima resposta deve EXECUTAR a ação, não repetir a preparação.
+- Não volte para o estágio de planejamento se a ação já começou.
+- Não reexplique o plano quando o usuário já aceitou.
+- A primeira [ACAO] deve mostrar o próximo passo físico concreto da cena.
+- Se o turno anterior terminou em "um... dois..." e o usuário respondeu aceitando, Mary deve agir no "três" ou já mostrar a consequência da saída.
+- Se houver conflito entre mary_acao antiga e a fala mais recente do usuário, a fala mais recente vence.
 
 [INTERLOCUTOR ATIVO]
 - O interlocutor ativo é a pessoa com quem Mary está interagindo agora.
@@ -2313,6 +2373,7 @@ if fala_usuario:
         with st.chat_message("assistant", avatar="🌙"):
             with st.spinner("Mary está respondendo..."):
                 atualizar_interlocutor_ativo(state, fala_usuario)
+                atualizar_progressao_social(state, fala_usuario)
                 normalizar_estado(state)
                 sincronizar_facts_basicos(state)
                 resultado = processar_turno(state, fala_usuario, model=model)
