@@ -304,17 +304,31 @@ def apagar_canon_mary_por_id(canon_id: str) -> bool:
 
 
 def apagar_ultimos_turnos_da_planilha(qtd_turnos: int) -> int:
+    """
+    Apaga os últimos turnos da aba de interações usando batch_update,
+    para evitar estouro de quota de escrita do Google Sheets.
+
+    Regra:
+    - Um turno normalmente = user + assistant.
+    - Apaga de baixo para cima.
+    - Agrupa linhas consecutivas em blocos.
+    - Executa tudo em uma única requisição batch_update.
+    """
     try:
         qtd_turnos = int(qtd_turnos or 0)
 
         if qtd_turnos <= 0:
             return 0
 
+        ss = _get_spreadsheet()
         ws = get_interacoes_sheet()
+
         values = ws.get_all_values()
 
         if len(values) <= 1:
             return 0
+
+        sheet_id = ws.id
 
         linhas = list(enumerate(values[1:], start=2))
         linhas_para_apagar = []
@@ -352,10 +366,49 @@ def apagar_ultimos_turnos_da_planilha(qtd_turnos: int) -> int:
             linhas_para_apagar.append(row_idx)
             i -= 1
 
-        for row_idx in sorted(set(linhas_para_apagar), reverse=True):
-            ws.delete_rows(row_idx)
+        linhas_para_apagar = sorted(set(linhas_para_apagar))
 
-        return len(set(linhas_para_apagar))
+        if not linhas_para_apagar:
+            return 0
+
+        # Agrupa linhas consecutivas em blocos.
+        blocos = []
+        inicio = linhas_para_apagar[0]
+        anterior = linhas_para_apagar[0]
+
+        for linha in linhas_para_apagar[1:]:
+            if linha == anterior + 1:
+                anterior = linha
+            else:
+                blocos.append((inicio, anterior))
+                inicio = linha
+                anterior = linha
+
+        blocos.append((inicio, anterior))
+
+        # IMPORTANTE:
+        # deleteDimension usa índice zero-based.
+        # endIndex é exclusivo.
+        # Como vamos deletar linhas, precisa mandar blocos de baixo para cima.
+        requests_delete = []
+
+        for inicio, fim in sorted(blocos, reverse=True):
+            requests_delete.append(
+                {
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": inicio - 1,
+                            "endIndex": fim,
+                        }
+                    }
+                }
+            )
+
+        ss.batch_update({"requests": requests_delete})
+
+        return len(linhas_para_apagar)
 
     except Exception as e:
         st.warning(f"Não foi possível apagar turnos: {type(e).__name__}: {e}")
@@ -2214,9 +2267,16 @@ with st.sidebar:
     if st.button("Apagar últimos turnos", use_container_width=True, disabled=not confirmar_turnos):
         qtd = apagar_ultimos_turnos_da_planilha(int(n_turnos))
         if qtd > 0:
-            state["history"] = carregar_history_da_planilha(MAX_HISTORY * 2)
-            state["turno"] = max(0, len(state["history"]) // 2)
+            limpar_cache_planilhas()
+
+            # Atualiza localmente para evitar nova leitura imediata do Sheets.
+            linhas_para_remover = min(qtd, len(state.get("history", [])))
+            if linhas_para_remover > 0:
+                state["history"] = state.get("history", [])[:-linhas_para_remover]
+        
+            state["turno"] = max(0, len(state.get("history", [])) // 2)
             st.session_state.mary_state_minimo = state
+        
             st.success(f"{qtd} linha(s) apagada(s).")
             st.rerun()
         else:
