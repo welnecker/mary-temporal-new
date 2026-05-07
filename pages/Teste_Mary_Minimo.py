@@ -64,6 +64,32 @@ def exigir_senha_app() -> None:
 # GOOGLE SHEETS
 # ==========================================================
 
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_history_cache(max_items: int = MAX_HISTORY * 2) -> list[dict]:
+    return carregar_history_da_planilha(max_items)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_facts_cache() -> dict:
+    return carregar_facts_da_planilha()
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_shared_memories_cache(apenas_ativas: bool = True) -> list[dict]:
+    return carregar_shared_memories_da_planilha(apenas_ativas=apenas_ativas)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_canon_mary_cache(apenas_ativos: bool = True) -> list[dict]:
+    return carregar_canon_mary_da_planilha(apenas_ativos=apenas_ativos)
+
+
+def limpar_cache_planilhas() -> None:
+    carregar_history_cache.clear()
+    carregar_facts_cache.clear()
+    carregar_shared_memories_cache.clear()
+    carregar_canon_mary_cache.clear()
+
 @st.cache_resource
 def get_gspread_client():
     info = dict(st.secrets["gcp_service_account"])
@@ -1356,21 +1382,21 @@ def init_state() -> dict:
     for k, v in estado_inicial.items():
         state.setdefault(k, v)
     if not state.get("history"):
-        history_salvo = carregar_history_da_planilha(MAX_HISTORY * 2)
+        history_salvo = carregar_history_cache(MAX_HISTORY * 2)
         if history_salvo:
             state["history"] = history_salvo
             state["turno"] = max(1, len(history_salvo) // 2)
     if not state.get("facts"):
-        facts_salvos = carregar_facts_da_planilha()
+        facts_salvos = carregar_facts_cache()
         if facts_salvos:
             aplicar_facts_no_state(state, facts_salvos)
     normalizar_estado(state)
     sincronizar_facts_basicos(state)
     if not state.get("shared_memories"):
-        state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+        state["shared_memories"] = carregar_shared_memories_cache(apenas_ativas=True)
     
     if not state.get("canon_mary"):
-        state["canon_mary"] = carregar_canon_mary_da_planilha(apenas_ativos=True)
+        state["canon_mary"] = carregar_canon_mary_cache(apenas_ativos=True)
     
     return state
 
@@ -1443,11 +1469,11 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     normalizar_estado(state)
     facts = sincronizar_facts_basicos(state)
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
-    shared_memories = state.get("shared_memories") or carregar_shared_memories_da_planilha(apenas_ativas=True)
+    shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
     
-    canon_mary = state.get("canon_mary") or carregar_canon_mary_da_planilha(apenas_ativos=True)
+    canon_mary = state.get("canon_mary") or carregar_canon_mary_cache(apenas_ativos=True)
     state["canon_mary"] = canon_mary
     canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=30)
     
@@ -2055,6 +2081,7 @@ with st.sidebar:
         normalizar_estado(state)
         sincronizar_facts_basicos(state)
         salvar_facts_na_planilha(state["facts"])
+        limpar_cache_planilhas()
         st.session_state.mary_state_minimo = state
         st.success("Cena salva.")
         st.rerun()
@@ -2069,6 +2096,7 @@ with st.sidebar:
     if st.button("💾 Salvar memória", use_container_width=True):
         ok = salvar_shared_memory_na_planilha(nova_memoria, tipo_memoria, peso_memoria)
         if ok:
+            limpar_cache_planilhas()
             state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
             st.session_state.mary_state_minimo = state
             st.success("Memória salva.")
