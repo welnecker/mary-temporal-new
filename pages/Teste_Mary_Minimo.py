@@ -18,7 +18,7 @@ MAX_HISTORY = 12
 
 OPENROUTER_MODELS = {
     "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
-    "DeepSeek V3 0324": "deepseek/deepseek-chat-v3-0324",
+    "owl-alpha": "openrouter/owl-alpha",
     "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
     "Auto Router": "openrouter/auto",
     "Manual": "__manual__",
