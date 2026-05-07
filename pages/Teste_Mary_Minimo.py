@@ -1077,7 +1077,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     )
     
     if interlocutor in ("silvia", "sílvia"):
-    relacao_social = True
+        relacao_social = True
 
     relacao_intima = any(
         p in relacao
