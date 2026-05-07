@@ -193,6 +193,43 @@ def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
     except Exception as e:
         st.warning(f"Não foi possível salvar interação: {type(e).__name__}: {e}")
 
+def testar_modelo_openrouter(model: str) -> dict:
+    """
+    Testa se o modelo selecionado responde via OpenRouter.
+    Retorna status, modelo usado e resposta curta.
+    """
+    try:
+        mensagens = [
+            {
+                "role": "system",
+                "content": "Responda apenas PONG em PT-BR. Não explique nada."
+            },
+            {
+                "role": "user",
+                "content": "PING"
+            }
+        ]
+
+        resposta = chamar_openrouter(
+            mensagens=mensagens,
+            model=model,
+        )
+
+        resposta_limpa = str(resposta or "").strip()
+
+        return {
+            "ok": True,
+            "model": model,
+            "resposta": resposta_limpa,
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "model": model,
+            "erro": f"{type(e).__name__}: {e}",
+        }
+
 def get_canon_mary_sheet():
     client = get_gspread_client()
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
@@ -2128,6 +2165,24 @@ with st.sidebar:
         model = OPENROUTER_MODELS[modelo_nome]
     
     st.caption(f"Modelo usado: `{model}`")
+
+    if st.button("🧪 Testar modelo", use_container_width=True):
+        with st.spinner("Testando modelo..."):
+            teste_modelo = testar_modelo_openrouter(model)
+    
+        st.session_state["mary_model_ping_result"] = teste_modelo
+    
+    if "mary_model_ping_result" in st.session_state:
+        teste_modelo = st.session_state["mary_model_ping_result"]
+    
+        if teste_modelo.get("ok"):
+            st.success("Modelo respondeu.")
+            st.caption(f"Modelo testado: `{teste_modelo.get('model')}`")
+            st.code(teste_modelo.get("resposta", ""), language="text")
+        else:
+            st.error("Falha ao testar modelo.")
+            st.caption(f"Modelo testado: `{teste_modelo.get('model')}`")
+            st.code(teste_modelo.get("erro", ""), language="text")
     
     st.divider()
     st.subheader("📌 Cena")
