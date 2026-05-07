@@ -1058,6 +1058,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     local_raw = str(state.get("local", "") or "").strip()
     local = local_raw.lower()
     relacao = str(state.get("relacao", "") or "").strip().lower()
+    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
 
     privacidade = get_privacidade_por_local(local_raw)
     state["privacidade"] = privacidade
@@ -1073,6 +1074,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             "professor",
             "conhecida",
             "conhecido",
+            "neutro",
+            "social",
         ]
     )
     
