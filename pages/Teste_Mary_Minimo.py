@@ -1128,6 +1128,77 @@ def resetar_se_contexto_mudou(state: dict) -> None:
         state["force_resolution_now"] = False
     state["_contexto_anterior"] = chave_atual
 
+def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
+    """
+    Mantém o interlocutor ativo de forma persistente.
+
+    Regra central:
+    - Se um personagem é citado explicitamente como quem entrou, falou ou agiu,
+      ele vira o interlocutor ativo persistente.
+    - Se nenhum novo personagem for introduzido,
+      mantém o último interlocutor persistente.
+    - Janio não volta automaticamente só por ser usuario_real.
+    """
+    texto = str(fala_usuario or "").strip().lower()
+
+    interlocutor_atual = str(
+        state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or "Janio Donisete"
+    ).strip()
+
+    personagens = {
+        "Anthony": ["anthony", "antony"],
+        "Silvia": ["silvia", "sílvia"],
+        "Janio": ["janio", "jânio", "janio donisete", "jânio donisete"],
+    }
+
+    padroes = [
+        r"\b{nome}\s+(se aproxima|aproxima|entra|chega|fala|diz|pergunta|responde|olha|sorri|toca|segura|puxa|chama)\b",
+        r"\b{nome}\s*:\s*",
+        r"\b(sou|eu sou)\s+{nome}\b",
+        r"\bcomo\s+{nome}\b",
+        r"\bna voz de\s+{nome}\b",
+        r"\b{nome}\s+(está|esta|fica|permanece|continua)\s+(com|perto de|ao lado de)\s+mary\b",
+    ]
+
+    novo_interlocutor = None
+
+    for nome_canonico, aliases in personagens.items():
+        for alias in aliases:
+            alias_regex = re.escape(alias)
+
+            for padrao in padroes:
+                if re.search(padrao.format(nome=alias_regex), texto, flags=re.IGNORECASE):
+                    novo_interlocutor = nome_canonico
+                    break
+
+            if novo_interlocutor:
+                break
+
+        if novo_interlocutor:
+            break
+
+    if novo_interlocutor:
+        state["interlocutor"] = novo_interlocutor
+        state["interlocutor_ativo_persistente"] = novo_interlocutor
+        state["ultimo_interlocutor_explicito"] = novo_interlocutor
+
+        if novo_interlocutor.lower() == "janio":
+            state["janio_status_na_cena"] = "presente"
+        else:
+            state["janio_status_na_cena"] = "roteirista"
+
+        return
+
+    # Se ninguém novo apareceu, mantém quem já estava persistente.
+    if interlocutor_atual:
+        state["interlocutor"] = interlocutor_atual
+        state["interlocutor_ativo_persistente"] = interlocutor_atual
+
+        if interlocutor_atual.lower() != "janio":
+            state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
+
 
 def normalizar_estado(state: dict) -> None:
     resetar_se_contexto_mudou(state)
@@ -1152,6 +1223,14 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "interlocutor": state.get("interlocutor", "Janio Donisete"),
         "usuario_real": state.get("usuario_real", "Janio Donisete"),
         "janio_status_na_cena": state.get("janio_status_na_cena", "presente"),
+        "interlocutor_ativo_persistente": state.get(
+            "interlocutor_ativo_persistente",
+            state.get("interlocutor", "Janio Donisete"),
+        ),
+        "ultimo_interlocutor_explicito": state.get(
+            "ultimo_interlocutor_explicito",
+            state.get("interlocutor", "Janio Donisete"),
+        ),        
         "relacao": state.get("relacao", "romance"),
         "tipo_de_cena": state.get("tipo_de_cena", "flerte leve"),
         "privacidade": state.get("privacidade", get_privacidade_por_local(state.get("local", ""))),
@@ -1166,6 +1245,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "mary_intent": state.get("mary_intent", "presenca_viva"),
         "toque_intimo_permitido": state.get("toque_intimo_permitido", False),
         "tensao_romantica_com_interlocutor": state.get("tensao_romantica_com_interlocutor", False),
+        
     }
     state["facts"] = facts
     return facts
@@ -1402,6 +1482,11 @@ Você escreve SOMENTE como Mary, em PT-BR.
 - Anthony, Janio, Silvia e outros personagens são pessoas distintas.
 - Mary não deve confundir nomes, desejos, histórico íntimo ou relação emocional entre personagens diferentes.
 - Cânone e memórias dão contexto, mas não substituem o interlocutor ativo.
+- O interlocutor persistente continua sendo a pessoa indicada em "interlocutor_ativo_persistente".
+- Se nenhum novo personagem foi explicitamente introduzido neste turno, Mary deve continuar respondendo ao interlocutor persistente.
+- Ausência de nome novo não significa retorno para Janio.
+- Ausência de nome novo significa continuidade do último interlocutor explícito.
+- Janio só deve voltar como interlocutor se for explicitamente introduzido, se o status dele for "presente", ou se os facts indicarem isso claramente.
 
 [LIMITE POR PRIVACIDADE]
 - Público: sensualidade discreta. Evitar exposição explícita, sexo, clímax, mão dentro da roupa ou ação que chame atenção.
@@ -1889,6 +1974,55 @@ with st.sidebar:
         value=state.get("interlocutor", "Janio Donisete"),
     )
     
+    state["interlocutor_ativo_persistente"] = st.text_input(
+        "Interlocutor persistente",
+        value=state.get(
+            "interlocutor_ativo_persistente",
+            state.get("interlocutor", "Janio Donisete"),
+        ),
+        help=(
+            "Personagem que continua interagindo com Mary até outro personagem "
+            "ser explicitamente introduzido."
+        ),
+    )
+    
+    state["janio_status_na_cena"] = st.selectbox(
+        "Status de Janio na cena",
+        options=[
+            "presente",
+            "ausente",
+            "ausente_ou_observador",
+            "mencionado",
+            "roteirista",
+        ],
+        index=[
+            "presente",
+            "ausente",
+            "ausente_ou_observador",
+            "mencionado",
+            "roteirista",
+        ].index(
+            state.get("janio_status_na_cena", "presente")
+            if state.get("janio_status_na_cena", "presente") in [
+                "presente",
+                "ausente",
+                "ausente_ou_observador",
+                "mencionado",
+                "roteirista",
+            ]
+            else "presente"
+        ),
+    )
+    
+    state["ultimo_interlocutor_explicito"] = st.text_input(
+        "Último interlocutor explícito",
+        value=state.get(
+            "ultimo_interlocutor_explicito",
+            state.get("interlocutor", "Janio Donisete"),
+        ),
+        help="Último personagem que apareceu claramente falando/agindo com Mary.",
+    )
+    
     state["relacao"] = st.text_input(
         "Relação",
         value=state.get("relacao", "romance"),
@@ -2090,6 +2224,9 @@ if fala_usuario:
             st.write(fala_usuario)
         with st.chat_message("assistant", avatar="🌙"):
             with st.spinner("Mary está respondendo..."):
+                atualizar_interlocutor_ativo(state, fala_usuario)
+                normalizar_estado(state)
+                sincronizar_facts_basicos(state)
                 resultado = processar_turno(state, fala_usuario, model=model)
                 st.session_state["mary_last_debug"] = resultado
             renderizar_resposta_mary(resultado["resposta_final_limpa"])
