@@ -16,6 +16,14 @@ from google.oauth2.service_account import Credentials
 MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 12
 
+OPENROUTER_MODELS = {
+    "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
+    "DeepSeek V3 0324": "deepseek/deepseek-chat-v3-0324",
+    "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
+    "Auto Router": "openrouter/auto",
+    "Manual": "__manual__",
+}
+
 SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
 SHEET_INTERACOES = "interacoes_mary_minimo"
 SHEET_FACTS = "facts_mary_minimo"
@@ -2096,7 +2104,30 @@ with st.sidebar:
         st.rerun()
     
     st.header("🎛️ Cena")
-    model = st.text_input("Modelo", value=MODEL_DEFAULT)
+    modelo_nome = st.selectbox(
+        "Modelo",
+        options=list(OPENROUTER_MODELS.keys()),
+        index=list(OPENROUTER_MODELS.keys()).index(
+            st.session_state.get("modelo_nome_mary", "Gemini 3 Flash Preview")
+        )
+        if st.session_state.get("modelo_nome_mary", "Gemini 3 Flash Preview") in OPENROUTER_MODELS
+        else 0,
+    )
+    
+    st.session_state["modelo_nome_mary"] = modelo_nome
+    
+    if OPENROUTER_MODELS[modelo_nome] == "__manual__":
+        model = st.text_input(
+            "ID manual do modelo OpenRouter",
+            value=st.session_state.get("modelo_manual_mary", MODEL_DEFAULT),
+            placeholder="Ex: deepseek/deepseek-chat-v3-0324",
+        ).strip()
+    
+        st.session_state["modelo_manual_mary"] = model
+    else:
+        model = OPENROUTER_MODELS[modelo_nome]
+    
+    st.caption(f"Modelo usado: `{model}`")
     
     st.divider()
     st.subheader("📌 Cena")
