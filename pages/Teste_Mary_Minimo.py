@@ -1819,6 +1819,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
 def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     if not isinstance(facts, dict):
         return
+
     campos = [
         "local",
         "tempo",
@@ -1836,13 +1837,23 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "tom_da_cena",
         "segredo_ativo",
         "plano_ativo",
-        "modo_surpresa": "Desligado",
-        "direcao_surpresa": "",
-        "estado_emocional": "confiante",
+        "modo_surpresa",
+        "direcao_surpresa",
     ]
+
     for campo in campos:
         if campo in facts and facts[campo] not in ("", None):
             state[campo] = facts[campo]
+
+    if not state.get("modo_surpresa"):
+        state["modo_surpresa"] = "Desligado"
+
+    if not state.get("direcao_surpresa"):
+        state["direcao_surpresa"] = ""
+
+    if not state.get("estado_emocional"):
+        state["estado_emocional"] = "confiante"
+
     normalizar_estado(state)
     sincronizar_facts_basicos(state)
 
