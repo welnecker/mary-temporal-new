@@ -16,9 +16,36 @@ from google.oauth2.service_account import Credentials
 MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 12
 
+OPCOES_TOM_MANUAL_CENA = [
+    "Neutro",
+    "Amizade",
+    "Malícia",
+    "Flerte",
+    "Intimidade",
+]
+
+
+def normalizar_tom_manual_cena(valor: str) -> str:
+    valor = str(valor or "").strip()
+
+    mapa = {
+        "neutro": "Neutro",
+        "amizade": "Amizade",
+        "malícia": "Malícia",
+        "malicia": "Malícia",
+        "flerte": "Flerte",
+        "intimidade": "Intimidade",
+    }
+
+    return mapa.get(valor.lower(), "Neutro")
+
 OPENROUTER_MODELS = {
     "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
+     "google-gemma-4-26b-a4b-it": "google/gemma-4-26b-a4b-it",
+    "google-gemma-4-31b-it": "google/gemma-4-31b-it",
+    "google-gemini-3.1-flash-lite-preview": "google/gemini-3.1-flash-lite-preview",
     "owl-alpha": "openrouter/owl-alpha",
+    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",    
     "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
     "Auto Router": "openrouter/auto",
     "Manual": "__manual__",
@@ -650,6 +677,11 @@ def get_privacidade_por_local(local: str) -> str:
         "motel",
         "hotel",
         "casa",
+        "mansão",
+        "mansao",
+        "propriedade",
+        "praia particular",
+        "piscina particular",
         "apartamento",
         "apto",
         "chalé",
@@ -1092,203 +1124,222 @@ def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
 
 def derivar_controles_de_cena(state: dict) -> None:
     """
-    Deriva automaticamente privacidade, tipo de cena, iniciativa e tom.
+    Deriva privacidade, tipo de cena, iniciativa e tom a partir do TOM MANUAL.
 
-    Regra-mãe:
-    - O usuário informa local, relação, ação atual e estado emocional.
-    - O script decide privacidade, tipo de cena, limites e intenção.
-    - Local manda sempre.
-    - Campos técnicos antigos não mandam no presente.
+    Nova regra-mãe:
+    - O roteirista escolhe o tom manual da cena.
+    - A privacidade detectada NÃO decide mais sozinha o tipo da cena.
+    - A privacidade apenas limita ou redireciona a execução do tom.
+    - Exemplo: Tom = Intimidade + privacidade pública => Mary busca lugar reservado.
     """
     local_raw = str(state.get("local", "") or "").strip()
-    local = local_raw.lower()
-    relacao = str(state.get("relacao", "") or "").strip().lower()
-    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
-
     privacidade = get_privacidade_por_local(local_raw)
     state["privacidade"] = privacidade
 
-    relacao_social = any(
-        p in relacao
-        for p in [
-            "amiga",
-            "amigo",
-            "colega",
-            "amizade",
-            "professora",
-            "professor",
-            "conhecida",
-            "conhecido",
-            "neutro",
-            "social",
-        ]
-    )
-    
-    if interlocutor in ("silvia", "sílvia"):
-        relacao_social = True
-
-    relacao_intima = any(
-        p in relacao
-        for p in [
-            "romance",
-            "casal",
-            "namoro",
-            "namorada",
-            "namorado",
-            "par íntimo",
-            "par intimo",
-            "marido",
-            "esposa",
-            "amante",
-        ]
+    tom_manual = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena")
+        or state.get("estado_emocional")
+        or "Neutro"
     )
 
-    relacao_rival = any(
-    p in relacao
-    for p in [
-        "rival",
-        "competidor",
-        "disputa",
-        "ciúme",
-        "ciume",
-        "anthony",
-        ]
-    )
-    
-    relacao_interesse_ambigua = any(
-        p in relacao
-        for p in [
-            "colega interessado",
-            "interesse secreto",
-            "flerta",
-            "flerte",
-            "segredo",
-            "aproximação ambígua",
-            "aproximacao ambigua",
-        ]
-    )
+    state["tom_manual_da_cena"] = tom_manual
 
     # ======================================================
-    # 1) TIPO DE CENA AUTOMÁTICO
+    # PRESETS PRINCIPAIS
     # ======================================================
-    if relacao_social:
-        tipo_cena = "social"
+    presets = {
+        "Neutro": {
+            "tipo_de_cena": "neutra",
+            "estilo_de_iniciativa": "resposta natural",
+            "tom_da_cena": "neutro",
+            "modo_relacional": "neutro",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+            "physical_phase": 0,
+            "scene_stage": "inicio",
+            "desire_level": 0.10,
+            "tension_level": 0.10,
+            "connection_level": 0.30,
+            "mary_intent": "responder_com_naturalidade",
+            "limite_ambiente": (
+                "Tom neutro: Mary responde com naturalidade, presença e clareza. "
+                "Não deve provocar tensão, flerte ou intimidade se isso não vier da cena."
+            ),
+        },
+        "Amizade": {
+            "tipo_de_cena": "amizade",
+            "estilo_de_iniciativa": "cumplicidade social",
+            "tom_da_cena": "amizade",
+            "modo_relacional": "amizade",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+            "physical_phase": 0,
+            "scene_stage": "cumplicidade",
+            "desire_level": 0.10,
+            "tension_level": 0.20,
+            "connection_level": 0.70,
+            "mary_intent": "conversar_com_cumplicidade",
+            "limite_ambiente": (
+                "Tom de amizade: Mary pode ser viva, engraçada, cúmplice, próxima e expressiva. "
+                "Ela pode demonstrar afeto social, humor, confiança e parceria, sem transformar a cena em flerte direto."
+            ),
+        },
+        "Malícia": {
+            "tipo_de_cena": "social_malicioso",
+            "estilo_de_iniciativa": "provocação social",
+            "tom_da_cena": "malícia social",
+            "modo_relacional": "social_malicioso",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": False,
+            "physical_phase": 1,
+            "scene_stage": "aproximacao",
+            "desire_level": 0.28,
+            "tension_level": 0.65,
+            "connection_level": 0.85,
+            "mary_intent": "brincar_com_tensao_social",
+            "limite_ambiente": (
+                "Tom de malícia: Mary percebe subtexto, provoca com olhar, pausa, humor, postura e escolha de palavras. "
+                "Ela sabe o efeito que causa, mas ainda mantém a cena no campo social. "
+                "Não deve pular para intimidade física direta."
+            ),
+        },
+        "Flerte": {
+            "tipo_de_cena": "flerte",
+            "estilo_de_iniciativa": "flerte consciente",
+            "tom_da_cena": "flerte direto",
+            "modo_relacional": "flerte",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": False,
+            "physical_phase": 2,
+            "scene_stage": "flerte_direto",
+            "desire_level": 0.45,
+            "tension_level": 0.75,
+            "connection_level": 0.90,
+            "mary_intent": "flerte_consciente",
+            "limite_ambiente": (
+                "Tom de flerte: Mary assume interesse, sustenta tensão, aproxima a fala e o olhar, "
+                "mas ainda respeita progressão e ambiente. Não deve saltar para intimidade plena sem contexto."
+            ),
+        },
+        "Intimidade": {
+            "tipo_de_cena": "intimidade",
+            "estilo_de_iniciativa": "aproximação íntima",
+            "tom_da_cena": "intimidade",
+            "modo_relacional": "intimo",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": True,
+            "physical_phase": 3,
+            "scene_stage": "intimidade",
+            "desire_level": 0.65,
+            "tension_level": 0.85,
+            "connection_level": 0.95,
+            "mary_intent": "aproximar_com_intimidade",
+            "limite_ambiente": (
+                "Tom de intimidade: Mary assume proximidade, desejo e condução íntima com progressão. "
+                "Ela mantém autoria própria e respeita o ambiente."
+            ),
+        },
+    }
 
-    elif relacao_rival or relacao_interesse_ambigua:
-        tipo_cena = "flerte leve"
-    
-    elif privacidade == "publico":
-        if relacao_intima:
-            tipo_cena = "intima discreta"
-        else:
-            tipo_cena = "flerte leve"
+    cfg = dict(presets.get(tom_manual, presets["Neutro"]))
+
+    # ======================================================
+    # AJUSTE POR PRIVACIDADE
+    # A privacidade NÃO muda o tom escolhido.
+    # Ela muda a rota de execução.
+    # ======================================================
+    if privacidade == "publico":
+        if tom_manual == "Malícia":
+            cfg["tipo_de_cena"] = "malicia_publica"
+            cfg["tom_da_cena"] = "malícia pública"
+            cfg["estilo_de_iniciativa"] = "provocação social contida"
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 1)
+            cfg["scene_stage"] = "aproximacao"
+            cfg["mary_intent"] = "provocar_sem_avanco_fisico"
+            cfg["limite_ambiente"] = (
+                "Malícia em público: Mary pode brincar com o subtexto, olhar, postura, sorriso, ironia e cumplicidade. "
+                "Ela não deve agir como se estivesse em local privado. "
+                "Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
+            )
+
+        elif tom_manual == "Flerte":
+            cfg["tipo_de_cena"] = "flerte_publico"
+            cfg["tom_da_cena"] = "flerte público contido"
+            cfg["estilo_de_iniciativa"] = "flerte discreto"
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 2)
+            cfg["scene_stage"] = "flerte_direto"
+            cfg["mary_intent"] = "flerte_com_discricao"
+            cfg["limite_ambiente"] = (
+                "Flerte em público: Mary pode sustentar olhar, responder com charme, provocar verbalmente e sugerir proximidade, "
+                "mas deve evitar exposição, toque íntimo, nudez, sexo ou clímax. "
+                "Se quiser avançar, deve conduzir para local reservado."
+            )
+
+        elif tom_manual == "Intimidade":
+            cfg["tipo_de_cena"] = "intimidade_contida_por_ambiente"
+            cfg["tom_da_cena"] = "intimidade com condução para local reservado"
+            cfg["estilo_de_iniciativa"] = "buscar privacidade"
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 2
+            cfg["scene_stage"] = "buscar_privacidade"
+            cfg["mary_intent"] = "convidar_para_lugar_particular"
+            cfg["limite_ambiente"] = (
+                "Intimidade desejada em local público: Mary não deve agir intimamente ali. "
+                "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
+            )
+
+    elif privacidade == "semiprivado":
+        if tom_manual == "Intimidade":
+            cfg["tipo_de_cena"] = "intimidade_semiprivada"
+            cfg["tom_da_cena"] = "intimidade contida"
+            cfg["estilo_de_iniciativa"] = "aproximação cuidadosa"
+            cfg["toque_intimo_permitido"] = True
+            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 4)
+            cfg["scene_stage"] = "intensidade_contida"
+            cfg["mary_intent"] = "aprofundar_com_cuidado"
+            cfg["limite_ambiente"] = (
+                "Intimidade em local semiprivado: Mary pode aumentar a tensão e o contato, "
+                "mas com cuidado, discrição e atenção ao risco de exposição."
+            )
 
     else:
-        if relacao_intima:
-            tipo_cena = "intima privada"
-        else:
-            tipo_cena = "flerte leve"
-
-    state["tipo_de_cena"] = tipo_cena
+        # Privado: o tom manual pode ser executado com mais liberdade.
+        if tom_manual in ("Malícia", "Flerte", "Intimidade"):
+            cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
 
     # ======================================================
-    # 2) CONTROLES DERIVADOS POR TIPO DE CENA
+    # APLICA NO STATE
     # ======================================================
-    if tipo_cena == "social":
-        state["estilo_de_iniciativa"] = "ação social"
-        state["tom_da_cena"] = "cumplicidade social"
-        state["modo_relacional"] = "social"
-        state["tensao_romantica_com_interlocutor"] = False
-        state["toque_intimo_permitido"] = False
-        state["limite_ambiente"] = (
-            "Cena social: Mary pode ser viva, engraçada, cúmplice e magnética. "
-            "Ela pode demonstrar presença, humor, afeto social e curiosidade, "
-            "mas não deve erotizar o interlocutor nem usar intimidade física."
+    state["tipo_de_cena"] = cfg["tipo_de_cena"]
+    state["estilo_de_iniciativa"] = cfg["estilo_de_iniciativa"]
+    state["tom_da_cena"] = cfg["tom_da_cena"]
+    state["modo_relacional"] = cfg["modo_relacional"]
+    state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
+    state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
+    state["limite_ambiente"] = cfg["limite_ambiente"]
+    state["mary_intent"] = cfg["mary_intent"]
+
+    # Só aplica fase/tensão base se a cena não estiver em pico/resolução.
+    if not state.get("force_resolution_now") and not state.get("mary_climax_done"):
+        state["physical_phase"] = int(cfg["physical_phase"])
+        state["scene_stage"] = cfg["scene_stage"]
+        state["desire_level"] = clamp(cfg["desire_level"])
+        state["tension_level"] = clamp(cfg["tension_level"])
+        state["connection_level"] = clamp(
+            max(
+                float(state.get("connection_level", 0.0) or 0.0),
+                float(cfg["connection_level"]),
+            )
         )
-        _set_fase_limitada(state, limite=1, stage_padrao="aproximacao")
-        state["mary_intent"] = "conversar_com_cumplicidade"
+
+    # Campos de segurança
+    if privacidade != "privado":
         state["force_resolution_now"] = False
         state["resolution_done"] = False
         state["mary_climax_done"] = False
         state["user_climax_done"] = False
-        return
-
-    if tipo_cena == "flerte leve":
-        state["estilo_de_iniciativa"] = "flerte progressivo"
-        state["tom_da_cena"] = "flerte com tensão progressiva"
-        state["modo_relacional"] = "ambiguo"
-        state["tensao_romantica_com_interlocutor"] = True
-        state["toque_intimo_permitido"] = privacidade != "publico"
-        state["limite_ambiente"] = (
-            "Flerte leve: Mary pode provocar, sorrir, aproximar e demonstrar interesse ambíguo. "
-            "Se o interlocutor for Anthony ou um rival, Mary deve manter subtexto, cautela e tensão social. "
-            "Ela não deve agir como se tivesse intimidade plena nem revelar segredos espontaneamente."
-        )
-        _set_fase_limitada(state, limite=2, stage_padrao="toque")
-        state["mary_intent"] = "sustentar_tensao"
-        state["force_resolution_now"] = False
-        state["resolution_done"] = False
-        state["mary_climax_done"] = False
-        state["user_climax_done"] = False
-        return
-
-    if tipo_cena == "intima discreta":
-        state["estilo_de_iniciativa"] = "convite suave"
-        state["tom_da_cena"] = "sensual carinhoso"
-        state["modo_relacional"] = "intimo"
-        state["tensao_romantica_com_interlocutor"] = True
-        state["toque_intimo_permitido"] = True
-
-        if privacidade == "publico":
-            state["limite_ambiente"] = (
-                "Local público: Mary pode ser sensual, carinhosa, provocante e próxima, "
-                "mas deve evitar exposição explícita, sexo, clímax, mão dentro da roupa, nudez "
-                "ou ações que chamem atenção. Se a tensão subir, ela deve conter com charme "
-                "ou sugerir lugar reservado."
-            )
-            _set_fase_limitada(state, limite=3, stage_padrao="beijo")
-            state["mary_intent"] = "flerte_intimo_discreto"
-
-        elif privacidade == "semiprivado":
-            state["limite_ambiente"] = (
-                "Local semiprivado: Mary pode aumentar a tensão e o toque, mas ainda com contenção, "
-                "atenção ao risco de exposição e progressão cuidadosa."
-            )
-            _set_fase_limitada(state, limite=4, stage_padrao="intensidade")
-            state["mary_intent"] = "aprofundar_com_cuidado"
-
-        else:
-            state["limite_ambiente"] = (
-                "Intimidade discreta em local privado: Mary pode ser sensual, carinhosa e fisicamente próxima. "
-                "Ela pode aprofundar a intimidade, mas sem atropelar a progressão emocional."
-            )
-            _set_fase_limitada(state, limite=4, stage_padrao="intensidade")
-            state["mary_intent"] = "aprofundar_com_cuidado"
-
-        state["force_resolution_now"] = False
-        state["resolution_done"] = False
-        state["mary_climax_done"] = False
-        state["user_climax_done"] = False
-        return
-
-    # ======================================================
-    # 3) ÍNTIMA PRIVADA
-    # ======================================================
-    state["estilo_de_iniciativa"] = "contextual"
-    state["tom_da_cena"] = "íntimo e direto"
-    state["modo_relacional"] = "intimo"
-    state["tensao_romantica_com_interlocutor"] = True
-    state["toque_intimo_permitido"] = True
-    state["limite_ambiente"] = (
-        "Intimidade privada: Mary pode expressar desejo com mais liberdade, "
-        "mantendo autoria do usuário, progressão emocional e cuidado. "
-        "Quando houver receio ou cuidado do usuário, Mary acolhe primeiro, mas não esfria: "
-        "ela mantém contato, orienta com carinho e pode aprofundar gradualmente. "
-        "Carinho não significa passividade; desejo não significa agressividade."
-    )
-
-    # Em privado, não herdar intenção contaminada como buscar_intensidade/resolver_pico.
-    state["mary_intent"] = "aprofundar_com_cuidado"
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
@@ -1415,6 +1466,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "estilo_de_iniciativa": state.get("estilo_de_iniciativa", "contextual"),
         "mary_acao": state.get("mary_acao", ""),
         "estado_emocional": state.get("estado_emocional", "confiante"),
+        "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
@@ -1432,7 +1484,21 @@ def sincronizar_facts_basicos(state: dict) -> dict:
 def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     if not isinstance(facts, dict):
         return
-    campos = ["local", "tempo", "interlocutor", "usuario_real", "janio_status_na_cena", "relacao", "tipo_de_cena", "privacidade", "estilo_de_iniciativa", "mary_acao", "estado_emocional", "tom_da_cena"]
+    campos = [
+        "local",
+        "tempo",
+        "interlocutor",
+        "usuario_real",
+        "janio_status_na_cena",
+        "relacao",
+        "tipo_de_cena",
+        "privacidade",
+        "estilo_de_iniciativa",
+        "mary_acao",
+        "estado_emocional",
+        "tom_manual_da_cena",
+        "tom_da_cena",
+    ]
     for campo in campos:
         if campo in facts and facts[campo] not in ("", None):
             state[campo] = facts[campo]
@@ -1498,6 +1564,7 @@ def init_state() -> dict:
         "estilo_de_iniciativa": "contextual",
         "mary_acao": "Mary está próxima de Janio, olhando para ele com curiosidade.",
         "estado_emocional": "confiante",
+        "tom_manual_da_cena": "Intimidade",
         "tom_da_cena": "íntimo e direto",
         "modo": "privado",
         "turno": 0,
@@ -1592,25 +1659,59 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
 
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
-    tipo = state.get("tipo_de_cena", "flerte leve")
+    tipo = str(state.get("tipo_de_cena", "neutra") or "neutra").lower()
+    tom_manual = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", "Neutro"))
     priv = state.get("privacidade", "publico")
-    local = str(state.get("local", "") or "").lower()
-    iniciativa = state.get("estilo_de_iniciativa", "contextual")
-    if tipo == "social":
-        state["mary_autonomous_action"] = "Mary responde de modo social: viva, cúmplice, expressiva e presente, sem erotizar a cena nem tratar o interlocutor como par íntimo."
+
+    if tom_manual == "Neutro":
+        state["mary_autonomous_action"] = (
+            "Mary responde com naturalidade, presença e clareza, sem criar tensão que não exista na cena."
+        )
         return
-    if tipo == "flerte leve":
-        state["mary_autonomous_action"] = "Mary flerta com presença e humor, mas sem prometer desfecho íntimo. Ela pode aproximar, sorrir, provocar de leve e deixar espaço."
+
+    if tom_manual == "Amizade":
+        state["mary_autonomous_action"] = (
+            "Mary responde com cumplicidade, humor e proximidade social. "
+            "Ela pode ser viva, expressiva e afetuosa sem transformar a cena em flerte."
+        )
         return
-    if tipo == "intima discreta":
+
+    if tom_manual == "Malícia":
+        state["mary_autonomous_action"] = (
+            "Mary percebe o subtexto e brinca com a tensão por olhar, pausa, postura, humor e provocação social. "
+            "Ela sabe o efeito que causa, mas não pula para intimidade física."
+        )
+        return
+
+    if tom_manual == "Flerte":
         if priv == "publico":
-            state["mary_autonomous_action"] = "Mary mantém sensualidade discreta adequada ao local público: fala baixa, toque contido, carinho, sorriso, cuidado e convite suave. Ela não age como se estivesse em quarto ou motel."
-        elif "praia" in local and iniciativa in ("contextual", "convite suave"):
-            state["mary_autonomous_action"] = "Mary transforma a tensão em convite físico suave: deixa o toque continuar, orienta com carinho, demonstra prazer sem pressa e evita ordem agressiva."
+            state["mary_autonomous_action"] = (
+                "Mary flerta com discrição: sustenta olhar, responde com charme, provoca verbalmente e mantém controle do ambiente."
+            )
         else:
-            state["mary_autonomous_action"] = "Mary expressa desejo com carinho e progressão, sem pressa e sem mandar."
+            state["mary_autonomous_action"] = (
+                "Mary assume o flerte com mais presença, aproximação e intenção, sem atropelar a progressão."
+            )
         return
-    state["mary_autonomous_action"] = "Mary pode intensificar em ambiente privado, mas continua carinhosa, progressiva e respeita a autoria do usuário."
+
+    if tom_manual == "Intimidade":
+        if priv == "publico":
+            state["mary_autonomous_action"] = (
+                "Mary reconhece a intimidade desejada, mas conduz para um lugar reservado em vez de agir intimamente em público."
+            )
+        elif priv == "semiprivado":
+            state["mary_autonomous_action"] = (
+                "Mary aprofunda a intimidade com contenção, cuidado e atenção ao risco de exposição."
+            )
+        else:
+            state["mary_autonomous_action"] = (
+                "Mary pode aprofundar a intimidade em ambiente privado, mantendo presença, desejo próprio e progressão."
+            )
+        return
+
+    state["mary_autonomous_action"] = (
+        "Mary responde de forma contextual, preservando continuidade, ambiente e tom manual da cena."
+    )
 
 
 # ==========================================================
@@ -2251,10 +2352,25 @@ with st.sidebar:
         help="Último personagem que apareceu claramente falando/agindo com Mary.",
     )
     
-    state["relacao"] = st.text_input(
-        "Relação",
-        value=state.get("relacao", "romance"),
+    tom_atual = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena")
+        or state.get("estado_emocional")
+        or "Neutro"
     )
+    
+    state["tom_manual_da_cena"] = st.selectbox(
+        "Tom manual da cena",
+        options=OPCOES_TOM_MANUAL_CENA,
+        index=OPCOES_TOM_MANUAL_CENA.index(tom_atual),
+        help=(
+            "Define a direção narrativa principal. "
+            "A privacidade detectada apenas limita ou redireciona esse tom."
+        ),
+    )
+    
+    # Mantém relacao por compatibilidade interna, mas sem exibir no sidebar.
+    if not state.get("relacao"):
+        state["relacao"] = "contextual"
     
     state["mary_acao"] = st.text_area(
         "Ação atual de Mary",
@@ -2272,10 +2388,13 @@ with st.sidebar:
     
     st.info(
         f"""
+        **Tom manual:** {state.get("tom_manual_da_cena")}  
         **Privacidade detectada:** {state.get("privacidade")}  
-        **Tipo de cena:** {state.get("tipo_de_cena")}  
-        **Iniciativa:** {state.get("estilo_de_iniciativa")}  
-        **Tom:** {state.get("tom_da_cena")}
+        **Tipo de cena aplicado:** {state.get("tipo_de_cena")}  
+        **Iniciativa aplicada:** {state.get("estilo_de_iniciativa")}  
+        **Tom aplicado:** {state.get("tom_da_cena")}  
+        **Fase física:** {state.get("physical_phase")}  
+        **Tensão:** {state.get("tension_level")}
         """
     )
     
