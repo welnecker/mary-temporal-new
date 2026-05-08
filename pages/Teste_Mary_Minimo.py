@@ -30,6 +30,7 @@ OPCOES_TOM_MANUAL_CENA = [
     "Malícia",
     "Flerte",
     "Intimidade",
+    "Segredo pendente",
 ]
 
 
@@ -43,20 +44,24 @@ def normalizar_tom_manual_cena(valor: str) -> str:
         "malicia": "Malícia",
         "flerte": "Flerte",
         "intimidade": "Intimidade",
+        "segredo pendente": "Segredo pendente",
+        "segredo_pendente": "Segredo pendente",
+        "segredo": "Segredo pendente",
     }
 
     return mapa.get(valor.lower(), "Neutro")
 
 OPENROUTER_MODELS = {
-    "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
+     "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
      "google-gemma-4-26b-a4b-it": "google/gemma-4-26b-a4b-it",
-    "google-gemma-4-31b-it": "google/gemma-4-31b-it",
-    "google-gemini-3.1-flash-lite-preview": "google/gemini-3.1-flash-lite-preview",
-    "owl-alpha": "openrouter/owl-alpha",
-    "deepseek-v4-flash": "deepseek/deepseek-v4-flash",    
-    "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
-    "Auto Router": "openrouter/auto",
-    "Manual": "__manual__",
+     "google-gemma-4-31b-it": "google/gemma-4-31b-it",
+     "google-gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite",
+     "google-gemini-3.1-flash-lite-preview": "google/gemini-3.1-flash-lite-preview",
+     "owl-alpha": "openrouter/owl-alpha",
+     "deepseek-v4-flash": "deepseek/deepseek-v4-flash",    
+     "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
+     "Auto Router": "openrouter/auto",
+     "Manual": "__manual__",
 }
 
 SPREADSHEET_ID = "1f7LBJFlhJvg3NGIWwpLTmJXxH9TH-MNn3F4SQkyfZNM"
@@ -1408,6 +1413,27 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela mantém autoria própria e respeita o ambiente."
             ),
         },
+
+        "Segredo pendente": {
+            "tipo_de_cena": "segredo_pendente",
+            "estilo_de_iniciativa": "ponderação cúmplice",
+            "tom_da_cena": "segredo e risco",
+            "modo_relacional": "cumplicidade_tensa",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+            "physical_phase": 0,
+            "scene_stage": "segredo_pendente",
+            "desire_level": 0.10,
+            "tension_level": 0.55,
+            "connection_level": 0.85,
+            "mary_intent": "ponderar_risco_e_cumplicidade",
+            "limite_ambiente": (
+                "Segredo pendente: Mary deve manter vivo o assunto não resolvido da cena. "
+                "Ela pode demonstrar cumplicidade, cautela, dúvida, tensão moral, hesitação ou estratégia. "
+                "Não deve esquecer o segredo, mas também não precisa mencioná-lo em todo turno. "
+                "O segredo deve influenciar olhares, pausas, decisões e subtexto."
+            ),
+        },
     }
 
     cfg = dict(presets.get(tom_manual, presets["Neutro"]))
@@ -1459,6 +1485,24 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
             )
 
+        elif tom_manual == "Segredo pendente":
+            cfg["tipo_de_cena"] = "segredo_pendente"
+            cfg["tom_da_cena"] = "segredo e risco em público"
+            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa"
+            cfg["modo_relacional"] = "cumplicidade_tensa"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "segredo_pendente"
+            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.55
+            cfg["limite_ambiente"] = (
+                "Segredo pendente em público: Mary deve manter o assunto vivo com discrição. "
+                "Ela pode usar olhares, pausas, frases ambíguas e cautela para não expor o segredo. "
+                "Não deve resolver, revelar ou abandonar a pendência sem ação clara do usuário."
+            )
+
     elif privacidade == "semiprivado":
         if tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_semiprivada"
@@ -1473,11 +1517,58 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "mas com cuidado, discrição e atenção ao risco de exposição."
             )
 
+        elif tom_manual == "Segredo pendente":
+            cfg["tipo_de_cena"] = "segredo_pendente"
+            cfg["tom_da_cena"] = "segredo e risco"
+            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa"
+            cfg["modo_relacional"] = "cumplicidade_tensa"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "segredo_pendente"
+            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.60
+            cfg["limite_ambiente"] = (
+                "Segredo pendente em local semiprivado: Mary pode falar com mais clareza, mas ainda com cautela. "
+                "Ela deve manter a pendência viva, medir riscos, observar quem pode ouvir e evitar decisões precipitadas."
+            )
+
     else:
-        # Privado: o tom manual pode ser executado com mais liberdade.
+        # Privado: o tom manual pode ser executado com mais liberdade,
+        # exceto Segredo pendente, que troca o eixo da cena para tensão narrativa.
         if tom_manual in ("Malícia", "Flerte", "Intimidade"):
             cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
 
+        elif tom_manual == "Segredo pendente":
+            cfg["tipo_de_cena"] = "segredo_pendente"
+            cfg["tom_da_cena"] = "segredo e risco"
+            cfg["estilo_de_iniciativa"] = "ponderação cúmplice"
+            cfg["modo_relacional"] = "cumplicidade_tensa"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "segredo_pendente"
+            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.65
+            cfg["limite_ambiente"] = (
+                "Segredo pendente em local privado: Mary deve tratar a pendência como eixo principal da cena. "
+                "Ela pode ser cúmplice, cautelosa, estratégica ou hesitante. "
+                "O segredo deve influenciar subtexto, olhar, pausas e decisões. "
+                "Não deve resolver, revelar, esquecer ou abandonar o segredo sem ação clara do usuário."
+            )
+
+    # ======================================================
+    # RESET FÍSICO QUANDO O TOM MUDA PARA SEGREDO PENDENTE
+    # ======================================================
+    if tom_manual == "Segredo pendente":
+        state["force_resolution_now"] = False
+        state["resolution_done"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
     # ======================================================
     # APLICA NO STATE
     # ======================================================
@@ -1667,6 +1758,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "estado_emocional": state.get("estado_emocional", "confiante"),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
+        "segredo_ativo": state.get("segredo_ativo", ""),
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
         "physical_phase": state.get("physical_phase", 0),
@@ -1702,6 +1794,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "estado_emocional",
         "tom_manual_da_cena",
         "tom_da_cena",
+        "segredo_ativo",
     ]
     for campo in campos:
         if campo in facts and facts[campo] not in ("", None):
@@ -1925,6 +2018,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     normalizar_estado(state)
     facts = sincronizar_facts_basicos(state)
+    segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
@@ -2220,6 +2314,18 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 - "interlocutor" deve ser sempre null.
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
+
+[SEGREDO / PENDÊNCIA ATIVA]
+{segredo_ativo if segredo_ativo else "Nenhum segredo ou pendência ativa."}
+
+REGRAS:
+- Se houver segredo ou pendência ativa, Mary não deve esquecer esse assunto.
+- Mary não precisa mencionar o segredo em todo turno.
+- O segredo deve influenciar subtexto, hesitação, olhar, escolha de palavras e decisões.
+- Se a cena se aproximar do tema, Mary deve retomar a pendência naturalmente.
+- Não resolver o segredo sem ação clara do usuário ou decisão explícita de Mary.
+- Não transformar a pendência em exposição artificial.
+
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
@@ -2619,6 +2725,26 @@ with st.sidebar:
         help=(
             "Define a direção narrativa principal. "
             "A privacidade detectada apenas limita ou redireciona esse tom."
+        ),
+    )
+    
+    # ======================================================
+    # SEGREDO / PENDÊNCIA ATIVA
+    # Mantém vivo um fio narrativo que não deve ser esquecido.
+    # Ex: colar, plano, mentira, risco, promessa, suspeita.
+    # ======================================================
+    state["segredo_ativo"] = st.text_area(
+        "Segredo / Pendência ativa",
+        value=state.get("segredo_ativo", ""),
+        height=100,
+        placeholder=(
+            "Ex: Silvia deseja ficar com o colar valioso de Nando. "
+            "Mary está dividida entre cumplicidade com Silvia e receio das consequências. "
+            "O colar ainda não foi levado; a decisão está pendente."
+        ),
+        help=(
+            "Use este campo para manter vivo um assunto importante que pode ser esquecido pelo histórico. "
+            "Mary não precisa mencionar isso todo turno, mas deve levar em conta no subtexto e nas decisões."
         ),
     )
     
