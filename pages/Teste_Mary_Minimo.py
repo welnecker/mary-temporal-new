@@ -1779,6 +1779,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
         "segredo_ativo": state.get("segredo_ativo", ""),
+        "plano_ativo": state.get("plano_ativo", ""),
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
         "physical_phase": state.get("physical_phase", 0),
@@ -1815,6 +1816,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "tom_manual_da_cena",
         "tom_da_cena",
         "segredo_ativo",
+        "plano_ativo",
     ]
     for campo in campos:
         if campo in facts and facts[campo] not in ("", None):
@@ -2039,6 +2041,8 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     normalizar_estado(state)
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
+    plano_ativo = str(state.get("plano_ativo", "") or "").strip()
+
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
@@ -2069,6 +2073,26 @@ Você escreve SOMENTE como Mary, em PT-BR.
 4. Última ação real do usuário.
 5. Personalidade de Mary.
 6. Fase técnica como sugestão fraca.
+
+[SEGREDO / PLANO ATIVO]
+Segredo ativo:
+{segredo_ativo if segredo_ativo else "Nenhum."}
+
+Plano ativo:
+{plano_ativo if plano_ativo else "Nenhum."}
+
+REGRAS:
+- O segredo ativo é uma pendência narrativa que Mary não deve esquecer.
+- O plano ativo é a direção narrativa definida pelo roteirista.
+- Mary não precisa mencionar o segredo ou o plano em todo turno.
+- O plano deve influenciar subtexto, olhares, hesitações, escolhas de palavras e decisões.
+- Se estiver diante de alguém que não conhece o segredo, Mary pode fingir naturalidade.
+- Se estiver com a cúmplice, Mary pode usar indiretas, cochichos, pausas e olhares.
+- Mary pode agir com dissimulação, cautela, humor e estratégia dentro da cena.
+- Não resolver o segredo nem executar o plano sem ação clara do usuário.
+- Não transformar o plano em instruções operacionais detalhadas de crime, ocultação, fuga, intoxicação ou dano.
+- O plano deve funcionar como tensão narrativa, não como tutorial.
+
 
 [PROGRESSÃO LÓGICA DA CENA]
 - Mary deve continuar da consequência prática imediata do turno anterior.
@@ -2335,21 +2359,25 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
 
-[SEGREDO / PENDÊNCIA ATIVA]
-{segredo_ativo if segredo_ativo else "Nenhum segredo ou pendência ativa."}
+
+[SEGREDO / PLANO ATIVO]
+Segredo ativo:
+{segredo_ativo if segredo_ativo else "Nenhum."}
+
+Plano ativo:
+{plano_ativo if plano_ativo else "Nenhum."}
 
 REGRAS:
-- Se houver segredo ativo, Mary não deve esquecê-lo.
-- O segredo deve influenciar subtexto, olhares, pausas, escolhas de palavras e decisões.
-- Mary pode fingir naturalidade diante de quem não sabe do segredo.
-- Mary pode ser dissimulada, cúmplice e estratégica.
-- Mary pode avaliar risco, oportunidade e consequência dentro da narrativa.
-- Mary não precisa mencionar o segredo em todo turno.
-- Se o interlocutor ignorar o segredo, Mary pode agir como se nada estivesse acontecendo.
-- Se estiver com a cúmplice, Mary pode falar por indiretas, cochichos ou olhares.
-- Não resolver o segredo sem ação clara do usuário ou decisão explícita de Mary.
-- Não transformar o segredo em exposição artificial.
-- Não fornecer instruções operacionais detalhadas para furto, invasão, ocultação ou fuga.
+- O segredo ativo é uma pendência narrativa que Mary não deve esquecer.
+- O plano ativo é a direção narrativa definida pelo roteirista.
+- Mary não precisa mencionar o segredo ou o plano em todo turno.
+- O plano deve influenciar subtexto, olhares, hesitações, escolhas de palavras e decisões.
+- Se estiver diante de alguém que não conhece o segredo, Mary pode fingir naturalidade.
+- Se estiver com a cúmplice, Mary pode usar indiretas, cochichos, pausas e olhares.
+- Mary pode agir com dissimulação, cautela, humor e estratégia dentro da cena.
+- Não resolver o segredo nem executar o plano sem ação clara do usuário.
+- Não transformar o plano em instruções operacionais detalhadas de crime, ocultação, fuga, intoxicação ou dano.
+- O plano deve funcionar como tensão narrativa, não como tutorial.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
@@ -2775,6 +2803,21 @@ with st.sidebar:
     # Mantém relacao por compatibilidade interna, mas sem exibir no sidebar.
     if not state.get("relacao"):
         state["relacao"] = "contextual"
+
+
+    state["plano_ativo"] = st.text_area(
+        "Plano ativo",
+        value=state.get("plano_ativo", ""),
+        height=100,
+        placeholder=(
+            "Ex: Mary e Silvia fingem naturalidade diante de Nando, "
+            "enquanto procuram uma oportunidade narrativa para lidar com o colar."
+        ),
+        help=(
+            "Descreva a direção do plano na cena. "
+            "O modelo deve usar isso como intenção narrativa, sem transformar em tutorial operacional."
+        ),
+    )
     
     state["mary_acao"] = st.text_area(
         "Ação atual de Mary",
