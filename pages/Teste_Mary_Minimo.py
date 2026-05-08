@@ -5,6 +5,7 @@ import requests
 import streamlit as st
 import gspread
 
+from model_eval import salvar_model_eval_na_planilha
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 
@@ -2706,16 +2707,18 @@ if fala_usuario:
     if fala_usuario:
         with st.chat_message("user", avatar="👤"):
             st.write(fala_usuario)
-
+       
         with st.chat_message("assistant", avatar="🌙"):
+            resposta_final = ""
+        
             with st.spinner("Mary está respondendo..."):
-
+        
                 # ==================================================
                 # 1) Atualiza interlocutor e progressão social
                 # ==================================================
                 atualizar_interlocutor_ativo(state, fala_usuario)
                 atualizar_progressao_social(state, fala_usuario)
-
+        
                 # ==================================================
                 # 2) Aplica o tom manual, privacidade e controles base
                 # IMPORTANTE:
@@ -2723,7 +2726,7 @@ if fala_usuario:
                 # rebaixar physical_phase já avançado.
                 # ==================================================
                 normalizar_estado(state)
-
+        
                 # ==================================================
                 # 3) Detecta estimulação real / pré-pico de Mary
                 # Deve acontecer ANTES de montar o prompt.
@@ -2733,7 +2736,7 @@ if fala_usuario:
                     fala_usuario,
                     resposta_limpa="",
                 )
-
+        
                 # ==================================================
                 # 4) Decide se este turno deve resolver o pico de Mary
                 # Isso precisa vir ANTES de processar_turno(),
@@ -2743,14 +2746,14 @@ if fala_usuario:
                     state,
                     fala_usuario,
                 )
-
+        
                 # ==================================================
                 # 5) Sincroniza facts finais para o prompt
                 # Agora os facts já carregam force_resolution_now,
                 # physical_phase, scene_stage e mary_intent corretos.
                 # ==================================================
                 sincronizar_facts_basicos(state)
-
+        
                 # ==================================================
                 # 6) Gera resposta
                 # ==================================================
@@ -2759,31 +2762,74 @@ if fala_usuario:
                     fala_usuario,
                     model=model,
                 )
-
+        
                 st.session_state["mary_last_debug"] = resultado
-
-            renderizar_resposta_mary(resultado["resposta_final_limpa"])
-
+        
+                resposta_final = str(
+                    resultado.get("resposta_final_limpa", "") or ""
+                ).strip()
+        
+                # ==================================================
+                # 7) Salva avaliação do modelo em módulo externo
+                # ==================================================
+                avaliacao_modelo = salvar_model_eval_na_planilha(
+                    get_spreadsheet_func=_get_spreadsheet,
+                    state=state,
+                    fala_usuario=fala_usuario,
+                    resposta=resposta_final,
+                    model=model,
+                    resultado=resultado,
+                )
+        
+                st.session_state["mary_last_model_eval"] = avaliacao_modelo
+        
+            renderizar_resposta_mary(resposta_final)
+        
         st.stop()
 
 if "mary_last_debug" in st.session_state:
     with st.expander("🧪 Última análise técnica", expanded=False):
         dbg = st.session_state["mary_last_debug"]
+
         st.markdown("### Prompt enviado ao modelo")
-        st.code(json.dumps(dbg.get("mensagens", []), ensure_ascii=False, indent=2), language="json")
+        st.code(
+            json.dumps(
+                dbg.get("mensagens", []),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            language="json",
+        )
+
         st.markdown("### Resposta bruta")
         st.write(dbg.get("resposta_bruta", ""))
+
         st.markdown("### Validação")
         validacao = dbg.get("validacao", {})
+
         if validacao.get("bloqueios"):
             st.error({"bloqueios": validacao.get("bloqueios")})
         elif validacao.get("alertas"):
             st.warning({"alertas": validacao.get("alertas")})
         else:
             st.success("Nenhuma violação detectada.")
+
         st.markdown("### State update extraído")
         st.json(dbg.get("update", {}))
+
         st.markdown("### Resposta final limpa")
         renderizar_resposta_mary(dbg.get("resposta_final_limpa", ""))
+
         st.markdown("### Estado real salvo")
         st.json(dbg.get("state", {}))
+
+if "mary_last_model_eval" in st.session_state:
+    with st.expander("📊 Avaliação do modelo", expanded=False):
+        avaliacao = st.session_state.get("mary_last_model_eval", {})
+
+        nota_final = avaliacao.get("nota_final", None)
+
+        if nota_final is not None:
+            st.metric("Nota final do modelo", nota_final)
+
+        st.json(avaliacao)
