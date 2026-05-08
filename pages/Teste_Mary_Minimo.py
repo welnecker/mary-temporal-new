@@ -2844,70 +2844,65 @@ with st.sidebar:
         ),
     )
     
-   
+       
     # ======================================================
     # SEGREDO / PENDÊNCIA ATIVA
-    # Mantém vivo um fio narrativo que não deve ser esquecido.
-    # Ex: colar, plano, mentira, risco, promessa, suspeita.
     # ======================================================
     state["segredo_ativo"] = st.text_area(
-        "Segredo / Pendência ativa",
+        "Segredo ativo",
         value=state.get("segredo_ativo", ""),
         height=100,
         placeholder=(
-            "Ex: Silvia deseja ficar com o colar valioso de Nando. "
-            "Mary está dividida entre cumplicidade com Silvia e receio das consequências. "
-            "O colar ainda não foi levado; a decisão está pendente."
+            "Ex: Silvia quer ficar com o colar valioso de Nando. "
+            "Mary sabe do segredo e precisa lidar com as consequências."
         ),
-        help=(
-            "Use este campo para manter vivo um assunto importante que pode ser esquecido pelo histórico. "
-            "Mary não precisa mencionar isso todo turno, mas deve levar em conta no subtexto e nas decisões."
-        ),
+        help="Mantém vivo um segredo, pendência ou assunto oculto da cena.",
     )
-    
+
     # Mantém relacao por compatibilidade interna, mas sem exibir no sidebar.
     if not state.get("relacao"):
         state["relacao"] = "contextual"
-    
+
     state["plano_ativo"] = st.text_area(
         "Plano ativo",
         value=state.get("plano_ativo", ""),
         height=100,
         placeholder=(
-            "Ex: Mary e Silvia fingem naturalidade diante de Nando, "
-            "enquanto procuram uma oportunidade narrativa para lidar com o colar."
+            "Ex: Mary vai à feira comprar frutas e legumes.\n"
+            "Ex: Mary e Silvia fingem naturalidade diante de Nando.\n"
+            "Ex: O plano é fazer Nando beber vinho demais e dormir."
         ),
         help=(
-            "Descreva a direção do plano na cena. "
-            "O modelo deve usar isso como intenção narrativa, sem transformar em tutorial operacional."
+            "Descreva a direção narrativa atual. "
+            "O modelo deve usar isso como intenção da cena, sem transformar em tutorial operacional."
         ),
     )
-    
+
     state["mary_acao"] = st.text_area(
         "Ação atual de Mary",
         value=state.get("mary_acao", ""),
         height=90,
     )
-    
+
     state["visual_atual"] = st.text_area(
         "Roupa / cabelo / visual atual",
         value=state.get("visual_atual", ""),
         height=90,
         placeholder=(
-            "Ex: Mary está de biquíni úmido, com uma saída de praia leve, "
-            "cabelos negros soltos e ainda molhados do banho."
+            "Ex: Mary está de short jeans, regata leve, sandália baixa, "
+            "cabelos negros presos em rabo de cavalo."
         ),
         help=(
-            "Descreve roupa, cabelo e aparência visual imediata de Mary. "
-            "Use para evitar que o modelo esqueça o que ela está vestindo ou como está o cabelo."
+            "Defina manualmente roupa, cabelo e aparência atual de Mary. "
+            "Esse campo vence histórico antigo."
         ),
     )
-    
+
     modo_surpresa_atual = state.get("modo_surpresa", "Desligado")
-    
+
     if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
         modo_surpresa_atual = "Desligado"
-    
+
     state["modo_surpresa"] = st.selectbox(
         "Modo de surpresa",
         options=OPCOES_MODO_SURPRESA,
@@ -2917,13 +2912,13 @@ with st.sidebar:
             "Ela não deve usar isso todo turno; é apenas uma chance narrativa."
         ),
     )
-    
+
     state["direcao_surpresa"] = st.text_area(
         "Direção da surpresa",
         value=state.get("direcao_surpresa", ""),
         height=80,
         placeholder=(
-            "Ex: surpresas de cotidiano, mensagens inesperadas, encontros sociais, "
+            "Ex: cotidiano, mensagens inesperadas, encontros sociais, "
             "pequenos conflitos, lembranças, oportunidades ou complicações."
         ),
         help=(
@@ -2931,15 +2926,15 @@ with st.sidebar:
             "Não escreva a ação exata; deixe Mary improvisar."
         ),
     )
-    
+
     state["estado_emocional"] = st.text_input(
         "Estado emocional",
         value=state.get("estado_emocional", "confiante"),
     )
-    
+
     normalizar_estado(state)
     sincronizar_facts_basicos(state)
-    
+
     st.info(
         f"""
         **Tom manual:** {state.get("tom_manual_da_cena")}  
@@ -2949,7 +2944,7 @@ with st.sidebar:
         **Tom aplicado:** {state.get("tom_da_cena")}  
         **Fase física:** {state.get("physical_phase")}  
         **Tensão:** {state.get("tension_level")}  
-        **Modo surpresa:** {state.get("modo_surpresa")}  
+        **Modo surpresa:** {state.get("modo_surpresa")}
         """
     )
     
