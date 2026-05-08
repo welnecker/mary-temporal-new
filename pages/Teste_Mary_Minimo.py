@@ -1780,6 +1780,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "privacidade": state.get("privacidade", get_privacidade_por_local(state.get("local", ""))),
         "estilo_de_iniciativa": state.get("estilo_de_iniciativa", "contextual"),
         "mary_acao": state.get("mary_acao", ""),
+        "visual_atual": state.get("visual_atual", ""),
         "estado_emocional": state.get("estado_emocional", "confiante"),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
@@ -1817,6 +1818,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "privacidade",
         "estilo_de_iniciativa",
         "mary_acao",
+        "visual_atual",
         "estado_emocional",
         "tom_manual_da_cena",
         "tom_da_cena",
@@ -1887,6 +1889,7 @@ def init_state() -> dict:
         "privacidade": "privado",
         "estilo_de_iniciativa": "contextual",
         "mary_acao": "Mary está próxima de Janio, olhando para ele com curiosidade.",
+        "visual_atual": "Mary está com cabelos negros soltos e visual coerente com a cena atual.",
         "estado_emocional": "confiante",
         "tom_manual_da_cena": "Intimidade",
         "tom_da_cena": "íntimo e direto",
@@ -2102,6 +2105,15 @@ REGRAS:
 - O plano ativo deve sempre representar o estágio atual da narrativa, não uma etapa antiga.
 - Não transformar o plano em instruções operacionais detalhadas de crime, ocultação, fuga, intoxicação ou dano.
 - O plano deve funcionar como tensão narrativa, não como tutorial.
+
+[VISUAL ATUAL DE MARY]
+{state.get("visual_atual", "") or "Não especificado."}
+
+REGRAS:
+- O visual atual inclui roupa, cabelo e aparência imediata de Mary.
+- Mary deve manter esse visual consistente até que o usuário ou os facts indiquem mudança.
+- Não trocar roupa, cabelo ou estado visual sem ação clara da cena.
+- Se houver conflito entre visual atual e histórico antigo, o visual atual vence.
 
 
 [PROGRESSÃO LÓGICA DA CENA]
@@ -2833,6 +2845,20 @@ with st.sidebar:
         "Ação atual de Mary",
         value=state.get("mary_acao", ""),
         height=90,
+    )
+
+    state["visual_atual"] = st.text_area(
+        "Roupa / cabelo / visual atual",
+        value=state.get("visual_atual", ""),
+        height=90,
+        placeholder=(
+            "Ex: Mary está de biquíni úmido, com uma saída de praia leve, "
+            "cabelos negros soltos e ainda molhados do banho."
+        ),
+        help=(
+            "Descreve roupa, cabelo e aparência visual imediata de Mary. "
+            "Use para evitar que o modelo esqueça o que ela está vestindo ou como está o cabelo."
+        ),
     )
     
     state["estado_emocional"] = st.text_input(
