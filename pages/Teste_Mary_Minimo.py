@@ -61,7 +61,10 @@ OPENROUTER_MODELS = {
      "deepseek-v4-flash": "deepseek/deepseek-v4-flash",    
      "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
      "meta-llama-llama-4-maverick": "meta-llama/llama-4-maverick",
-     "openai-gpt-4.1-mini": "openai/gpt-4.1-mini",
+     "openai-gpt-5-nano": "openai/gpt-5-nano",
+     "tencent-hy3-preview:free": "tencent/hy3-preview:free",
+     "onvidia-nemotron-3-super-120b-a12b:free": "nvidia/nemotron-3-super-120b-a12b:free",
+     "xiaomi-mimo-v2-flash": "xiaomi/mimo-v2-flash",
      "Auto Router": "openrouter/auto",
      "Manual": "__manual__",
 }
