@@ -969,6 +969,14 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         or tem_friccao
     )
 
+    if estimulacao_direta:
+        state["mary_stimulation_turns"] = int(state.get("mary_stimulation_turns", 0) or 0) + 1
+    else:
+        state["mary_stimulation_turns"] = max(
+            0,
+            int(state.get("mary_stimulation_turns", 0) or 0) - 1
+        )
+
     estimulacao_intensa = (
         (tem_penetracao and tem_ritmo_penetracao)
         or tem_oral_mary
@@ -986,6 +994,14 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         state["mary_intent"] = "sentir_e_conduzir"
 
     if estimulacao_intensa:
+        fase = max(fase, 5)
+        state["scene_stage"] = "pre_pico_mary"
+        state["mary_intent"] = "aproximar_do_pico"
+        state["mary_pre_orgasm_signals"] = True
+
+    # Se a estimulação direta já dura vários turnos, Mary deve chegar perto do pico
+    # mesmo que o usuário não use a palavra exata.
+    if int(state.get("mary_stimulation_turns", 0) or 0) >= 3:
         fase = max(fase, 5)
         state["scene_stage"] = "pre_pico_mary"
         state["mary_intent"] = "aproximar_do_pico"
@@ -1066,10 +1082,29 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "brinco com",
     ]
 
-    if fase >= 5 and pre_pico and any(p in texto for p in gatilhos_resolucao):
+    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
+
+    gatilho_textual = any(p in texto for p in gatilhos_resolucao)
+    
+    gatilho_por_duracao = (
+        fase >= 5
+        and pre_pico
+        and stimulation_turns >= 4
+    )
+    
+    gatilho_por_tensao_maxima = (
+        fase >= 5
+        and pre_pico
+        and float(state.get("tension_level", 0.0) or 0.0) >= 0.85
+        and float(state.get("desire_level", 0.0) or 0.0) >= 0.65
+        and stimulation_turns >= 3
+    )
+    
+    if fase >= 5 and pre_pico and (gatilho_textual or gatilho_por_duracao or gatilho_por_tensao_maxima):
         state["force_resolution_now"] = True
         state["mary_intent"] = "resolver_pico_mary"
         state["scene_stage"] = "pico_mary"
+        state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
     else:
         state["force_resolution_now"] = False
 
@@ -1321,12 +1356,42 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
 
-    # Só aplica fase/tensão base se a cena não estiver em pico/resolução.
+    # Só aplica base se a cena ainda não avançou fisicamente.
+    # O tom manual define o piso, não deve rebaixar fase já conquistada.
     if not state.get("force_resolution_now") and not state.get("mary_climax_done"):
-        state["physical_phase"] = int(cfg["physical_phase"])
-        state["scene_stage"] = cfg["scene_stage"]
-        state["desire_level"] = clamp(cfg["desire_level"])
-        state["tension_level"] = clamp(cfg["tension_level"])
+        fase_atual = int(state.get("physical_phase", 0) or 0)
+        fase_base = int(cfg["physical_phase"])
+    
+        nova_fase = max(fase_atual, fase_base)
+    
+        mapa_stage = {
+            0: "inicio",
+            1: "aproximacao",
+            2: "toque",
+            3: "intimidade",
+            4: "sexo_ou_estimulo",
+            5: "pre_pico_mary",
+            6: "pico_mary",
+            7: "aftercare",
+        }
+    
+        state["physical_phase"] = nova_fase
+        state["scene_stage"] = mapa_stage.get(nova_fase, cfg["scene_stage"])
+    
+        state["desire_level"] = clamp(
+            max(
+                float(state.get("desire_level", 0.0) or 0.0),
+                float(cfg["desire_level"]),
+            )
+        )
+    
+        state["tension_level"] = clamp(
+            max(
+                float(state.get("tension_level", 0.0) or 0.0),
+                float(cfg["tension_level"]),
+            )
+        )
+    
         state["connection_level"] = clamp(
             max(
                 float(state.get("connection_level", 0.0) or 0.0),
@@ -1473,6 +1538,11 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "physical_phase": state.get("physical_phase", 0),
         "scene_stage": state.get("scene_stage", "inicio"),
         "mary_intent": state.get("mary_intent", "presenca_viva"),
+        "force_resolution_now": state.get("force_resolution_now", False),
+        "mary_pre_orgasm_signals": state.get("mary_pre_orgasm_signals", False),
+        "mary_stimulation_turns": state.get("mary_stimulation_turns", 0),
+        "mary_climax_done": state.get("mary_climax_done", False),
+        "user_climax_done": state.get("user_climax_done", False),
         "toque_intimo_permitido": state.get("toque_intimo_permitido", False),
         "tensao_romantica_com_interlocutor": state.get("tensao_romantica_com_interlocutor", False),
         
@@ -1945,15 +2015,65 @@ STATE_UPDATE:
 - Se a cena continuar em ritmo intenso por mais um turno, Mary pode chegar ao próprio orgasmo se "force_resolution_now" for true ou se o usuário claramente estimular o pico dela.
 
 [RESOLUÇÃO DO PICO DE MARY]
-- Se "force_resolution_now" for true, este turno deve resolver somente o orgasmo de Mary.
-- Resolver o orgasmo de Mary significa mostrar consequência física dela: perda breve de ritmo, contração, respiração quebrada, gemido involuntário, corpo prendendo ou tremendo, depois queda de intensidade.
-- A causa do pico deve corresponder ao estímulo atual: penetração, sexo oral, masturbação, fricção ou combinação deles.
-- Não prolongue o "quase".
-- Não diga apenas "estou quase".
-- Não transforme o orgasmo de Mary em metáfora.
-- Depois do pico de Mary, reduza o ritmo dela por alguns segundos: respiração, tremor, sensibilidade, pausa, fala baixa.
-- A cena não termina.
-- Não narre orgasmo, finalização ou descarga do usuário.
+
+- Se "force_resolution_now" for true, ESTE TURNO DEVE resolver o orgasmo de Mary.
+- Mary DEVE verbalizar o próprio orgasmo em [FALA].
+- Não basta mostrar reação corporal.
+- A fala precisa deixar claro que Mary chegou ao pico agora.
+- Não prolongar pré-pico neste turno.
+- Não terminar com "vou gozar", "estou quase", "não aguento" ou equivalente sem resolver.
+
+OBRIGATÓRIO:
+1. Mostrar a causa física do pico de Mary.
+2. Mostrar a consequência corporal imediata.
+3. Fazer Mary verbalizar que está gozando ou que gozou.
+4. Reduzir o ritmo dela por alguns segundos depois do pico.
+
+A causa do pico deve corresponder ao estímulo atual:
+- penetração;
+- sexo oral;
+- masturbação;
+- fricção;
+- estímulo nos seios/mamilos;
+- combinação de estímulos.
+
+Resolver o orgasmo de Mary significa mostrar consequência física dela:
+- perda breve de ritmo;
+- contração;
+- respiração quebrada;
+- gemido involuntário;
+- corpo prendendo, tremendo ou falhando;
+- sensibilidade imediata depois do pico;
+- queda temporária de intensidade.
+
+A fala de Mary deve ser direta e reconhecível.
+Exemplos de estrutura permitida:
+- "Ahhh... eu estou gozando..."
+- "Caralho... eu gozei..."
+- "Não para... eu estou gozando..."
+- "Meu Deus... eu gozei com isso..."
+- "Eu não aguentei... gozei..."
+
+PROIBIDO:
+- transformar o orgasmo de Mary em metáfora;
+- usar apenas tremor, contração ou gemido sem fala clara;
+- dizer apenas "estou quase";
+- dizer apenas "vou gozar";
+- adiar o pico para outro turno;
+- resolver o orgasmo do usuário;
+- narrar descarga, finalização ou clímax do usuário;
+- encerrar a cena como se tudo tivesse acabado.
+
+Depois do pico de Mary:
+- reduza o ritmo dela por alguns segundos;
+- mostre respiração, tremor, sensibilidade, pausa ou fala baixa;
+- mantenha a cena viva;
+- não encerre a interação;
+- não force aftercare longo se a cena ainda está ativa.
+
+REGRA FINAL:
+Se "force_resolution_now" for true, Mary não está mais apenas chegando perto.
+Mary chega ao pico neste turno e verbaliza isso em [FALA].
 
 [REGRAS DO STATE_UPDATE]
 - "acao_mary" deve resumir apenas a posição/ação atual de Mary no final deste turno.
@@ -2557,36 +2677,93 @@ with st.sidebar:
 
 
 history = state.get("history", [])
+
 if not history:
     with st.chat_message("assistant", avatar="🌙"):
         st.write("Estou aqui, Janio. Pode começar a cena do jeito que quiser.")
+
 for msg in history:
     role = msg.get("role")
     content = str(msg.get("content", "") or "").strip()
+
     if not content:
         continue
+
     if role == "user":
         with st.chat_message("user", avatar="👤"):
             st.write(content)
+
     elif role == "assistant":
         with st.chat_message("assistant", avatar="🌙"):
             renderizar_resposta_mary(content)
 
+
 fala_usuario = st.chat_input("Escreva sua fala ou ação...")
+
 if fala_usuario:
     fala_usuario = fala_usuario.strip()
+
     if fala_usuario:
         with st.chat_message("user", avatar="👤"):
             st.write(fala_usuario)
+
         with st.chat_message("assistant", avatar="🌙"):
             with st.spinner("Mary está respondendo..."):
+
+                # ==================================================
+                # 1) Atualiza interlocutor e progressão social
+                # ==================================================
                 atualizar_interlocutor_ativo(state, fala_usuario)
                 atualizar_progressao_social(state, fala_usuario)
+
+                # ==================================================
+                # 2) Aplica o tom manual, privacidade e controles base
+                # IMPORTANTE:
+                # Depois da correção anterior, isso não pode mais
+                # rebaixar physical_phase já avançado.
+                # ==================================================
                 normalizar_estado(state)
+
+                # ==================================================
+                # 3) Detecta estimulação real / pré-pico de Mary
+                # Deve acontecer ANTES de montar o prompt.
+                # ==================================================
+                atualizar_pico_mary_por_contexto(
+                    state,
+                    fala_usuario,
+                    resposta_limpa="",
+                )
+
+                # ==================================================
+                # 4) Decide se este turno deve resolver o pico de Mary
+                # Isso precisa vir ANTES de processar_turno(),
+                # pois processar_turno() monta o prompt.
+                # ==================================================
+                preparar_resolucao_mary_se_necessario(
+                    state,
+                    fala_usuario,
+                )
+
+                # ==================================================
+                # 5) Sincroniza facts finais para o prompt
+                # Agora os facts já carregam force_resolution_now,
+                # physical_phase, scene_stage e mary_intent corretos.
+                # ==================================================
                 sincronizar_facts_basicos(state)
-                resultado = processar_turno(state, fala_usuario, model=model)
+
+                # ==================================================
+                # 6) Gera resposta
+                # ==================================================
+                resultado = processar_turno(
+                    state,
+                    fala_usuario,
+                    model=model,
+                )
+
                 st.session_state["mary_last_debug"] = resultado
+
             renderizar_resposta_mary(resultado["resposta_final_limpa"])
+
         st.stop()
 
 if "mary_last_debug" in st.session_state:
