@@ -777,7 +777,15 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     - Não narra orgasmo do usuário.
     - Não força orgasmo imediato; primeiro cria sinais de pré-pico.
     """
-    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+    texto = "\n".join(
+        [
+            str(fala_usuario or ""),
+            str(resposta_limpa or ""),
+            str(state.get("mary_acao", "") or ""),
+            str(state.get("scene_stage", "") or ""),
+            str(state.get("mary_intent", "") or ""),
+        ]
+    ).lower()
 
     if state.get("privacidade") != "privado":
         state["force_resolution_now"] = False
@@ -797,6 +805,19 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "penetrar",
         "penetração",
         "penetracao",
+        "penetração profunda",
+        "penetracao profunda",
+        "cavalgando",
+        "cavalga",
+        "cavalgar",
+        "montada",
+        "estocada",
+        "estocadas",
+        "entrar e sair",
+        "entra e sai",
+        "entrando e saindo",
+        "movimentos pélvicos",
+        "movimentos pelvicos",
         "pau dentro",
         "dentro de mim",
         "dentro dela",
@@ -806,6 +827,7 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "encaixando",
         "se encaixa",
         "se acomodando",
+        
     ]
 
     sinais_ritmo_penetracao = [
@@ -825,6 +847,19 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "continua",
         "batendo",
         "impacto",
+        "flop",
+        "flop!",
+        "flop! flop",
+        "sincronizando",
+        "quadril sobe",
+        "quadril subindo",
+        "mary desce",
+        "desce o quadril",
+        "subindo contra",
+        "movimento pélvico",
+        "movimento pelvico",
+        "ritmo frenético",
+        "ritmo frenetico",
     ]
 
     # ======================================================
@@ -959,38 +994,129 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "goza comigo",
     ]
 
-    tem_penetracao = any(p in texto for p in sinais_penetracao)
-    tem_ritmo_penetracao = any(p in texto for p in sinais_ritmo_penetracao)
-
-    tem_oral_mary = any(p in texto for p in sinais_oral_mary)
-    tem_masturbacao_mary = any(p in texto for p in sinais_masturbacao_mary)
-    tem_friccao = any(p in texto for p in sinais_friccao)
-    tem_seios = any(p in texto for p in sinais_seios)
-
-    tem_prazer = any(p in texto for p in sinais_prazer_mary)
-    tem_pre_orgasmo_explicito = any(p in texto for p in sinais_pre_orgasmo)
-
-    estimulacao_direta = (
-        tem_penetracao
-        or tem_oral_mary
-        or tem_masturbacao_mary
-        or tem_friccao
-    )
-
-    if estimulacao_direta:
-        state["mary_stimulation_turns"] = int(state.get("mary_stimulation_turns", 0) or 0) + 1
-    else:
-        state["mary_stimulation_turns"] = max(
-            0,
-            int(state.get("mary_stimulation_turns", 0) or 0) - 1
+        tem_penetracao = any(p in texto for p in sinais_penetracao)
+        tem_ritmo_penetracao = any(p in texto for p in sinais_ritmo_penetracao)
+    
+        tem_oral_mary = any(p in texto for p in sinais_oral_mary)
+        tem_masturbacao_mary = any(p in texto for p in sinais_masturbacao_mary)
+        tem_friccao = any(p in texto for p in sinais_friccao)
+        tem_seios = any(p in texto for p in sinais_seios)
+    
+        tem_prazer = any(p in texto for p in sinais_prazer_mary)
+        tem_pre_orgasmo_explicito = any(p in texto for p in sinais_pre_orgasmo)
+    
+        # ======================================================
+        # CONTEXTO FÍSICO JÁ ESTABELECIDO NA CENA
+        # ======================================================
+        mary_acao_lower = str(state.get("mary_acao", "") or "").lower()
+        scene_stage_lower = str(state.get("scene_stage", "") or "").lower()
+        mary_intent_lower = str(state.get("mary_intent", "") or "").lower()
+    
+        contexto_fisico_salvo = "\n".join(
+            [
+                mary_acao_lower,
+                scene_stage_lower,
+                mary_intent_lower,
+            ]
         )
-
-    estimulacao_intensa = (
-        (tem_penetracao and tem_ritmo_penetracao)
-        or tem_oral_mary
-        or tem_masturbacao_mary
-        or (tem_friccao and tem_prazer)
-    )
+    
+        contexto_penetracao_ativo = (
+            int(state.get("physical_phase", 0) or 0) >= 4
+            or "penetração" in contexto_fisico_salvo
+            or "penetracao" in contexto_fisico_salvo
+            or "penetrando" in contexto_fisico_salvo
+            or "cavalgando" in contexto_fisico_salvo
+            or "cavalga" in contexto_fisico_salvo
+            or "montada" in contexto_fisico_salvo
+            or "entra e sai" in contexto_fisico_salvo
+            or "entrar e sair" in contexto_fisico_salvo
+            or "dentro" in contexto_fisico_salvo
+            or "estocadas" in contexto_fisico_salvo
+            or "estocada" in contexto_fisico_salvo
+            or "sexo_ou_estimulo" in contexto_fisico_salvo
+            or "pre_pico_mary" in contexto_fisico_salvo
+        )
+    
+        contexto_oral_ativo = (
+            "sexo oral" in contexto_fisico_salvo
+            or "língua" in contexto_fisico_salvo
+            or "lingua" in contexto_fisico_salvo
+            or "clitóris" in contexto_fisico_salvo
+            or "clitoris" in contexto_fisico_salvo
+            or "chupando" in contexto_fisico_salvo
+            or "sucção" in contexto_fisico_salvo
+            or "succao" in contexto_fisico_salvo
+        )
+    
+        contexto_masturbacao_ativo = (
+            "dedos" in contexto_fisico_salvo
+            or "dedo" in contexto_fisico_salvo
+            or "masturbação" in contexto_fisico_salvo
+            or "masturbacao" in contexto_fisico_salvo
+            or "massageando" in contexto_fisico_salvo
+            or "esfregando" in contexto_fisico_salvo
+        )
+    
+        # Se já existe contexto físico salvo, o ritmo atual também deve contar.
+        if tem_ritmo_penetracao and contexto_penetracao_ativo:
+            tem_penetracao = True
+    
+        if contexto_oral_ativo:
+            tem_oral_mary = True
+    
+        if contexto_masturbacao_ativo:
+            tem_masturbacao_mary = True
+    
+        estimulacao_direta = (
+            tem_penetracao
+            or tem_oral_mary
+            or tem_masturbacao_mary
+            or tem_friccao
+        )
+    
+        # ======================================================
+        # CONTADOR DE ESTIMULAÇÃO
+        # ======================================================
+        if estimulacao_direta:
+            state["mary_stimulation_turns"] = int(state.get("mary_stimulation_turns", 0) or 0) + 1
+        else:
+            state["mary_stimulation_turns"] = max(
+                0,
+                int(state.get("mary_stimulation_turns", 0) or 0) - 1,
+            )
+    
+        estimulacao_intensa = (
+            (tem_penetracao and tem_ritmo_penetracao)
+            or tem_oral_mary
+            or tem_masturbacao_mary
+            or (tem_friccao and tem_prazer)
+        )
+    
+        # ======================================================
+        # CORREÇÃO DE FASE PELO CONTEXTO SALVO
+        # ======================================================
+        if contexto_penetracao_ativo:
+            fase = max(fase, 4)
+            state["scene_stage"] = "sexo_ou_estimulo"
+            state["mary_intent"] = "sentir_e_conduzir"
+    
+        if contexto_penetracao_ativo and tem_ritmo_penetracao:
+            fase = max(fase, 5)
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "aproximar_do_pico"
+            state["mary_pre_orgasm_signals"] = True
+    
+        if estimulacao_intensa:
+            fase = max(fase, 5)
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "aproximar_do_pico"
+            state["mary_pre_orgasm_signals"] = True
+    
+        if int(state.get("mary_stimulation_turns", 0) or 0) >= 3:
+            fase = max(fase, 5)
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "aproximar_do_pico"
+            state["mary_pre_orgasm_signals"] = True
 
     # ======================================================
     # 7) ATUALIZA FASE / STAGE / INTENÇÃO
