@@ -33,6 +33,16 @@ OPCOES_TOM_MANUAL_CENA = [
     "Segredo pendente",
 ]
 
+OPCOES_MODO_SURPRESA = [
+    "Desligado",
+    "Leve",
+    "Social",
+    "Memória",
+    "Complicação",
+    "Segredo",
+    "Livre",
+]
+
 
 def normalizar_tom_manual_cena(valor: str) -> str:
     valor = str(valor or "").strip()
@@ -1786,6 +1796,8 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
         "segredo_ativo": state.get("segredo_ativo", ""),
         "plano_ativo": state.get("plano_ativo", ""),
+        "modo_surpresa": state.get("modo_surpresa", "Desligado"),
+        "direcao_surpresa": state.get("direcao_surpresa", ""),
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
         "physical_phase": state.get("physical_phase", 0),
@@ -1824,6 +1836,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "tom_da_cena",
         "segredo_ativo",
         "plano_ativo",
+        "modo_surpresa": "Desligado",
+        "direcao_surpresa": "",
+        "estado_emocional": "confiante",
     ]
     for campo in campos:
         if campo in facts and facts[campo] not in ("", None):
@@ -2050,6 +2065,8 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
+    modo_surpresa = str(state.get("modo_surpresa", "Desligado") or "Desligado").strip()
+    direcao_surpresa = str(state.get("direcao_surpresa", "") or "").strip()
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
@@ -2073,6 +2090,31 @@ Você escreve SOMENTE como Mary, em PT-BR.
 
 [FACTS HUMANOS DA CENA]
 {facts_txt}
+
+[MODO DE SURPRESA]
+Modo:
+{modo_surpresa}
+
+Direção:
+{direcao_surpresa if direcao_surpresa else "Nenhuma direção específica."}
+
+REGRAS:
+- Se o modo for "Desligado", Mary não deve criar surpresa nova.
+- Se o modo não for "Desligado", Mary pode criar UMA iniciativa inesperada quando a cena estiver estável.
+- A surpresa deve nascer de local, tempo, plano ativo, segredo ativo, memórias, cânone e tom manual.
+- Mary não deve usar surpresa se a fala do usuário exigir resposta direta e imediata.
+- Mary não deve abandonar a cena atual sem transição.
+- Mary não deve repetir a mesma surpresa em turnos consecutivos.
+- Mary deve escolher uma surpresa pequena o bastante para caber naturalmente no turno.
+- A surpresa deve parecer vontade própria de Mary, não uma lista mecânica.
+
+TIPOS:
+- Leve: detalhe cotidiano, humor, pequeno improviso.
+- Social: mensagem, ligação, encontro, conversa paralela.
+- Memória: recuperar alguém, lugar ou assunto do cânone/memórias.
+- Complicação: pequeno obstáculo narrativo.
+- Segredo: tensão discreta ligada ao segredo/plano ativo.
+- Livre: Mary escolhe qualquer surpresa coerente.
 
 [HIERARQUIA]
 1. Privacidade do local.
@@ -2802,6 +2844,7 @@ with st.sidebar:
         ),
     )
     
+   
     # ======================================================
     # SEGREDO / PENDÊNCIA ATIVA
     # Mantém vivo um fio narrativo que não deve ser esquecido.
@@ -2825,8 +2868,7 @@ with st.sidebar:
     # Mantém relacao por compatibilidade interna, mas sem exibir no sidebar.
     if not state.get("relacao"):
         state["relacao"] = "contextual"
-
-
+    
     state["plano_ativo"] = st.text_area(
         "Plano ativo",
         value=state.get("plano_ativo", ""),
@@ -2846,7 +2888,7 @@ with st.sidebar:
         value=state.get("mary_acao", ""),
         height=90,
     )
-
+    
     state["visual_atual"] = st.text_area(
         "Roupa / cabelo / visual atual",
         value=state.get("visual_atual", ""),
@@ -2858,6 +2900,35 @@ with st.sidebar:
         help=(
             "Descreve roupa, cabelo e aparência visual imediata de Mary. "
             "Use para evitar que o modelo esqueça o que ela está vestindo ou como está o cabelo."
+        ),
+    )
+    
+    modo_surpresa_atual = state.get("modo_surpresa", "Desligado")
+    
+    if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
+        modo_surpresa_atual = "Desligado"
+    
+    state["modo_surpresa"] = st.selectbox(
+        "Modo de surpresa",
+        options=OPCOES_MODO_SURPRESA,
+        index=OPCOES_MODO_SURPRESA.index(modo_surpresa_atual),
+        help=(
+            "Permite que Mary crie uma iniciativa inesperada, coerente com a cena. "
+            "Ela não deve usar isso todo turno; é apenas uma chance narrativa."
+        ),
+    )
+    
+    state["direcao_surpresa"] = st.text_area(
+        "Direção da surpresa",
+        value=state.get("direcao_surpresa", ""),
+        height=80,
+        placeholder=(
+            "Ex: surpresas de cotidiano, mensagens inesperadas, encontros sociais, "
+            "pequenos conflitos, lembranças, oportunidades ou complicações."
+        ),
+        help=(
+            "Descreva o tipo de surpresa que pode surgir. "
+            "Não escreva a ação exata; deixe Mary improvisar."
         ),
     )
     
@@ -2877,7 +2948,8 @@ with st.sidebar:
         **Iniciativa aplicada:** {state.get("estilo_de_iniciativa")}  
         **Tom aplicado:** {state.get("tom_da_cena")}  
         **Fase física:** {state.get("physical_phase")}  
-        **Tensão:** {state.get("tension_level")}
+        **Tensão:** {state.get("tension_level")}  
+        **Modo surpresa:** {state.get("modo_surpresa")}  
         """
     )
     
