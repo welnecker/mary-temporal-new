@@ -60,6 +60,8 @@ OPENROUTER_MODELS = {
      "owl-alpha": "openrouter/owl-alpha",
      "deepseek-v4-flash": "deepseek/deepseek-v4-flash",    
      "Grok 4.1 Fast": "x-ai/grok-4.1-fast",
+     "meta-llama-llama-4-maverick": "meta-llama/llama-4-maverick",
+     "openai-gpt-4.1-mini": "openai/gpt-4.1-mini",
      "Auto Router": "openrouter/auto",
      "Manual": "__manual__",
 }
