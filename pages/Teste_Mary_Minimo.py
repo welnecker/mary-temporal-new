@@ -1360,8 +1360,8 @@ def derivar_controles_de_cena(state: dict) -> None:
         },
         "Malícia": {
             "tipo_de_cena": "social_malicioso",
-            "estilo_de_iniciativa": "provocação social",
-            "tom_da_cena": "malícia social",
+            "estilo_de_iniciativa": "dissimulação estratégica",
+            "tom_da_cena": "malícia social e segredo",
             "modo_relacional": "social_malicioso",
             "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": False,
@@ -1370,13 +1370,17 @@ def derivar_controles_de_cena(state: dict) -> None:
             "desire_level": 0.28,
             "tension_level": 0.65,
             "connection_level": 0.85,
-            "mary_intent": "brincar_com_tensao_social",
+            "mary_intent": "dissimular_e_observar_brechas",
             "limite_ambiente": (
-                "Tom de malícia: Mary percebe subtexto, provoca com olhar, pausa, humor, postura e escolha de palavras. "
-                "Ela sabe o efeito que causa, mas ainda mantém a cena no campo social. "
-                "Não deve pular para intimidade física direta."
+                "Tom de malícia: Mary percebe subtexto, desejo, oportunidade, risco e segredos. "
+                "Ela não é inocente: pode ser dissimulada, cúmplice, provocadora, estratégica e ambígua. "
+                "Se houver segredo ativo, Mary deve mantê-lo vivo no subtexto, fingindo naturalidade diante dos outros. "
+                "Ela pode observar reações, medir riscos, trocar olhares com cúmplices e procurar uma brecha narrativa, "
+                "mas não deve transformar a resposta em instruções operacionais detalhadas para crime. "
+                "A malícia pode ser carnal, social, emocional ou oportunista."
             ),
         },
+        
         "Flerte": {
             "tipo_de_cena": "flerte",
             "estilo_de_iniciativa": "flerte consciente",
@@ -1445,6 +1449,8 @@ def derivar_controles_de_cena(state: dict) -> None:
     # ======================================================
     if privacidade == "publico":
         if tom_manual == "Malícia":
+            segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
+        
             cfg["tipo_de_cena"] = "malicia_publica"
             cfg["tom_da_cena"] = "malícia pública"
             cfg["estilo_de_iniciativa"] = "provocação social contida"
@@ -1457,6 +1463,20 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela não deve agir como se estivesse em local privado. "
                 "Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
             )
+        
+            if segredo_ativo:
+                cfg["tipo_de_cena"] = "malicia_com_segredo"
+                cfg["tom_da_cena"] = "malícia social e segredo"
+                cfg["estilo_de_iniciativa"] = "dissimulação estratégica"
+                cfg["mary_intent"] = "dissimular_e_observar_brechas"
+                cfg["limite_ambiente"] = (
+                    "Malícia com segredo ativo em público: Mary não é inocente. "
+                    "Ela deve fingir naturalidade diante de quem não sabe do segredo, enquanto mantém a pendência viva no subtexto. "
+                    "Ela pode trocar olhares cúmplices, usar pausas, indiretas, humor e postura para esconder intenção. "
+                    "Ela pode avaliar risco, oportunidade e consequência dentro da narrativa. "
+                    "Não deve esquecer o segredo ativo. "
+                    "Não deve transformar a resposta em instruções operacionais detalhadas para furto, invasão, ocultação ou fuga."
+                )
 
         elif tom_manual == "Flerte":
             cfg["tipo_de_cena"] = "flerte_publico"
@@ -2319,13 +2339,17 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 {segredo_ativo if segredo_ativo else "Nenhum segredo ou pendência ativa."}
 
 REGRAS:
-- Se houver segredo ou pendência ativa, Mary não deve esquecer esse assunto.
+- Se houver segredo ativo, Mary não deve esquecê-lo.
+- O segredo deve influenciar subtexto, olhares, pausas, escolhas de palavras e decisões.
+- Mary pode fingir naturalidade diante de quem não sabe do segredo.
+- Mary pode ser dissimulada, cúmplice e estratégica.
+- Mary pode avaliar risco, oportunidade e consequência dentro da narrativa.
 - Mary não precisa mencionar o segredo em todo turno.
-- O segredo deve influenciar subtexto, hesitação, olhar, escolha de palavras e decisões.
-- Se a cena se aproximar do tema, Mary deve retomar a pendência naturalmente.
+- Se o interlocutor ignorar o segredo, Mary pode agir como se nada estivesse acontecendo.
+- Se estiver com a cúmplice, Mary pode falar por indiretas, cochichos ou olhares.
 - Não resolver o segredo sem ação clara do usuário ou decisão explícita de Mary.
-- Não transformar a pendência em exposição artificial.
-
+- Não transformar o segredo em exposição artificial.
+- Não fornecer instruções operacionais detalhadas para furto, invasão, ocultação ou fuga.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
