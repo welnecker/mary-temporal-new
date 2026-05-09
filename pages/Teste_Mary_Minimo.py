@@ -1693,6 +1693,21 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     - Janio não volta automaticamente só por ser usuario_real.
     """
     texto = str(fala_usuario or "").strip().lower()
+    interlocutor_campo = str(state.get("interlocutor", "") or "").strip()
+
+    if any(sep in interlocutor_campo for sep in [",", ";", "/", "|"]):
+        foco = detectar_foco_do_turno(fala_usuario, interlocutor_campo)
+    
+        state["interlocutor_foco_turno"] = foco
+        state["interlocutor_ativo_persistente"] = foco
+        state["ultimo_interlocutor_explicito"] = foco
+    
+        if foco.lower() in ("janio", "jânio", "janio donisete", "jânio donisete"):
+            state["janio_status_na_cena"] = "presente"
+        else:
+            state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
+    
+        return
 
     interlocutor_atual = str(
         state.get("interlocutor_ativo_persistente")
@@ -1752,6 +1767,52 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
         if interlocutor_atual.lower() != "janio":
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
 
+def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
+    """
+    Detecta quem é o foco do turno quando há mais de um interlocutor na cena.
+    Ex:
+    interlocutor_atual = "Silvia, Anthony"
+
+    Se o texto disser "Silvia cochicha", foco = Silvia.
+    Se disser "Anthony se aproxima", foco = Anthony.
+    Se não detectar ninguém, mantém o primeiro nome do grupo.
+    """
+    texto = str(fala_usuario or "").lower()
+    interlocutor_atual = str(interlocutor_atual or "").strip()
+
+    nomes = [
+        nome.strip()
+        for nome in re.split(r"[,;/|]", interlocutor_atual)
+        if nome.strip()
+    ]
+
+    if not nomes:
+        return interlocutor_atual or "Janio Donisete"
+
+    padroes_acao = [
+        r"\b{nome}\s+(cochicha|sussurra|fala|diz|responde|pergunta|grita|chama|se aproxima|aproxima|chega|entra|olha|sorri|toca|segura|puxa|manda mensagem|envia mensagem)\b",
+        r'"{nome}[^"]*"\s*:',
+        r"\bmensagem de\s+{nome}\b",
+        r"\b{name}\s*:\s*",
+    ]
+
+    for nome in nomes:
+        nome_lower = nome.lower()
+        nome_regex = re.escape(nome_lower)
+
+        for padrao in padroes_acao:
+            padrao_final = (
+                padrao
+                .replace("{nome}", nome_regex)
+                .replace("{name}", nome_regex)
+            )
+
+            if re.search(padrao_final, texto, flags=re.IGNORECASE):
+                return nome
+
+    # Se não detectou foco explícito, mantém o primeiro personagem listado.
+    return nomes[0]
+
 
 def normalizar_estado(state: dict) -> None:
     resetar_se_contexto_mudou(state)
@@ -1774,6 +1835,10 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
         "interlocutor": state.get("interlocutor", "Janio Donisete"),
+        "interlocutor_foco_turno": state.get(
+            "interlocutor_foco_turno",
+            state.get("interlocutor_ativo_persistente", state.get("interlocutor", "")),
+        ),
         "usuario_real": state.get("usuario_real", "Janio Donisete"),
         "janio_status_na_cena": state.get("janio_status_na_cena", "presente"),
         "interlocutor_ativo_persistente": state.get(
@@ -2191,6 +2256,16 @@ REGRAS:
 - Ausência de nome novo não significa retorno para Janio.
 - Ausência de nome novo significa continuidade do último interlocutor explícito.
 - Janio só deve voltar como interlocutor se for explicitamente introduzido, se o status dele for "presente", ou se os facts indicarem isso claramente.
+
+[CENA COM MÚLTIPLOS INTERLOCUTORES]
+- O campo "interlocutor" pode conter mais de uma pessoa, como "Silvia, Anthony".
+- Quando houver vários interlocutores, Mary deve identificar quem falou ou agiu no turno atual.
+- O campo "interlocutor_foco_turno" indica quem Mary deve responder diretamente neste turno.
+- Os demais nomes em "interlocutor" continuam presentes na cena e podem observar, reagir ou influenciar o subtexto.
+- Mary não deve responder como se todos tivessem falado ao mesmo tempo.
+- Se Silvia cochicha, Mary responde a Silvia, mas pode considerar Anthony presente.
+- Se Anthony se aproxima e fala, Mary responde a Anthony, mas pode considerar Silvia presente.
+- Se ninguém for claramente indicado, Mary mantém o foco no interlocutor persistente.
 
 [LIMITE POR PRIVACIDADE]
 - Público: sensualidade discreta. Evitar exposição explícita, sexo, clímax, mão dentro da roupa ou ação que chame atenção.
