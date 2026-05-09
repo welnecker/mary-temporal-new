@@ -692,10 +692,60 @@ def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
 def get_privacidade_por_local(local: str) -> str:
     """
     Detecta privacidade automaticamente pelo texto do local.
-    A ordem importa: privado vem antes de público.
+
+    Regra principal:
+    - Cabine exclusiva / privada / trancada vence o fato de estar dentro de clube, boate ou local público.
+    - Banheiro comum de clube não é necessariamente privado.
+    - A ordem importa: exceções fortes vêm antes das listas gerais.
     """
     local = str(local or "").strip().lower()
 
+    # ======================================================
+    # EXCEÇÃO FORTE:
+    # Cabines exclusivas/trancadas funcionam como ambiente privado,
+    # mesmo dentro de clube, banheiro, boate ou local público.
+    # ======================================================
+    if "cabine" in local and any(
+        p in local
+        for p in [
+            "privada",
+            "privativo",
+            "exclusiva",
+            "exclusivo",
+            "sócios",
+            "socios",
+            "trancada",
+            "trancado",
+            "fechada",
+            "fechado",
+            "particular",
+            "reservada",
+            "reservado",
+        ]
+    ):
+        return "privado"
+
+    if "banheiro" in local and "cabine" in local and any(
+        p in local
+        for p in [
+            "privada",
+            "privativo",
+            "exclusiva",
+            "exclusivo",
+            "trancada",
+            "trancado",
+            "fechada",
+            "fechado",
+            "particular",
+            "reservada",
+            "reservado",
+        ]
+    ):
+        return "privado"
+
+    # ======================================================
+    # PRIVADOS GERAIS
+    # ======================================================
     locais_privados = [
         "quarto",
         "suíte",
@@ -717,14 +767,15 @@ def get_privacidade_por_local(local: str) -> str:
         "bangalô",
         "bangalo",
         "banheiro privado",
-        "cabine trancada",
-        "cabine do banheiro",
-        "banheiro feminino",
-        "toalete feminino",
         "toalete privado",
-        "toalete",
+        "banheiro particular",
+        "toalete particular",
     ]
 
+    # ======================================================
+    # SEMIPRIVADOS
+    # Banheiro/toalete comum entra aqui, não como privado.
+    # ======================================================
     locais_semiprivados = [
         "carro",
         "uber",
@@ -733,9 +784,23 @@ def get_privacidade_por_local(local: str) -> str:
         "cinema",
         "corredor",
         "elevador",
+        "banheiro",
+        "banheiro feminino",
+        "banheiro masculino",
+        "toalete",
+        "toalete feminino",
+        "toalete masculino",
+        "lavabo",
     ]
 
+    # ======================================================
+    # PÚBLICOS
+    # ======================================================
     locais_publicos = [
+        "clube",
+        "boate",
+        "balada",
+        "pista",
         "praia",
         "rua",
         "shopping",
@@ -761,7 +826,6 @@ def get_privacidade_por_local(local: str) -> str:
         return "publico"
 
     return "publico"
-
 
 def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
     valor = str(valor or "").strip()
