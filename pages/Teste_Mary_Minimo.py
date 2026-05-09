@@ -1767,6 +1767,44 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
         if interlocutor_atual.lower() != "janio":
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
 
+def sincronizar_interlocutor_manual(state: dict) -> None:
+    """
+    Quando o campo manual 'interlocutor' muda no sidebar,
+    ele vira a fonte principal.
+
+    Isso impede resíduos como:
+    interlocutor = "Joselina, Anthony"
+    foco/persistente/último = "Silvia"
+    """
+    interlocutor = str(state.get("interlocutor", "") or "").strip()
+
+    if not interlocutor:
+        interlocutor = "Janio Donisete"
+        state["interlocutor"] = interlocutor
+
+    anterior = str(state.get("_interlocutor_manual_anterior", "") or "").strip()
+
+    # Se o usuário mudou manualmente o interlocutor no sidebar,
+    # resetamos os campos derivados.
+    if interlocutor != anterior:
+        nomes = [
+            nome.strip()
+            for nome in re.split(r"[,;/|]", interlocutor)
+            if nome.strip()
+        ]
+
+        foco_padrao = nomes[0] if nomes else interlocutor
+
+        state["interlocutor_foco_turno"] = foco_padrao
+        state["interlocutor_ativo_persistente"] = foco_padrao
+        state["ultimo_interlocutor_explicito"] = foco_padrao
+        state["_interlocutor_manual_anterior"] = interlocutor
+
+        if foco_padrao.lower() in ("janio", "jânio", "janio donisete", "jânio donisete"):
+            state["janio_status_na_cena"] = "presente"
+        elif state.get("janio_status_na_cena") == "presente":
+            state["janio_status_na_cena"] = "roteirista"
+
 def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
     """
     Detecta quem é o foco do turno quando há mais de um interlocutor na cena.
@@ -2862,7 +2900,13 @@ with st.sidebar:
     state["interlocutor"] = st.text_input(
         "Interlocutor ativo",
         value=state.get("interlocutor", "Janio Donisete"),
+        help=(
+            "Personagem ou grupo com quem Mary está interagindo agora. "
+            "Ex: Silvia | Joselina | Joselina, Anthony"
+        ),
     )
+    
+    sincronizar_interlocutor_manual(state)
     
     state["interlocutor_ativo_persistente"] = st.text_input(
         "Interlocutor persistente",
