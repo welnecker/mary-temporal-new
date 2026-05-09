@@ -717,6 +717,12 @@ def get_privacidade_por_local(local: str) -> str:
         "bangalô",
         "bangalo",
         "banheiro privado",
+        "cabine trancada",
+        "cabine do banheiro",
+        "banheiro feminino",
+        "toalete feminino",
+        "toalete privado",
+        "toalete",
     ]
 
     locais_semiprivados = [
