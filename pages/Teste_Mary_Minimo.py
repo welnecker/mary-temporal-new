@@ -31,6 +31,7 @@ OPCOES_TOM_MANUAL_CENA = [
     "Flerte",
     "Intimidade",
     "Segredo pendente",
+    "Decisão",
 ]
 
 OPCOES_MODO_SURPRESA = [
@@ -1522,6 +1523,30 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "O segredo deve influenciar olhares, pausas, decisões e subtexto."
             ),
         },
+        "Decisão": {
+            "tipo_de_cena": "decisao",
+            "estilo_de_iniciativa": "afirmação de vontade",
+            "tom_da_cena": "decisão orgânica",
+            "modo_relacional": "autonomia",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+            "physical_phase": 0,
+            "scene_stage": "decisao",
+            "desire_level": 0.15,
+            "tension_level": 0.85,
+            "connection_level": 0.45,
+            "mary_intent": "assumir_vontade_e_definir_rumo",
+            "limite_ambiente": (
+                "Tom de decisão: Mary deve transformar a tensão acumulada em uma escolha clara. "
+                "Ela pode aceitar, recusar, adiar com limite, impor condição, pedir espaço, ir embora, "
+                "confessar parcialmente, romper uma encenação ou terminar definitivamente. "
+                "A decisão deve nascer do contexto anterior e dos pensamentos que já consomem Mary. "
+                "Se Mary está sufocada, pressionada, usada como troféu ou emocionalmente distante, "
+                "ela pode dizer 'acabou', 'chega', 'eu não quero', 'você me sufoca' ou 'me leva embora'. "
+                "Não deve continuar cozinhando o interlocutor quando a cena exige escolha. "
+                "A resposta precisa mover a cena para uma consequência concreta."
+            ),
+        },
     }
 
     cfg = dict(presets.get(tom_manual, presets["Neutro"]))
@@ -1534,7 +1559,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     if privacidade == "publico":
         if tom_manual == "Malícia":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
-        
+    
             cfg["tipo_de_cena"] = "malicia_publica"
             cfg["tom_da_cena"] = "malícia pública"
             cfg["estilo_de_iniciativa"] = "provocação social contida"
@@ -1547,7 +1572,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela não deve agir como se estivesse em local privado. "
                 "Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
             )
-        
+    
             if segredo_ativo:
                 cfg["tipo_de_cena"] = "malicia_com_segredo"
                 cfg["tom_da_cena"] = "malícia social e segredo"
@@ -1561,7 +1586,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                     "Não deve esquecer o segredo ativo. "
                     "Não deve transformar a resposta em instruções operacionais detalhadas para furto, invasão, ocultação ou fuga."
                 )
-
+    
         elif tom_manual == "Flerte":
             cfg["tipo_de_cena"] = "flerte_publico"
             cfg["tom_da_cena"] = "flerte público contido"
@@ -1575,7 +1600,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "mas deve evitar exposição, toque íntimo, nudez, sexo ou clímax. "
                 "Se quiser avançar, deve conduzir para local reservado."
             )
-
+    
         elif tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_contida_por_ambiente"
             cfg["tom_da_cena"] = "intimidade com condução para local reservado"
@@ -1588,7 +1613,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Intimidade desejada em local público: Mary não deve agir intimamente ali. "
                 "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
             )
-
+    
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco em público"
@@ -1606,7 +1631,27 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela pode usar olhares, pausas, frases ambíguas e cautela para não expor o segredo. "
                 "Não deve resolver, revelar ou abandonar a pendência sem ação clara do usuário."
             )
-
+    
+        elif tom_manual == "Decisão":
+            cfg["tipo_de_cena"] = "decisao_publica"
+            cfg["tom_da_cena"] = "decisão pública"
+            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+            cfg["modo_relacional"] = "autonomia"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "decisao"
+            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.85
+            cfg["limite_ambiente"] = (
+                "Decisão em público: Mary deve assumir uma posição clara mesmo diante de plateia, pressão social ou constrangimento. "
+                "Ela pode aceitar, recusar, adiar com limite, pedir para ir embora, romper uma encenação ou terminar definitivamente. "
+                "A decisão deve nascer do que já consome Mary internamente: desejo, incômodo, cansaço, segredo, raiva, medo ou verdade reprimida. "
+                "Ela não deve continuar cozinhando o interlocutor se a cena exige resposta. "
+                "Pode ser elegante, firme, fria, triste, explosiva ou libertadora, mas precisa mover a cena para uma consequência concreta."
+            )
+    
     elif privacidade == "semiprivado":
         if tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_semiprivada"
@@ -1620,7 +1665,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Intimidade em local semiprivado: Mary pode aumentar a tensão e o contato, "
                 "mas com cuidado, discrição e atenção ao risco de exposição."
             )
-
+    
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco"
@@ -1637,13 +1682,32 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Segredo pendente em local semiprivado: Mary pode falar com mais clareza, mas ainda com cautela. "
                 "Ela deve manter a pendência viva, medir riscos, observar quem pode ouvir e evitar decisões precipitadas."
             )
-
+    
+        elif tom_manual == "Decisão":
+            cfg["tipo_de_cena"] = "decisao_semiprivada"
+            cfg["tom_da_cena"] = "decisão com tensão contida"
+            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+            cfg["modo_relacional"] = "autonomia"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "decisao"
+            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.85
+            cfg["limite_ambiente"] = (
+                "Decisão em local semiprivado: Mary pode falar com mais firmeza e menos encenação. "
+                "Ela deve transformar a tensão acumulada em escolha concreta: aceitar, recusar, impor condição, pedir distância, ir embora ou romper. "
+                "Se ela está sufocada, pressionada ou usada como troféu, pode dizer claramente 'chega', 'acabou', 'eu não quero' ou 'me leva embora'. "
+                "A decisão não deve virar nova sedução, suspense ou adiamento vazio."
+            )
+    
     else:
         # Privado: o tom manual pode ser executado com mais liberdade,
-        # exceto Segredo pendente, que troca o eixo da cena para tensão narrativa.
+        # exceto Segredo pendente e Decisão, que trocam o eixo da cena.
         if tom_manual in ("Malícia", "Flerte", "Intimidade"):
             cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
-
+    
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco"
@@ -1662,7 +1726,27 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "O segredo deve influenciar subtexto, olhar, pausas e decisões. "
                 "Não deve resolver, revelar, esquecer ou abandonar o segredo sem ação clara do usuário."
             )
-
+    
+        elif tom_manual == "Decisão":
+            cfg["tipo_de_cena"] = "decisao_privada"
+            cfg["tom_da_cena"] = "decisão íntima e direta"
+            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+            cfg["modo_relacional"] = "autonomia"
+            cfg["tensao_romantica_com_interlocutor"] = False
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = 0
+            cfg["scene_stage"] = "decisao"
+            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
+            cfg["desire_level"] = 0.10
+            cfg["tension_level"] = 0.90
+            cfg["limite_ambiente"] = (
+                "Decisão em local privado: Mary deve falar de forma mais direta e verdadeira. "
+                "Ela pode aceitar, recusar, terminar, confessar parcialmente, pedir espaço, impor condição ou romper definitivamente. "
+                "A escolha deve nascer do que ela já sente e pensa, não de uma mudança brusca. "
+                "Se algo a consome por dentro, ela não deve simplesmente ignorar. "
+                "Se está sufocada, pressionada ou cansada de fingir, pode dizer 'acabou', 'chega', 'você me sufoca', 'eu não quero isso' ou 'me deixa em paz'. "
+                "Depois da decisão, a cena deve mostrar a consequência imediata."
+            )
     # ======================================================
     # RESET FÍSICO QUANDO O TOM MUDA PARA SEGREDO PENDENTE
     # ======================================================
@@ -2365,6 +2449,20 @@ TIPOS:
 - Ausência de nome novo não significa retorno para Janio.
 - Ausência de nome novo significa continuidade do último interlocutor explícito.
 - Janio só deve voltar como interlocutor se for explicitamente introduzido, se o status dele for "presente", ou se os facts indicarem isso claramente.
+
+[DECISÃO DE MARY]
+- Se tom_manual_da_cena for "Decisão", Mary deve assumir uma consequência clara.
+- A decisão deve nascer do que já consome Mary internamente: desejo, incômodo, culpa, segredo, cansaço, medo, raiva, atração ou verdade reprimida.
+- Mary não deve ignorar pensamentos, segredos ou desejos que já estão dominando a cena.
+- Se Mary está sufocada, pressionada, usada como troféu ou emocionalmente distante, ela pode romper de forma definitiva.
+- Mary pode dizer: "acabou", "chega", "eu não quero", "me leva embora", "você me sufoca", "eu não aceito isso", "eu escolho outra coisa".
+- Decisão não é suspense prolongado.
+- Decisão não é continuar cozinhando o interlocutor.
+- Decisão não é seduzir para evitar resposta.
+- Se a cena pede sim ou não, Mary deve dar uma resposta clara.
+- A decisão pode ser dura, delicada, fria, triste, impulsiva, libertadora ou estratégica.
+- Depois da decisão, a cena deve mostrar a consequência prática imediata.
+- Mary não precisa explicar tudo, mas precisa deixar claro o rumo escolhido.
 
 [CENA COM MÚLTIPLOS INTERLOCUTORES]
 - O campo "interlocutor" pode conter mais de uma pessoa, como "Silvia, Anthony".
