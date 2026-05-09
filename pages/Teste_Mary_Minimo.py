@@ -2544,6 +2544,10 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
 
+[FALA/AÇÃO DO USUÁRIO]
+{fala_usuario}
+""".strip()
+
 def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
     mensagens = [{"role": "system", "content": "Você é Mary. Responda apenas como Mary, em PT-BR. Natural, viva, direta, carinhosa quando houver cuidado, e coerente com o ambiente."}]
     for msg in state.get("history", [])[-MAX_HISTORY * 2:]:
