@@ -1324,7 +1324,14 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         and stimulation_turns >= 3
     )
     
-    if fase >= 5 and pre_pico and (gatilho_textual or gatilho_por_duracao or gatilho_por_tensao_maxima):
+    estimulos_minimos_para_resolver = stimulation_turns >= 3
+
+    if (
+        fase >= 5
+        and pre_pico
+        and estimulos_minimos_para_resolver
+        and (gatilho_textual or gatilho_por_duracao or gatilho_por_tensao_maxima)
+    ):
         state["force_resolution_now"] = True
         state["mary_intent"] = "resolver_pico_mary"
         state["scene_stage"] = "pico_mary"
@@ -1821,18 +1828,33 @@ def derivar_controles_de_cena(state: dict) -> None:
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
-    chave_atual = "|".join([str(state.get("local", "")), str(state.get("interlocutor", "")), str(state.get("tipo_de_cena", "")), str(state.get("privacidade", ""))])
+    chave_atual = "|".join([
+        str(state.get("local", "")),
+        str(state.get("interlocutor", "")),
+        str(state.get("tipo_de_cena", "")),
+        str(state.get("privacidade", "")),
+    ])
+
     chave_antiga = str(state.get("_contexto_anterior", "") or "")
+
     if chave_antiga and chave_atual != chave_antiga:
         state["physical_phase"] = 0
         state["scene_stage"] = "inicio"
         state["desire_level"] = 0.18
         state["tension_level"] = 0.12
-        state["connection_level"] = max(float(state.get("connection_level", 0.22) or 0.22), 0.22)
+        state["connection_level"] = max(
+            float(state.get("connection_level", 0.22) or 0.22),
+            0.22,
+        )
+
+        # Reset completo de resolução/pico
         state["resolution_done"] = False
         state["mary_climax_done"] = False
         state["user_climax_done"] = False
         state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+
     state["_contexto_anterior"] = chave_atual
 
 def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
