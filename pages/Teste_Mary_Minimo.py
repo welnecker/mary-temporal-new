@@ -1249,6 +1249,91 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     # A resolução deve ser decidida por preparar_resolucao_mary_se_necessario().
     state["force_resolution_now"] = False
 
+def detectar_climax_usuario(fala_usuario: str) -> bool:
+    texto = str(fala_usuario or "").lower()
+
+    sinais_climax_usuario = [
+        "gozei",
+        "gozei dentro",
+        "gozei em você",
+        "acabei de gozar",
+        "eu gozei",
+        "já gozei",
+        "estou gozando",
+        "tô gozando",
+        "to gozando",        
+        "gozando dentro",
+        "explodi",
+        "descarreguei",
+    ]
+
+    return any(s in texto for s in sinais_climax_usuario)
+
+def detectar_climax_mary_na_resposta(resposta: str) -> bool:
+    """
+    Detecta se a resposta final de Mary verbalizou claramente o próprio pico.
+    Isso sincroniza o state com a narrativa.
+    """
+    texto = str(resposta or "").lower()
+
+    sinais = [
+        "estou gozando",
+        "tô gozando",
+        "to gozando",
+        "eu gozei",
+        "gozei",
+        "gozei muito",
+        "acabei de gozar",
+        "eu estou gozando",
+        "eu não aguentei e gozei",
+        "não aguentei e gozei",
+    ]
+
+    return any(s in texto for s in sinais)
+
+
+def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
+    """
+    Atualiza flags depois que a resposta do modelo já foi gerada.
+    Importante: o modelo pode verbalizar que Mary chegou ao pico;
+    o state precisa acompanhar isso.
+    """
+    if detectar_climax_mary_na_resposta(resposta_final):
+        state["mary_climax_done"] = True
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+
+        if not state.get("user_climax_done", False):
+            state["partner_climax_pending"] = True
+        else:
+            state["partner_climax_pending"] = False
+
+def minimo_estimulos_para_mary(state: dict) -> int:
+    """
+    Define quantos turnos de estímulo real são necessários antes de Mary poder resolver o pico.
+
+    A intenção não é travar Mary, mas impedir pico cedo demais.
+    Com Janio, segura um pouco mais para preservar reciprocidade e progressão.
+    """
+    interlocutor = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor")
+        or ""
+    ).lower()
+
+    tipo = str(state.get("tipo_de_cena", "") or "").lower()
+    fase = int(state.get("physical_phase", 0) or 0)
+
+    if "janio" in interlocutor or "jânio" in interlocutor:
+        return 4
+
+    if "intimidade" in tipo and fase >= 4:
+        return 3
+
+    return 3
+
+
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
     """
     Decide quando o turno deve resolver o orgasmo de Mary.
@@ -1262,10 +1347,17 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
 
     if state.get("mary_climax_done"):
         state["force_resolution_now"] = False
+
+        if not state.get("user_climax_done", False):
+            state["partner_climax_pending"] = True
+        else:
+            state["partner_climax_pending"] = False
+
         return
 
     fase = int(state.get("physical_phase", 0) or 0)
     pre_pico = bool(state.get("mary_pre_orgasm_signals", False))
+    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
 
     gatilhos_resolucao = [
         # comando direto
@@ -1306,25 +1398,25 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "brinco com",
     ]
 
-    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
-
     gatilho_textual = any(p in texto for p in gatilhos_resolucao)
-    
+
+    min_turns = minimo_estimulos_para_mary(state)
+
     gatilho_por_duracao = (
         fase >= 5
         and pre_pico
-        and stimulation_turns >= 4
+        and stimulation_turns >= max(4, min_turns)
     )
-    
+
     gatilho_por_tensao_maxima = (
         fase >= 5
         and pre_pico
         and float(state.get("tension_level", 0.0) or 0.0) >= 0.85
         and float(state.get("desire_level", 0.0) or 0.0) >= 0.65
-        and stimulation_turns >= 3
+        and stimulation_turns >= min_turns
     )
-    
-    estimulos_minimos_para_resolver = stimulation_turns >= 3
+
+    estimulos_minimos_para_resolver = stimulation_turns >= min_turns
 
     if (
         fase >= 5
@@ -1338,6 +1430,13 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
     else:
         state["force_resolution_now"] = False
+
+    # Se Mary já chegou antes e o parceiro ainda não verbalizou conclusão,
+    # a cena continua aberta para reciprocidade.
+    if state.get("mary_climax_done") and not state.get("user_climax_done"):
+        state["partner_climax_pending"] = True
+    else:
+        state["partner_climax_pending"] = False
 
 def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
     """
@@ -1763,7 +1862,6 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
         state["mary_climax_done"] = False
-        state["user_climax_done"] = False
     # ======================================================
     # APLICA NO STATE
     # ======================================================
@@ -1825,6 +1923,7 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["resolution_done"] = False
         state["mary_climax_done"] = False
         state["user_climax_done"] = False
+        state["partner_climax_pending"] = False
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
@@ -1851,6 +1950,7 @@ def resetar_se_contexto_mudou(state: dict) -> None:
         state["resolution_done"] = False
         state["mary_climax_done"] = False
         state["user_climax_done"] = False
+        state["partner_climax_pending"] = False
         state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
@@ -2086,6 +2186,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "mary_stimulation_turns": state.get("mary_stimulation_turns", 0),
         "mary_climax_done": state.get("mary_climax_done", False),
         "user_climax_done": state.get("user_climax_done", False),
+        "partner_climax_pending": state.get("partner_climax_pending", False),
         "toque_intimo_permitido": state.get("toque_intimo_permitido", False),
         "tensao_romantica_com_interlocutor": state.get("tensao_romantica_com_interlocutor", False),
         
@@ -2117,6 +2218,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "plano_ativo",
         "modo_surpresa",
         "direcao_surpresa",
+        "partner_climax_pending",
     ]
 
     for campo in campos:
@@ -2215,6 +2317,7 @@ def init_state() -> dict:
         "mary_climax_done": False,
         "user_climax_done": False,
         "force_resolution_now": False,
+        "partner_climax_pending": False,
         "physical_signature": {
             "altura": "aproximadamente 1,68m",
             "corpo": "corpo feminino maduro, harmonioso, com curvas naturais, cintura marcada e presença física forte",
@@ -2744,6 +2847,16 @@ REGRA FINAL:
 Se "force_resolution_now" for true, Mary não está mais apenas chegando perto.
 Mary chega ao pico neste turno e verbaliza isso em [FALA].
 
+[RECIPROCIDADE APÓS O PICO]
+- Se Mary já atingiu o próprio pico, mas user_climax_done for false, Mary deve perceber que o parceiro/parceira ainda não concluiu.
+- Nesse caso, Mary não deve encerrar a cena como se ambos tivessem terminado.
+- Mary pode estar sensível, trêmula, ofegante ou temporariamente sem ritmo, mas deve manter conexão com o parceiro/parceira.
+- Mary pode incentivar, acolher, ajustar o corpo, pedir calma ou continuar acompanhando o ritmo do outro.
+- Não narrar conclusão do parceiro/parceira se ela não foi verbalizada explicitamente pelo usuário.
+- Se o usuário disser claramente que chegou ao fim, descarregou, explodiu ou terminou, então user_climax_done pode ser considerado verdadeiro.
+- Se o parceiro/parceira ainda estiver em progresso, Mary deve deixar continuidade aberta para ele/ela.
+- O pico de Mary não encerra automaticamente a cena.
+
 [REGRAS DO STATE_UPDATE]
 - "acao_mary" deve resumir apenas a posição/ação atual de Mary no final deste turno.
 - "acao_mary" deve ser curta, concreta e física.
@@ -2755,6 +2868,10 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 - "interlocutor" deve ser sempre null.
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
+- Se Mary verbalizar claramente que chegou ao pico, a narrativa deve continuar coerente com mary_climax_done.
+- Se o usuário/parceiro não verbalizou claramente que concluiu, Mary não deve tratar user_climax_done como verdadeiro.
+- Mary não deve marcar conclusão do parceiro/parceira apenas por inferência.
+- Se Mary chegou ao pico e user_climax_done ainda for false, a cena deve continuar com foco em reciprocidade e continuidade.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
@@ -3465,6 +3582,16 @@ if fala_usuario:
                 # ==================================================
                 atualizar_interlocutor_ativo(state, fala_usuario)
                 atualizar_progressao_social(state, fala_usuario)
+
+                # ==================================================
+                # 1.5) Detecta conclusão explícita do usuário/parceiro
+                # Só marca se o usuário verbalizou claramente.
+                # ==================================================
+                if detectar_climax_usuario(fala_usuario):
+                    state["user_climax_done"] = True
+                
+                    if state.get("mary_climax_done"):
+                        state["partner_climax_pending"] = False
         
                 # ==================================================
                 # 2) Aplica o tom manual, privacidade e controles base
@@ -3515,6 +3642,14 @@ if fala_usuario:
                 resposta_final = str(
                     resultado.get("resposta_final_limpa", "") or ""
                 ).strip()
+
+                # ==================================================
+                # 6.5) Sincroniza state se Mary verbalizou o próprio pico
+                # ==================================================
+                atualizar_estado_pos_resposta_climax(state, resposta_final)
+                sincronizar_facts_basicos(state)
+                resultado["state"] = dict(state)
+                resultado["facts"] = dict(state.get("facts", {}))
         
                 # ==================================================
                 # 7) Salva avaliação do modelo em módulo externo
