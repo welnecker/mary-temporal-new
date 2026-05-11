@@ -861,6 +861,72 @@ def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
     valor = str(valor or "").strip()
     return valor if valor in opcoes else padrao
 
+def normalizar_relacao_por_interlocutor(state: dict) -> None:
+    """
+    Corrige relação ativa quando Mary está sem interlocutor real.
+    Evita herdar 'amigas', 'romance' ou outro vínculo antigo quando a cena está introspectiva.
+    """
+    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
+    persistente = str(state.get("interlocutor_ativo_persistente", "") or "").strip().lower()
+
+    sem_interlocutor = {
+        "sozinha",
+        "sozinha em casa",
+        "sem interlocutor",
+        "nenhum",
+        "ninguém",
+        "ninguem",
+        "",
+    }
+
+    if interlocutor in sem_interlocutor and foco in sem_interlocutor and persistente in sem_interlocutor:
+        state["relacao"] = "sem interlocutor"
+        state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
+        state["tensao_romantica_com_interlocutor"] = False
+        state["toque_intimo_permitido"] = False
+
+def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
+    """
+    Quando Mary está sozinha, em tom neutro e sem estímulo ativo,
+    limpa fase física herdada de cena anterior.
+    """
+    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
+    tom = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
+    tipo = str(state.get("tipo_de_cena", "") or "").strip().lower()
+
+    sem_interlocutor = {
+        "sozinha",
+        "sozinha em casa",
+        "sem interlocutor",
+        "nenhum",
+        "ninguém",
+        "ninguem",
+        "",
+    }
+
+    mary_stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
+    force_resolution_now = bool(state.get("force_resolution_now", False))
+    mary_pre_orgasm_signals = bool(state.get("mary_pre_orgasm_signals", False))
+
+    if (
+        interlocutor in sem_interlocutor
+        and foco in sem_interlocutor
+        and tom == "neutro"
+        and tipo == "neutra"
+        and mary_stimulation_turns <= 0
+        and not force_resolution_now
+        and not mary_pre_orgasm_signals
+    ):
+        state["physical_phase"] = 0
+        state["scene_stage"] = "cotidiano"
+        state["mary_intent"] = "preparar_noite_refletindo"
+        state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.12)
+        state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.12)
+        state["toque_intimo_permitido"] = False
+        state["tensao_romantica_com_interlocutor"] = False
+
 
 def _fase_atual(state: dict) -> int:
     try:
@@ -1891,6 +1957,7 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
         state["mary_climax_done"] = False
+    
     # ======================================================
     # APLICA NO STATE
     # ======================================================
@@ -1903,14 +1970,43 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
 
-    # Só aplica base se a cena ainda não avançou fisicamente.
-    # O tom manual define o piso, não deve rebaixar fase já conquistada.
+    # Corrige relação quando não há interlocutor real.
+    normalizar_relacao_por_interlocutor(state)
+
+    # Detecta se a cena atual é neutra/introspectiva, sem interlocutor.
+    interlocutor_norm = str(state.get("interlocutor", "") or "").strip().lower()
+    foco_norm = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
+    tom_norm = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
+    tipo_norm = str(state.get("tipo_de_cena", "") or "").strip().lower()
+
+    sem_interlocutor = {
+        "",
+        "sozinha",
+        "sozinha em casa",
+        "sem interlocutor",
+        "nenhum",
+        "ninguém",
+        "ninguem",
+    }
+
+    cena_neutra_sozinha = (
+        interlocutor_norm in sem_interlocutor
+        and foco_norm in sem_interlocutor
+        and tom_norm == "neutro"
+        and tipo_norm == "neutra"
+        and not bool(state.get("force_resolution_now", False))
+        and not bool(state.get("mary_climax_done", False))
+        and not bool(state.get("mary_pre_orgasm_signals", False))
+        and int(state.get("mary_stimulation_turns", 0) or 0) <= 0
+    )
+
+    # ======================================================
+    # FASE / STAGE / NÍVEIS
+    # ======================================================
     if not state.get("force_resolution_now") and not state.get("mary_climax_done"):
         fase_atual = int(state.get("physical_phase", 0) or 0)
         fase_base = int(cfg["physical_phase"])
-    
-        nova_fase = max(fase_atual, fase_base)
-    
+
         mapa_stage = {
             0: "inicio",
             1: "aproximacao",
@@ -1921,30 +2017,60 @@ def derivar_controles_de_cena(state: dict) -> None:
             6: "pico_mary",
             7: "aftercare",
         }
-    
-        state["physical_phase"] = nova_fase
-        state["scene_stage"] = mapa_stage.get(nova_fase, cfg["scene_stage"])
-    
-        state["desire_level"] = clamp(
-            max(
+
+        # Cena neutra, Mary sozinha:
+        # aqui o tom manual PODE rebaixar fase antiga.
+        if cena_neutra_sozinha:
+            state["physical_phase"] = 0
+            state["scene_stage"] = "cotidiano"
+            state["mary_intent"] = "preparar_noite_refletindo"
+            state["desire_level"] = min(
                 float(state.get("desire_level", 0.0) or 0.0),
                 float(cfg["desire_level"]),
             )
-        )
-    
-        state["tension_level"] = clamp(
-            max(
+            state["tension_level"] = min(
                 float(state.get("tension_level", 0.0) or 0.0),
                 float(cfg["tension_level"]),
             )
-        )
-    
-        state["connection_level"] = clamp(
-            max(
+            state["connection_level"] = max(
                 float(state.get("connection_level", 0.0) or 0.0),
                 float(cfg["connection_level"]),
             )
-        )
+            state["toque_intimo_permitido"] = False
+            state["tensao_romantica_com_interlocutor"] = False
+
+        else:
+            # Cena com interlocutor ou tensão ativa:
+            # preserva progressão já conquistada.
+            nova_fase = max(fase_atual, fase_base)
+
+            state["physical_phase"] = nova_fase
+            state["scene_stage"] = mapa_stage.get(nova_fase, cfg["scene_stage"])
+
+            state["desire_level"] = clamp(
+                max(
+                    float(state.get("desire_level", 0.0) or 0.0),
+                    float(cfg["desire_level"]),
+                )
+            )
+
+            state["tension_level"] = clamp(
+                max(
+                    float(state.get("tension_level", 0.0) or 0.0),
+                    float(cfg["tension_level"]),
+                )
+            )
+
+            state["connection_level"] = clamp(
+                max(
+                    float(state.get("connection_level", 0.0) or 0.0),
+                    float(cfg["connection_level"]),
+                )
+            )
+
+    # Segurança final: reaplica limpeza caso algum campo anterior tenha herdado lixo antigo.
+    normalizar_relacao_por_interlocutor(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
 
     # Campos de segurança
     if privacidade != "privado":
@@ -2330,9 +2456,11 @@ def consumir_evento_inesperado_se_usado(state: dict) -> None:
 
 def sincronizar_facts_basicos(state: dict) -> dict:
     normalizar_estado(state)
+    normalizar_relacao_por_interlocutor(state)
+
     state["visual_atual"] = resolver_visual_atual_mary(state)
     estado_emocional_resolvido = resolver_estado_emocional_mary(state)
-    
+
     facts = {
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
@@ -2350,8 +2478,11 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "ultimo_interlocutor_explicito": state.get(
             "ultimo_interlocutor_explicito",
             state.get("interlocutor", "Janio Donisete"),
-        ),        
-        "relacao": state.get("relacao", "romance"),
+        ),
+
+        # Relação já normalizada antes de salvar.
+        "relacao": state.get("relacao", "contextual"),
+
         "tipo_de_cena": state.get("tipo_de_cena", "flerte leve"),
         "privacidade": state.get("privacidade", get_privacidade_por_local(state.get("local", ""))),
         "estilo_de_iniciativa": state.get("estilo_de_iniciativa", "contextual"),
@@ -2364,10 +2495,14 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "disparar_evento_inesperado": state.get("disparar_evento_inesperado", False),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
+
+        # Campos narrativos avançados.
         "segredo_ativo": state.get("segredo_ativo", ""),
         "plano_ativo": state.get("plano_ativo", ""),
+        "eventos_recentes": state.get("eventos_recentes", ""),
         "modo_surpresa": state.get("modo_surpresa", "Desligado"),
         "direcao_surpresa": state.get("direcao_surpresa", ""),
+
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
         "physical_phase": state.get("physical_phase", 0),
@@ -2381,8 +2516,8 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "partner_climax_pending": state.get("partner_climax_pending", False),
         "toque_intimo_permitido": state.get("toque_intimo_permitido", False),
         "tensao_romantica_com_interlocutor": state.get("tensao_romantica_com_interlocutor", False),
-        
     }
+
     state["facts"] = facts
     return facts
 
@@ -2395,6 +2530,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "local",
         "tempo",
         "interlocutor",
+        "interlocutor_foco_turno",
+        "interlocutor_ativo_persistente",
+        "ultimo_interlocutor_explicito",
         "usuario_real",
         "janio_status_na_cena",
         "relacao",
@@ -2408,14 +2546,26 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "tom_da_cena",
         "segredo_ativo",
         "plano_ativo",
+        "eventos_recentes",
         "modo_surpresa",
         "direcao_surpresa",
         "usar_visual_automatico",
         "visual_atual_manual",
-        "visual_atual",
         "evento_inesperado",
         "disparar_evento_inesperado",
+        "limite_ambiente",
+        "modo_relacional",
+        "physical_phase",
+        "scene_stage",
+        "mary_intent",
+        "force_resolution_now",
+        "mary_pre_orgasm_signals",
+        "mary_stimulation_turns",
+        "mary_climax_done",
+        "user_climax_done",
         "partner_climax_pending",
+        "toque_intimo_permitido",
+        "tensao_romantica_com_interlocutor",
     ]
 
     for campo in campos:
@@ -2429,9 +2579,17 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         state["direcao_surpresa"] = ""
 
     if not state.get("estado_emocional"):
-        state["estado_emocional"] = "confiante"
+        state["estado_emocional"] = "Automático"
+
+    if not state.get("tom_manual_da_cena"):
+        state["tom_manual_da_cena"] = "Neutro"
+
+    if not state.get("eventos_recentes"):
+        state["eventos_recentes"] = ""
 
     normalizar_estado(state)
+    normalizar_relacao_por_interlocutor(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
 
 
@@ -2482,32 +2640,74 @@ def init_state() -> dict:
     estado_inicial = {
         "personagem": "Mary",
         "timeline": "universitaria_creator",
+
+        # ======================================================
+        # CENA BASE
+        # ======================================================
         "local": "quarto",
         "tempo": "noite",
         "interlocutor": "Janio Donisete",
+        "interlocutor_foco_turno": "Janio Donisete",
+        "interlocutor_ativo_persistente": "Janio Donisete",
+        "ultimo_interlocutor_explicito": "Janio Donisete",
         "usuario_real": "Janio Donisete",
         "janio_status_na_cena": "presente",
-        "relacao": "romance",
+
+        # Não usar "romance" como default rígido.
+        # A relação será corrigida por normalizar_relacao_por_interlocutor().
+        "relacao": "contextual",
+
         "tipo_de_cena": "intima privada",
         "privacidade": "privado",
         "estilo_de_iniciativa": "contextual",
+
+        # ======================================================
+        # ESTADO ATUAL DE MARY
+        # ======================================================
         "mary_acao": "Mary está próxima de Janio, olhando para ele com curiosidade.",
-        "visual_atual": "Mary está com cabelos negros soltos e visual coerente com a cena atual.",
-        "estado_emocional": "confiante",
+        "estado_emocional": "Automático",
         "tom_manual_da_cena": "Intimidade",
         "tom_da_cena": "íntimo e direto",
-        "estado_emocional": "Automático",
+
+        # ======================================================
+        # VISUAL
+        # ======================================================
         "usar_visual_automatico": True,
         "visual_atual_manual": "",
         "visual_atual": "",
+
+        # ======================================================
+        # EVENTOS / SURPRESAS / PENDÊNCIAS
+        # ======================================================
+        "segredo_ativo": "",
+        "plano_ativo": "",
+        "eventos_recentes": "",
         "evento_inesperado": "",
         "disparar_evento_inesperado": False,
+        "modo_surpresa": "Desligado",
+        "direcao_surpresa": "",
+
+        # ======================================================
+        # CONTROLES DERIVADOS
+        # ======================================================
         "modo": "privado",
+        "limite_ambiente": "",
+        "modo_relacional": "contextual",
+        "tensao_romantica_com_interlocutor": False,
+        "toque_intimo_permitido": False,
+
+        # ======================================================
+        # HISTÓRICO / MEMÓRIA
+        # ======================================================
         "turno": 0,
         "history": [],
         "canon_mary": [],
         "facts": {},
         "shared_memories": [],
+
+        # ======================================================
+        # PROGRESSÃO FÍSICA / EMOCIONAL
+        # ======================================================
         "physical_phase": 0,
         "scene_stage": "inicio",
         "desire_level": 0.18,
@@ -2521,9 +2721,15 @@ def init_state() -> dict:
         "user_climax_done": False,
         "force_resolution_now": False,
         "partner_climax_pending": False,
+        "mary_pre_orgasm_signals": False,
+        "mary_stimulation_turns": 0,
+
+        # ======================================================
+        # ASSINATURA FÍSICA FIXA
+        # ======================================================
         "physical_signature": {
             "altura": "aproximadamente 1,68m",
-            "corpo": "corpo feminino maduro, harmonioso, com curvas naturais, cintura marcada e presença física forte",
+            "corpo": "corpo feminino harmonioso, com curvas naturais, cintura marcada e presença física forte",
             "pele": "pele bem cuidada, com aparência natural e toque visual quente",
             "cabelos": "cabelos negros, longos, soltos ou moldados conforme a cena",
             "olhos": "olhos verdes expressivos, atentos e magnéticos",
@@ -2532,28 +2738,53 @@ def init_state() -> dict:
             "assinatura": "Mary nunca deve parecer comum, apagada ou genérica; sua presença física deve ser percebida mesmo em cenas sociais",
         },
     }
+
     if "mary_state_minimo" not in st.session_state:
         st.session_state.mary_state_minimo = dict(estado_inicial)
+
     state = st.session_state.mary_state_minimo
+
+    # Garante novos campos sem apagar estado já existente.
     for k, v in estado_inicial.items():
         state.setdefault(k, v)
+
+    # ======================================================
+    # CARREGA HISTÓRICO SALVO
+    # ======================================================
     if not state.get("history"):
         history_salvo = carregar_history_cache(MAX_HISTORY * 2)
+
         if history_salvo:
             state["history"] = history_salvo
             state["turno"] = max(1, len(history_salvo) // 2)
+
+    # ======================================================
+    # CARREGA FACTS SALVOS
+    # ======================================================
     if not state.get("facts"):
         facts_salvos = carregar_facts_cache()
+
         if facts_salvos:
             aplicar_facts_no_state(state, facts_salvos)
+
+    # ======================================================
+    # NORMALIZAÇÕES CENTRAIS
+    # ======================================================
     normalizar_estado(state)
+    normalizar_relacao_por_interlocutor(state)
+    derivar_controles_de_cena(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
+
+    # ======================================================
+    # CARREGA MEMÓRIAS E CÂNONE
+    # ======================================================
     if not state.get("shared_memories"):
         state["shared_memories"] = carregar_shared_memories_cache(apenas_ativas=True)
-    
+
     if not state.get("canon_mary"):
         state["canon_mary"] = carregar_canon_mary_cache(apenas_ativos=True)
-    
+
     return state
 
 
@@ -3506,6 +3737,9 @@ with st.sidebar:
     )
 
     # Mantém relacao por compatibilidade interna, mas sem exibir no sidebar.
+    # IMPORTANTE:
+    # - Não usar "amigas", "romance" ou qualquer vínculo específico como default.
+    # - A relação real será corrigida depois por normalizar_relacao_por_interlocutor().
     if not state.get("relacao"):
         state["relacao"] = "contextual"
 
@@ -3514,13 +3748,29 @@ with st.sidebar:
         value=state.get("plano_ativo", ""),
         height=100,
         placeholder=(
-            "Ex: Mary vai à feira comprar frutas e legumes.\n"
-            "Ex: Mary e Silvia fingem naturalidade diante de Nando.\n"
-            "Ex: O plano é fazer Nando beber vinho demais e dormir."
+            "Ex: Mary precisa arrumar a mochila e dormir.\n"
+            "Ex: Amanhã ela precisa falar com Anthony na faculdade.\n"
+            "Ex: Mary pretende ligar para Janio no Ninho."
         ),
         help=(
-            "Descreva a direção narrativa atual. "
-            "O modelo deve usar isso como intenção da cena, sem transformar em tutorial operacional."
+            "Descreva a direção narrativa atual: o que ainda está em aberto, "
+            "o que Mary pretende fazer ou qual rumo a cena deve seguir. "
+            "Não coloque aqui fatos já encerrados; use 'Eventos recentes' para isso."
+        ),
+    )
+
+    state["eventos_recentes"] = st.text_area(
+        "Eventos recentes",
+        value=state.get("eventos_recentes", ""),
+        height=100,
+        placeholder=(
+            "Ex: Mary esteve no Maracanã.\n"
+            "Ex: Anthony apareceu de surpresa.\n"
+            "Ex: Janio saiu pelos fundos e deixou o número no espelho."
+        ),
+        help=(
+            "Use este campo para fatos que já aconteceram e ainda influenciam a cena, "
+            "mas que não são mais o plano ativo."
         ),
     )
 
@@ -3528,6 +3778,14 @@ with st.sidebar:
         "Ação atual de Mary",
         value=state.get("mary_acao", ""),
         height=90,
+        placeholder=(
+            "Ex: Mary está no banheiro, terminando de apagar o batom do espelho "
+            "com um lenço, vestindo o roupão de seda."
+        ),
+        help=(
+            "Descreva o estado físico e a ação imediata de Mary no momento atual da cena. "
+            "Este campo deve representar o agora, não o passado."
+        ),
     )
 
     # ======================================================
