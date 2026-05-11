@@ -44,6 +44,34 @@ OPCOES_MODO_SURPRESA = [
     "Livre",
 ]
 
+OPCOES_ESTADO_EMOCIONAL_MARY = [
+    "Automático",
+    "Neutro",
+    "Leveza",
+    "Cumplicidade",
+    "Desejo",
+    "Pressão",
+    "Ferida",
+    "Conflito",
+    "Decidida",
+    "Vulnerável",
+    "Euforia",
+]
+
+MAPA_ESTADO_EMOCIONAL_MARY = {
+    "Automático": "Mary escolhe dinamicamente a nuance emocional mais coerente com o enredo.",
+    "Neutro": "calma, presença, naturalidade",
+    "Leveza": "humor, ironia leve, descontração",
+    "Cumplicidade": "carinho, parceria, confiança",
+    "Desejo": "atração, inquietação, provocação, saudade física",
+    "Pressão": "sufocamento, irritação, defesa, impaciência",
+    "Ferida": "mágoa, tristeza, recolhimento, decepção",
+    "Conflito": "culpa, dúvida, hesitação, divisão interna",
+    "Decidida": "firmeza, frieza, corte, resolução",
+    "Vulnerável": "honestidade, insegurança, sensibilidade, medo de perder",
+    "Euforia": "intensidade, impulso, alegria, excitação emocional",
+}
+
 
 def normalizar_tom_manual_cena(valor: str) -> str:
     valor = str(valor or "").strip()
@@ -771,6 +799,7 @@ def get_privacidade_por_local(local: str) -> str:
         "toalete privado",
         "banheiro particular",
         "toalete particular",
+        "praia deserta",
     ]
 
     # ======================================================
@@ -802,7 +831,7 @@ def get_privacidade_por_local(local: str) -> str:
         "boate",
         "balada",
         "pista",
-        "praia",
+        "praia urbana",
         "rua",
         "shopping",
         "sala de aula",
@@ -2142,9 +2171,168 @@ def normalizar_estado(state: dict) -> None:
         state["mary_climax_done"] = False
         state["user_climax_done"] = False
 
+def resolver_estado_emocional_mary(state: dict) -> str:
+    estado = str(state.get("estado_emocional", "Automático") or "Automático").strip()
+
+    if estado not in OPCOES_ESTADO_EMOCIONAL_MARY:
+        estado = "Automático"
+
+    return estado
+
+
+def formatar_estado_emocional_para_prompt(state: dict) -> str:
+    estado = resolver_estado_emocional_mary(state)
+    descricao = MAPA_ESTADO_EMOCIONAL_MARY.get(
+        estado,
+        MAPA_ESTADO_EMOCIONAL_MARY["Automático"],
+    )
+
+    return f"""
+[ESTADO EMOCIONAL DINÂMICO]
+Estado emocional selecionado:
+{estado}
+
+Campo emocional permitido:
+{descricao}
+
+REGRAS:
+- O estado emocional selecionado não é uma emoção única e rígida.
+- Ele define um campo emocional dentro do qual Mary pode reagir dinamicamente.
+- Mary deve escolher a nuance emocional mais coerente com o enredo, interlocutor, segredo ativo, plano ativo e fala recente do usuário.
+- O tom_manual_da_cena continua definindo a direção principal da cena.
+- O estado emocional apenas colore a forma como Mary vive essa direção.
+- Se o estado for "Automático", Mary escolhe livremente a nuance emocional mais coerente com a cena atual.
+- Se houver conflito entre tom manual e estado emocional, o tom manual vence.
+""".strip()
+
+def gerar_visual_automatico_mary(state: dict) -> str:
+    local = str(state.get("local", "") or "").strip().lower()
+    tempo = str(state.get("tempo", "") or "").strip().lower()
+    tom = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
+
+    roupa = "roupa coerente com a cena"
+    cabelo = "cabelos negros bem cuidados"
+    extras = []
+
+    # Praia / orla / piscina
+    if any(p in local for p in ["praia", "orla", "piscina", "beira-mar", "mar"]):
+        if any(p in tempo for p in ["manhã", "manha", "tarde", "dia"]):
+            roupa = "biquíni cavado com saída de praia leve"
+            cabelo = "cabelos negros soltos, com aspecto levemente úmido"
+            extras = ["óculos de sol", "chinelo de borracha"]
+        else:
+            roupa = "vestido de verão leve sobre roupa de banho"
+            cabelo = "cabelos negros soltos com movimento natural"
+            extras = ["sandália baixa", "perfume suave"]
+
+    # Casa / apartamento
+    elif any(p in local for p in ["casa", "apartamento", "apto", "quarto", "cozinha", "sala"]):
+        if any(p in tempo for p in ["manhã", "manha"]):
+            roupa = "short curto e blusa leve de alças"
+            cabelo = "cabelos negros presos de forma prática ou soltos de maneira casual"
+            extras = ["chinelo", "visual caseiro natural"]
+        elif "noite" in tempo or "madrugada" in tempo:
+            roupa = "roupa leve e confortável, com toque feminino"
+            cabelo = "cabelos negros soltos ou presos de forma suave"
+            extras = ["pele cheirosa", "visual íntimo e caseiro"]
+        else:
+            roupa = "roupa casual confortável"
+            cabelo = "cabelos negros naturais e bem cuidados"
+
+    # Faculdade / UFRJ
+    elif any(p in local for p in ["faculdade", "ufrj", "sala de aula", "cantina", "campus"]):
+        roupa = "calça jeans ou short arrumado com blusa bonita e casual"
+        cabelo = "cabelos negros bem cuidados, soltos ou presos com naturalidade"
+        extras = ["bolsa", "visual jovem e prático"]
+
+    # Clube / bar / restaurante / balada
+    elif any(p in local for p in ["bar", "restaurante", "balada", "boate", "clube", "sugar baby"]):
+        if "noite" in tempo or "madrugada" in tempo:
+            if tom == "malícia" or tom == "malicia":
+                roupa = "vestido ajustado e elegante"
+                cabelo = "cabelos negros bem alinhados, com acabamento sensual"
+                extras = ["sandália de salto", "maquiagem marcante", "perfume envolvente"]
+            elif tom == "flerte":
+                roupa = "look elegante e atraente, sem exagero"
+                cabelo = "cabelos negros bem alinhados e soltos"
+                extras = ["acessórios discretos", "maquiagem bonita"]
+            else:
+                roupa = "look social elegante"
+                cabelo = "cabelos bem cuidados com apresentação refinada"
+                extras = ["sandália", "maquiagem equilibrada"]
+        else:
+            roupa = "roupa arrumada e feminina"
+            cabelo = "cabelos negros bem cuidados"
+            extras = ["acessórios discretos"]
+
+    # Carro / Uber / táxi
+    elif any(p in local for p in ["carro", "uber", "táxi", "taxi"]):
+        roupa = "roupa coerente com o destino e o momento da cena"
+        cabelo = "cabelos bem cuidados, já marcados pelo contexto do encontro"
+        extras = ["perfume ainda presente", "visual já montado"]
+
+    descricao = f"Mary está com {roupa}, {cabelo}"
+
+    if extras:
+        descricao += ", usando " + ", ".join(extras)
+
+    descricao += "."
+
+    return descricao
+
+
+def resolver_visual_atual_mary(state: dict) -> str:
+    visual_manual = str(state.get("visual_atual_manual", "") or "").strip()
+    usar_auto = bool(state.get("usar_visual_automatico", True))
+
+    if visual_manual:
+        return visual_manual
+
+    if usar_auto:
+        return gerar_visual_automatico_mary(state)
+
+    return str(state.get("visual_atual", "") or "").strip()
+
+def preparar_evento_inesperado_para_prompt(state: dict) -> str:
+    evento = str(state.get("evento_inesperado", "") or "").strip()
+    disparar = bool(state.get("disparar_evento_inesperado", False))
+
+    if not evento or not disparar:
+        return ""
+
+    return f"""
+[EVENTO INESPERADO]
+{evento}
+
+REGRAS:
+- Evento inesperado é um gancho definido pelo roteirista.
+- Se existir evento inesperado ativo, Mary deve reconhecê-lo como virada real da cena.
+- Mary não deve ignorar o evento.
+- Mary não deve resolver todas as consequências sozinha.
+- Mary deve reagir ao evento com corpo, fala e emoção coerentes.
+- O evento deve abrir uma nova tensão para o usuário continuar.
+- Não transformar o evento em resumo longo.
+- Não pular etapas importantes.
+- Se o evento introduz novo personagem, Mary deve perceber a presença dele, mas não controlar ações dele além do que foi descrito.
+- O evento deve aparecer neste turno como gancho narrativo concreto.
+""".strip()
+
+
+def consumir_evento_inesperado_se_usado(state: dict) -> None:
+    """
+    Evita que o mesmo evento inesperado se repita em todos os turnos.
+    Deve ser chamado depois de processar_turno().
+    """
+    if bool(state.get("disparar_evento_inesperado", False)):
+        state["disparar_evento_inesperado"] = False
+        state["evento_inesperado"] = ""
+
 
 def sincronizar_facts_basicos(state: dict) -> dict:
     normalizar_estado(state)
+    state["visual_atual"] = resolver_visual_atual_mary(state)
+    estado_emocional_resolvido = resolver_estado_emocional_mary(state)
+    
     facts = {
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
@@ -2169,7 +2357,11 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "estilo_de_iniciativa": state.get("estilo_de_iniciativa", "contextual"),
         "mary_acao": state.get("mary_acao", ""),
         "visual_atual": state.get("visual_atual", ""),
-        "estado_emocional": state.get("estado_emocional", "confiante"),
+        "estado_emocional": estado_emocional_resolvido,
+        "usar_visual_automatico": state.get("usar_visual_automatico", True),
+        "visual_atual_manual": state.get("visual_atual_manual", ""),
+        "evento_inesperado": state.get("evento_inesperado", ""),
+        "disparar_evento_inesperado": state.get("disparar_evento_inesperado", False),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
         "segredo_ativo": state.get("segredo_ativo", ""),
@@ -2218,6 +2410,11 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "plano_ativo",
         "modo_surpresa",
         "direcao_surpresa",
+        "usar_visual_automatico",
+        "visual_atual_manual",
+        "visual_atual",
+        "evento_inesperado",
+        "disparar_evento_inesperado",
         "partner_climax_pending",
     ]
 
@@ -2299,6 +2496,12 @@ def init_state() -> dict:
         "estado_emocional": "confiante",
         "tom_manual_da_cena": "Intimidade",
         "tom_da_cena": "íntimo e direto",
+        "estado_emocional": "Automático",
+        "usar_visual_automatico": True,
+        "visual_atual_manual": "",
+        "visual_atual": "",
+        "evento_inesperado": "",
+        "disparar_evento_inesperado": False,
         "modo": "privado",
         "turno": 0,
         "history": [],
@@ -2460,6 +2663,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     modo_surpresa = str(state.get("modo_surpresa", "Desligado") or "Desligado").strip()
     direcao_surpresa = str(state.get("direcao_surpresa", "") or "").strip()
 
+    estado_emocional_txt = formatar_estado_emocional_para_prompt(state)
+    evento_inesperado_txt = preparar_evento_inesperado_para_prompt(state)
+
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
@@ -2470,6 +2676,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=30)
     
     physical_txt = formatar_physical_signature_para_prompt(state)
+    
     return f"""
 Você escreve SOMENTE como Mary, em PT-BR.
 
@@ -2524,6 +2731,8 @@ REGRAS:
 - Não resolver o segredo nem executar o plano sem ação clara do usuário.
 - Não transformar o plano em instruções operacionais detalhadas de crime, ocultação, fuga, intoxicação ou dano.
 - O plano deve funcionar como tensão narrativa, não como tutorial.
+
+{evento_inesperado_txt}
 
 [MODO DE SURPRESA]
 Modo:
@@ -2631,6 +2840,8 @@ TIPOS:
 - Se estiver magoada, pode chorar ou se fechar.
 - Se estiver decidida, pode cortar a cena com firmeza.
 - A emoção deve nascer dos facts, do histórico recente, do segredo ativo e do interlocutor atual.
+
+{estado_emocional_txt}
 
 [ASSINATURA FÍSICA FIXA DE MARY]
 {physical_txt}
@@ -3319,19 +3530,50 @@ with st.sidebar:
         height=90,
     )
 
-    state["visual_atual"] = st.text_area(
-        "Roupa / cabelo / visual atual",
-        value=state.get("visual_atual", ""),
-        height=90,
-        placeholder=(
-            "Ex: Mary está de short jeans, regata leve, sandália baixa, "
-            "cabelos negros presos em rabo de cavalo."
-        ),
+    # ======================================================
+    # ESTADO EMOCIONAL DINÂMICO
+    # ======================================================
+    estado_emocional_atual = state.get("estado_emocional", "Automático")
+    
+    if estado_emocional_atual not in OPCOES_ESTADO_EMOCIONAL_MARY:
+        estado_emocional_atual = "Automático"
+    
+    state["estado_emocional"] = st.selectbox(
+        "Estado emocional",
+        options=OPCOES_ESTADO_EMOCIONAL_MARY,
+        index=OPCOES_ESTADO_EMOCIONAL_MARY.index(estado_emocional_atual),
         help=(
-            "Defina manualmente roupa, cabelo e aparência atual de Mary. "
-            "Esse campo vence histórico antigo."
+            "Define o campo emocional dominante. "
+            "Mary escolhe dinamicamente a nuance específica dentro desse bloco."
         ),
     )
+    
+    # ======================================================
+    # VISUAL AUTOMÁTICO / MANUAL
+    # ======================================================
+    state["usar_visual_automatico"] = st.checkbox(
+        "Gerar visual automaticamente",
+        value=bool(state.get("usar_visual_automatico", True)),
+        help=(
+            "Se ativado, roupa/cabelo de Mary serão sugeridos automaticamente "
+            "com base no local, tempo e tom da cena."
+        ),
+    )
+    
+    state["visual_atual_manual"] = st.text_area(
+        "Visual manual de Mary (opcional)",
+        value=state.get("visual_atual_manual", ""),
+        height=90,
+        placeholder=(
+            "Se quiser, descreva manualmente o visual. "
+            "Se deixar em branco, o script gera automaticamente."
+        ),
+    )
+    
+    state["visual_atual"] = resolver_visual_atual_mary(state)
+    
+    with st.expander("👗 Visual resolvido", expanded=False):
+        st.write(state.get("visual_atual", ""))
 
     modo_surpresa_atual = state.get("modo_surpresa", "Desligado")
 
@@ -3361,11 +3603,7 @@ with st.sidebar:
             "Não escreva a ação exata; deixe Mary improvisar."
         ),
     )
-
-    state["estado_emocional"] = st.text_input(
-        "Estado emocional",
-        value=state.get("estado_emocional", "confiante"),
-    )
+    
 
     normalizar_estado(state)
     sincronizar_facts_basicos(state)
@@ -3636,6 +3874,8 @@ if fala_usuario:
                     fala_usuario,
                     model=model,
                 )
+
+                consumir_evento_inesperado_se_usado(state)
         
                 st.session_state["mary_last_debug"] = resultado
         
