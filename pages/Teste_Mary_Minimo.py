@@ -2332,50 +2332,255 @@ REGRAS:
 """.strip()
 
 def gerar_visual_automatico_mary(state: dict) -> str:
+    """
+    Gera o visual automático de Mary com atenção ao ENREDO ATUAL.
+
+    Princípios:
+    - mary_acao e plano_ativo vencem local genérico.
+    - O visual descreve roupa/aparência, não cria destino novo.
+    - Não usar gatilhos perigosos como "mar" sozinho, porque pode bater em palavras como Mary, Maracanã etc.
+    - Contexto de saída/compromisso externo vence roupa de casa, banho, praia ou descanso.
+    """
+
     local = str(state.get("local", "") or "").strip().lower()
     tempo = str(state.get("tempo", "") or "").strip().lower()
     tom = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
+    acao = str(state.get("mary_acao", "") or "").strip().lower()
+    plano = str(state.get("plano_ativo", "") or "").strip().lower()
+    eventos = str(state.get("eventos_recentes", "") or "").strip().lower()
+    fala_atual = str(state.get("_fala_usuario_atual", "") or "").strip().lower()
 
-    roupa = "roupa coerente com a cena"
+    contexto_atual = "\n".join(
+        [
+            acao,
+            plano,
+            fala_atual,
+            local,
+            tempo,
+        ]
+    )
+
+    contexto_memoria = eventos
+
+    roupa = "roupa coerente com a cena atual"
     cabelo = "cabelos negros bem cuidados"
     extras = []
 
-    # Praia / orla / piscina
-    if any(p in local for p in ["praia", "orla", "piscina", "beira-mar", "mar"]):
-        if any(p in tempo for p in ["manhã", "manha", "tarde", "dia"]):
-            roupa = "biquíni cavado com saída de praia leve"
-            cabelo = "cabelos negros soltos, com aspecto levemente úmido"
-            extras = ["óculos de sol", "chinelo de borracha"]
-        else:
-            roupa = "vestido de verão leve sobre roupa de banho"
-            cabelo = "cabelos negros soltos com movimento natural"
-            extras = ["sandália baixa", "perfume suave"]
+    # ======================================================
+    # DETECTORES DE ENREDO ATUAL
+    # ======================================================
 
-    # Casa / apartamento
-    elif any(p in local for p in ["casa", "apartamento", "apto", "quarto", "cozinha", "sala"]):
+    termos_compromisso_externo = [
+        "sair",
+        "saindo",
+        "sair de casa",
+        "indo para",
+        "ir para",
+        "ponto de ônibus",
+        "ponto de onibus",
+        "ônibus",
+        "onibus",
+        "mototáxi",
+        "mototaxi",
+        "uber",
+        "táxi",
+        "taxi",
+        "mochila",
+        "bolsa",
+        "chave",
+        "porta",
+        "rua",
+        "calçar",
+        "calcando",
+        "calçando",
+        "tênis",
+        "tenis",
+        "sapato",
+        "sandália",
+        "sandalia",
+        "compromisso",
+        "aula",
+        "faculdade",
+        "ufrj",
+        "campus",
+        "trabalho",
+        "curso",
+        "reunião",
+        "reuniao",
+        "encontro marcado",
+        "almoçar",
+        "almocar",
+        "ru",
+    ]
+
+    termos_faculdade = [
+        "aula",
+        "faculdade",
+        "ufrj",
+        "campus",
+        "sala de aula",
+        "cantina",
+        "ru",
+        "professor",
+        "matéria",
+        "materia",
+        "caderno",
+        "livros",
+        "mochila",
+    ]
+
+    termos_praia_reais = [
+        "praia",
+        "orla",
+        "piscina",
+        "beira-mar",
+        "beira mar",
+        "areia",
+        "calçadão",
+        "calcadao",
+        "mergulho",
+        "banho de mar",
+    ]
+
+    termos_casa = [
+        "casa",
+        "apartamento",
+        "apto",
+        "quarto",
+        "cozinha",
+        "sala",
+        "banheiro",
+        "varanda",
+    ]
+
+    termos_banho = [
+        "banho",
+        "chuveiro",
+        "banheiro",
+        "toalha",
+        "roupão",
+        "roupao",
+        "sabonete",
+        "molhada",
+        "molhado",
+        "úmida",
+        "umida",
+        "se secando",
+        "sair do banho",
+        "pós-banho",
+        "pos-banho",
+    ]
+
+    termos_sono_descanso = [
+        "dormir",
+        "deitar",
+        "cama",
+        "sono",
+        "descansar",
+        "pijama",
+        "babydoll",
+        "camisola",
+        "travesseiro",
+        "coberta",
+        "apagar a luz",
+    ]
+
+    termos_noite_social = [
+        "bar",
+        "restaurante",
+        "balada",
+        "boate",
+        "clube",
+        "festa",
+        "jantar",
+        "sugar baby",
+    ]
+
+    contexto_compromisso_externo = any(t in contexto_atual for t in termos_compromisso_externo)
+    contexto_faculdade = any(t in contexto_atual for t in termos_faculdade)
+    contexto_praia = any(t in contexto_atual for t in termos_praia_reais)
+    contexto_casa = any(t in contexto_atual for t in termos_casa)
+    contexto_banho = any(t in contexto_atual for t in termos_banho)
+    contexto_sono = any(t in contexto_atual for t in termos_sono_descanso)
+    contexto_noite_social = any(t in contexto_atual for t in termos_noite_social)
+
+    # ======================================================
+    # REGRA-MÃE DE PRIORIDADE
+    # ======================================================
+    # Se existe compromisso externo atual, ele vence praia/casa/banho.
+    # Ex: se há mochila + aula + ônibus, não gerar biquíni/saída de praia.
+    # ======================================================
+
+    if contexto_faculdade:
+        roupa = "roupa casual prática e arrumada para aula"
+        cabelo = "cabelos negros arrumados com naturalidade"
+        extras = ["mochila", "calçado confortável"]
+    
+    elif contexto_compromisso_externo:
+        roupa = "roupa casual prática para sair de casa"
+        cabelo = "cabelos negros arrumados de forma natural"
+        extras = ["bolsa ou mochila", "calçado confortável"]
+
+    # ======================================================
+    # PRAIA / PISCINA
+    # Só entra se o ENREDO ATUAL apontar para praia/piscina.
+    # Não usar 'mar' sozinho.
+    # ======================================================
+
+    elif contexto_praia:
+        if any(p in tempo for p in ["manhã", "manha", "tarde", "dia"]):
+            roupa = "roupa leve adequada para praia ou piscina"
+            cabelo = "cabelos negros soltos com aspecto natural"
+            extras = ["óculos de sol", "sandália ou chinelo"]
+        else:
+            roupa = "vestido leve ou saída de praia discreta"
+            cabelo = "cabelos negros soltos com movimento natural"
+            extras = ["sandália baixa", "visual leve"]
+
+    # ======================================================
+    # BANHO / PÓS-BANHO
+    # Só entra se não houver saída/compromisso vencendo.
+    # ======================================================
+
+    elif contexto_banho:
+        roupa = "roupão, toalha ou roupa leve de pós-banho"
+        cabelo = "cabelos negros úmidos ou recém-arrumados"
+        extras = ["pele limpa", "visual de banho recente"]
+
+    # ======================================================
+    # SONO / DESCANSO
+    # ======================================================
+
+    elif contexto_sono:
+        roupa = "roupa confortável de dormir ou descanso"
+        cabelo = "cabelos negros soltos ou presos de forma suave"
+        extras = ["visual íntimo e caseiro"]
+
+    # ======================================================
+    # CASA / APARTAMENTO / ROTINA DOMÉSTICA
+    # ======================================================
+
+    elif contexto_casa:
         if any(p in tempo for p in ["manhã", "manha"]):
-            roupa = "short curto e blusa leve de alças"
-            cabelo = "cabelos negros presos de forma prática ou soltos de maneira casual"
-            extras = ["chinelo", "visual caseiro natural"]
+            roupa = "roupa casual doméstica e confortável"
+            cabelo = "cabelos negros presos de forma prática ou soltos casualmente"
+            extras = ["visual natural de rotina"]
         elif "noite" in tempo or "madrugada" in tempo:
-            roupa = "roupa leve e confortável, com toque feminino"
+            roupa = "roupa leve e confortável de casa"
             cabelo = "cabelos negros soltos ou presos de forma suave"
-            extras = ["pele cheirosa", "visual íntimo e caseiro"]
+            extras = ["visual caseiro"]
         else:
             roupa = "roupa casual confortável"
             cabelo = "cabelos negros naturais e bem cuidados"
 
-    # Faculdade / UFRJ
-    elif any(p in local for p in ["faculdade", "ufrj", "sala de aula", "cantina", "campus"]):
-        roupa = "calça jeans ou short arrumado com blusa bonita e casual"
-        cabelo = "cabelos negros bem cuidados, soltos ou presos com naturalidade"
-        extras = ["bolsa", "visual jovem e prático"]
+    # ======================================================
+    # AMBIENTE SOCIAL NOTURNO
+    # ======================================================
 
-    # Clube / bar / restaurante / balada
-    elif any(p in local for p in ["bar", "restaurante", "balada", "boate", "clube", "sugar baby"]):
+    elif contexto_noite_social:
         if "noite" in tempo or "madrugada" in tempo:
-            if tom == "malícia" or tom == "malicia":
-                roupa = "vestido ajustado e elegante"
+            if tom in ("malícia", "malicia"):
+                roupa = "look elegante e marcante"
                 cabelo = "cabelos negros bem alinhados, com acabamento sensual"
                 extras = ["sandália de salto", "maquiagem marcante", "perfume envolvente"]
             elif tom == "flerte":
@@ -2391,11 +2596,55 @@ def gerar_visual_automatico_mary(state: dict) -> str:
             cabelo = "cabelos negros bem cuidados"
             extras = ["acessórios discretos"]
 
-    # Carro / Uber / táxi
+    # ======================================================
+    # CARRO / UBER / TÁXI
+    # ======================================================
+
     elif any(p in local for p in ["carro", "uber", "táxi", "taxi"]):
-        roupa = "roupa coerente com o destino e o momento da cena"
+        roupa = "roupa coerente com o destino atual da cena"
         cabelo = "cabelos bem cuidados, já marcados pelo contexto do encontro"
-        extras = ["perfume ainda presente", "visual já montado"]
+        extras = ["visual já montado"]
+
+    # ======================================================
+    # FALLBACK ATENTO AO ENREDO
+    # ======================================================
+
+    else:
+        roupa = "roupa coerente com a ação atual"
+        cabelo = "cabelos negros bem cuidados"
+        extras = ["presença natural"]
+
+    # ======================================================
+    # TRAVA DE COERÊNCIA CONTRA CONTRADIÇÃO
+    # ======================================================
+    # Se o plano/ação indica compromisso externo, remove qualquer linguagem
+    # que pareça praia, banho ou descanso.
+    # ======================================================
+
+    if contexto_compromisso_externo or contexto_faculdade:
+        texto_visual = " ".join([roupa, cabelo, " ".join(extras)]).lower()
+
+        termos_incompativeis = [
+            "biquíni",
+            "biquini",
+            "maiô",
+            "maio",
+            "roupa de banho",
+            "saída de praia",
+            "saida de praia",
+            "roupão",
+            "roupao",
+            "toalha",
+            "babydoll",
+            "camisola",
+            "pijama",
+            "chinelo de borracha",
+        ]
+
+        if any(t in texto_visual for t in termos_incompativeis):
+            roupa = "roupa casual prática e adequada ao compromisso externo"
+            cabelo = "cabelos negros arrumados com naturalidade"
+            extras = ["mochila ou bolsa", "calçado confortável"]
 
     descricao = f"Mary está com {roupa}, {cabelo}"
 
@@ -2408,8 +2657,17 @@ def gerar_visual_automatico_mary(state: dict) -> str:
 
 
 def resolver_visual_atual_mary(state: dict) -> str:
+    """
+    Resolve o visual atual.
+
+    Regras:
+    - Visual manual preenchido vence.
+    - Se automático estiver ligado, gera visual a partir do enredo atual.
+    - Se automático estiver desligado, só preserva visual antigo se houver algo salvo.
+    - Manual vazio não deve forçar visual antigo incoerente.
+    """
     visual_manual = str(state.get("visual_atual_manual", "") or "").strip()
-    usar_auto = bool(state.get("usar_visual_automatico", True))
+    usar_auto = normalizar_bool(state.get("usar_visual_automatico", True), default=True)
 
     if visual_manual:
         return visual_manual
@@ -2417,7 +2675,14 @@ def resolver_visual_atual_mary(state: dict) -> str:
     if usar_auto:
         return gerar_visual_automatico_mary(state)
 
-    return str(state.get("visual_atual", "") or "").strip()
+    visual_antigo = str(state.get("visual_atual", "") or "").strip()
+
+    if visual_antigo:
+        return visual_antigo
+
+    # Se manual está vazio e automático desligado, mas não há visual antigo,
+    # gera fallback automático para evitar campo vazio.
+    return gerar_visual_automatico_mary(state)
 
 def preparar_evento_inesperado_para_prompt(state: dict) -> str:
     evento = str(state.get("evento_inesperado", "") or "").strip()
