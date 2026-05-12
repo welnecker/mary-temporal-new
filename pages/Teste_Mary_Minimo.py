@@ -907,13 +907,15 @@ def buscar_contexto_do_personagem(state: dict, alvo: str) -> str:
     Busca menções ao personagem em facts, plano, eventos, cânone e memórias.
     Não decide sozinho; apenas junta contexto textual para inferência.
     """
-    alvo = str(alvo or "").strip().lower()
+    if not isinstance(state, dict):
+        return ""
+
+    alvo = remover_acentos(str(alvo or "").strip().lower())
     if not alvo:
         return ""
 
     partes = []
 
-    # Campos atuais da cena
     for chave in [
         "interlocutor",
         "interlocutor_foco_turno",
@@ -928,25 +930,27 @@ def buscar_contexto_do_personagem(state: dict, alvo: str) -> str:
         if valor:
             partes.append(valor)
 
-    # Cânone
     for item in state.get("canon_mary", []) or []:
         if isinstance(item, dict):
             fato = str(item.get("fato", "") or "")
             if fato:
                 partes.append(fato)
+        elif isinstance(item, str):
+            partes.append(item)
 
-    # Memórias shared
     for item in state.get("shared_memories", []) or []:
         if isinstance(item, dict):
             memoria = str(item.get("memoria", "") or "")
             if memoria:
                 partes.append(memoria)
+        elif isinstance(item, str):
+            partes.append(item)
 
-    contexto_total = "\n".join(partes).lower()
+    contexto_total = remover_acentos("\n".join(partes).lower())
 
-    # Se o alvo tiver apelido entre parênteses, ex: Fernando Nando,
-    # qualquer parte relevante pode bater.
     tokens_alvo = [p for p in alvo.split() if len(p) >= 3]
+    if not tokens_alvo:
+        return ""
 
     linhas_relevantes = []
     for linha in contexto_total.splitlines():
@@ -956,18 +960,52 @@ def buscar_contexto_do_personagem(state: dict, alvo: str) -> str:
     return "\n".join(linhas_relevantes)
 
 
+
+import re
+
+
+def contem_termo(texto: str, termos: list[str]) -> bool:
+    texto = remover_acentos(str(texto or "").lower())
+
+    for termo in termos:
+        termo = remover_acentos(str(termo or "").strip().lower())
+        if not termo:
+            continue
+
+        if " " in termo:
+            if termo in texto:
+                return True
+            continue
+
+        if re.search(rf"\b{re.escape(termo)}\b", texto):
+            return True
+
+    return False
+
+
+def eh_sem_interlocutor(valor: str) -> bool:
+    valor = remover_acentos(str(valor or "").strip().lower())
+    return valor in {
+        "sozinha",
+        "sozinha em casa",
+        "sem interlocutor",
+        "nenhum",
+        "ninguem",
+        "",
+    }
+
+
 def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
     """
     Infere relação estrutural a partir do contexto textual.
     Não altera estado emocional manual.
     """
-    alvo = str(alvo or "").lower()
-    contexto = str(contexto or "").lower()
+    alvo = remover_acentos(str(alvo or "").lower())
+    contexto = remover_acentos(str(contexto or "").lower())
 
     texto = f"{alvo}\n{contexto}"
 
-    # Família
-    if any(p in texto for p in ["mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "tia", "tio", "prima", "primo"]):
+    if contem_termo(texto, ["mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "tia", "tio", "prima", "primo"]):
         return {
             "relacao": "família",
             "modo_relacional": "familia",
@@ -975,8 +1013,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Professor / autoridade acadêmica
-    if any(p in texto for p in ["professor", "professora", "docente", "orientador", "reitor", "reitoria", "coordenador"]):
+    if contem_termo(texto, ["professor", "professora", "docente", "orientador", "reitor", "reitoria", "coordenador"]):
         return {
             "relacao": "autoridade acadêmica",
             "modo_relacional": "formal",
@@ -984,8 +1021,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Colega / aluno / turma
-    if any(p in texto for p in ["colega", "aluno", "aluna", "turma", "classe", "paciente", "divã", "diva", "aula prática", "aula pratica"]):
+    if contem_termo(texto, ["colega", "aluno", "aluna", "turma", "classe", "paciente", "divã", "diva", "aula prática", "aula pratica"]):
         return {
             "relacao": "colega de faculdade",
             "modo_relacional": "academico",
@@ -993,8 +1029,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Amizade
-    if any(p in texto for p in ["amiga", "amigo", "cúmplice", "cumplice", "confidente"]):
+    if contem_termo(texto, ["amiga", "amigo", "cúmplice", "cumplice", "confidente"]):
         return {
             "relacao": "amizade",
             "modo_relacional": "amizade",
@@ -1002,8 +1037,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Ex / rival / tensão
-    if any(p in texto for p in ["ex", "rival", "ciúme", "ciume", "obcecado", "apaixonado por mary", "quer voltar"]):
+    if contem_termo(texto, ["ex", "rival", "ciúme", "ciume", "obcecado", "apaixonado por mary", "quer voltar"]):
         return {
             "relacao": "tensão social",
             "modo_relacional": "tensao_social",
@@ -1011,8 +1045,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Contato profissional / oportunidade
-    if any(p in texto for p in ["fotógrafo", "fotografo", "fotografia", "projeto", "ong", "contrato", "negócio", "negocio", "represento", "centro de idiomas"]):
+    if contem_termo(texto, ["fotógrafo", "fotografo", "fotografia", "projeto", "ong", "contrato", "negócio", "negocio", "represento", "centro de idiomas"]):
         return {
             "relacao": "contato profissional / social",
             "modo_relacional": "social",
@@ -1020,8 +1053,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Anfitrião / figura influente / mansão
-    if any(p in texto for p in ["mansão", "mansao", "dono da mansão", "orla de botafogo", "piscina particular", "praia particular", "all inclusive"]):
+    if contem_termo(texto, ["mansão", "mansao", "dono da mansão", "orla de botafogo", "piscina particular", "praia particular", "all inclusive"]):
         return {
             "relacao": "anfitrião / conhecido influente",
             "modo_relacional": "cautela_social",
@@ -1029,8 +1061,7 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Possível flerte/atração, mas sem liberar toque automaticamente
-    if any(p in texto for p in ["paquera", "ficante", "atração", "atracao", "interesse", "elogio", "convite"]):
+    if contem_termo(texto, ["paquera", "ficante", "atração", "atracao", "interesse", "elogio", "convite"]):
         return {
             "relacao": "contato com possível interesse",
             "modo_relacional": "social_ambíguo",
@@ -1038,7 +1069,6 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    # Fallback seguro
     return {
         "relacao": "contextual",
         "modo_relacional": "neutro",
@@ -1057,32 +1087,23 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
     - Estado emocional manual não é alterado aqui.
     - O foco do turno vence quando houver múltiplos interlocutores.
     """
-    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
-    foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
-    persistente = str(state.get("interlocutor_ativo_persistente", "") or "").strip().lower()
-    ultimo = str(state.get("ultimo_interlocutor_explicito", "") or "").strip().lower()
-    janio_status = str(state.get("janio_status_na_cena", "") or "").strip().lower()
+    if not isinstance(state, dict):
+        return
 
-    sem_interlocutor = {
-        "sozinha",
-        "sozinha em casa",
-        "sem interlocutor",
-        "nenhum",
-        "ninguém",
-        "ninguem",
-        "",
-    }
+    interlocutor = remover_acentos(str(state.get("interlocutor", "") or "").strip().lower())
+    foco = remover_acentos(str(state.get("interlocutor_foco_turno", "") or "").strip().lower())
+    persistente = remover_acentos(str(state.get("interlocutor_ativo_persistente", "") or "").strip().lower())
+    ultimo = remover_acentos(str(state.get("ultimo_interlocutor_explicito", "") or "").strip().lower())
+    janio_status = remover_acentos(str(state.get("janio_status_na_cena", "") or "").strip().lower())
 
     alvo_raw = foco or persistente or ultimo or interlocutor
     alvo = extrair_nome_base_interlocutor(alvo_raw)
 
-    # ======================================================
-    # SEM INTERLOCUTOR REAL
-    # ======================================================
     if (
-        interlocutor in sem_interlocutor
-        and foco in sem_interlocutor
-        and persistente in sem_interlocutor
+        eh_sem_interlocutor(interlocutor)
+        and eh_sem_interlocutor(foco)
+        and eh_sem_interlocutor(persistente)
+        and eh_sem_interlocutor(ultimo)
     ):
         state["relacao"] = "sem interlocutor"
         state["modo_relacional"] = "neutro"
@@ -1090,9 +1111,6 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["toque_intimo_permitido"] = False
         return
 
-    # ======================================================
-    # PERSONAGENS CENTRAIS / REGRAS FIXAS
-    # ======================================================
     if "silvia" in alvo:
         state["relacao"] = "amizade"
         state["modo_relacional"] = "amizade"
@@ -1107,12 +1125,26 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["toque_intimo_permitido"] = False
         return
 
-    if "janio" in alvo or "jânio" in alvo:
-        if janio_status in {"presente", "interlocutor", "personagem", "na cena"}:
+    if "janio" in alvo:
+        janio_presente = janio_status in {
+            "presente",
+            "interlocutor",
+            "personagem",
+            "na cena",
+            "presente na cena",
+            "ativo",
+            "participando",
+            "junto",
+            "sim",
+            "true",
+            "1",
+        }
+
+        if janio_presente:
             state["relacao"] = "romance"
             state["modo_relacional"] = "romance"
             state["tensao_romantica_com_interlocutor"] = True
-            # Não força toque; quem decide isso é tom/privacidade.
+            state["toque_intimo_permitido"] = False
             return
 
         state["relacao"] = "contextual"
@@ -1125,12 +1157,9 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["relacao"] = "amizade íntima"
         state["modo_relacional"] = "cumplicidade"
         state["tensao_romantica_com_interlocutor"] = True
-        # Não força toque; depende de tom/privacidade.
+        state["toque_intimo_permitido"] = False
         return
 
-    # ======================================================
-    # PERSONAGENS NOVOS / INFERÊNCIA POR CONTEXTO
-    # ======================================================
     contexto_personagem = buscar_contexto_do_personagem(state, alvo)
     inferido = inferir_relacao_por_contexto(alvo, contexto_personagem)
 
@@ -1138,34 +1167,32 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
     state["modo_relacional"] = inferido["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = inferido["tensao_romantica_com_interlocutor"]
     state["toque_intimo_permitido"] = inferido["toque_intimo_permitido"]
-    
+
+
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     """
     Quando Mary está sozinha, em tom neutro e sem estímulo ativo,
     limpa fase física herdada de cena anterior.
     """
-    interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
-    foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
-    tom = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
-    tipo = str(state.get("tipo_de_cena", "") or "").strip().lower()
+    if not isinstance(state, dict):
+        return
 
-    sem_interlocutor = {
-        "sozinha",
-        "sozinha em casa",
-        "sem interlocutor",
-        "nenhum",
-        "ninguém",
-        "ninguem",
-        "",
-    }
+    interlocutor = remover_acentos(str(state.get("interlocutor", "") or "").strip().lower())
+    foco = remover_acentos(str(state.get("interlocutor_foco_turno", "") or "").strip().lower())
+    tom = remover_acentos(str(state.get("tom_manual_da_cena", "") or "").strip().lower())
+    tipo = remover_acentos(str(state.get("tipo_de_cena", "") or "").strip().lower())
 
-    mary_stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
-    force_resolution_now = bool(state.get("force_resolution_now", False))
-    mary_pre_orgasm_signals = bool(state.get("mary_pre_orgasm_signals", False))
+    try:
+        mary_stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
+    except Exception:
+        mary_stimulation_turns = 0
+
+    force_resolution_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
+    mary_pre_orgasm_signals = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
 
     if (
-        interlocutor in sem_interlocutor
-        and foco in sem_interlocutor
+        eh_sem_interlocutor(interlocutor)
+        and eh_sem_interlocutor(foco)
         and tom == "neutro"
         and tipo == "neutra"
         and mary_stimulation_turns <= 0
@@ -1175,21 +1202,60 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
         state["physical_phase"] = 0
         state["scene_stage"] = "cotidiano"
         state["mary_intent"] = "preparar_noite_refletindo"
-        state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.12)
-        state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.12)
+        state["desire_level"] = min(clamp(state.get("desire_level", 0.0)), 0.12)
+        state["tension_level"] = min(clamp(state.get("tension_level", 0.0)), 0.12)
         state["toque_intimo_permitido"] = False
         state["tensao_romantica_com_interlocutor"] = False
 
 
 def _fase_atual(state: dict) -> int:
+    if not isinstance(state, dict):
+        return 0
+
     try:
         return int(state.get("physical_phase", 0) or 0)
     except Exception:
         return 0
 
 
+# ==========================================================
+# PROGRESSÃO DE CENA / PICO / CLÍMAX / AVANÇO SOCIAL
+# ==========================================================
+
+def safe_int(valor, default: int = 0) -> int:
+    try:
+        return int(valor or default)
+    except Exception:
+        return default
+
+
+def safe_float(valor, default: float = 0.0) -> float:
+    try:
+        return float(valor or default)
+    except Exception:
+        return default
+
+
+def _texto_norm(valor: str) -> str:
+    """
+    Normaliza texto para comparação simples.
+    Depende da função remover_acentos() definida no bloco anterior.
+    """
+    return remover_acentos(str(valor or "").strip().lower())
+
+
+def _tem_algum(texto: str, termos: list[str]) -> bool:
+    texto = _texto_norm(texto)
+    return any(_texto_norm(t) in texto for t in termos if str(t or "").strip())
+
+
 def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
+    if not isinstance(state, dict):
+        return
+
+    limite = safe_int(limite, 0)
     fase = max(0, min(_fase_atual(state), limite))
+
     state["physical_phase"] = fase
 
     mapa = {
@@ -1203,44 +1269,111 @@ def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
         7: "aftercare",
     }
 
-    state["scene_stage"] = mapa.get(fase, stage_padrao)
+    state["scene_stage"] = mapa.get(fase, stage_padrao or "inicio")
+
 
 def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_limpa: str = "") -> None:
     """
-    Detecta progressão sexual real da cena e prepara sinais de orgasmo de Mary.
+    Detecta progressão física real da cena e prepara sinais de pico de Mary.
 
     Importante:
-    - Detecta penetração, sexo oral, masturbação, fricção e estimulação corporal.
+    - Detecta contato direto, ritmo, estimulação e aproximação de pico.
     - Só atua em ambiente privado.
-    - Não narra orgasmo do usuário.
-    - Não força orgasmo imediato; primeiro cria sinais de pré-pico.
+    - Não narra clímax do usuário.
+    - Não força resolução imediata; apenas prepara estado para outra função decidir.
     """
-    texto = "\n".join(
-        [
-            str(fala_usuario or ""),
-            str(resposta_limpa or ""),
-            str(state.get("mary_acao", "") or ""),
-            str(state.get("scene_stage", "") or ""),
-            str(state.get("mary_intent", "") or ""),
-        ]
-    ).lower()
+    if not isinstance(state, dict):
+        return
 
-    if state.get("privacidade") != "privado":
+    texto = _texto_norm(
+        "\n".join(
+            [
+                str(fala_usuario or ""),
+                str(resposta_limpa or ""),
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("scene_stage", "") or ""),
+                str(state.get("mary_intent", "") or ""),
+            ]
+        )
+    )
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+
+    if privacidade != "privado":
         state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         return
 
-    fase = int(state.get("physical_phase", 0) or 0)
+    fase = safe_int(state.get("physical_phase", 0), 0)
 
     # ======================================================
-    # 1) PENETRAÇÃO / SEXO COM MOVIMENTO
+    # CONTEXTO FÍSICO JÁ ESTABELECIDO NA CENA
     # ======================================================
-    sinais_penetracao = [
-        "tá entrando",
-        "ta entrando",
-        "entrando",
-        "entrou",
-        "penetrar",
+    contexto_fisico_salvo = _texto_norm(
+        "\n".join(
+            [
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("scene_stage", "") or ""),
+                str(state.get("mary_intent", "") or ""),
+            ]
+        )
+    )
+
+    contexto_penetracao_ativo = (
+        fase >= 4
+        or _tem_algum(
+            contexto_fisico_salvo,
+            [
+                "penetração",
+                "penetracao",
+                "penetrando",
+                "cavalgando",
+                "cavalga",
+                "montada",
+                "entra e sai",
+                "entrar e sair",
+                "dentro de mim",
+                "dentro dela",
+                "estocadas",
+                "estocada",
+                "sexo_ou_estimulo",
+                "pre_pico_mary",
+            ],
+        )
+    )
+
+    contexto_oral_ativo = _tem_algum(
+        contexto_fisico_salvo,
+        [
+            "sexo oral",
+            "língua",
+            "lingua",
+            "clitóris",
+            "clitoris",
+            "chupando",
+            "sucção",
+            "succao",
+        ],
+    )
+
+    contexto_masturbacao_ativo = _tem_algum(
+        contexto_fisico_salvo,
+        [
+            "dedos",
+            "dedo",
+            "masturbação",
+            "masturbacao",
+            "massageando",
+            "esfregando",
+        ],
+    )
+
+    # ======================================================
+    # 1) CONTATO / PENETRAÇÃO
+    # Separação entre sinais fortes e fracos evita falso positivo
+    # com frases como "entrando na sala".
+    # ======================================================
+    sinais_fortes_penetracao = [
         "penetração",
         "penetracao",
         "penetração profunda",
@@ -1261,11 +1394,17 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "dentro dela",
         "me preenchendo",
         "preenchendo",
+    ]
+
+    sinais_fracos_penetracao = [
+        "tá entrando",
+        "ta entrando",
+        "entrando",
+        "entrou",
         "encaixar",
         "encaixando",
         "se encaixa",
         "se acomodando",
-        
     ]
 
     sinais_ritmo_penetracao = [
@@ -1285,9 +1424,6 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "continua",
         "batendo",
         "impacto",
-        "flop",
-        "flop!",
-        "flop! flop",
         "sincronizando",
         "quadril sobe",
         "quadril subindo",
@@ -1299,6 +1435,17 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "ritmo frenético",
         "ritmo frenetico",
     ]
+
+    tem_penetracao_forte = _tem_algum(texto, sinais_fortes_penetracao)
+    tem_penetracao_fraca = _tem_algum(texto, sinais_fracos_penetracao)
+    tem_ritmo_penetracao = _tem_algum(texto, sinais_ritmo_penetracao)
+
+    tem_penetracao = tem_penetracao_forte or (
+        tem_penetracao_fraca and contexto_penetracao_ativo
+    )
+
+    if tem_ritmo_penetracao and contexto_penetracao_ativo:
+        tem_penetracao = True
 
     # ======================================================
     # 2) SEXO ORAL EM MARY
@@ -1329,8 +1476,10 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "virilha",
     ]
 
+    tem_oral_mary = _tem_algum(texto, sinais_oral_mary) or contexto_oral_ativo
+
     # ======================================================
-    # 3) MASTURBAÇÃO / TOQUE MANUAL EM MARY
+    # 3) TOQUE MANUAL / MASTURBAÇÃO EM MARY
     # ======================================================
     sinais_masturbacao_mary = [
         "dedo",
@@ -1357,6 +1506,11 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "mao entre suas pernas",
     ]
 
+    tem_masturbacao_mary = (
+        _tem_algum(texto, sinais_masturbacao_mary)
+        or contexto_masturbacao_ativo
+    )
+
     # ======================================================
     # 4) FRICÇÃO / CONTATO EXTERNO
     # ======================================================
@@ -1374,12 +1528,15 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "entre suas pernas",
         "na sua virilha",
         "borda do biquíni",
+        "borda do biquini",
         "borda da calcinha",
     ]
 
+    tem_friccao = _tem_algum(texto, sinais_friccao)
+
     # ======================================================
     # 5) SEIOS / MAMILOS
-    # Ajuda a aumentar tensão, mas sozinho normalmente não resolve pico.
+    # Aumenta tensão, mas sozinho não resolve pico.
     # ======================================================
     sinais_seios = [
         "seios",
@@ -1394,8 +1551,10 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "massageio seus seios",
     ]
 
+    tem_seios = _tem_algum(texto, sinais_seios)
+
     # ======================================================
-    # 6) SINAIS DE PRAZER / APROXIMAÇÃO DE PICO
+    # 6) PRAZER / PRÉ-PICO
     # ======================================================
     sinais_prazer_mary = [
         "gosta",
@@ -1432,78 +1591,8 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         "goza comigo",
     ]
 
-    tem_penetracao = any(p in texto for p in sinais_penetracao)
-    tem_ritmo_penetracao = any(p in texto for p in sinais_ritmo_penetracao)
-
-    tem_oral_mary = any(p in texto for p in sinais_oral_mary)
-    tem_masturbacao_mary = any(p in texto for p in sinais_masturbacao_mary)
-    tem_friccao = any(p in texto for p in sinais_friccao)
-    tem_seios = any(p in texto for p in sinais_seios)
-
-    tem_prazer = any(p in texto for p in sinais_prazer_mary)
-    tem_pre_orgasmo_explicito = any(p in texto for p in sinais_pre_orgasmo)
-
-    # ======================================================
-    # CONTEXTO FÍSICO JÁ ESTABELECIDO NA CENA
-    # ======================================================
-    mary_acao_lower = str(state.get("mary_acao", "") or "").lower()
-    scene_stage_lower = str(state.get("scene_stage", "") or "").lower()
-    mary_intent_lower = str(state.get("mary_intent", "") or "").lower()
-
-    contexto_fisico_salvo = "\n".join(
-        [
-            mary_acao_lower,
-            scene_stage_lower,
-            mary_intent_lower,
-        ]
-    )
-
-    contexto_penetracao_ativo = (
-        int(state.get("physical_phase", 0) or 0) >= 4
-        or "penetração" in contexto_fisico_salvo
-        or "penetracao" in contexto_fisico_salvo
-        or "penetrando" in contexto_fisico_salvo
-        or "cavalgando" in contexto_fisico_salvo
-        or "cavalga" in contexto_fisico_salvo
-        or "montada" in contexto_fisico_salvo
-        or "entra e sai" in contexto_fisico_salvo
-        or "entrar e sair" in contexto_fisico_salvo
-        or "dentro" in contexto_fisico_salvo
-        or "estocadas" in contexto_fisico_salvo
-        or "estocada" in contexto_fisico_salvo
-        or "sexo_ou_estimulo" in contexto_fisico_salvo
-        or "pre_pico_mary" in contexto_fisico_salvo
-    )
-
-    contexto_oral_ativo = (
-        "sexo oral" in contexto_fisico_salvo
-        or "língua" in contexto_fisico_salvo
-        or "lingua" in contexto_fisico_salvo
-        or "clitóris" in contexto_fisico_salvo
-        or "clitoris" in contexto_fisico_salvo
-        or "chupando" in contexto_fisico_salvo
-        or "sucção" in contexto_fisico_salvo
-        or "succao" in contexto_fisico_salvo
-    )
-
-    contexto_masturbacao_ativo = (
-        "dedos" in contexto_fisico_salvo
-        or "dedo" in contexto_fisico_salvo
-        or "masturbação" in contexto_fisico_salvo
-        or "masturbacao" in contexto_fisico_salvo
-        or "massageando" in contexto_fisico_salvo
-        or "esfregando" in contexto_fisico_salvo
-    )
-
-    # Se já existe contexto físico salvo, o ritmo atual também deve contar.
-    if tem_ritmo_penetracao and contexto_penetracao_ativo:
-        tem_penetracao = True
-
-    if contexto_oral_ativo:
-        tem_oral_mary = True
-
-    if contexto_masturbacao_ativo:
-        tem_masturbacao_mary = True
+    tem_prazer = _tem_algum(texto, sinais_prazer_mary)
+    tem_pre_orgasmo_explicito = _tem_algum(texto, sinais_pre_orgasmo)
 
     estimulacao_direta = (
         tem_penetracao
@@ -1511,17 +1600,6 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         or tem_masturbacao_mary
         or tem_friccao
     )
-
-    # ======================================================
-    # CONTADOR DE ESTIMULAÇÃO
-    # ======================================================
-    if estimulacao_direta:
-        state["mary_stimulation_turns"] = int(state.get("mary_stimulation_turns", 0) or 0) + 1
-    else:
-        state["mary_stimulation_turns"] = max(
-            0,
-            int(state.get("mary_stimulation_turns", 0) or 0) - 1,
-        )
 
     estimulacao_intensa = (
         (tem_penetracao and tem_ritmo_penetracao)
@@ -1531,98 +1609,124 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     )
 
     # ======================================================
-    # CORREÇÃO DE FASE PELO CONTEXTO SALVO
+    # CONTADOR DE ESTIMULAÇÃO
     # ======================================================
-    if contexto_penetracao_ativo:
-        fase = max(fase, 4)
-        state["scene_stage"] = "sexo_ou_estimulo"
-        state["mary_intent"] = "sentir_e_conduzir"
-
-    if contexto_penetracao_ativo and tem_ritmo_penetracao:
-        fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
-        state["mary_pre_orgasm_signals"] = True
-
-    if estimulacao_intensa:
-        fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
-        state["mary_pre_orgasm_signals"] = True
-
-    if int(state.get("mary_stimulation_turns", 0) or 0) >= 3:
-        fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
-        state["mary_pre_orgasm_signals"] = True
-
-    # ======================================================
-    # 7) ATUALIZA FASE / STAGE / INTENÇÃO
-    # ======================================================
+    turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
 
     if estimulacao_direta:
+        turns += 1
+    else:
+        turns = max(0, turns - 1)
+
+    state["mary_stimulation_turns"] = turns
+
+    # ======================================================
+    # DECISÃO DE FASE / STAGE / INTENÇÃO
+    # Aplica uma vez, evitando duplicação e sobrescritas confusas.
+    # ======================================================
+    novo_stage = str(state.get("scene_stage", "") or "")
+    nova_intencao = str(state.get("mary_intent", "") or "")
+
+    if contexto_penetracao_ativo or estimulacao_direta:
         fase = max(fase, 4)
-        state["scene_stage"] = "sexo_ou_estimulo"
-        state["mary_intent"] = "sentir_e_conduzir"
+        novo_stage = "sexo_ou_estimulo"
+        nova_intencao = "sentir_e_conduzir"
 
-    if estimulacao_intensa:
+    if (
+        (contexto_penetracao_ativo and tem_ritmo_penetracao)
+        or estimulacao_intensa
+        or turns >= 3
+        or tem_pre_orgasmo_explicito
+    ):
         fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
+        novo_stage = "pre_pico_mary"
+        nova_intencao = "aproximar_do_pico"
         state["mary_pre_orgasm_signals"] = True
 
-    # Se a estimulação direta já dura vários turnos, Mary deve chegar perto do pico
-    # mesmo que o usuário não use a palavra exata.
-    if int(state.get("mary_stimulation_turns", 0) or 0) >= 3:
-        fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
-        state["mary_pre_orgasm_signals"] = True
-
-    # Se for só seios/mamilos, aumenta tensão, mas não joga direto para pico.
-    if tem_seios and not estimulacao_direta:
+    elif tem_seios and not estimulacao_direta:
         fase = max(fase, 3)
-        state["scene_stage"] = "estimulo_corporal"
-        state["mary_intent"] = "intensificar_com_cuidado"
+        novo_stage = "estimulo_corporal"
+        nova_intencao = "intensificar_com_cuidado"
 
-    if tem_pre_orgasmo_explicito:
-        fase = max(fase, 5)
-        state["scene_stage"] = "pre_pico_mary"
-        state["mary_intent"] = "aproximar_do_pico"
-        state["mary_pre_orgasm_signals"] = True
+    # Limpa pré-pico fantasma quando não há mais estímulo nem fase compatível.
+    if turns <= 0 and fase < 5:
+        state["mary_pre_orgasm_signals"] = False
 
     state["physical_phase"] = max(0, min(fase, 6))
+    state["scene_stage"] = novo_stage
+    state["mary_intent"] = nova_intencao
 
     # Não força resolução imediatamente aqui.
     # A resolução deve ser decidida por preparar_resolucao_mary_se_necessario().
     state["force_resolution_now"] = False
 
+
 def detectar_climax_usuario(fala_usuario: str) -> bool:
-    texto = str(fala_usuario or "").lower()
+    texto = _texto_norm(fala_usuario)
+
+    negacoes = [
+        "nao gozei",
+        "não gozei",
+        "ainda nao gozei",
+        "ainda não gozei",
+        "nao estou gozando",
+        "não estou gozando",
+        "nao acabei",
+        "não acabei",
+        "segurei",
+        "estou segurando",
+        "to segurando",
+        "tô segurando",
+    ]
+
+    if _tem_algum(texto, negacoes):
+        return False
 
     sinais_climax_usuario = [
         "gozei",
         "gozei dentro",
         "gozei em você",
+        "gozei em voce",
         "acabei de gozar",
         "eu gozei",
         "já gozei",
+        "ja gozei",
         "estou gozando",
         "tô gozando",
-        "to gozando",        
+        "to gozando",
         "gozando dentro",
         "explodi",
         "descarreguei",
     ]
 
-    return any(s in texto for s in sinais_climax_usuario)
+    return _tem_algum(texto, sinais_climax_usuario)
+
 
 def detectar_climax_mary_na_resposta(resposta: str) -> bool:
     """
-    Detecta se a resposta final de Mary verbalizou claramente o próprio pico.
+    Detecta se a resposta final verbalizou claramente o próprio pico.
     Isso sincroniza o state com a narrativa.
     """
-    texto = str(resposta or "").lower()
+    texto = _texto_norm(resposta)
+
+    negacoes = [
+        "nao gozei",
+        "não gozei",
+        "ainda nao gozei",
+        "ainda não gozei",
+        "nao estou gozando",
+        "não estou gozando",
+        "quase gozei",
+        "quase gozando",
+        "sem gozar",
+        "segurei",
+        "estou segurando",
+        "to segurando",
+        "tô segurando",
+    ]
+
+    if _tem_algum(texto, negacoes):
+        return False
 
     sinais = [
         "estou gozando",
@@ -1634,10 +1738,12 @@ def detectar_climax_mary_na_resposta(resposta: str) -> bool:
         "acabei de gozar",
         "eu estou gozando",
         "eu não aguentei e gozei",
+        "eu nao aguentei e gozei",
         "não aguentei e gozei",
+        "nao aguentei e gozei",
     ]
 
-    return any(s in texto for s in sinais)
+    return _tem_algum(texto, sinais)
 
 
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
@@ -1646,16 +1752,18 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
     Importante: o modelo pode verbalizar que Mary chegou ao pico;
     o state precisa acompanhar isso.
     """
+    if not isinstance(state, dict):
+        return
+
     if detectar_climax_mary_na_resposta(resposta_final):
+        user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+
         state["mary_climax_done"] = True
         state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
+        state["partner_climax_pending"] = not user_done
 
-        if not state.get("user_climax_done", False):
-            state["partner_climax_pending"] = True
-        else:
-            state["partner_climax_pending"] = False
 
 def minimo_estimulos_para_mary(state: dict) -> int:
     """
@@ -1664,16 +1772,19 @@ def minimo_estimulos_para_mary(state: dict) -> int:
     A intenção não é travar Mary, mas impedir pico cedo demais.
     Com Janio, segura um pouco mais para preservar reciprocidade e progressão.
     """
-    interlocutor = str(
+    if not isinstance(state, dict):
+        return 3
+
+    interlocutor = _texto_norm(
         state.get("interlocutor_foco_turno")
         or state.get("interlocutor")
         or ""
-    ).lower()
+    )
 
-    tipo = str(state.get("tipo_de_cena", "") or "").lower()
-    fase = int(state.get("physical_phase", 0) or 0)
+    tipo = _texto_norm(state.get("tipo_de_cena", ""))
+    fase = safe_int(state.get("physical_phase", 0), 0)
 
-    if "janio" in interlocutor or "jânio" in interlocutor:
+    if "janio" in interlocutor:
         return 4
 
     if "intimidade" in tipo and fase >= 4:
@@ -1684,28 +1795,33 @@ def minimo_estimulos_para_mary(state: dict) -> int:
 
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
     """
-    Decide quando o turno deve resolver o orgasmo de Mary.
-    Não resolve orgasmo do usuário.
+    Decide quando o turno deve resolver o pico de Mary.
+    Não resolve clímax do usuário.
     """
-    texto = str(fala_usuario or "").lower()
+    if not isinstance(state, dict):
+        return
 
-    if state.get("privacidade") != "privado":
+    texto = _texto_norm(fala_usuario)
+    privacidade = _texto_norm(state.get("privacidade", ""))
+
+    if privacidade != "privado":
         state["force_resolution_now"] = False
         return
 
-    if state.get("mary_climax_done"):
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+
+    if mary_done:
         state["force_resolution_now"] = False
-
-        if not state.get("user_climax_done", False):
-            state["partner_climax_pending"] = True
-        else:
-            state["partner_climax_pending"] = False
-
+        state["partner_climax_pending"] = not user_done
         return
 
-    fase = int(state.get("physical_phase", 0) or 0)
-    pre_pico = bool(state.get("mary_pre_orgasm_signals", False))
-    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
+    fase = safe_int(state.get("physical_phase", 0), 0)
+    pre_pico = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+    stimulation_turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
+
+    tension = safe_float(state.get("tension_level", 0.0), 0.0)
+    desire = safe_float(state.get("desire_level", 0.0), 0.0)
 
     gatilhos_resolucao = [
         # comando direto
@@ -1746,9 +1862,10 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "brinco com",
     ]
 
-    gatilho_textual = any(p in texto for p in gatilhos_resolucao)
+    gatilho_textual = _tem_algum(texto, gatilhos_resolucao)
 
     min_turns = minimo_estimulos_para_mary(state)
+    estimulos_minimos_para_resolver = stimulation_turns >= min_turns
 
     gatilho_por_duracao = (
         fase >= 5
@@ -1759,12 +1876,10 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
     gatilho_por_tensao_maxima = (
         fase >= 5
         and pre_pico
-        and float(state.get("tension_level", 0.0) or 0.0) >= 0.85
-        and float(state.get("desire_level", 0.0) or 0.0) >= 0.65
+        and tension >= 0.85
+        and desire >= 0.65
         and stimulation_turns >= min_turns
     )
-
-    estimulos_minimos_para_resolver = stimulation_turns >= min_turns
 
     if (
         fase >= 5
@@ -1775,29 +1890,36 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         state["force_resolution_now"] = True
         state["mary_intent"] = "resolver_pico_mary"
         state["scene_stage"] = "pico_mary"
-        state["physical_phase"] = max(int(state.get("physical_phase", 0) or 0), 6)
+        state["physical_phase"] = max(safe_int(state.get("physical_phase", 0), 0), 6)
     else:
         state["force_resolution_now"] = False
 
     # Se Mary já chegou antes e o parceiro ainda não verbalizou conclusão,
     # a cena continua aberta para reciprocidade.
-    if state.get("mary_climax_done") and not state.get("user_climax_done"):
-        state["partner_climax_pending"] = True
-    else:
-        state["partner_climax_pending"] = False
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+    state["partner_climax_pending"] = bool(mary_done and not user_done)
+
 
 def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
     """
     Detecta quando uma ação social planejada deve avançar.
     Ex: fugir da aula, sair da sala, levantar, ir ao café.
     """
-    texto = str(fala_usuario or "").strip().lower()
-    acao_atual = str(state.get("mary_acao", "") or "").lower()
+    if not isinstance(state, dict):
+        return
+
+    texto = _texto_norm(fala_usuario)
+    acao_atual = _texto_norm(state.get("mary_acao", ""))
 
     gatilhos_execucao = [
         "bora",
         "vamos",
         "vamo",
+        "vamos sair",
+        "bora sair",
+        "pode ir",
+        "vai agora",
         "ele nem viu",
         "ela nem viu",
         "ninguém viu",
@@ -1811,12 +1933,11 @@ def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
         "saimos",
         "fugimos",
         "corre",
-        "vai",
     ]
 
-    contexto_fuga = any(
-        p in acao_atual
-        for p in [
+    contexto_fuga = _tem_algum(
+        acao_atual,
+        [
             "fugir",
             "sair",
             "porta",
@@ -1824,27 +1945,45 @@ def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
             "fechar o caderno",
             "professor",
             "sala de aula",
-        ]
+        ],
     )
 
-    if contexto_fuga and any(g in texto for g in gatilhos_execucao):
+    if contexto_fuga and _tem_algum(texto, gatilhos_execucao):
         state["scene_stage"] = "fuga_em_andamento"
         state["mary_intent"] = "executar_plano_social"
-        state["mary_acao"] = (
-            "Mary já começou a sair discretamente da sala com Silvia, "
-            "aproveitando a distração do professor."
-        )
+        state["social_progression_event"] = "fuga_em_andamento"
+
+        if _tem_algum(
+            acao_atual,
+            [
+                "esperando o momento",
+                "fechar o caderno",
+                "porta",
+                "fugir",
+                "sair",
+            ],
+        ):
+            state["mary_acao"] = (
+                "Mary já começou a sair discretamente da sala com Silvia, "
+                "aproveitando a distração do professor."
+            )
 
 def derivar_controles_de_cena(state: dict) -> None:
     """
     Deriva privacidade, tipo de cena, iniciativa e tom a partir do TOM MANUAL.
 
-    Nova regra-mãe:
+    Regra-mãe:
     - O roteirista escolhe o tom manual da cena.
-    - A privacidade detectada NÃO decide mais sozinha o tipo da cena.
+    - A privacidade detectada NÃO decide sozinha o tipo da cena.
     - A privacidade apenas limita ou redireciona a execução do tom.
     - Exemplo: Tom = Intimidade + privacidade pública => Mary busca lugar reservado.
     """
+    if not isinstance(state, dict):
+        return
+
+    # ======================================================
+    # 1) PRIVACIDADE / TOM MANUAL
+    # ======================================================
     local_raw = str(state.get("local", "") or "").strip()
     privacidade = get_privacidade_por_local(local_raw)
     state["privacidade"] = privacidade
@@ -1858,7 +1997,15 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["tom_manual_da_cena"] = tom_manual
 
     # ======================================================
-    # PRESETS PRINCIPAIS
+    # 2) RELAÇÃO DO INTERLOCUTOR
+    # Calcula antes dos presets.
+    # Importante: depois o TOM MANUAL pode ajustar modo/tensão.
+    # Não chamar de novo no final para não sobrescrever o tom.
+    # ======================================================
+    normalizar_relacao_por_interlocutor(state)
+
+    # ======================================================
+    # 3) PRESETS PRINCIPAIS
     # ======================================================
     presets = {
         "Neutro": {
@@ -1919,7 +2066,6 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "A malícia pode ser carnal, social, emocional ou oportunista."
             ),
         },
-        
         "Flerte": {
             "tipo_de_cena": "flerte",
             "estilo_de_iniciativa": "flerte consciente",
@@ -1956,7 +2102,6 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela mantém autoria própria e respeita o ambiente."
             ),
         },
-
         "Segredo pendente": {
             "tipo_de_cena": "segredo_pendente",
             "estilo_de_iniciativa": "ponderação cúmplice",
@@ -2006,19 +2151,19 @@ def derivar_controles_de_cena(state: dict) -> None:
     cfg = dict(presets.get(tom_manual, presets["Neutro"]))
 
     # ======================================================
-    # AJUSTE POR PRIVACIDADE
+    # 4) AJUSTE POR PRIVACIDADE
     # A privacidade NÃO muda o tom escolhido.
     # Ela muda a rota de execução.
     # ======================================================
     if privacidade == "publico":
         if tom_manual == "Malícia":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
-    
+
             cfg["tipo_de_cena"] = "malicia_publica"
             cfg["tom_da_cena"] = "malícia pública"
             cfg["estilo_de_iniciativa"] = "provocação social contida"
             cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 1)
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 1)
             cfg["scene_stage"] = "aproximacao"
             cfg["mary_intent"] = "provocar_sem_avanco_fisico"
             cfg["limite_ambiente"] = (
@@ -2026,7 +2171,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela não deve agir como se estivesse em local privado. "
                 "Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
             )
-    
+
             if segredo_ativo:
                 cfg["tipo_de_cena"] = "malicia_com_segredo"
                 cfg["tom_da_cena"] = "malícia social e segredo"
@@ -2040,13 +2185,13 @@ def derivar_controles_de_cena(state: dict) -> None:
                     "Não deve esquecer o segredo ativo. "
                     "Não deve transformar a resposta em instruções operacionais detalhadas para furto, invasão, ocultação ou fuga."
                 )
-    
+
         elif tom_manual == "Flerte":
             cfg["tipo_de_cena"] = "flerte_publico"
             cfg["tom_da_cena"] = "flerte público contido"
             cfg["estilo_de_iniciativa"] = "flerte discreto"
             cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 2)
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 2)
             cfg["scene_stage"] = "flerte_direto"
             cfg["mary_intent"] = "flerte_com_discricao"
             cfg["limite_ambiente"] = (
@@ -2054,7 +2199,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "mas deve evitar exposição, toque íntimo, nudez, sexo ou clímax. "
                 "Se quiser avançar, deve conduzir para local reservado."
             )
-    
+
         elif tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_contida_por_ambiente"
             cfg["tom_da_cena"] = "intimidade com condução para local reservado"
@@ -2067,7 +2212,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Intimidade desejada em local público: Mary não deve agir intimamente ali. "
                 "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
             )
-    
+
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco em público"
@@ -2085,7 +2230,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela pode usar olhares, pausas, frases ambíguas e cautela para não expor o segredo. "
                 "Não deve resolver, revelar ou abandonar a pendência sem ação clara do usuário."
             )
-    
+
         elif tom_manual == "Decisão":
             cfg["tipo_de_cena"] = "decisao_publica"
             cfg["tom_da_cena"] = "decisão pública"
@@ -2105,21 +2250,21 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela não deve continuar cozinhando o interlocutor se a cena exige resposta. "
                 "Pode ser elegante, firme, fria, triste, explosiva ou libertadora, mas precisa mover a cena para uma consequência concreta."
             )
-    
+
     elif privacidade == "semiprivado":
         if tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_semiprivada"
             cfg["tom_da_cena"] = "intimidade contida"
             cfg["estilo_de_iniciativa"] = "aproximação cuidadosa"
             cfg["toque_intimo_permitido"] = True
-            cfg["physical_phase"] = min(int(cfg["physical_phase"]), 4)
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 4)
             cfg["scene_stage"] = "intensidade_contida"
             cfg["mary_intent"] = "aprofundar_com_cuidado"
             cfg["limite_ambiente"] = (
                 "Intimidade em local semiprivado: Mary pode aumentar a tensão e o contato, "
                 "mas com cuidado, discrição e atenção ao risco de exposição."
             )
-    
+
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco"
@@ -2136,7 +2281,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Segredo pendente em local semiprivado: Mary pode falar com mais clareza, mas ainda com cautela. "
                 "Ela deve manter a pendência viva, medir riscos, observar quem pode ouvir e evitar decisões precipitadas."
             )
-    
+
         elif tom_manual == "Decisão":
             cfg["tipo_de_cena"] = "decisao_semiprivada"
             cfg["tom_da_cena"] = "decisão com tensão contida"
@@ -2155,13 +2300,13 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Se ela está sufocada, pressionada ou usada como troféu, pode dizer claramente 'chega', 'acabou', 'eu não quero' ou 'me leva embora'. "
                 "A decisão não deve virar nova sedução, suspense ou adiamento vazio."
             )
-    
+
     else:
         # Privado: o tom manual pode ser executado com mais liberdade,
         # exceto Segredo pendente e Decisão, que trocam o eixo da cena.
         if tom_manual in ("Malícia", "Flerte", "Intimidade"):
             cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
-    
+
         elif tom_manual == "Segredo pendente":
             cfg["tipo_de_cena"] = "segredo_pendente"
             cfg["tom_da_cena"] = "segredo e risco"
@@ -2180,7 +2325,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "O segredo deve influenciar subtexto, olhar, pausas e decisões. "
                 "Não deve resolver, revelar, esquecer ou abandonar o segredo sem ação clara do usuário."
             )
-    
+
         elif tom_manual == "Decisão":
             cfg["tipo_de_cena"] = "decisao_privada"
             cfg["tom_da_cena"] = "decisão íntima e direta"
@@ -2201,18 +2346,23 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Se está sufocada, pressionada ou cansada de fingir, pode dizer 'acabou', 'chega', 'você me sufoca', 'eu não quero isso' ou 'me deixa em paz'. "
                 "Depois da decisão, a cena deve mostrar a consequência imediata."
             )
+
     # ======================================================
-    # RESET FÍSICO QUANDO O TOM MUDA PARA SEGREDO PENDENTE
+    # 5) RESET TEMPORÁRIO QUANDO O TOM MUDA PARA SEGREDO PENDENTE
+    # Importante:
+    # - Limpa gatilhos momentâneos.
+    # - NÃO apaga mary_climax_done/user_climax_done, pois isso pode
+    #   ser fato narrativo já ocorrido.
     # ======================================================
     if tom_manual == "Segredo pendente":
         state["force_resolution_now"] = False
         state["resolution_done"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
-        state["mary_climax_done"] = False
-    
+        state["partner_climax_pending"] = False
+
     # ======================================================
-    # APLICA NO STATE
+    # 6) APLICA CFG NO STATE
     # ======================================================
     state["tipo_de_cena"] = cfg["tipo_de_cena"]
     state["estilo_de_iniciativa"] = cfg["estilo_de_iniciativa"]
@@ -2223,14 +2373,13 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
 
-    # Corrige relação quando não há interlocutor real.
-    normalizar_relacao_por_interlocutor(state)
-
-    # Detecta se a cena atual é neutra/introspectiva, sem interlocutor.
-    interlocutor_norm = str(state.get("interlocutor", "") or "").strip().lower()
-    foco_norm = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
-    tom_norm = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
-    tipo_norm = str(state.get("tipo_de_cena", "") or "").strip().lower()
+    # ======================================================
+    # 7) DETECTA CENA NEUTRA SOZINHA
+    # ======================================================
+    interlocutor_norm = _texto_norm(state.get("interlocutor", ""))
+    foco_norm = _texto_norm(state.get("interlocutor_foco_turno", ""))
+    tom_norm = _texto_norm(state.get("tom_manual_da_cena", ""))
+    tipo_norm = _texto_norm(state.get("tipo_de_cena", ""))
 
     sem_interlocutor = {
         "",
@@ -2238,27 +2387,31 @@ def derivar_controles_de_cena(state: dict) -> None:
         "sozinha em casa",
         "sem interlocutor",
         "nenhum",
-        "ninguém",
         "ninguem",
     }
+
+    force_resolution = normalizar_bool(state.get("force_resolution_now", False), default=False)
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+    pre_signals = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+    stimulation_turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
 
     cena_neutra_sozinha = (
         interlocutor_norm in sem_interlocutor
         and foco_norm in sem_interlocutor
         and tom_norm == "neutro"
         and tipo_norm == "neutra"
-        and not bool(state.get("force_resolution_now", False))
-        and not bool(state.get("mary_climax_done", False))
-        and not bool(state.get("mary_pre_orgasm_signals", False))
-        and int(state.get("mary_stimulation_turns", 0) or 0) <= 0
+        and not force_resolution
+        and not mary_done
+        and not pre_signals
+        and stimulation_turns <= 0
     )
 
     # ======================================================
-    # FASE / STAGE / NÍVEIS
+    # 8) FASE / STAGE / NÍVEIS
     # ======================================================
-    if not state.get("force_resolution_now") and not state.get("mary_climax_done"):
-        fase_atual = int(state.get("physical_phase", 0) or 0)
-        fase_base = int(cfg["physical_phase"])
+    if not force_resolution and not mary_done:
+        fase_atual = safe_int(state.get("physical_phase", 0), 0)
+        fase_base = safe_int(cfg.get("physical_phase", 0), 0)
 
         mapa_stage = {
             0: "inicio",
@@ -2271,23 +2424,21 @@ def derivar_controles_de_cena(state: dict) -> None:
             7: "aftercare",
         }
 
-        # Cena neutra, Mary sozinha:
-        # aqui o tom manual PODE rebaixar fase antiga.
         if cena_neutra_sozinha:
             state["physical_phase"] = 0
             state["scene_stage"] = "cotidiano"
             state["mary_intent"] = "preparar_noite_refletindo"
             state["desire_level"] = min(
-                float(state.get("desire_level", 0.0) or 0.0),
-                float(cfg["desire_level"]),
+                safe_float(state.get("desire_level", 0.0), 0.0),
+                safe_float(cfg.get("desire_level", 0.0), 0.0),
             )
             state["tension_level"] = min(
-                float(state.get("tension_level", 0.0) or 0.0),
-                float(cfg["tension_level"]),
+                safe_float(state.get("tension_level", 0.0), 0.0),
+                safe_float(cfg.get("tension_level", 0.0), 0.0),
             )
             state["connection_level"] = max(
-                float(state.get("connection_level", 0.0) or 0.0),
-                float(cfg["connection_level"]),
+                safe_float(state.get("connection_level", 0.0), 0.0),
+                safe_float(cfg.get("connection_level", 0.0), 0.0),
             )
             state["toque_intimo_permitido"] = False
             state["tensao_romantica_com_interlocutor"] = False
@@ -2302,68 +2453,139 @@ def derivar_controles_de_cena(state: dict) -> None:
 
             state["desire_level"] = clamp(
                 max(
-                    float(state.get("desire_level", 0.0) or 0.0),
-                    float(cfg["desire_level"]),
+                    safe_float(state.get("desire_level", 0.0), 0.0),
+                    safe_float(cfg.get("desire_level", 0.0), 0.0),
                 )
             )
 
             state["tension_level"] = clamp(
                 max(
-                    float(state.get("tension_level", 0.0) or 0.0),
-                    float(cfg["tension_level"]),
+                    safe_float(state.get("tension_level", 0.0), 0.0),
+                    safe_float(cfg.get("tension_level", 0.0), 0.0),
                 )
             )
 
             state["connection_level"] = clamp(
                 max(
-                    float(state.get("connection_level", 0.0) or 0.0),
-                    float(cfg["connection_level"]),
+                    safe_float(state.get("connection_level", 0.0), 0.0),
+                    safe_float(cfg.get("connection_level", 0.0), 0.0),
                 )
             )
 
-    # Segurança final: reaplica limpeza caso algum campo anterior tenha herdado lixo antigo.
-    normalizar_relacao_por_interlocutor(state)
+    # ======================================================
+    # 9) LIMPEZA FINAL DE CENA NEUTRA SOZINHA
+    # Não recalcula relação aqui para não sobrescrever o tom manual.
+    # ======================================================
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
 
-    # Campos de segurança
+    # ======================================================
+    # 10) SEGURANÇA FINAL POR AMBIENTE
+    # Ambiente não privado impede nova resolução,
+    # mas NÃO apaga fatos narrativos já ocorridos.
+    # ======================================================
     if privacidade != "privado":
         state["force_resolution_now"] = False
-        state["resolution_done"] = False
-        state["mary_climax_done"] = False
-        state["user_climax_done"] = False
-        state["partner_climax_pending"] = False
+        state["mary_pre_orgasm_signals"] = False
+
+        if safe_int(state.get("physical_phase", 0), 0) < 6:
+            state["resolution_done"] = False
+            state["partner_climax_pending"] = False
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
-    chave_atual = "|".join([
-        str(state.get("local", "")),
-        str(state.get("interlocutor", "")),
-        str(state.get("tipo_de_cena", "")),
-        str(state.get("privacidade", "")),
-    ])
+    """
+    Reseta progressão apenas quando há mudança forte de contexto.
 
-    chave_antiga = str(state.get("_contexto_anterior", "") or "")
+    Mudanças leves de local não devem destruir continuidade.
+    Ex:
+    - sala -> corredor com mesmo interlocutor e mesmo tipo de cena: pode continuar.
+    - Janio -> Anthony: reset forte.
+    - privado -> público: reset forte.
+    - qualquer coisa -> neutra: reset forte.
+    """
+    if not isinstance(state, dict):
+        return
 
-    if chave_antiga and chave_atual != chave_antiga:
-        state["physical_phase"] = 0
-        state["scene_stage"] = "inicio"
-        state["desire_level"] = 0.18
-        state["tension_level"] = 0.12
-        state["connection_level"] = max(
-            float(state.get("connection_level", 0.22) or 0.22),
-            0.22,
+    contexto_atual = {
+        "local": str(state.get("local", "") or "").strip(),
+        "interlocutor": str(state.get("interlocutor", "") or "").strip(),
+        "tipo_de_cena": str(state.get("tipo_de_cena", "") or "").strip(),
+        "privacidade": str(state.get("privacidade", "") or "").strip(),
+    }
+
+    contexto_antigo = state.get("_contexto_anterior_dict")
+
+    # Compatibilidade com versão antiga que salvava string.
+    if not isinstance(contexto_antigo, dict):
+        chave_antiga = str(state.get("_contexto_anterior", "") or "")
+        if chave_antiga:
+            partes = chave_antiga.split("|")
+            contexto_antigo = {
+                "local": partes[0] if len(partes) > 0 else "",
+                "interlocutor": partes[1] if len(partes) > 1 else "",
+                "tipo_de_cena": partes[2] if len(partes) > 2 else "",
+                "privacidade": partes[3] if len(partes) > 3 else "",
+            }
+        else:
+            contexto_antigo = None
+
+    if contexto_antigo:
+        antigo_interlocutor = _texto_norm(contexto_antigo.get("interlocutor", ""))
+        novo_interlocutor = _texto_norm(contexto_atual.get("interlocutor", ""))
+
+        antigo_tipo = _texto_norm(contexto_antigo.get("tipo_de_cena", ""))
+        novo_tipo = _texto_norm(contexto_atual.get("tipo_de_cena", ""))
+
+        antiga_privacidade = _texto_norm(contexto_antigo.get("privacidade", ""))
+        nova_privacidade = _texto_norm(contexto_atual.get("privacidade", ""))
+
+        mudou_interlocutor = antigo_interlocutor != novo_interlocutor
+        mudou_tipo_para_neutro = novo_tipo == "neutra" and antigo_tipo != "neutra"
+        saiu_do_privado = antiga_privacidade == "privado" and nova_privacidade != "privado"
+
+        mudanca_forte = (
+            mudou_interlocutor
+            or mudou_tipo_para_neutro
+            or saiu_do_privado
         )
 
-        # Reset completo de resolução/pico
-        state["resolution_done"] = False
-        state["mary_climax_done"] = False
-        state["user_climax_done"] = False
-        state["partner_climax_pending"] = False
-        state["force_resolution_now"] = False
-        state["mary_pre_orgasm_signals"] = False
-        state["mary_stimulation_turns"] = 0
+        if mudanca_forte:
+            state["physical_phase"] = 0
+            state["scene_stage"] = "inicio"
+            state["desire_level"] = 0.18
+            state["tension_level"] = 0.12
+            state["connection_level"] = max(
+                safe_float(state.get("connection_level", 0.22), 0.22),
+                0.22,
+            )
 
-    state["_contexto_anterior"] = chave_atual
+            # Reset completo de resolução/pico apenas em mudança forte.
+            state["resolution_done"] = False
+            state["mary_climax_done"] = False
+            state["user_climax_done"] = False
+            state["partner_climax_pending"] = False
+            state["force_resolution_now"] = False
+            state["mary_pre_orgasm_signals"] = False
+            state["mary_stimulation_turns"] = 0
+
+    state["_contexto_anterior_dict"] = contexto_atual
+    state["_contexto_anterior"] = "|".join(
+        [
+            contexto_atual["local"],
+            contexto_atual["interlocutor"],
+            contexto_atual["tipo_de_cena"],
+            contexto_atual["privacidade"],
+        ]
+    )
+
+def eh_janio(valor: str) -> bool:
+    valor = _texto_norm(valor)
+    return valor in {
+        "janio",
+        "janio donisete",
+        "janio donisete welnecker",
+    }
+
 
 def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     """
@@ -2376,21 +2598,24 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
       mantém o último interlocutor persistente.
     - Janio não volta automaticamente só por ser usuario_real.
     """
-    texto = str(fala_usuario or "").strip().lower()
+    if not isinstance(state, dict):
+        return
+
+    texto = _texto_norm(fala_usuario)
     interlocutor_campo = str(state.get("interlocutor", "") or "").strip()
 
     if any(sep in interlocutor_campo for sep in [",", ";", "/", "|"]):
         foco = detectar_foco_do_turno(fala_usuario, interlocutor_campo)
-    
+
         state["interlocutor_foco_turno"] = foco
         state["interlocutor_ativo_persistente"] = foco
         state["ultimo_interlocutor_explicito"] = foco
-    
-        if foco.lower() in ("janio", "jânio", "janio donisete", "jânio donisete"):
+
+        if eh_janio(foco):
             state["janio_status_na_cena"] = "presente"
         else:
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
-    
+
         return
 
     interlocutor_atual = str(
@@ -2418,7 +2643,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
 
     for nome_canonico, aliases in personagens.items():
         for alias in aliases:
-            alias_regex = re.escape(alias)
+            alias_regex = re.escape(_texto_norm(alias))
 
             for padrao in padroes:
                 if re.search(padrao.format(nome=alias_regex), texto, flags=re.IGNORECASE):
@@ -2436,7 +2661,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
         state["interlocutor_ativo_persistente"] = novo_interlocutor
         state["ultimo_interlocutor_explicito"] = novo_interlocutor
 
-        if novo_interlocutor.lower() == "janio":
+        if eh_janio(novo_interlocutor):
             state["janio_status_na_cena"] = "presente"
         else:
             state["janio_status_na_cena"] = "roteirista"
@@ -2448,8 +2673,9 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
         state["interlocutor"] = interlocutor_atual
         state["interlocutor_ativo_persistente"] = interlocutor_atual
 
-        if interlocutor_atual.lower() != "janio":
+        if not eh_janio(interlocutor_atual):
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
+
 
 def sincronizar_interlocutor_manual(state: dict) -> None:
     """
@@ -2460,6 +2686,9 @@ def sincronizar_interlocutor_manual(state: dict) -> None:
     interlocutor = "Joselina, Anthony"
     foco/persistente/último = "Silvia"
     """
+    if not isinstance(state, dict):
+        return
+
     interlocutor = str(state.get("interlocutor", "") or "").strip()
 
     if not interlocutor:
@@ -2468,8 +2697,6 @@ def sincronizar_interlocutor_manual(state: dict) -> None:
 
     anterior = str(state.get("_interlocutor_manual_anterior", "") or "").strip()
 
-    # Se o usuário mudou manualmente o interlocutor no sidebar,
-    # resetamos os campos derivados.
     if interlocutor != anterior:
         nomes = [
             nome.strip()
@@ -2484,10 +2711,11 @@ def sincronizar_interlocutor_manual(state: dict) -> None:
         state["ultimo_interlocutor_explicito"] = foco_padrao
         state["_interlocutor_manual_anterior"] = interlocutor
 
-        if foco_padrao.lower() in ("janio", "jânio", "janio donisete", "jânio donisete"):
+        if eh_janio(foco_padrao):
             state["janio_status_na_cena"] = "presente"
         elif state.get("janio_status_na_cena") == "presente":
             state["janio_status_na_cena"] = "roteirista"
+
 
 def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
     """
@@ -2499,7 +2727,7 @@ def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
     Se disser "Anthony se aproxima", foco = Anthony.
     Se não detectar ninguém, mantém o primeiro nome do grupo.
     """
-    texto = str(fala_usuario or "").lower()
+    texto = _texto_norm(fala_usuario)
     interlocutor_atual = str(interlocutor_atual or "").strip()
 
     nomes = [
@@ -2513,44 +2741,83 @@ def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
 
     padroes_acao = [
         r"\b{nome}\s+(cochicha|sussurra|fala|diz|responde|pergunta|grita|chama|se aproxima|aproxima|chega|entra|olha|sorri|toca|segura|puxa|manda mensagem|envia mensagem)\b",
-        r'"{nome}[^"]*"\s*:',
+        r"\b{nome}\s*:\s*",
         r"\bmensagem de\s+{nome}\b",
-        r"\b{name}\s*:\s*",
+        r"\bna voz de\s+{nome}\b",
+        r"\bcomo\s+{nome}\b",
     ]
 
     for nome in nomes:
-        nome_lower = nome.lower()
-        nome_regex = re.escape(nome_lower)
+        nome_norm = _texto_norm(nome)
+        nome_regex = re.escape(nome_norm)
 
         for padrao in padroes_acao:
-            padrao_final = (
-                padrao
-                .replace("{nome}", nome_regex)
-                .replace("{name}", nome_regex)
-            )
-
-            if re.search(padrao_final, texto, flags=re.IGNORECASE):
+            if re.search(padrao.format(nome=nome_regex), texto, flags=re.IGNORECASE):
                 return nome
 
-    # Se não detectou foco explícito, mantém o primeiro personagem listado.
     return nomes[0]
 
 
 def normalizar_estado(state: dict) -> None:
+    """
+    Normaliza o estado geral da cena.
+
+    Importante:
+    - Não deve apagar fatos narrativos já ocorridos apenas porque a privacidade atual é pública.
+    - Ambiente público limita nova progressão, mas não reescreve passado.
+    """
+    if not isinstance(state, dict):
+        return
+
     resetar_se_contexto_mudou(state)
     derivar_controles_de_cena(state)
-    if state.get("privacidade") == "publico" and state.get("tipo_de_cena") != "social":
-        state["physical_phase"] = min(int(state.get("physical_phase", 0) or 0), 3)
-        if str(state.get("scene_stage", "")).lower() in ("intensidade", "pico", "desaceleracao", "aftercare", "pos_pico_mary"):
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    tipo_de_cena = _texto_norm(state.get("tipo_de_cena", ""))
+
+    if privacidade == "publico" and tipo_de_cena != "social":
+        state["physical_phase"] = min(
+            safe_int(state.get("physical_phase", 0), 0),
+            3,
+        )
+
+        scene_stage = _texto_norm(state.get("scene_stage", ""))
+        if scene_stage in (
+            "intensidade",
+            "pico",
+            "desaceleracao",
+            "aftercare",
+            "pos_pico_mary",
+            "sexo_ou_estimulo",
+            "pre_pico_mary",
+            "pico_mary",
+        ):
             state["scene_stage"] = "beijo"
-        if str(state.get("mary_intent", "")).lower() in ("buscar_intensidade", "resolver_pico", "retomar_intensidade"):
+
+        mary_intent = _texto_norm(state.get("mary_intent", ""))
+        if mary_intent in (
+            "buscar_intensidade",
+            "resolver_pico",
+            "resolver_pico_mary",
+            "retomar_intensidade",
+            "aproximar_do_pico",
+        ):
             state["mary_intent"] = "flerte_intimo_discreto"
+
+        # Ambiente público bloqueia nova resolução,
+        # mas NÃO apaga clímax já ocorrido.
         state["force_resolution_now"] = False
-        state["resolution_done"] = False
-        state["mary_climax_done"] = False
-        state["user_climax_done"] = False
+        state["mary_pre_orgasm_signals"] = False
+
+        if safe_int(state.get("physical_phase", 0), 0) < 6:
+            state["resolution_done"] = False
+            state["partner_climax_pending"] = False
+
 
 def resolver_estado_emocional_mary(state: dict) -> str:
+    if not isinstance(state, dict):
+        return "Automático"
+
     estado = str(state.get("estado_emocional", "Automático") or "Automático").strip()
 
     if estado not in OPCOES_ESTADO_EMOCIONAL_MARY:
@@ -2591,29 +2858,30 @@ def gerar_visual_automatico_mary(state: dict) -> str:
     Princípios:
     - mary_acao e plano_ativo vencem local genérico.
     - O visual descreve roupa/aparência, não cria destino novo.
-    - Não usar gatilhos perigosos como "mar" sozinho, porque pode bater em palavras como Mary, Maracanã etc.
+    - Não usar gatilhos perigosos como "mar" sozinho.
     - Contexto de saída/compromisso externo vence roupa de casa, banho, praia ou descanso.
     """
+    if not isinstance(state, dict):
+        return "Mary está com roupa coerente com a cena atual, cabelos negros bem cuidados."
 
-    local = str(state.get("local", "") or "").strip().lower()
-    tempo = str(state.get("tempo", "") or "").strip().lower()
-    tom = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
-    acao = str(state.get("mary_acao", "") or "").strip().lower()
-    plano = str(state.get("plano_ativo", "") or "").strip().lower()
-    eventos = str(state.get("eventos_recentes", "") or "").strip().lower()
-    fala_atual = str(state.get("_fala_usuario_atual", "") or "").strip().lower()
+    local = _texto_norm(state.get("local", ""))
+    tempo = _texto_norm(state.get("tempo", ""))
+    tom = _texto_norm(state.get("tom_manual_da_cena", ""))
+    acao = _texto_norm(state.get("mary_acao", ""))
+    plano = _texto_norm(state.get("plano_ativo", ""))
+    eventos = _texto_norm(state.get("eventos_recentes", ""))
+    fala_atual = _texto_norm(state.get("_fala_usuario_atual", ""))
 
     contexto_atual = "\n".join(
         [
             acao,
             plano,
             fala_atual,
+            eventos,
             local,
             tempo,
         ]
     )
-
-    contexto_memoria = eventos
 
     roupa = "roupa coerente com a cena atual"
     cabelo = "cabelos negros bem cuidados"
@@ -2624,32 +2892,27 @@ def gerar_visual_automatico_mary(state: dict) -> str:
     # ======================================================
 
     termos_compromisso_externo = [
-        "sair",
-        "saindo",
+        "saindo de casa",
         "sair de casa",
+        "vou sair",
+        "vamos sair",
         "indo para",
         "ir para",
-        "ponto de ônibus",
         "ponto de onibus",
-        "ônibus",
         "onibus",
-        "mototáxi",
         "mototaxi",
         "uber",
-        "táxi",
         "taxi",
         "mochila",
         "bolsa",
         "chave",
         "porta",
         "rua",
-        "calçar",
+        "calcar",
         "calcando",
-        "calçando",
-        "tênis",
+        "calcando",
         "tenis",
         "sapato",
-        "sandália",
         "sandalia",
         "compromisso",
         "aula",
@@ -2658,12 +2921,9 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "campus",
         "trabalho",
         "curso",
-        "reunião",
         "reuniao",
         "encontro marcado",
-        "almoçar",
         "almocar",
-        "ru",
     ]
 
     termos_faculdade = [
@@ -2673,9 +2933,12 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "campus",
         "sala de aula",
         "cantina",
-        "ru",
+        "restaurante universitario",
+        "bandejao",
+        "ir ao ru",
+        "no ru",
+        "para o ru",
         "professor",
-        "matéria",
         "materia",
         "caderno",
         "livros",
@@ -2709,18 +2972,14 @@ def gerar_visual_automatico_mary(state: dict) -> str:
     termos_banho = [
         "banho",
         "chuveiro",
-        "banheiro",
         "toalha",
-        "roupão",
         "roupao",
         "sabonete",
         "molhada",
         "molhado",
-        "úmida",
         "umida",
         "se secando",
         "sair do banho",
-        "pós-banho",
         "pos-banho",
     ]
 
@@ -2739,7 +2998,8 @@ def gerar_visual_automatico_mary(state: dict) -> str:
     ]
 
     termos_noite_social = [
-        "bar",
+        "no bar",
+        "para o bar",
         "restaurante",
         "balada",
         "boate",
@@ -2938,8 +3198,21 @@ def resolver_visual_atual_mary(state: dict) -> str:
     return gerar_visual_automatico_mary(state)
 
 def preparar_evento_inesperado_para_prompt(state: dict) -> str:
+    """
+    Prepara o bloco de evento inesperado para o prompt.
+
+    O evento só aparece se:
+    - existir texto de evento;
+    - disparar_evento_inesperado estiver realmente ativo.
+    """
+    if not isinstance(state, dict):
+        return ""
+
     evento = str(state.get("evento_inesperado", "") or "").strip()
-    disparar = bool(state.get("disparar_evento_inesperado", False))
+    disparar = normalizar_bool(
+        state.get("disparar_evento_inesperado", False),
+        default=False,
+    )
 
     if not evento or not disparar:
         return ""
@@ -2962,20 +3235,49 @@ REGRAS:
 """.strip()
 
 
-def consumir_evento_inesperado_se_usado(state: dict) -> None:
+def consumir_evento_inesperado_se_usado(state: dict, resposta_gerada: bool = True) -> None:
     """
     Evita que o mesmo evento inesperado se repita em todos os turnos.
-    Deve ser chamado depois de processar_turno().
+
+    Deve ser chamado depois de processar_turno(), apenas se houve resposta gerada.
+    Se a chamada ao modelo falhar, não consome o evento.
     """
-    if bool(state.get("disparar_evento_inesperado", False)):
+    if not isinstance(state, dict):
+        return
+
+    disparar = normalizar_bool(
+        state.get("disparar_evento_inesperado", False),
+        default=False,
+    )
+
+    if resposta_gerada and disparar:
         state["disparar_evento_inesperado"] = False
         state["evento_inesperado"] = ""
 
 
 def sincronizar_facts_basicos(state: dict) -> dict:
-    normalizar_estado(state)
+    """
+    Normaliza o state e monta o pacote facts usado pelo prompt.
+
+    Ordem importante:
+    1. Corrige flags booleanas vindas como texto.
+    2. Normaliza estado geral.
+    3. Limpa progressão física apenas se a cena for neutra/sozinha.
+    4. Resolve visual e estado emocional.
+    5. Monta facts com tipos seguros.
+    """
+    if not isinstance(state, dict):
+        return {}
+
+    # Primeiro limpa booleanos crus.
     normalizar_flags_booleanas_state(state)
-    normalizar_relacao_por_interlocutor(state)
+
+    # normalizar_estado já chama derivar_controles_de_cena(),
+    # e derivar_controles_de_cena já normaliza relação no ponto correto.
+    normalizar_estado(state)
+
+    # Não chamar normalizar_relacao_por_interlocutor aqui,
+    # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
 
     state["visual_atual"] = resolver_visual_atual_mary(state)
@@ -3000,19 +3302,28 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             state.get("interlocutor", "Janio Donisete"),
         ),
 
-        # Relação já normalizada antes de salvar.
+        # Relação já normalizada dentro de derivar_controles_de_cena().
         "relacao": state.get("relacao", "contextual"),
 
         "tipo_de_cena": state.get("tipo_de_cena", "flerte leve"),
-        "privacidade": state.get("privacidade", get_privacidade_por_local(state.get("local", ""))),
+        "privacidade": state.get(
+            "privacidade",
+            get_privacidade_por_local(state.get("local", "")),
+        ),
         "estilo_de_iniciativa": state.get("estilo_de_iniciativa", "contextual"),
         "mary_acao": state.get("mary_acao", ""),
         "visual_atual": state.get("visual_atual", ""),
         "estado_emocional": estado_emocional_resolvido,
-        "usar_visual_automatico": normalizar_bool(state.get("usar_visual_automatico", True), default=True),
+        "usar_visual_automatico": normalizar_bool(
+            state.get("usar_visual_automatico", True),
+            default=True,
+        ),
         "visual_atual_manual": state.get("visual_atual_manual", ""),
         "evento_inesperado": state.get("evento_inesperado", ""),
-        "disparar_evento_inesperado": normalizar_bool(state.get("disparar_evento_inesperado", False), default=False),
+        "disparar_evento_inesperado": normalizar_bool(
+            state.get("disparar_evento_inesperado", False),
+            default=False,
+        ),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
 
@@ -3025,16 +3336,37 @@ def sincronizar_facts_basicos(state: dict) -> dict:
 
         "limite_ambiente": state.get("limite_ambiente", ""),
         "modo_relacional": state.get("modo_relacional", "ambiguo"),
-        "physical_phase": state.get("physical_phase", 0),
+        "physical_phase": safe_int(state.get("physical_phase", 0), 0),
         "scene_stage": state.get("scene_stage", "inicio"),
         "mary_intent": state.get("mary_intent", "presenca_viva"),
-        "force_resolution_now": normalizar_bool(state.get("force_resolution_now", False), default=False),
-        "mary_pre_orgasm_signals": normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False),
-        "mary_stimulation_turns": int(state.get("mary_stimulation_turns", 0) or 0),
-        "mary_climax_done": normalizar_bool(state.get("mary_climax_done", False), default=False),
-        "user_climax_done": normalizar_bool(state.get("user_climax_done", False), default=False),
-        "partner_climax_pending": normalizar_bool(state.get("partner_climax_pending", False), default=False),
-        "toque_intimo_permitido": normalizar_bool(state.get("toque_intimo_permitido", False), default=False),
+        "force_resolution_now": normalizar_bool(
+            state.get("force_resolution_now", False),
+            default=False,
+        ),
+        "mary_pre_orgasm_signals": normalizar_bool(
+            state.get("mary_pre_orgasm_signals", False),
+            default=False,
+        ),
+        "mary_stimulation_turns": safe_int(
+            state.get("mary_stimulation_turns", 0),
+            0,
+        ),
+        "mary_climax_done": normalizar_bool(
+            state.get("mary_climax_done", False),
+            default=False,
+        ),
+        "user_climax_done": normalizar_bool(
+            state.get("user_climax_done", False),
+            default=False,
+        ),
+        "partner_climax_pending": normalizar_bool(
+            state.get("partner_climax_pending", False),
+            default=False,
+        ),
+        "toque_intimo_permitido": normalizar_bool(
+            state.get("toque_intimo_permitido", False),
+            default=False,
+        ),
         "tensao_romantica_com_interlocutor": normalizar_bool(
             state.get("tensao_romantica_com_interlocutor", False),
             default=False,
@@ -3046,6 +3378,19 @@ def sincronizar_facts_basicos(state: dict) -> dict:
 
 
 def aplicar_facts_no_state(state: dict, facts: dict) -> None:
+    """
+    Aplica facts de volta no state com segurança.
+
+    Regras:
+    - Só aplica campos não vazios.
+    - Normaliza booleanos antes de recalcular estado.
+    - Não chama normalizar_relacao_por_interlocutor diretamente aqui,
+      porque isso pode sobrescrever o tom manual já aplicado em derivar_controles_de_cena().
+    - Ao final, sincroniza facts novamente para manter state["facts"] coerente.
+    """
+    if not isinstance(state, dict):
+        return
+
     if not isinstance(facts, dict):
         return
 
@@ -3092,9 +3437,12 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     ]
 
     for campo in campos:
-        if campo in facts and facts[campo] not in ("", None):
-            state[campo] = facts[campo]
+        valor = facts.get(campo, None)
 
+        if valor not in ("", None):
+            state[campo] = valor
+
+    # Defaults seguros
     if not state.get("modo_surpresa"):
         state["modo_surpresa"] = "Desligado"
 
@@ -3110,22 +3458,41 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     if not state.get("eventos_recentes"):
         state["eventos_recentes"] = ""
 
-    normalizar_estado(state)
-    normalizar_relacao_por_interlocutor(state)
-    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+    # Normalização de tipos antes de recalcular estado
+    normalizar_flags_booleanas_state(state)
+
+    state["physical_phase"] = safe_int(state.get("physical_phase", 0), 0)
+    state["mary_stimulation_turns"] = safe_int(
+        state.get("mary_stimulation_turns", 0),
+        0,
+    )
+
+    # Fluxo final:
+    # sincronizar_facts_basicos já chama normalizar_estado()
+    # e normalizar_estado já chama derivar_controles_de_cena().
+    # Não chamar normalizar_relacao_por_interlocutor aqui.
     sincronizar_facts_basicos(state)
 
 
 def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20) -> str:
     if not memories:
         return "Nenhuma memória shared ativa."
+
     linhas = []
+
     for m in memories[:limite]:
-        memoria = str(m.get("memoria", "") or "").strip()
-        tipo = str(m.get("tipo", "shared") or "shared").strip()
+        if isinstance(m, dict):
+            memoria = str(m.get("memoria", "") or "").strip()
+            tipo = str(m.get("tipo", "shared") or "shared").strip()
+        else:
+            memoria = str(m or "").strip()
+            tipo = "shared"
+
         if memoria:
             linhas.append(f"- [{tipo}] {memoria}")
+
     return "\n".join(linhas) if linhas else "Nenhuma memória shared ativa."
+
 
 def formatar_canon_mary_para_prompt(canon: list[dict], limite: int = 30) -> str:
     if not canon:
@@ -3134,8 +3501,12 @@ def formatar_canon_mary_para_prompt(canon: list[dict], limite: int = 30) -> str:
     linhas = []
 
     for item in canon[:limite]:
-        categoria = str(item.get("categoria", "geral") or "geral").strip()
-        fato = str(item.get("fato", "") or "").strip()
+        if isinstance(item, dict):
+            categoria = str(item.get("categoria", "geral") or "geral").strip()
+            fato = str(item.get("fato", "") or "").strip()
+        else:
+            categoria = "geral"
+            fato = str(item or "").strip()
 
         if fato:
             linhas.append(f"- [{categoria}] {fato}")
@@ -3144,15 +3515,23 @@ def formatar_canon_mary_para_prompt(canon: list[dict], limite: int = 30) -> str:
 
 
 def formatar_physical_signature_para_prompt(state: dict) -> str:
+    if not isinstance(state, dict):
+        return "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio."
+
     assinatura = state.get("physical_signature")
+
     if not isinstance(assinatura, dict):
         return "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio."
+
     linhas = []
+
     for chave, valor in assinatura.items():
         valor = str(valor or "").strip()
+
         if valor:
             linhas.append(f"- {chave}: {valor}")
-    return "\n".join(linhas)
+
+    return "\n".join(linhas) if linhas else "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio."
 
 
 # ==========================================================
@@ -3177,7 +3556,7 @@ def init_state() -> dict:
         "janio_status_na_cena": "presente",
 
         # Não usar "romance" como default rígido.
-        # A relação será corrigida por normalizar_relacao_por_interlocutor().
+        # A relação será corrigida por derivar_controles_de_cena().
         "relacao": "contextual",
 
         "tipo_de_cena": "intima privada",
@@ -3267,7 +3646,9 @@ def init_state() -> dict:
 
     state = st.session_state.mary_state_minimo
 
-    # Garante novos campos sem apagar estado já existente.
+    # ======================================================
+    # GARANTE NOVOS CAMPOS SEM APAGAR ESTADO EXISTENTE
+    # ======================================================
     for k, v in estado_inicial.items():
         state.setdefault(k, v)
 
@@ -3291,12 +3672,21 @@ def init_state() -> dict:
             aplicar_facts_no_state(state, facts_salvos)
 
     # ======================================================
-    # NORMALIZAÇÕES CENTRAIS
+    # NORMALIZAÇÃO CENTRAL
+    # Ordem importante:
+    # - normalizar_flags_booleanas_state corrige TRUE/FALSE textuais.
+    # - sincronizar_facts_basicos chama normalizar_estado().
+    # - normalizar_estado chama derivar_controles_de_cena().
+    # - derivar_controles_de_cena chama normalizar_relacao_por_interlocutor()
+    #   no ponto correto, antes dos presets do tom manual.
+    #
+    # Portanto, NÃO chamar aqui:
+    # - normalizar_relacao_por_interlocutor(state)
+    # - derivar_controles_de_cena(state)
+    # - normalizar_estado(state)
+    # de forma separada, para evitar sobrescrita duplicada.
     # ======================================================
-    normalizar_estado(state)
-    normalizar_relacao_por_interlocutor(state)
-    derivar_controles_de_cena(state)
-    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+    normalizar_flags_booleanas_state(state)
     sincronizar_facts_basicos(state)
 
     # ======================================================
@@ -3316,11 +3706,22 @@ def init_state() -> dict:
 # ==========================================================
 
 def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
-    texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+    """
+    Atualiza níveis emocionais e fase física básica com base no turno.
 
-    desejo = float(state.get("desire_level", 0.18) or 0.18)
-    tensao = float(state.get("tension_level", 0.12) or 0.12)
-    conexao = float(state.get("connection_level", 0.22) or 0.22)
+    Importante:
+    - Detecta aproximação, toque e beijo.
+    - Não deve resolver pico/clímax.
+    - Não deve chamar normalizações duplicadas que sobrescrevam o tom manual.
+    """
+    if not isinstance(state, dict):
+        return
+
+    texto = _texto_norm(f"{fala_usuario or ''}\n{resposta_limpa or ''}")
+
+    desejo = safe_float(state.get("desire_level", 0.18), 0.18)
+    tensao = safe_float(state.get("tension_level", 0.12), 0.12)
+    conexao = safe_float(state.get("connection_level", 0.22), 0.22)
 
     # ======================================================
     # BLOQUEIOS DE FALSOS POSITIVOS
@@ -3336,30 +3737,27 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         "toque de recolher",
         "tocou no assunto",
         "tocar no assunto",
-        "mão de obra",
         "mao de obra",
         "perna da mesa",
         "boca da garrafa",
-        "boca do fogão",
         "boca do fogao",
         "costas do caderno",
-        "borda da página",
         "borda da pagina",
     ]
 
-    tem_falso_toque = any(p in texto for p in falsos_toques)
+    tem_falso_toque = _tem_algum(texto, falsos_toques)
 
     # ======================================================
     # SINAIS EMOCIONAIS / CONEXÃO
     # ======================================================
-    if any(p in texto for p in ["calma", "devagar", "cuidado", "foi só", "avancei demais", "sem pressa"]):
+    if _tem_algum(texto, ["calma", "devagar", "cuidado", "foi so", "avancei demais", "sem pressa"]):
         conexao += 0.10
         tensao = max(0.05, tensao - 0.05)
 
-    if any(p in texto for p in ["gosto", "confio", "carinho", "amor", "cuidado", "fica comigo"]):
+    if _tem_algum(texto, ["gosto", "confio", "carinho", "amor", "cuidado", "fica comigo"]):
         conexao += 0.10
 
-    if any(p in texto for p in ["tesão", "tesao", "desejo", "vontade", "excitado", "excitada"]):
+    if _tem_algum(texto, ["tesao", "desejo", "vontade", "excitado", "excitada"]):
         desejo += 0.08
 
     # ======================================================
@@ -3385,10 +3783,8 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         "puxo",
         "puxei",
         "puxar",
-        "abraço",
         "abraco",
         "abracei",
-        "abraçar",
         "abracar",
         "aperto",
         "apertei",
@@ -3396,16 +3792,13 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
     ]
 
     partes_corpo = [
-        "mão",
         "mao",
         "rosto",
         "cabelo",
         "cabelos",
         "ombro",
         "ombros",
-        "braço",
         "braco",
-        "braços",
         "bracos",
         "costas",
         "cintura",
@@ -3414,10 +3807,8 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         "pernas",
         "coxa",
         "coxas",
-        "pescoço",
         "pescoco",
         "boca",
-        "lábios",
         "labios",
         "peito",
         "seios",
@@ -3425,8 +3816,8 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         "ventre",
     ]
 
-    tem_verbo_fisico = any(p in texto for p in verbos_fisicos)
-    tem_parte_corpo = any(p in texto for p in partes_corpo)
+    tem_verbo_fisico = _tem_algum(texto, verbos_fisicos)
+    tem_parte_corpo = _tem_algum(texto, partes_corpo)
 
     tem_toque_fisico = (
         not tem_falso_toque
@@ -3434,25 +3825,20 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         and tem_parte_corpo
     )
 
-    # Beijo também precisa de contexto físico mínimo.
     sinais_beijo = [
         "beijo sua boca",
-        "beijo seus lábios",
         "beijo seus labios",
         "beijo seu rosto",
-        "beijo seu pescoço",
         "beijo seu pescoco",
         "beijo sua testa",
-        "beijo sua mão",
         "beijo sua mao",
         "ela beija",
         "mary beija",
         "nos beijamos",
     ]
 
-    tem_beijo_real = any(p in texto for p in sinais_beijo)
+    tem_beijo_real = _tem_algum(texto, sinais_beijo)
 
-    # Aproximação leve: menos exigente, mas ainda contextual.
     sinais_aproximacao = [
         "chego perto",
         "cheguei perto",
@@ -3466,10 +3852,10 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         "olhar nos olhos",
     ]
 
-    tem_aproximacao_real = any(p in texto for p in sinais_aproximacao)
+    tem_aproximacao_real = _tem_algum(texto, sinais_aproximacao)
 
     # ======================================================
-    # TENSÃO
+    # TENSÃO / DESEJO / CONEXÃO
     # ======================================================
     if tem_aproximacao_real:
         tensao += 0.03
@@ -3484,7 +3870,7 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
     # ======================================================
     # FASE
     # ======================================================
-    fase = int(state.get("physical_phase", 0) or 0)
+    fase = safe_int(state.get("physical_phase", 0), 0)
 
     if tem_aproximacao_real:
         fase = max(fase, 1)
@@ -3498,9 +3884,11 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
     # ======================================================
     # LIMITES POR PRIVACIDADE
     # ======================================================
-    if state.get("privacidade") == "publico":
+    privacidade = _texto_norm(state.get("privacidade", ""))
+
+    if privacidade == "publico":
         fase = min(fase, 3)
-    elif state.get("privacidade") == "semiprivado":
+    elif privacidade == "semiprivado":
         fase = min(fase, 4)
 
     state["desire_level"] = clamp(desejo)
@@ -3515,38 +3903,44 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         3: "beijo",
         4: "intensidade",
         5: "pico",
+        6: "pico_mary",
+        7: "aftercare",
     }.get(fase, "aproximacao")
 
-    normalizar_estado(state)
+    # Normalização final sem duplicar relação/tom manual.
     normalizar_flags_booleanas_state(state)
-    normalizar_relacao_por_interlocutor(state)
-    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
+
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
-    Decide quando Mary deve sair do pré-pico e resolver o próprio orgasmo.
-    Deve rodar ANTES de montar o prompt do turno atual.
-    Não resolve orgasmo do usuário.
+    Decide quando Mary deve sair do pré-pico e resolver o próprio pico.
+
+    Observação:
+    - Esta função é conservadora.
+    - A função principal de resolução continua sendo preparar_resolucao_mary_se_necessario().
+    - Não resolve clímax do usuário.
     """
+    if not isinstance(state, dict):
+        return
+
     normalizar_flags_booleanas_state(state)
 
-    privacidade = str(state.get("privacidade", "") or "").lower()
-    fase = int(state.get("physical_phase", 0) or 0)
-    stage = str(state.get("scene_stage", "") or "").lower()
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    fase = safe_int(state.get("physical_phase", 0), 0)
+    stage = _texto_norm(state.get("scene_stage", ""))
 
     pre = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
     climax_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
     force_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
 
-    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
-    texto = str(fala_usuario or "").lower()
+    stimulation_turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
+    texto = _texto_norm(fala_usuario)
 
-    sinais_continuidade_intensa = any(
-        p in texto
-        for p in [
+    sinais_continuidade_intensa = _tem_algum(
+        texto,
+        [
             "continua",
-            "não para",
             "nao para",
             "assim",
             "isso",
@@ -3558,7 +3952,7 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
             "humm",
             "ahhh",
             "caralho",
-        ]
+        ],
     )
 
     if climax_done:
@@ -3589,45 +3983,137 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
 
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
-    tipo = str(state.get("tipo_de_cena", "neutra") or "neutra").lower()
-    tom_manual = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", "Neutro"))
-    priv = state.get("privacidade", "publico")
+    """
+    Define uma orientação curta de ação autônoma para Mary antes do prompt.
 
-    if tom_manual == "Neutro":
+    Regras:
+    - Não recalcula estado.
+    - Não altera fase física.
+    - Não altera relação.
+    - Apenas traduz tom_manual_da_cena + privacidade + pendências em uma diretriz prática.
+    """
+    if not isinstance(state, dict):
+        return
+
+    tipo = _texto_norm(state.get("tipo_de_cena", "neutra"))
+    tom_manual = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena", "Neutro")
+    )
+    priv = _texto_norm(state.get("privacidade", "publico"))
+    fala_norm = _texto_norm(fala_usuario)
+
+    segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
+    plano_ativo = str(state.get("plano_ativo", "") or "").strip()
+    evento_inesperado = str(state.get("evento_inesperado", "") or "").strip()
+    disparar_evento = normalizar_bool(
+        state.get("disparar_evento_inesperado", False),
+        default=False,
+    )
+
+    # ======================================================
+    # EVENTO INESPERADO TEM PRIORIDADE DE ATENÇÃO
+    # Não substitui o tom, mas força Mary a reconhecer a virada.
+    # ======================================================
+    if evento_inesperado and disparar_evento:
         state["mary_autonomous_action"] = (
-            "Mary responde com naturalidade, presença e clareza, sem criar tensão que não exista na cena."
+            "Mary deve reconhecer o evento inesperado como virada real da cena, "
+            "reagir com corpo, fala e emoção coerentes, sem resolver tudo sozinha. "
+            "Ela deve abrir tensão concreta para o usuário continuar."
         )
         return
 
+    # ======================================================
+    # SEGREDO / PENDÊNCIA TEM PRIORIDADE NARRATIVA
+    # ======================================================
+    if tom_manual == "Segredo pendente" or tipo == "segredo_pendente":
+        state["mary_autonomous_action"] = (
+            "Mary deve manter o segredo ou pendência vivo no subtexto da cena. "
+            "Ela pode demonstrar cautela, cumplicidade, hesitação, cálculo ou tensão interna, "
+            "sem esquecer o assunto e sem resolvê-lo sozinha."
+        )
+        return
+
+    # ======================================================
+    # DECISÃO
+    # ======================================================
+    if tom_manual == "Decisão" or tipo.startswith("decisao"):
+        state["mary_autonomous_action"] = (
+            "Mary deve transformar a tensão acumulada em uma escolha concreta. "
+            "Ela pode aceitar, recusar, impor condição, pedir espaço, ir embora, confessar parcialmente "
+            "ou romper uma encenação. A resposta deve mover a cena para uma consequência clara."
+        )
+        return
+
+    # ======================================================
+    # NEUTRO
+    # ======================================================
+    if tom_manual == "Neutro":
+        state["mary_autonomous_action"] = (
+            "Mary responde com naturalidade, presença e clareza, "
+            "sem criar tensão, flerte ou intimidade que não exista na cena."
+        )
+        return
+
+    # ======================================================
+    # AMIZADE
+    # ======================================================
     if tom_manual == "Amizade":
         state["mary_autonomous_action"] = (
             "Mary responde com cumplicidade, humor e proximidade social. "
-            "Ela pode ser viva, expressiva e afetuosa sem transformar a cena em flerte."
+            "Ela pode ser viva, expressiva e afetuosa, sem transformar a cena em flerte direto."
         )
         return
 
+    # ======================================================
+    # MALÍCIA
+    # ======================================================
     if tom_manual == "Malícia":
-        state["mary_autonomous_action"] = (
-            "Mary percebe o subtexto e brinca com a tensão por olhar, pausa, postura, humor e provocação social. "
-            "Ela sabe o efeito que causa, mas não pula para intimidade física."
-        )
-        return
-
-    if tom_manual == "Flerte":
-        if priv == "publico":
+        if segredo_ativo or plano_ativo:
             state["mary_autonomous_action"] = (
-                "Mary flerta com discrição: sustenta olhar, responde com charme, provoca verbalmente e mantém controle do ambiente."
+                "Mary percebe subtexto, risco e oportunidade. "
+                "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura e dissimulação, "
+                "sem entregar tudo de forma direta e sem pular para intimidade física."
+            )
+        elif priv == "publico":
+            state["mary_autonomous_action"] = (
+                "Mary brinca com a tensão de forma social e discreta: olhar, pausa, ironia, postura e provocação contida. "
+                "Ela sabe o efeito que causa, mas respeita o ambiente público."
             )
         else:
             state["mary_autonomous_action"] = (
-                "Mary assume o flerte com mais presença, aproximação e intenção, sem atropelar a progressão."
+                "Mary percebe o subtexto e brinca com a tensão por olhar, pausa, postura, humor e provocação. "
+                "Ela sabe o efeito que causa, mas não atropela a progressão física."
             )
         return
 
+    # ======================================================
+    # FLERTE
+    # ======================================================
+    if tom_manual == "Flerte":
+        if priv == "publico":
+            state["mary_autonomous_action"] = (
+                "Mary flerta com discrição: sustenta olhar, responde com charme, provoca verbalmente "
+                "e mantém controle do ambiente, sem agir como se estivesse em local privado."
+            )
+        elif priv == "semiprivado":
+            state["mary_autonomous_action"] = (
+                "Mary assume o flerte com mais proximidade, mas ainda mede risco, exposição e progressão."
+            )
+        else:
+            state["mary_autonomous_action"] = (
+                "Mary assume o flerte com presença, aproximação e intenção, "
+                "sem atropelar a continuidade nem transformar tudo em resumo."
+            )
+        return
+
+    # ======================================================
+    # INTIMIDADE
+    # ======================================================
     if tom_manual == "Intimidade":
         if priv == "publico":
             state["mary_autonomous_action"] = (
-                "Mary reconhece a intimidade desejada, mas conduz para um lugar reservado em vez de agir intimamente em público."
+                "Mary reconhece a intimidade desejada, mas conduz para um lugar reservado "
+                "em vez de agir intimamente em público."
             )
         elif priv == "semiprivado":
             state["mary_autonomous_action"] = (
@@ -3635,12 +4121,17 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
             )
         else:
             state["mary_autonomous_action"] = (
-                "Mary pode aprofundar a intimidade em ambiente privado, mantendo presença, desejo próprio e progressão."
+                "Mary pode aprofundar a intimidade em ambiente privado, "
+                "mantendo presença, desejo próprio, continuidade física e progressão."
             )
         return
 
+    # ======================================================
+    # FALLBACK
+    # ======================================================
     state["mary_autonomous_action"] = (
-        "Mary responde de forma contextual, preservando continuidade, ambiente e tom manual da cena."
+        "Mary responde de forma contextual, preservando continuidade, ambiente, interlocutor ativo "
+        "e tom manual da cena."
     )
 
 
@@ -3649,7 +4140,6 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 # ==========================================================
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
-    normalizar_estado(state)
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
@@ -3757,6 +4247,7 @@ REGRAS:
 - Mary não deve repetir a mesma surpresa em turnos consecutivos.
 - Mary deve escolher uma surpresa pequena o bastante para caber naturalmente no turno.
 - A surpresa deve parecer vontade própria de Mary, não uma lista mecânica.
+- Se houver [EVENTO INESPERADO] ativo, ele tem prioridade e Mary não deve criar outra surpresa adicional neste turno.
 
 TIPOS:
 - Leve: detalhe cotidiano, humor, pequeno improviso.
@@ -3828,6 +4319,7 @@ TIPOS:
 - Mary pode dizer o que quer, mas evita pressão seca.
 - Mary não termina com pergunta genérica.
 - Mary prefere gesto, convite suave ou fala íntima natural.
+- Exceto quando tom_manual_da_cena for "Decisão"; nesse caso, clareza e consequência vencem suavidade.
 
 
 [AMPLITUDE EMOCIONAL DE MARY]
@@ -3993,6 +4485,7 @@ STATE_UPDATE:
 - Mary não deve resolver o orgasmo imediatamente sem transição.
 - Mary não narra clímax do usuário.
 - Se a cena continuar em ritmo intenso por mais um turno, Mary pode chegar ao próprio orgasmo se "force_resolution_now" for true ou se o usuário claramente estimular o pico dela.
+- Se force_resolution_now também for true, siga [RESOLUÇÃO DO PICO DE MARY] em vez de permanecer apenas em pré-pico.
 
 [RESOLUÇÃO DO PICO DE MARY]
 
