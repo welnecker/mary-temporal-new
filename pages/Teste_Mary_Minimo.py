@@ -888,17 +888,174 @@ def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
     valor = str(valor or "").strip()
     return valor if valor in opcoes else padrao
 
+def extrair_nome_base_interlocutor(texto: str) -> str:
+    """
+    Extrai um nome-base simples do interlocutor.
+    Ex:
+    'Fernando (Nando)' -> 'fernando nando'
+    'Silvia, Anthony' -> 'silvia anthony'
+    """
+    texto = str(texto or "").strip().lower()
+    texto = texto.replace("(", " ").replace(")", " ")
+    texto = texto.replace(",", " ")
+    texto = " ".join(texto.split())
+    return texto
+
+
+def buscar_contexto_do_personagem(state: dict, alvo: str) -> str:
+    """
+    Busca menções ao personagem em facts, plano, eventos, cânone e memórias.
+    Não decide sozinho; apenas junta contexto textual para inferência.
+    """
+    alvo = str(alvo or "").strip().lower()
+    if not alvo:
+        return ""
+
+    partes = []
+
+    # Campos atuais da cena
+    for chave in [
+        "interlocutor",
+        "interlocutor_foco_turno",
+        "interlocutor_ativo_persistente",
+        "ultimo_interlocutor_explicito",
+        "plano_ativo",
+        "eventos_recentes",
+        "segredo_ativo",
+        "_fala_usuario_atual",
+    ]:
+        valor = str(state.get(chave, "") or "")
+        if valor:
+            partes.append(valor)
+
+    # Cânone
+    for item in state.get("canon_mary", []) or []:
+        if isinstance(item, dict):
+            fato = str(item.get("fato", "") or "")
+            if fato:
+                partes.append(fato)
+
+    # Memórias shared
+    for item in state.get("shared_memories", []) or []:
+        if isinstance(item, dict):
+            memoria = str(item.get("memoria", "") or "")
+            if memoria:
+                partes.append(memoria)
+
+    contexto_total = "\n".join(partes).lower()
+
+    # Se o alvo tiver apelido entre parênteses, ex: Fernando Nando,
+    # qualquer parte relevante pode bater.
+    tokens_alvo = [p for p in alvo.split() if len(p) >= 3]
+
+    linhas_relevantes = []
+    for linha in contexto_total.splitlines():
+        if any(tok in linha for tok in tokens_alvo):
+            linhas_relevantes.append(linha)
+
+    return "\n".join(linhas_relevantes)
+
+
+def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
+    """
+    Infere relação estrutural a partir do contexto textual.
+    Não altera estado emocional manual.
+    """
+    alvo = str(alvo or "").lower()
+    contexto = str(contexto or "").lower()
+
+    texto = f"{alvo}\n{contexto}"
+
+    # Família
+    if any(p in texto for p in ["mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "tia", "tio", "prima", "primo"]):
+        return {
+            "relacao": "família",
+            "modo_relacional": "familia",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Professor / autoridade acadêmica
+    if any(p in texto for p in ["professor", "professora", "docente", "orientador", "reitor", "reitoria", "coordenador"]):
+        return {
+            "relacao": "autoridade acadêmica",
+            "modo_relacional": "formal",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Colega / aluno / turma
+    if any(p in texto for p in ["colega", "aluno", "aluna", "turma", "classe", "paciente", "divã", "diva", "aula prática", "aula pratica"]):
+        return {
+            "relacao": "colega de faculdade",
+            "modo_relacional": "academico",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Amizade
+    if any(p in texto for p in ["amiga", "amigo", "cúmplice", "cumplice", "confidente"]):
+        return {
+            "relacao": "amizade",
+            "modo_relacional": "amizade",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Ex / rival / tensão
+    if any(p in texto for p in ["ex", "rival", "ciúme", "ciume", "obcecado", "apaixonado por mary", "quer voltar"]):
+        return {
+            "relacao": "tensão social",
+            "modo_relacional": "tensao_social",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Contato profissional / oportunidade
+    if any(p in texto for p in ["fotógrafo", "fotografo", "fotografia", "projeto", "ong", "contrato", "negócio", "negocio", "represento", "centro de idiomas"]):
+        return {
+            "relacao": "contato profissional / social",
+            "modo_relacional": "social",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Anfitrião / figura influente / mansão
+    if any(p in texto for p in ["mansão", "mansao", "dono da mansão", "orla de botafogo", "piscina particular", "praia particular", "all inclusive"]):
+        return {
+            "relacao": "anfitrião / conhecido influente",
+            "modo_relacional": "cautela_social",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # Possível flerte/atração, mas sem liberar toque automaticamente
+    if any(p in texto for p in ["paquera", "ficante", "atração", "atracao", "interesse", "elogio", "convite"]):
+        return {
+            "relacao": "contato com possível interesse",
+            "modo_relacional": "social_ambíguo",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": False,
+        }
+
+    # Fallback seguro
+    return {
+        "relacao": "contextual",
+        "modo_relacional": "neutro",
+        "tensao_romantica_com_interlocutor": False,
+        "toque_intimo_permitido": False,
+    }
+
+
 def normalizar_relacao_por_interlocutor(state: dict) -> None:
     """
     Normaliza relação ativa com base no interlocutor real da cena.
 
     Regras:
-    - Se Mary está sozinha, relação = sem interlocutor.
-    - Se há foco em Silvia, relação = amizade.
-    - Se há foco em Anthony, relação = ex / tensão.
-    - Se há foco em Janio, relação depende do status dele na cena.
-    - Se houver múltiplos interlocutores, o foco do turno vence.
-    - Evita herdar relação antiga incompatível com o interlocutor atual.
+    - Personagens centrais têm regra fixa.
+    - Personagens novos são inferidos por contexto em memórias, cânone e facts.
+    - Estado emocional manual não é alterado aqui.
+    - O foco do turno vence quando houver múltiplos interlocutores.
     """
     interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
     foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
@@ -916,7 +1073,8 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         "",
     }
 
-    alvo = foco or persistente or ultimo or interlocutor
+    alvo_raw = foco or persistente or ultimo or interlocutor
+    alvo = extrair_nome_base_interlocutor(alvo_raw)
 
     # ======================================================
     # SEM INTERLOCUTOR REAL
@@ -933,8 +1091,7 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         return
 
     # ======================================================
-    # INTERLOCUTORES CONHECIDOS
-    # O foco do turno vence quando houver múltiplas pessoas.
+    # PERSONAGENS CENTRAIS / REGRAS FIXAS
     # ======================================================
     if "silvia" in alvo:
         state["relacao"] = "amizade"
@@ -955,33 +1112,33 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
             state["relacao"] = "romance"
             state["modo_relacional"] = "romance"
             state["tensao_romantica_com_interlocutor"] = True
+            # Não força toque; quem decide isso é tom/privacidade.
             return
 
-        # Janio pode ser apenas roteirista/usuário real.
         state["relacao"] = "contextual"
-        state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
+        state["modo_relacional"] = "neutro"
+        state["tensao_romantica_com_interlocutor"] = False
+        state["toque_intimo_permitido"] = False
         return
 
     if "bianca" in alvo:
         state["relacao"] = "amizade íntima"
         state["modo_relacional"] = "cumplicidade"
         state["tensao_romantica_com_interlocutor"] = True
-        return
-
-    if "rico" in alvo or "ricardo" in alvo:
-        state["relacao"] = "novo contato"
-        state["modo_relacional"] = "social"
-        state["tensao_romantica_com_interlocutor"] = False
-        state["toque_intimo_permitido"] = False
+        # Não força toque; depende de tom/privacidade.
         return
 
     # ======================================================
-    # FALLBACK
+    # PERSONAGENS NOVOS / INFERÊNCIA POR CONTEXTO
     # ======================================================
-    if state.get("relacao") in ("sem interlocutor", "", None):
-        state["relacao"] = "contextual"
+    contexto_personagem = buscar_contexto_do_personagem(state, alvo)
+    inferido = inferir_relacao_por_contexto(alvo, contexto_personagem)
 
-    state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
+    state["relacao"] = inferido["relacao"]
+    state["modo_relacional"] = inferido["modo_relacional"]
+    state["tensao_romantica_com_interlocutor"] = inferido["tensao_romantica_com_interlocutor"]
+    state["toque_intimo_permitido"] = inferido["toque_intimo_permitido"]
+    
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     """
     Quando Mary está sozinha, em tom neutro e sem estímulo ativo,
@@ -2817,7 +2974,9 @@ def consumir_evento_inesperado_se_usado(state: dict) -> None:
 
 def sincronizar_facts_basicos(state: dict) -> dict:
     normalizar_estado(state)
+    normalizar_flags_booleanas_state(state)
     normalizar_relacao_por_interlocutor(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
 
     state["visual_atual"] = resolver_visual_atual_mary(state)
     estado_emocional_resolvido = resolver_estado_emocional_mary(state)
@@ -2850,10 +3009,10 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "mary_acao": state.get("mary_acao", ""),
         "visual_atual": state.get("visual_atual", ""),
         "estado_emocional": estado_emocional_resolvido,
-        "usar_visual_automatico": state.get("usar_visual_automatico", True),
+        "usar_visual_automatico": normalizar_bool(state.get("usar_visual_automatico", True), default=True),
         "visual_atual_manual": state.get("visual_atual_manual", ""),
         "evento_inesperado": state.get("evento_inesperado", ""),
-        "disparar_evento_inesperado": state.get("disparar_evento_inesperado", False),
+        "disparar_evento_inesperado": normalizar_bool(state.get("disparar_evento_inesperado", False), default=False),
         "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
 
@@ -2869,14 +3028,17 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "physical_phase": state.get("physical_phase", 0),
         "scene_stage": state.get("scene_stage", "inicio"),
         "mary_intent": state.get("mary_intent", "presenca_viva"),
-        "force_resolution_now": state.get("force_resolution_now", False),
-        "mary_pre_orgasm_signals": state.get("mary_pre_orgasm_signals", False),
-        "mary_stimulation_turns": state.get("mary_stimulation_turns", 0),
-        "mary_climax_done": state.get("mary_climax_done", False),
-        "user_climax_done": state.get("user_climax_done", False),
-        "partner_climax_pending": state.get("partner_climax_pending", False),
-        "toque_intimo_permitido": state.get("toque_intimo_permitido", False),
-        "tensao_romantica_com_interlocutor": state.get("tensao_romantica_com_interlocutor", False),
+        "force_resolution_now": normalizar_bool(state.get("force_resolution_now", False), default=False),
+        "mary_pre_orgasm_signals": normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False),
+        "mary_stimulation_turns": int(state.get("mary_stimulation_turns", 0) or 0),
+        "mary_climax_done": normalizar_bool(state.get("mary_climax_done", False), default=False),
+        "user_climax_done": normalizar_bool(state.get("user_climax_done", False), default=False),
+        "partner_climax_pending": normalizar_bool(state.get("partner_climax_pending", False), default=False),
+        "toque_intimo_permitido": normalizar_bool(state.get("toque_intimo_permitido", False), default=False),
+        "tensao_romantica_com_interlocutor": normalizar_bool(
+            state.get("tensao_romantica_com_interlocutor", False),
+            default=False,
+        ),
     }
 
     state["facts"] = facts
