@@ -709,6 +709,33 @@ def normalizar_bool(valor, default: bool = False) -> bool:
         return False
     return default
 
+def normalizar_flags_booleanas_state(state: dict) -> None:
+    """
+    Corrige flags booleanas que podem vir da planilha como texto:
+    'FALSE', 'TRUE', '0', '1', 'sim', 'não' etc.
+
+    Sem isso, bool("FALSE") vira True em Python.
+    """
+    if not isinstance(state, dict):
+        return
+
+    campos_bool = [
+        "usar_visual_automatico",
+        "disparar_evento_inesperado",
+        "force_resolution_now",
+        "mary_pre_orgasm_signals",
+        "mary_climax_done",
+        "user_climax_done",
+        "partner_climax_pending",
+        "toque_intimo_permitido",
+        "tensao_romantica_com_interlocutor",
+        "resolution_done",
+    ]
+
+    for campo in campos_bool:
+        if campo in state:
+            state[campo] = normalizar_bool(state.get(campo), default=False)
+
 
 def clamp(v: float, min_v: float = 0.0, max_v: float = 1.0) -> float:
     try:
