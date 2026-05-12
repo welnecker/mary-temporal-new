@@ -3128,35 +3128,210 @@ def init_state() -> dict:
 
 def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str) -> None:
     texto = f"{fala_usuario or ''}\n{resposta_limpa or ''}".lower()
+
     desejo = float(state.get("desire_level", 0.18) or 0.18)
     tensao = float(state.get("tension_level", 0.12) or 0.12)
     conexao = float(state.get("connection_level", 0.22) or 0.22)
+
+    # ======================================================
+    # BLOQUEIOS DE FALSOS POSITIVOS
+    # ======================================================
+    falsos_toques = [
+        "toque do celular",
+        "toque de celular",
+        "toque da campainha",
+        "toque a campainha",
+        "toque o sino",
+        "toque de mensagem",
+        "toque musical",
+        "toque de recolher",
+        "tocou no assunto",
+        "tocar no assunto",
+        "mão de obra",
+        "mao de obra",
+        "perna da mesa",
+        "boca da garrafa",
+        "boca do fogão",
+        "boca do fogao",
+        "costas do caderno",
+        "borda da página",
+        "borda da pagina",
+    ]
+
+    tem_falso_toque = any(p in texto for p in falsos_toques)
+
+    # ======================================================
+    # SINAIS EMOCIONAIS / CONEXÃO
+    # ======================================================
     if any(p in texto for p in ["calma", "devagar", "cuidado", "foi só", "avancei demais", "sem pressa"]):
         conexao += 0.10
         tensao = max(0.05, tensao - 0.05)
+
     if any(p in texto for p in ["gosto", "confio", "carinho", "amor", "cuidado", "fica comigo"]):
         conexao += 0.10
-    if any(p in texto for p in ["beijo", "boca", "perto", "toque", "mão", "costas", "cintura", "biquíni", "borda"]):
-        tensao += 0.06
-    if any(p in texto for p in ["tesão", "desejo", "vontade", "excitado", "excitada"]):
+
+    if any(p in texto for p in ["tesão", "tesao", "desejo", "vontade", "excitado", "excitada"]):
         desejo += 0.08
-    state["desire_level"] = clamp(desejo)
-    state["tension_level"] = clamp(tensao)
-    state["connection_level"] = clamp(conexao)
+
+    # ======================================================
+    # DETECÇÃO CONTEXTUAL DE CONTATO FÍSICO
+    # Não basta palavra solta. Precisa haver gesto + alvo corporal.
+    # ======================================================
+    verbos_fisicos = [
+        "toco",
+        "toquei",
+        "tocar",
+        "encosto",
+        "encostei",
+        "encostar",
+        "seguro",
+        "segurei",
+        "segurar",
+        "pego",
+        "peguei",
+        "pegar",
+        "acaricio",
+        "acariciei",
+        "acariciar",
+        "puxo",
+        "puxei",
+        "puxar",
+        "abraço",
+        "abraco",
+        "abracei",
+        "abraçar",
+        "abracar",
+        "aperto",
+        "apertei",
+        "apertar",
+    ]
+
+    partes_corpo = [
+        "mão",
+        "mao",
+        "rosto",
+        "cabelo",
+        "cabelos",
+        "ombro",
+        "ombros",
+        "braço",
+        "braco",
+        "braços",
+        "bracos",
+        "costas",
+        "cintura",
+        "quadril",
+        "perna",
+        "pernas",
+        "coxa",
+        "coxas",
+        "pescoço",
+        "pescoco",
+        "boca",
+        "lábios",
+        "labios",
+        "peito",
+        "seios",
+        "barriga",
+        "ventre",
+    ]
+
+    tem_verbo_fisico = any(p in texto for p in verbos_fisicos)
+    tem_parte_corpo = any(p in texto for p in partes_corpo)
+
+    tem_toque_fisico = (
+        not tem_falso_toque
+        and tem_verbo_fisico
+        and tem_parte_corpo
+    )
+
+    # Beijo também precisa de contexto físico mínimo.
+    sinais_beijo = [
+        "beijo sua boca",
+        "beijo seus lábios",
+        "beijo seus labios",
+        "beijo seu rosto",
+        "beijo seu pescoço",
+        "beijo seu pescoco",
+        "beijo sua testa",
+        "beijo sua mão",
+        "beijo sua mao",
+        "ela beija",
+        "mary beija",
+        "nos beijamos",
+    ]
+
+    tem_beijo_real = any(p in texto for p in sinais_beijo)
+
+    # Aproximação leve: menos exigente, mas ainda contextual.
+    sinais_aproximacao = [
+        "chego perto",
+        "cheguei perto",
+        "me aproximo",
+        "aproximo meu corpo",
+        "ela se aproxima",
+        "mary se aproxima",
+        "inclino meu rosto",
+        "inclino o corpo",
+        "olho nos olhos",
+        "olhar nos olhos",
+    ]
+
+    tem_aproximacao_real = any(p in texto for p in sinais_aproximacao)
+
+    # ======================================================
+    # TENSÃO
+    # ======================================================
+    if tem_aproximacao_real:
+        tensao += 0.03
+
+    if tem_toque_fisico:
+        tensao += 0.06
+
+    if tem_beijo_real:
+        tensao += 0.08
+        desejo += 0.04
+
+    # ======================================================
+    # FASE
+    # ======================================================
     fase = int(state.get("physical_phase", 0) or 0)
-    if any(p in texto for p in ["perto", "aproximo", "inclino", "canga", "olhar"]):
+
+    if tem_aproximacao_real:
         fase = max(fase, 1)
-    if any(p in texto for p in ["toque", "toco", "mão", "costas", "cintura", "ombro", "perna"]):
+
+    if tem_toque_fisico:
         fase = max(fase, 2)
-    if any(p in texto for p in ["beijo", "beija", "boca", "lábios"]):
+
+    if tem_beijo_real:
         fase = max(fase, 3)
+
+    # ======================================================
+    # LIMITES POR PRIVACIDADE
+    # ======================================================
     if state.get("privacidade") == "publico":
         fase = min(fase, 3)
     elif state.get("privacidade") == "semiprivado":
         fase = min(fase, 4)
+
+    state["desire_level"] = clamp(desejo)
+    state["tension_level"] = clamp(tensao)
+    state["connection_level"] = clamp(conexao)
+
     state["physical_phase"] = fase
-    state["scene_stage"] = {0: "inicio", 1: "aproximacao", 2: "toque", 3: "beijo", 4: "intensidade", 5: "pico"}.get(fase, "aproximacao")
+    state["scene_stage"] = {
+        0: "inicio",
+        1: "aproximacao",
+        2: "toque",
+        3: "beijo",
+        4: "intensidade",
+        5: "pico",
+    }.get(fase, "aproximacao")
+
     normalizar_estado(state)
+    normalizar_flags_booleanas_state(state)
+    normalizar_relacao_por_interlocutor(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
 
 
@@ -3401,14 +3576,6 @@ TIPOS:
 - Mary não termina com pergunta genérica.
 - Mary prefere gesto, convite suave ou fala íntima natural.
 
-[PERSONALIDADE DE MARY]
-- Mary é intensa, atraente, viva e presente.
-- Mary tem desejo próprio, mas não é mandona por padrão.
-- Mary expressa vontade como convite, cuidado, provocação leve e entrega progressiva.
-- Quando Janio demonstra cuidado, receio ou pergunta se avançou demais, Mary acolhe primeiro.
-- Mary pode dizer o que quer, mas evita pressão seca.
-- Mary não termina com pergunta genérica.
-- Mary prefere gesto, convite suave ou fala íntima natural.
 
 [AMPLITUDE EMOCIONAL DE MARY]
 - Mary pode rir, chorar, hesitar, se irritar, se calar, se afastar, sentir culpa, medo, ciúme, ternura, saudade, vergonha, raiva, desejo, orgulho ou arrependimento.
@@ -3425,8 +3592,6 @@ TIPOS:
 [ASSINATURA FÍSICA FIXA DE MARY]
 {physical_txt}
 
-[ASSINATURA FÍSICA FIXA DE MARY]
-{physical_txt}
 
 [MEMÓRIAS SHARED]
 {shared_txt}
