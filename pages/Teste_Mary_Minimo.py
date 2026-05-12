@@ -3523,6 +3523,70 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
 
+def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
+    """
+    Decide quando Mary deve sair do pré-pico e resolver o próprio orgasmo.
+    Deve rodar ANTES de montar o prompt do turno atual.
+    Não resolve orgasmo do usuário.
+    """
+    normalizar_flags_booleanas_state(state)
+
+    privacidade = str(state.get("privacidade", "") or "").lower()
+    fase = int(state.get("physical_phase", 0) or 0)
+    stage = str(state.get("scene_stage", "") or "").lower()
+
+    pre = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+    climax_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+    force_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
+
+    stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
+    texto = str(fala_usuario or "").lower()
+
+    sinais_continuidade_intensa = any(
+        p in texto
+        for p in [
+            "continua",
+            "não para",
+            "nao para",
+            "assim",
+            "isso",
+            "mais forte",
+            "ritmo",
+            "me beija",
+            "floop",
+            "flop",
+            "humm",
+            "ahhh",
+            "caralho",
+        ]
+    )
+
+    if climax_done:
+        state["force_resolution_now"] = False
+        return
+
+    if privacidade != "privado":
+        state["force_resolution_now"] = False
+        return
+
+    if force_now:
+        state["physical_phase"] = max(fase, 6)
+        state["scene_stage"] = "pico_mary"
+        state["mary_intent"] = "resolver_pico_mary"
+        return
+
+    if (
+        pre
+        and fase >= 5
+        and stage in {"pre_pico_mary", "pico", "pre_pico"}
+        and stimulation_turns >= 2
+        and sinais_continuidade_intensa
+    ):
+        state["force_resolution_now"] = True
+        state["physical_phase"] = 6
+        state["scene_stage"] = "pico_mary"
+        state["mary_intent"] = "resolver_pico_mary"
+
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     tipo = str(state.get("tipo_de_cena", "neutra") or "neutra").lower()
@@ -4248,29 +4312,83 @@ def renderizar_resposta_mary(texto: str) -> None:
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
+
+    # ======================================================
+    # PRÉ-PROMPT
+    # Tudo que precisa influenciar a resposta atual deve vir ANTES
+    # de montar_mensagens().
+    # ======================================================
     normalizar_estado(state)
+    normalizar_flags_booleanas_state(state)
+    normalizar_relacao_por_interlocutor(state)
+
     definir_acao_autonoma(state, fala_usuario)
+
+    # Gate de resolução do pico de Mary.
+    # IMPORTANTE:
+    # Deve rodar antes de montar_mensagens(), para o prompt já receber
+    # force_resolution_now=True quando a cena pedir resolução.
+    atualizar_gate_orgasmo_mary(state, fala_usuario)
+
     sincronizar_facts_basicos(state)
+
+    # ======================================================
+    # MONTA PROMPT / CHAMA MODELO
+    # ======================================================
     mensagens = montar_mensagens(state, fala_usuario)
+
     resposta_bruta = chamar_openrouter(mensagens, model=model)
+
     resposta_sem_update, update = separar_state_update(resposta_bruta)
+
     validacao = resposta_viola_estado(resposta_sem_update, state)
-    resposta_final_com_update = corrigir_resposta_se_necessario(resposta_bruta, state, validacao)
+
+    resposta_final_com_update = corrigir_resposta_se_necessario(
+        resposta_bruta,
+        state,
+        validacao,
+    )
+
     resposta_final_limpa, update_final = separar_state_update(resposta_final_com_update)
+
+    # ======================================================
+    # PÓS-RESPOSTA
+    # Aplica update do modelo e atualiza estado para o próximo turno.
+    # ======================================================
     aplicar_state_update(state, update_final or update)
+
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
+
     normalizar_estado(state)
+    normalizar_flags_booleanas_state(state)
+    normalizar_relacao_por_interlocutor(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
+
+    # ======================================================
+    # HISTÓRICO
+    # ======================================================
     state["history"].append({"role": "user", "content": fala_usuario})
     state["history"].append({"role": "assistant", "content": resposta_final_limpa})
     state["history"] = state["history"][-MAX_HISTORY * 2:]
+
+    # ======================================================
+    # SALVAMENTO
+    # ======================================================
     salvar_interacao_na_planilha(state, "user", fala_usuario)
     salvar_interacao_na_planilha(state, "assistant", resposta_final_limpa)
     salvar_facts_na_planilha(state["facts"])
+
     st.session_state.mary_state_minimo = state
-    return {"mensagens": mensagens, "resposta_bruta": resposta_bruta, "resposta_final_limpa": resposta_final_limpa, "validacao": validacao, "update": update_final or update, "state": state}
 
-
+    return {
+        "mensagens": mensagens,
+        "resposta_bruta": resposta_bruta,
+        "resposta_final_limpa": resposta_final_limpa,
+        "validacao": validacao,
+        "update": update_final or update,
+        "state": state,
+    }
 # ==========================================================
 # UI
 # ==========================================================
