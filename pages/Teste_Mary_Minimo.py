@@ -863,12 +863,21 @@ def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
 
 def normalizar_relacao_por_interlocutor(state: dict) -> None:
     """
-    Corrige relação ativa quando Mary está sem interlocutor real.
-    Evita herdar 'amigas', 'romance' ou outro vínculo antigo quando a cena está introspectiva.
+    Normaliza relação ativa com base no interlocutor real da cena.
+
+    Regras:
+    - Se Mary está sozinha, relação = sem interlocutor.
+    - Se há foco em Silvia, relação = amizade.
+    - Se há foco em Anthony, relação = ex / tensão.
+    - Se há foco em Janio, relação depende do status dele na cena.
+    - Se houver múltiplos interlocutores, o foco do turno vence.
+    - Evita herdar relação antiga incompatível com o interlocutor atual.
     """
     interlocutor = str(state.get("interlocutor", "") or "").strip().lower()
     foco = str(state.get("interlocutor_foco_turno", "") or "").strip().lower()
     persistente = str(state.get("interlocutor_ativo_persistente", "") or "").strip().lower()
+    ultimo = str(state.get("ultimo_interlocutor_explicito", "") or "").strip().lower()
+    janio_status = str(state.get("janio_status_na_cena", "") or "").strip().lower()
 
     sem_interlocutor = {
         "sozinha",
@@ -880,12 +889,72 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         "",
     }
 
-    if interlocutor in sem_interlocutor and foco in sem_interlocutor and persistente in sem_interlocutor:
+    alvo = foco or persistente or ultimo or interlocutor
+
+    # ======================================================
+    # SEM INTERLOCUTOR REAL
+    # ======================================================
+    if (
+        interlocutor in sem_interlocutor
+        and foco in sem_interlocutor
+        and persistente in sem_interlocutor
+    ):
         state["relacao"] = "sem interlocutor"
-        state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
+        state["modo_relacional"] = "neutro"
         state["tensao_romantica_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
+        return
 
+    # ======================================================
+    # INTERLOCUTORES CONHECIDOS
+    # O foco do turno vence quando houver múltiplas pessoas.
+    # ======================================================
+    if "silvia" in alvo:
+        state["relacao"] = "amizade"
+        state["modo_relacional"] = "amizade"
+        state["tensao_romantica_com_interlocutor"] = False
+        state["toque_intimo_permitido"] = False
+        return
+
+    if "anthony" in alvo:
+        state["relacao"] = "ex / tensão"
+        state["modo_relacional"] = "tensao_social"
+        state["tensao_romantica_com_interlocutor"] = False
+        state["toque_intimo_permitido"] = False
+        return
+
+    if "janio" in alvo or "jânio" in alvo:
+        if janio_status in {"presente", "interlocutor", "personagem", "na cena"}:
+            state["relacao"] = "romance"
+            state["modo_relacional"] = "romance"
+            state["tensao_romantica_com_interlocutor"] = True
+            return
+
+        # Janio pode ser apenas roteirista/usuário real.
+        state["relacao"] = "contextual"
+        state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
+        return
+
+    if "bianca" in alvo:
+        state["relacao"] = "amizade íntima"
+        state["modo_relacional"] = "cumplicidade"
+        state["tensao_romantica_com_interlocutor"] = True
+        return
+
+    if "rico" in alvo or "ricardo" in alvo:
+        state["relacao"] = "novo contato"
+        state["modo_relacional"] = "social"
+        state["tensao_romantica_com_interlocutor"] = False
+        state["toque_intimo_permitido"] = False
+        return
+
+    # ======================================================
+    # FALLBACK
+    # ======================================================
+    if state.get("relacao") in ("sem interlocutor", "", None):
+        state["relacao"] = "contextual"
+
+    state["modo_relacional"] = state.get("modo_relacional", "neutro") or "neutro"
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     """
     Quando Mary está sozinha, em tom neutro e sem estímulo ativo,
