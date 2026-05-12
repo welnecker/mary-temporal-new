@@ -5,6 +5,7 @@ import os
 import sys
 import requests
 from datetime import datetime
+import unicodedata
 
 import streamlit as st
 import gspread
@@ -691,6 +692,33 @@ def apagar_shared_memory_por_id(memory_id: str) -> bool:
     except Exception as e:
         st.warning(f"Não foi possível apagar memória: {type(e).__name__}: {e}")
         return False
+
+def remover_acentos(texto: str) -> str:
+    """
+    Remove acentos para comparações internas.
+    Ex:
+    'Jânio' -> 'Janio'
+    'Sílvia' -> 'Silvia'
+    'ônibus' -> 'onibus'
+    """
+    texto = str(texto or "")
+
+    return "".join(
+        caractere
+        for caractere in unicodedata.normalize("NFD", texto)
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+
+def _texto_norm(valor: str) -> str:
+    """
+    Normaliza texto para comparações internas:
+    - converte para string;
+    - remove espaços externos;
+    - coloca em minúsculas;
+    - remove acentos.
+    """
+    return remover_acentos(str(valor or "").strip().lower())
 
 
 # ==========================================================
