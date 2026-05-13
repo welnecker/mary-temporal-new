@@ -2531,11 +2531,14 @@ def resetar_se_contexto_mudou(state: dict) -> None:
     Reseta progressão apenas quando há mudança forte de contexto.
 
     Mudanças leves de local não devem destruir continuidade.
-    Ex:
-    - sala -> corredor com mesmo interlocutor e mesmo tipo de cena: pode continuar.
-    - Janio -> Anthony: reset forte.
-    - privado -> público: reset forte.
-    - qualquer coisa -> neutra: reset forte.
+
+    Regras:
+    - Mudança de interlocutor, saída de ambiente privado ou ida para cena neutra
+      podem limpar progressão física momentânea.
+    - Porém mary_climax_done e user_climax_done são fatos narrativos já ocorridos.
+      Não devem ser apagados automaticamente por mudança de contexto.
+    - Esses fatos só devem ser zerados por uma função específica de nova cena,
+      novo capítulo ou reset manual.
     """
     if not isinstance(state, dict):
         return
@@ -2552,6 +2555,7 @@ def resetar_se_contexto_mudou(state: dict) -> None:
     # Compatibilidade com versão antiga que salvava string.
     if not isinstance(contexto_antigo, dict):
         chave_antiga = str(state.get("_contexto_anterior", "") or "")
+
         if chave_antiga:
             partes = chave_antiga.split("|")
             contexto_antigo = {
@@ -2584,8 +2588,12 @@ def resetar_se_contexto_mudou(state: dict) -> None:
         )
 
         if mudanca_forte:
+            # ==================================================
+            # RESET DE PROGRESSÃO MOMENTÂNEA
+            # ==================================================
             state["physical_phase"] = 0
             state["scene_stage"] = "inicio"
+
             state["desire_level"] = 0.18
             state["tension_level"] = 0.12
             state["connection_level"] = max(
@@ -2593,14 +2601,25 @@ def resetar_se_contexto_mudou(state: dict) -> None:
                 0.22,
             )
 
-            # Reset completo de resolução/pico apenas em mudança forte.
+            # ==================================================
+            # LIMPA GATILHOS TÉCNICOS DO PICO
+            # ==================================================
             state["resolution_done"] = False
-            state["mary_climax_done"] = False
-            state["user_climax_done"] = False
             state["partner_climax_pending"] = False
             state["force_resolution_now"] = False
             state["mary_pre_orgasm_signals"] = False
             state["mary_stimulation_turns"] = 0
+
+            # ==================================================
+            # NÃO APAGAR FATOS NARRATIVOS JÁ OCORRIDOS
+            # ==================================================
+            # Não fazer:
+            # state["mary_climax_done"] = False
+            # state["user_climax_done"] = False
+            #
+            # Esses campos indicam acontecimentos já verbalizados.
+            # Eles só devem ser limpos em reset manual, nova cena real
+            # ou função específica de novo capítulo.
 
     state["_contexto_anterior_dict"] = contexto_atual
     state["_contexto_anterior"] = "|".join(
@@ -2611,7 +2630,6 @@ def resetar_se_contexto_mudou(state: dict) -> None:
             contexto_atual["privacidade"],
         ]
     )
-
 def eh_janio(valor: str) -> bool:
     valor = _texto_norm(valor)
     return valor in {
