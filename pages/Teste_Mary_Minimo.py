@@ -2903,6 +2903,343 @@ REGRAS:
 - Se houver conflito entre tom manual e estado emocional, o tom manual vence.
 """.strip()
 
+# ==========================================================
+# VISUAL AUTOMÁTICO DE MARY
+# ==========================================================
+
+def _escolher_visual_estavel(opcoes: list[dict], state: dict) -> dict:
+    """
+    Escolhe um visual de forma estável, sem usar random.
+    Assim o Streamlit não muda a roupa a cada rerun.
+    """
+    fallback = {
+        "roupa": "calça jeans escura, camiseta preta ajustada e tênis branco",
+        "cabelo": "cabelos negros soltos, bem cuidados",
+        "extras": ["presença natural"],
+    }
+
+    if not opcoes:
+        return fallback
+
+    base = "|".join(
+        [
+            str(state.get("local", "") or ""),
+            str(state.get("tempo", "") or ""),
+            str(state.get("mary_acao", "") or ""),
+            str(state.get("plano_ativo", "") or ""),
+            str(state.get("tom_manual_da_cena", "") or ""),
+        ]
+    )
+
+    indice = abs(hash(base)) % len(opcoes)
+    return opcoes[indice]
+
+
+def _aplicar_visual(visual: dict) -> tuple[str, str, list[str]]:
+    roupa = str(visual.get("roupa", "") or "").strip()
+    cabelo = str(visual.get("cabelo", "") or "").strip()
+    extras = visual.get("extras", [])
+
+    if not isinstance(extras, list):
+        extras = [str(extras)]
+
+    extras = [str(e or "").strip() for e in extras if str(e or "").strip()]
+
+    if not roupa:
+        roupa = "calça jeans escura, camiseta preta ajustada e tênis branco"
+
+    if not cabelo:
+        cabelo = "cabelos negros soltos, bem cuidados"
+
+    return roupa, cabelo, extras
+
+
+VISUAIS_FACULDADE_MANHA = [
+    {
+        "roupa": "calça jeans clara, baby look preta da UFRJ e tênis branco",
+        "cabelo": "cabelos negros soltos, alinhados atrás das orelhas",
+        "extras": ["mochila preta em um ombro", "caderno fino contra o peito"],
+    },
+    {
+        "roupa": "calça jeans azul, camiseta baby look da UFRJ e jaqueta leve aberta",
+        "cabelo": "cabelos negros presos em rabo baixo, com alguns fios soltos no rosto",
+        "extras": ["mochila com cadernos", "celular na mão"],
+    },
+    {
+        "roupa": "saia jeans discreta, baby look preta da UFRJ e tênis casual",
+        "cabelo": "cabelos negros soltos, com movimento natural",
+        "extras": ["bolsa lateral pequena", "relógio simples"],
+    },
+]
+
+VISUAIS_FACULDADE_TARDE = [
+    {
+        "roupa": "calça jeans azul ajustada, baby look preta da UFRJ e tênis confortável",
+        "cabelo": "cabelos negros soltos, com aparência natural de rotina universitária",
+        "extras": ["mochila universitária", "caderno ou celular na mão"],
+    },
+    {
+        "roupa": "calça jeans escura, blusa branca justa por baixo de uma jaqueta jeans aberta",
+        "cabelo": "cabelos negros presos de forma prática, com fios soltos no pescoço",
+        "extras": ["mochila apoiada em um ombro", "estojo pequeno na mão"],
+    },
+    {
+        "roupa": "short jeans discreto, camiseta preta da UFRJ e tênis branco",
+        "cabelo": "cabelos negros soltos, levemente desalinhados pelo movimento do dia",
+        "extras": ["bolsa transversal", "garrafinha de água"],
+    },
+]
+
+VISUAIS_FACULDADE_NOITE = [
+    {
+        "roupa": "calça jeans escura, baby look preta da UFRJ e tênis branco já marcado pelo uso do dia",
+        "cabelo": "cabelos negros soltos, um pouco desalinhados pelo cansaço",
+        "extras": ["mochila apoiada em um ombro", "visual de quem acabou de voltar da faculdade"],
+    },
+    {
+        "roupa": "calça jeans ajustada, camiseta preta da UFRJ parcialmente amassada e tênis casual",
+        "cabelo": "cabelos negros soltos, com alguns fios caindo sobre o rosto",
+        "extras": ["mochila pesada", "chaves na mão"],
+    },
+    {
+        "roupa": "calça jeans azul, baby look da UFRJ e casaco leve amarrado na cintura",
+        "cabelo": "cabelos negros soltos, com aparência de fim de dia",
+        "extras": ["mochila com cadernos", "celular na mão"],
+    },
+]
+
+VISUAIS_SAIDA_URBANA = [
+    {
+        "roupa": "calça jeans escura, blusa preta ajustada e tênis branco",
+        "cabelo": "cabelos negros soltos, penteados com os dedos",
+        "extras": ["bolsa pequena no ombro", "chaves na mão"],
+    },
+    {
+        "roupa": "vestido curto casual de algodão escuro e sandália baixa",
+        "cabelo": "cabelos negros soltos, com movimento natural",
+        "extras": ["bolsa lateral", "perfume discreto"],
+    },
+    {
+        "roupa": "short jeans, blusa baby look lisa e tênis casual",
+        "cabelo": "cabelos negros presos em rabo baixo",
+        "extras": ["celular na mão", "bolsa pequena atravessada no corpo"],
+    },
+    {
+        "roupa": "calça jeans azul, camiseta justa sem estampa e jaqueta leve aberta",
+        "cabelo": "cabelos negros soltos, alinhados atrás dos ombros",
+        "extras": ["mochila pequena", "batom discreto"],
+    },
+]
+
+VISUAIS_PRAIA_DIA = [
+    {
+        "roupa": "biquíni de crochê por baixo de uma saída de praia branca aberta",
+        "cabelo": "cabelos negros soltos, com aspecto natural de praia",
+        "extras": ["óculos de sol", "chinelo claro", "bolsa de palha"],
+    },
+    {
+        "roupa": "biquíni preto, short jeans aberto no botão e camisa leve amarrada na cintura",
+        "cabelo": "cabelos negros soltos, com fios bagunçados pelo vento",
+        "extras": ["canga dobrada no braço", "protetor solar na bolsa"],
+    },
+    {
+        "roupa": "maiô vermelho com short branco leve por cima",
+        "cabelo": "cabelos negros presos em coque frouxo",
+        "extras": ["sandália rasteira", "óculos escuros"],
+    },
+]
+
+VISUAIS_PRAIA_NOITE = [
+    {
+        "roupa": "vestido leve de alcinha por cima do biquíni",
+        "cabelo": "cabelos negros soltos, com movimento suave",
+        "extras": ["sandália baixa", "bolsa pequena de praia"],
+    },
+    {
+        "roupa": "saída de praia discreta, biquíni escuro por baixo e chinelo baixo",
+        "cabelo": "cabelos negros soltos, levemente úmidos nas pontas",
+        "extras": ["canga fina nos ombros", "visual relaxado de orla"],
+    },
+    {
+        "roupa": "short jeans claro, top de biquíni por baixo de uma camisa branca aberta",
+        "cabelo": "cabelos negros presos de lado, com fios soltos no rosto",
+        "extras": ["sandália rasteira", "pulseira simples"],
+    },
+]
+
+VISUAIS_BANHO = [
+    {
+        "roupa": "corpo nu sob o chuveiro",
+        "cabelo": "cabelos negros molhados, grudando parcialmente nos ombros",
+        "extras": ["pele molhada", "gotas de água escorrendo pelo corpo"],
+    },
+    {
+        "roupa": "toalha branca enrolada acima dos seios",
+        "cabelo": "cabelos negros úmidos, penteados para trás com os dedos",
+        "extras": ["pele limpa", "vapor leve no banheiro"],
+    },
+    {
+        "roupa": "roupão claro aberto no colo, ainda com a pele úmida do banho",
+        "cabelo": "cabelos negros úmidos caindo sobre os ombros",
+        "extras": ["cheiro de sabonete", "pés descalços no piso frio"],
+    },
+]
+
+VISUAIS_SONO_NOITE = [
+    {
+        "roupa": "calcinha limpa e babydoll preto leve",
+        "cabelo": "cabelos negros soltos, ainda úmidos nas pontas",
+        "extras": ["pés descalços", "visual íntimo de fim de noite"],
+    },
+    {
+        "roupa": "camiseta comprida usada como roupa de dormir e calcinha simples",
+        "cabelo": "cabelos negros presos de qualquer jeito, com fios soltos no rosto",
+        "extras": ["pele recém-saída do banho", "expressão cansada"],
+    },
+    {
+        "roupa": "shortinho de algodão cinza e blusa fina de alça",
+        "cabelo": "cabelos negros soltos sobre os ombros",
+        "extras": ["pés descalços", "travesseiro próximo"],
+    },
+    {
+        "roupa": "camisola curta de algodão claro",
+        "cabelo": "cabelos negros soltos, espalhados pelo pescoço",
+        "extras": ["visual caseiro e sonolento"],
+    },
+]
+
+VISUAIS_CASA_MANHA = [
+    {
+        "roupa": "shortinho de algodão e camiseta larga levemente caída em um ombro",
+        "cabelo": "cabelos negros presos em coque frouxo",
+        "extras": ["pés descalços", "caneca na mão"],
+    },
+    {
+        "roupa": "calça de moletom leve e regata branca simples",
+        "cabelo": "cabelos negros soltos, ainda bagunçados de sono",
+        "extras": ["rosto lavado", "visual de manhã em casa"],
+    },
+    {
+        "roupa": "camiseta comprida e short curto de dormir",
+        "cabelo": "cabelos negros presos de forma despretensiosa",
+        "extras": ["pés descalços", "expressão sonolenta"],
+    },
+]
+
+VISUAIS_CASA_DIA = [
+    {
+        "roupa": "short jeans claro e camiseta preta justa",
+        "cabelo": "cabelos negros soltos, bem cuidados",
+        "extras": ["pés descalços", "celular na mão"],
+    },
+    {
+        "roupa": "calça legging preta e camiseta larga da UFRJ",
+        "cabelo": "cabelos negros presos em rabo baixo",
+        "extras": ["visual doméstico confortável", "chinelo simples"],
+    },
+    {
+        "roupa": "vestido caseiro curto de algodão",
+        "cabelo": "cabelos negros soltos, com aparência natural",
+        "extras": ["pulseira simples", "pés descalços"],
+    },
+]
+
+VISUAIS_CASA_NOITE = [
+    {
+        "roupa": "shortinho de algodão e camiseta larga levemente caída em um ombro",
+        "cabelo": "cabelos negros soltos, com aparência relaxada",
+        "extras": ["pés descalços", "visual caseiro de fim de noite"],
+    },
+    {
+        "roupa": "calcinha limpa e babydoll leve",
+        "cabelo": "cabelos negros soltos, ainda úmidos nas pontas",
+        "extras": ["pele recém-saída do banho", "visual íntimo e doméstico"],
+    },
+    {
+        "roupa": "camiseta comprida usada como roupa de dormir",
+        "cabelo": "cabelos negros presos de qualquer jeito, com fios soltos no rosto",
+        "extras": ["pés descalços", "expressão cansada"],
+    },
+    {
+        "roupa": "short de malha cinza e regata preta fina",
+        "cabelo": "cabelos negros soltos sobre os ombros",
+        "extras": ["chinelo baixo", "celular por perto"],
+    },
+]
+
+VISUAIS_SOCIAL_NOITE_MALICIA = [
+    {
+        "roupa": "vestido preto justo acima dos joelhos e sandália de salto fino",
+        "cabelo": "cabelos negros soltos, bem alinhados, com acabamento sensual",
+        "extras": ["batom marcante", "perfume envolvente", "brincos pequenos"],
+    },
+    {
+        "roupa": "saia preta curta, blusa de alcinha vinho e sandália de salto",
+        "cabelo": "cabelos negros soltos, jogados para um lado",
+        "extras": ["maquiagem marcante", "bolsa pequena"],
+    },
+    {
+        "roupa": "macacão preto ajustado ao corpo e salto baixo elegante",
+        "cabelo": "cabelos negros lisos e soltos, com brilho",
+        "extras": ["perfume doce", "pulseira dourada discreta"],
+    },
+]
+
+VISUAIS_SOCIAL_NOITE_FLERTE = [
+    {
+        "roupa": "vestido azul escuro de alcinha e sandália baixa elegante",
+        "cabelo": "cabelos negros soltos, bem alinhados",
+        "extras": ["maquiagem bonita", "colar discreto"],
+    },
+    {
+        "roupa": "calça jeans escura, body preto e sandália de salto médio",
+        "cabelo": "cabelos negros soltos, com volume natural",
+        "extras": ["bolsa pequena", "batom suave"],
+    },
+    {
+        "roupa": "saia jeans curta, blusa preta justa e sandália delicada",
+        "cabelo": "cabelos negros presos em meio rabo, com fios soltos",
+        "extras": ["brincos pequenos", "perfume leve"],
+    },
+]
+
+VISUAIS_SOCIAL_NOITE_NEUTRO = [
+    {
+        "roupa": "vestido midi simples e sandália baixa",
+        "cabelo": "cabelos negros soltos, bem cuidados",
+        "extras": ["maquiagem equilibrada", "bolsa pequena"],
+    },
+    {
+        "roupa": "calça pantalona preta, blusa clara de tecido leve e sandália discreta",
+        "cabelo": "cabelos negros presos em coque baixo",
+        "extras": ["brincos pequenos", "visual social discreto"],
+    },
+    {
+        "roupa": "calça jeans escura, blusa de manga curta ajustada e sapatilha",
+        "cabelo": "cabelos negros soltos, com aparência refinada",
+        "extras": ["bolsa lateral", "batom claro"],
+    },
+]
+
+VISUAIS_CARRO_UBER = [
+    {
+        "roupa": "calça jeans escura, baby look preta e tênis branco",
+        "cabelo": "cabelos negros soltos, já marcados pelo movimento da noite",
+        "extras": ["cinto afivelado", "bolsa no colo"],
+    },
+    {
+        "roupa": "vestido curto casual e sandália baixa",
+        "cabelo": "cabelos negros soltos sobre os ombros",
+        "extras": ["celular na mão", "bolsa encostada na perna"],
+    },
+    {
+        "roupa": "short jeans, blusa justa e jaqueta leve aberta",
+        "cabelo": "cabelos negros presos de lado, com fios soltos",
+        "extras": ["cinto de segurança cruzando o corpo", "visual já montado para sair"],
+    },
+]
+
+
 def gerar_visual_automatico_mary(state: dict) -> str:
     """
     Gera o visual automático de Mary com atenção ao ENREDO ATUAL.
@@ -2910,11 +3247,11 @@ def gerar_visual_automatico_mary(state: dict) -> str:
     Princípios:
     - mary_acao e plano_ativo vencem local genérico.
     - O visual descreve roupa/aparência, não cria destino novo.
-    - Não usar gatilhos perigosos como "mar" sozinho.
-    - Contexto de saída/compromisso externo vence roupa de casa, banho, praia ou descanso.
+    - Usa peças concretas, não descrições genéricas.
+    - Contexto de saída/compromisso externo só vence quando for realmente atual.
     """
     if not isinstance(state, dict):
-        return "Mary está com roupa coerente com a cena atual, cabelos negros bem cuidados."
+        return "Mary está com calça jeans escura, camiseta preta ajustada e tênis branco, cabelos negros soltos, bem cuidados."
 
     local = _texto_norm(state.get("local", ""))
     tempo = _texto_norm(state.get("tempo", ""))
@@ -2935,13 +3272,47 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         ]
     )
 
-    roupa = "roupa coerente com a cena atual"
-    cabelo = "cabelos negros bem cuidados"
-    extras = []
+    # ======================================================
+    # DETECTORES MAIS SEGUROS
+    # ======================================================
 
-    # ======================================================
-    # DETECTORES DE ENREDO ATUAL
-    # ======================================================
+    termos_faculdade_fortes = [
+        "indo para a aula",
+        "ir para a aula",
+        "vou para a aula",
+        "indo para faculdade",
+        "ir para faculdade",
+        "vou para faculdade",
+        "indo para a faculdade",
+        "ir para a faculdade",
+        "vou para a faculdade",
+        "indo para ufrj",
+        "ir para ufrj",
+        "vou para ufrj",
+        "campus",
+        "sala de aula",
+        "cantina",
+        "professor",
+        "caderno",
+        "livros",
+        "mochila pronta",
+        "pegar onibus para aula",
+        "pegar onibus para faculdade",
+        "restaurante universitario",
+        "bandejao",
+        "ir ao ru",
+        "no ru",
+        "para o ru",
+    ]
+
+    termos_faculdade_fracos = [
+        "ufrj",
+        "faculdade",
+        "roupa da faculdade",
+        "camiseta da ufrj",
+        "baby look da ufrj",
+        "blusa da ufrj",
+    ]
 
     termos_compromisso_externo = [
         "saindo de casa",
@@ -2955,46 +3326,21 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "mototaxi",
         "uber",
         "taxi",
-        "mochila",
         "bolsa",
         "chave",
         "porta",
         "rua",
         "calcar",
         "calcando",
-        "calcando",
         "tenis",
         "sapato",
         "sandalia",
         "compromisso",
-        "aula",
-        "faculdade",
-        "ufrj",
-        "campus",
         "trabalho",
         "curso",
         "reuniao",
         "encontro marcado",
         "almocar",
-    ]
-
-    termos_faculdade = [
-        "aula",
-        "faculdade",
-        "ufrj",
-        "campus",
-        "sala de aula",
-        "cantina",
-        "restaurante universitario",
-        "bandejao",
-        "ir ao ru",
-        "no ru",
-        "para o ru",
-        "professor",
-        "materia",
-        "caderno",
-        "livros",
-        "mochila",
     ]
 
     termos_praia_reais = [
@@ -3004,10 +3350,12 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "beira-mar",
         "beira mar",
         "areia",
-        "calçadão",
         "calcadao",
         "mergulho",
         "banho de mar",
+        "canga",
+        "biquini",
+        "maio",
     ]
 
     termos_casa = [
@@ -3033,6 +3381,7 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "se secando",
         "sair do banho",
         "pos-banho",
+        "box",
     ]
 
     termos_sono_descanso = [
@@ -3047,6 +3396,7 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "travesseiro",
         "coberta",
         "apagar a luz",
+        "antes de dormir",
     ]
 
     termos_noite_social = [
@@ -3061,155 +3411,109 @@ def gerar_visual_automatico_mary(state: dict) -> str:
         "sugar baby",
     ]
 
-    contexto_compromisso_externo = any(t in contexto_atual for t in termos_compromisso_externo)
-    contexto_faculdade = any(t in contexto_atual for t in termos_faculdade)
-    contexto_praia = any(t in contexto_atual for t in termos_praia_reais)
-    contexto_casa = any(t in contexto_atual for t in termos_casa)
     contexto_banho = any(t in contexto_atual for t in termos_banho)
     contexto_sono = any(t in contexto_atual for t in termos_sono_descanso)
+    contexto_praia = any(t in contexto_atual for t in termos_praia_reais)
+    contexto_casa = any(t in contexto_atual for t in termos_casa)
     contexto_noite_social = any(t in contexto_atual for t in termos_noite_social)
 
-    # ======================================================
-    # REGRA-MÃE DE PRIORIDADE
-    # ======================================================
-    # Se existe compromisso externo atual, ele vence praia/casa/banho.
-    # Ex: se há mochila + aula + ônibus, não gerar biquíni/saída de praia.
-    # ======================================================
+    contexto_faculdade_forte = any(t in contexto_atual for t in termos_faculdade_fortes)
+    contexto_faculdade_fraco = any(t in contexto_atual for t in termos_faculdade_fracos)
 
-    if contexto_faculdade:
-        roupa = "roupa casual prática e arrumada para aula"
-        cabelo = "cabelos negros arrumados com naturalidade"
-        extras = ["mochila", "calçado confortável"]
-    
-    elif contexto_compromisso_externo:
-        roupa = "roupa casual prática para sair de casa"
-        cabelo = "cabelos negros arrumados de forma natural"
-        extras = ["bolsa ou mochila", "calçado confortável"]
+    # Faculdade fraca não decide visual sozinha.
+    contexto_faculdade = contexto_faculdade_forte
 
-    # ======================================================
-    # PRAIA / PISCINA
-    # Só entra se o ENREDO ATUAL apontar para praia/piscina.
-    # Não usar 'mar' sozinho.
-    # ======================================================
+    contexto_compromisso_externo = any(t in contexto_atual for t in termos_compromisso_externo)
 
-    elif contexto_praia:
-        if any(p in tempo for p in ["manhã", "manha", "tarde", "dia"]):
-            roupa = "roupa leve adequada para praia ou piscina"
-            cabelo = "cabelos negros soltos com aspecto natural"
-            extras = ["óculos de sol", "sandália ou chinelo"]
-        else:
-            roupa = "vestido leve ou saída de praia discreta"
-            cabelo = "cabelos negros soltos com movimento natural"
-            extras = ["sandália baixa", "visual leve"]
+    # Se está claramente em banho/sono, isso vence referência fraca de faculdade.
+    if contexto_banho or contexto_sono:
+        contexto_faculdade = False
+        contexto_compromisso_externo = False
+
+    # Se só há UFRJ/camiseta/faculdade fraca, não vira roupa de aula.
+    if contexto_faculdade_fraco and not contexto_faculdade_forte:
+        contexto_faculdade = False
 
     # ======================================================
-    # BANHO / PÓS-BANHO
-    # Só entra se não houver saída/compromisso vencendo.
+    # ESCOLHA DO VISUAL POR PRIORIDADE
     # ======================================================
 
-    elif contexto_banho:
-        roupa = "roupão, toalha ou roupa leve de pós-banho"
-        cabelo = "cabelos negros úmidos ou recém-arrumados"
-        extras = ["pele limpa", "visual de banho recente"]
-
-    # ======================================================
-    # SONO / DESCANSO
-    # ======================================================
+    if contexto_banho:
+        visual = _escolher_visual_estavel(VISUAIS_BANHO, state)
 
     elif contexto_sono:
-        roupa = "roupa confortável de dormir ou descanso"
-        cabelo = "cabelos negros soltos ou presos de forma suave"
-        extras = ["visual íntimo e caseiro"]
+        visual = _escolher_visual_estavel(VISUAIS_SONO_NOITE, state)
 
-    # ======================================================
-    # CASA / APARTAMENTO / ROTINA DOMÉSTICA
-    # ======================================================
-
-    elif contexto_casa:
-        if any(p in tempo for p in ["manhã", "manha"]):
-            roupa = "roupa casual doméstica e confortável"
-            cabelo = "cabelos negros presos de forma prática ou soltos casualmente"
-            extras = ["visual natural de rotina"]
-        elif "noite" in tempo or "madrugada" in tempo:
-            roupa = "roupa leve e confortável de casa"
-            cabelo = "cabelos negros soltos ou presos de forma suave"
-            extras = ["visual caseiro"]
+    elif contexto_faculdade:
+        if "noite" in tempo or "22 horas" in tempo or "madrugada" in tempo:
+            visual = _escolher_visual_estavel(VISUAIS_FACULDADE_NOITE, state)
+        elif "manha" in tempo:
+            visual = _escolher_visual_estavel(VISUAIS_FACULDADE_MANHA, state)
+        elif "tarde" in tempo:
+            visual = _escolher_visual_estavel(VISUAIS_FACULDADE_TARDE, state)
         else:
-            roupa = "roupa casual confortável"
-            cabelo = "cabelos negros naturais e bem cuidados"
+            visual = _escolher_visual_estavel(VISUAIS_FACULDADE_TARDE, state)
 
-    # ======================================================
-    # AMBIENTE SOCIAL NOTURNO
-    # ======================================================
+    elif contexto_compromisso_externo:
+        visual = _escolher_visual_estavel(VISUAIS_SAIDA_URBANA, state)
+
+    elif contexto_praia:
+        if any(p in tempo for p in ["manha", "tarde", "dia"]):
+            visual = _escolher_visual_estavel(VISUAIS_PRAIA_DIA, state)
+        else:
+            visual = _escolher_visual_estavel(VISUAIS_PRAIA_NOITE, state)
 
     elif contexto_noite_social:
-        if "noite" in tempo or "madrugada" in tempo:
-            if tom in ("malícia", "malicia"):
-                roupa = "look elegante e marcante"
-                cabelo = "cabelos negros bem alinhados, com acabamento sensual"
-                extras = ["sandália de salto", "maquiagem marcante", "perfume envolvente"]
+        if "noite" in tempo or "madrugada" in tempo or "22 horas" in tempo:
+            if tom == "malicia":
+                visual = _escolher_visual_estavel(VISUAIS_SOCIAL_NOITE_MALICIA, state)
             elif tom == "flerte":
-                roupa = "look elegante e atraente, sem exagero"
-                cabelo = "cabelos negros bem alinhados e soltos"
-                extras = ["acessórios discretos", "maquiagem bonita"]
+                visual = _escolher_visual_estavel(VISUAIS_SOCIAL_NOITE_FLERTE, state)
             else:
-                roupa = "look social elegante"
-                cabelo = "cabelos bem cuidados com apresentação refinada"
-                extras = ["sandália", "maquiagem equilibrada"]
+                visual = _escolher_visual_estavel(VISUAIS_SOCIAL_NOITE_NEUTRO, state)
         else:
-            roupa = "roupa arrumada e feminina"
-            cabelo = "cabelos negros bem cuidados"
-            extras = ["acessórios discretos"]
+            visual = _escolher_visual_estavel(VISUAIS_SAIDA_URBANA, state)
 
-    # ======================================================
-    # CARRO / UBER / TÁXI
-    # ======================================================
+    elif any(p in local for p in ["carro", "uber", "taxi"]):
+        visual = _escolher_visual_estavel(VISUAIS_CARRO_UBER, state)
 
-    elif any(p in local for p in ["carro", "uber", "táxi", "taxi"]):
-        roupa = "roupa coerente com o destino atual da cena"
-        cabelo = "cabelos bem cuidados, já marcados pelo contexto do encontro"
-        extras = ["visual já montado"]
-
-    # ======================================================
-    # FALLBACK ATENTO AO ENREDO
-    # ======================================================
+    elif contexto_casa:
+        if "manha" in tempo:
+            visual = _escolher_visual_estavel(VISUAIS_CASA_MANHA, state)
+        elif "noite" in tempo or "madrugada" in tempo or "22 horas" in tempo:
+            visual = _escolher_visual_estavel(VISUAIS_CASA_NOITE, state)
+        else:
+            visual = _escolher_visual_estavel(VISUAIS_CASA_DIA, state)
 
     else:
-        roupa = "roupa coerente com a ação atual"
-        cabelo = "cabelos negros bem cuidados"
-        extras = ["presença natural"]
+        visual = _escolher_visual_estavel(VISUAIS_SAIDA_URBANA, state)
+
+    roupa, cabelo, extras = _aplicar_visual(visual)
 
     # ======================================================
     # TRAVA DE COERÊNCIA CONTRA CONTRADIÇÃO
     # ======================================================
-    # Se o plano/ação indica compromisso externo, remove qualquer linguagem
-    # que pareça praia, banho ou descanso.
-    # ======================================================
 
     if contexto_compromisso_externo or contexto_faculdade:
-        texto_visual = " ".join([roupa, cabelo, " ".join(extras)]).lower()
+        texto_visual = _texto_norm(" ".join([roupa, cabelo, " ".join(extras)]))
 
         termos_incompativeis = [
-            "biquíni",
             "biquini",
-            "maiô",
             "maio",
             "roupa de banho",
-            "saída de praia",
             "saida de praia",
-            "roupão",
             "roupao",
             "toalha",
             "babydoll",
             "camisola",
             "pijama",
             "chinelo de borracha",
+            "corpo nu",
         ]
 
         if any(t in texto_visual for t in termos_incompativeis):
-            roupa = "roupa casual prática e adequada ao compromisso externo"
-            cabelo = "cabelos negros arrumados com naturalidade"
-            extras = ["mochila ou bolsa", "calçado confortável"]
+            visual = _escolher_visual_estavel(VISUAIS_SAIDA_URBANA, state)
+            roupa, cabelo, extras = _aplicar_visual(visual)
 
     descricao = f"Mary está com {roupa}, {cabelo}"
 
@@ -3228,9 +3532,12 @@ def resolver_visual_atual_mary(state: dict) -> str:
     Regras:
     - Visual manual preenchido vence.
     - Se automático estiver ligado, gera visual a partir do enredo atual.
-    - Se automático estiver desligado, só preserva visual antigo se houver algo salvo.
+    - Se automático estiver desligado, preserva visual antigo se houver algo salvo.
     - Manual vazio não deve forçar visual antigo incoerente.
     """
+    if not isinstance(state, dict):
+        return "Mary está com calça jeans escura, camiseta preta ajustada e tênis branco, cabelos negros soltos, bem cuidados."
+
     visual_manual = str(state.get("visual_atual_manual", "") or "").strip()
     usar_auto = normalizar_bool(state.get("usar_visual_automatico", True), default=True)
 
@@ -3245,8 +3552,6 @@ def resolver_visual_atual_mary(state: dict) -> str:
     if visual_antigo:
         return visual_antigo
 
-    # Se manual está vazio e automático desligado, mas não há visual antigo,
-    # gera fallback automático para evitar campo vazio.
     return gerar_visual_automatico_mary(state)
 
 def preparar_evento_inesperado_para_prompt(state: dict) -> str:
