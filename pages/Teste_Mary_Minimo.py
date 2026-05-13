@@ -1641,11 +1641,26 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     # ======================================================
     turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
 
-    if estimulacao_direta:
+    # ======================================================
+    # CONTADOR DE ESTIMULAÇÃO DIRETA
+    # Só conta turnos depois de estímulo sexual direto real.
+    # ======================================================
+    
+    estimulacao_para_contador = (
+        tem_penetracao
+        or tem_oral_mary
+        or tem_masturbacao_mary
+        or tem_friccao
+    )
+    
+    turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
+    
+    if estimulacao_para_contador:
         turns += 1
     else:
+        # Não zera de uma vez: permite pausas curtas sem perder tudo.
         turns = max(0, turns - 1)
-
+    
     state["mary_stimulation_turns"] = turns
 
     # ======================================================
@@ -1660,16 +1675,31 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         novo_stage = "sexo_ou_estimulo"
         nova_intencao = "sentir_e_conduzir"
 
-    if (
-        (contexto_penetracao_ativo and tem_ritmo_penetracao)
-        or estimulacao_intensa
-        or turns >= 3
-        or tem_pre_orgasmo_explicito
-    ):
+    # ======================================================
+    # PRÉ-PICO
+    # Mary só entra em pré-pico depois de alguns turnos
+    # de estímulo direto, ou se houver sinal explícito forte.
+    # ======================================================
+    
+    min_turns_pre_pico = 3
+    
+    if tem_pre_orgasmo_explicito and turns >= 2:
         fase = max(fase, 5)
         novo_stage = "pre_pico_mary"
         nova_intencao = "aproximar_do_pico"
         state["mary_pre_orgasm_signals"] = True
+    
+    elif estimulacao_intensa and turns >= min_turns_pre_pico:
+        fase = max(fase, 5)
+        novo_stage = "pre_pico_mary"
+        nova_intencao = "aproximar_do_pico"
+        state["mary_pre_orgasm_signals"] = True
+    
+    elif estimulacao_para_contador:
+        fase = max(fase, 4)
+        novo_stage = "sexo_ou_estimulo"
+        nova_intencao = "sustentar_tensao_intensa"
+        state["mary_pre_orgasm_signals"] = False
 
     elif tem_seios and not estimulacao_direta:
         fase = max(fase, 3)
@@ -1795,11 +1825,13 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
 
 def minimo_estimulos_para_mary(state: dict) -> int:
     """
-    Define quantos turnos de estímulo real são necessários antes de Mary poder resolver o pico.
+    Define quantos turnos de estímulo sexual direto são necessários
+    antes de Mary poder resolver o pico.
 
-    Versão mais lenta:
-    - Mantém tensão intensa por mais turnos.
-    - Evita pico cedo demais.
+    Regra geral:
+    - Funciona para Janio, Rico, Bianca ou qualquer novo interlocutor.
+    - O nome do interlocutor só ajusta levemente o ritmo.
+    - A base da decisão é o estímulo direto real, não a identidade da pessoa.
     """
     if not isinstance(state, dict):
         return 5
@@ -1810,27 +1842,43 @@ def minimo_estimulos_para_mary(state: dict) -> int:
         or ""
     )
 
+    relacao = _texto_norm(state.get("relacao", ""))
     tipo = _texto_norm(state.get("tipo_de_cena", ""))
-    fase = safe_int(state.get("physical_phase", 0), 0)
 
-    # Com Janio, segura mais por reciprocidade e progressão.
+    # Relações centrais / mais carregadas emocionalmente:
+    # segura um pouco mais para manter tensão e reciprocidade.
     if "janio" in interlocutor:
         return 6
 
-    # Com Bianca ou outro interlocutor íntimo, ainda segura alguns turnos.
     if "bianca" in interlocutor:
+        return 6
+
+    # Rico ou novo amigo íntimo: padrão com leve sustentação.
+    if "rico" in interlocutor or "ricardo" in interlocutor:
         return 5
 
-    if "intimidade" in tipo and fase >= 4:
+    # Qualquer relação íntima, ficante, paquera, interesse ou contato ambíguo.
+    if any(t in relacao for t in ["intima", "íntima", "ficante", "paquera", "interesse", "ambigua", "ambígua"]):
         return 5
 
+    # Se o tom da cena já é intimidade, vale para qualquer pessoa.
+    if "intimidade" in tipo:
+        return 5
+
+    # Default para qualquer novo personagem.
     return 5
 
 
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
     """
     Decide quando o turno deve resolver o pico de Mary.
-    Não resolve clímax do usuário.
+
+    Regra:
+    - O orgasmo é liberado por contagem de turnos de estímulo direto.
+    - A contagem começa com penetração explícita, clitóris, masturbação, oral
+      ou fricção genital clara.
+    - Depois de minimo_estimulos_para_mary(), Mary pode resolver naturalmente.
+    - Não depende de comando direto do usuário.
     """
     if not isinstance(state, dict):
         return
@@ -1854,85 +1902,80 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
     pre_pico = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
     stimulation_turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
 
-    tension = safe_float(state.get("tension_level", 0.0), 0.0)
-    desire = safe_float(state.get("desire_level", 0.0), 0.0)
+    min_turns = minimo_estimulos_para_mary(state)
 
-    gatilhos_resolucao = [
-        # comando direto
-        "goza",
-        "gozar",
-        "goza pra mim",
-        "quero te ver gozar",
-        "pode gozar",
-        "não segura",
-        "nao segura",
-        "se solta",
-
-        # continuidade intensa
-        "não para",
-        "nao para",
+    # ======================================================
+    # SINAIS QUE CONFIRMAM QUE A CENA CONTINUA INTENSA
+    # Não são obrigatórios, mas ajudam a evitar orgasmo seco
+    # quando a cena esfriou.
+    # ======================================================
+    sinais_intensidade_atual = [
         "continua",
+        "nao para",
+        "não para",
         "mais forte",
-        "mais rápido",
         "mais rapido",
-        "flop",
-        "vai e vem",
+        "mais rápido",
+        "ritmo",
+        "dentro",
+        "entra",
+        "entrando",
         "mete",
-        "estocada",
-
-        # oral/masturbação
-        "chupo mais",
+        "metendo",
+        "penetra",
+        "penetrando",
+        "clitoris",
+        "clitóris",
+        "dedos",
+        "dedo",
+        "chupa",
         "chupando",
         "lambendo",
-        "língua",
-        "lingua",
-        "clitóris",
-        "clitoris",
-        "dedo",
-        "dedos",
-        "esfrego",
-        "masturbo",
-        "massageio",
-        "brinco com",
+        "buceta",
+        "molhada",
+        "melada",
+        "gemendo",
+        "ahhh",
+        "humm",
     ]
 
-    gatilho_textual = _tem_algum(texto, gatilhos_resolucao)
+    cena_ainda_intensa = _tem_algum(texto, sinais_intensidade_atual) or fase >= 5
 
-    min_turns = minimo_estimulos_para_mary(state)
-    estimulos_minimos_para_resolver = stimulation_turns >= min_turns
-
-    gatilho_por_duracao = (
-        fase >= 5
-        and pre_pico
-        and stimulation_turns >= max(5, min_turns)
-    )
-
-    gatilho_por_tensao_maxima = (
-        fase >= 5
-        and pre_pico
-        and tension >= 0.85
-        and desire >= 0.65
-        and stimulation_turns >= min_turns
-    )
-
+    # ======================================================
+    # LIBERAÇÃO POR TURNO
+    # ======================================================
     if (
         fase >= 5
         and pre_pico
-        and estimulos_minimos_para_resolver
-        and (gatilho_textual or gatilho_por_duracao or gatilho_por_tensao_maxima)
+        and stimulation_turns >= min_turns
+        and cena_ainda_intensa
     ):
         state["force_resolution_now"] = True
         state["mary_intent"] = "resolver_pico_mary"
         state["scene_stage"] = "pico_mary"
-        state["physical_phase"] = max(safe_int(state.get("physical_phase", 0), 0), 6)
-    else:
-        state["force_resolution_now"] = False
+        state["physical_phase"] = 6
+        return
 
-    # Se Mary já chegou antes e o parceiro ainda não verbalizou conclusão,
-    # a cena continua aberta para reciprocidade.
-    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
-    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
-    state["partner_climax_pending"] = bool(mary_done and not user_done)
+    # ======================================================
+    # AINDA NÃO CHEGOU: sustenta tensão.
+    # ======================================================
+    state["force_resolution_now"] = False
+
+    if stimulation_turns >= 3 or pre_pico or fase >= 5:
+        state["physical_phase"] = 5
+        state["scene_stage"] = "pre_pico_mary"
+        state["mary_intent"] = "sustentar_tensao_intensa"
+        state["mary_pre_orgasm_signals"] = True
+    elif stimulation_turns > 0:
+        state["physical_phase"] = max(fase, 4)
+        state["scene_stage"] = "sexo_ou_estimulo"
+        state["mary_intent"] = "sustentar_tensao_intensa"
+        state["mary_pre_orgasm_signals"] = False
+
+    state["partner_climax_pending"] = bool(
+        normalizar_bool(state.get("mary_climax_done", False), default=False)
+        and not user_done
+    )
 
 
 def atualizar_progressao_social(state: dict, fala_usuario: str) -> None:
@@ -4271,79 +4314,33 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
-    Decide quando Mary deve sair do pré-pico e resolver o próprio pico.
+    Gate simples de segurança.
 
-    Versão conservadora:
-    - Não resolve rápido.
-    - Exige mais turnos de estimulação direta.
-    - Mantém tensão sexual intensa por mais tempo.
+    Não decide orgasmo.
+    A função que decide é preparar_resolucao_mary_se_necessario().
+    Aqui apenas corrigimos estados contraditórios.
     """
     if not isinstance(state, dict):
         return
 
     normalizar_flags_booleanas_state(state)
 
-    privacidade = _texto_norm(state.get("privacidade", ""))
+    force_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+
     fase = safe_int(state.get("physical_phase", 0), 0)
     stage = _texto_norm(state.get("scene_stage", ""))
 
-    pre = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
-    climax_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
-    force_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
-
-    stimulation_turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
-    texto = _texto_norm(fala_usuario)
-
-    sinais_continuidade_intensa = _tem_algum(
-        texto,
-        [
-            "continua",
-            "nao para",
-            "assim",
-            "isso",
-            "mais forte",
-            "ritmo",
-            "me beija",
-            "floop",
-            "flop",
-            "humm",
-            "ahhh",
-        ],
-    )
-
-    if climax_done:
+    if mary_done:
         state["force_resolution_now"] = False
         return
 
-    if privacidade != "privado":
-        state["force_resolution_now"] = False
-        return
-
-    # Se outra função já marcou force_now, ainda assim exige maturidade mínima.
-    if force_now:
-        if stimulation_turns >= 5 and fase >= 5:
-            state["physical_phase"] = max(fase, 6)
-            state["scene_stage"] = "pico_mary"
-            state["mary_intent"] = "resolver_pico_mary"
-        else:
-            state["force_resolution_now"] = False
-            state["mary_pre_orgasm_signals"] = True
-            state["physical_phase"] = max(fase, 5)
+    if not force_now:
+        if fase >= 6 or stage == "pico_mary":
+            state["physical_phase"] = 5
             state["scene_stage"] = "pre_pico_mary"
             state["mary_intent"] = "sustentar_tensao_intensa"
-        return
-
-    if (
-        pre
-        and fase >= 5
-        and stage in {"pre_pico_mary", "pico", "pre_pico"}
-        and stimulation_turns >= 5
-        and sinais_continuidade_intensa
-    ):
-        state["force_resolution_now"] = True
-        state["physical_phase"] = 6
-        state["scene_stage"] = "pico_mary"
-        state["mary_intent"] = "resolver_pico_mary"
+            state["mary_pre_orgasm_signals"] = True
 
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
