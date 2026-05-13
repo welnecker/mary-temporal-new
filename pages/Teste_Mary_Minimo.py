@@ -1797,11 +1797,12 @@ def minimo_estimulos_para_mary(state: dict) -> int:
     """
     Define quantos turnos de estímulo real são necessários antes de Mary poder resolver o pico.
 
-    A intenção não é travar Mary, mas impedir pico cedo demais.
-    Com Janio, segura um pouco mais para preservar reciprocidade e progressão.
+    Versão mais lenta:
+    - Mantém tensão intensa por mais turnos.
+    - Evita pico cedo demais.
     """
     if not isinstance(state, dict):
-        return 3
+        return 5
 
     interlocutor = _texto_norm(
         state.get("interlocutor_foco_turno")
@@ -1812,13 +1813,18 @@ def minimo_estimulos_para_mary(state: dict) -> int:
     tipo = _texto_norm(state.get("tipo_de_cena", ""))
     fase = safe_int(state.get("physical_phase", 0), 0)
 
+    # Com Janio, segura mais por reciprocidade e progressão.
     if "janio" in interlocutor:
-        return 4
+        return 6
+
+    # Com Bianca ou outro interlocutor íntimo, ainda segura alguns turnos.
+    if "bianca" in interlocutor:
+        return 5
 
     if "intimidade" in tipo and fase >= 4:
-        return 3
+        return 5
 
-    return 3
+    return 5
 
 
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
@@ -1898,7 +1904,7 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
     gatilho_por_duracao = (
         fase >= 5
         and pre_pico
-        and stimulation_turns >= max(4, min_turns)
+        and stimulation_turns >= max(5, min_turns)
     )
 
     gatilho_por_tensao_maxima = (
@@ -3944,10 +3950,10 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
     Decide quando Mary deve sair do pré-pico e resolver o próprio pico.
 
-    Observação:
-    - Esta função é conservadora.
-    - A função principal de resolução continua sendo preparar_resolucao_mary_se_necessario().
-    - Não resolve clímax do usuário.
+    Versão conservadora:
+    - Não resolve rápido.
+    - Exige mais turnos de estimulação direta.
+    - Mantém tensão sexual intensa por mais tempo.
     """
     if not isinstance(state, dict):
         return
@@ -3979,7 +3985,6 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
             "flop",
             "humm",
             "ahhh",
-            "caralho",
         ],
     )
 
@@ -3991,17 +3996,25 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
         state["force_resolution_now"] = False
         return
 
+    # Se outra função já marcou force_now, ainda assim exige maturidade mínima.
     if force_now:
-        state["physical_phase"] = max(fase, 6)
-        state["scene_stage"] = "pico_mary"
-        state["mary_intent"] = "resolver_pico_mary"
+        if stimulation_turns >= 5 and fase >= 5:
+            state["physical_phase"] = max(fase, 6)
+            state["scene_stage"] = "pico_mary"
+            state["mary_intent"] = "resolver_pico_mary"
+        else:
+            state["force_resolution_now"] = False
+            state["mary_pre_orgasm_signals"] = True
+            state["physical_phase"] = max(fase, 5)
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "sustentar_tensao_intensa"
         return
 
     if (
         pre
         and fase >= 5
         and stage in {"pre_pico_mary", "pico", "pre_pico"}
-        and stimulation_turns >= 2
+        and stimulation_turns >= 5
         and sinais_continuidade_intensa
     ):
         state["force_resolution_now"] = True
@@ -4831,24 +4844,24 @@ def renderizar_resposta_mary(texto: str) -> None:
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
-
+   
     # ======================================================
     # PRÉ-PROMPT
     # Tudo que precisa influenciar a resposta atual deve vir ANTES
     # de montar_mensagens().
     # ======================================================
-    normalizar_estado(state)
     normalizar_flags_booleanas_state(state)
-    normalizar_relacao_por_interlocutor(state)
-
+    
+    # normalizar_estado já chama derivar_controles_de_cena(),
+    # e derivar_controles_de_cena já chama normalizar_relacao_por_interlocutor()
+    # no ponto correto.
+    normalizar_estado(state)
+    
     definir_acao_autonoma(state, fala_usuario)
-
-    # Gate de resolução do pico de Mary.
-    # IMPORTANTE:
-    # Deve rodar antes de montar_mensagens(), para o prompt já receber
-    # force_resolution_now=True quando a cena pedir resolução.
+    
+    # Gate conservador. Não deve resolver rápido demais.
     atualizar_gate_orgasmo_mary(state, fala_usuario)
-
+    
     sincronizar_facts_basicos(state)
 
     # ======================================================
@@ -4878,9 +4891,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
 
-    normalizar_estado(state)
     normalizar_flags_booleanas_state(state)
-    normalizar_relacao_por_interlocutor(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
 
@@ -5483,6 +5494,12 @@ if fala_usuario:
                 # ==================================================
                 # 6.5) Sincroniza state se Mary verbalizou o próprio pico
                 # ==================================================
+                atualizar_pico_mary_por_contexto(
+                    state,
+                    fala_usuario,
+                    resposta_limpa=resposta_final,
+                )
+                
                 atualizar_estado_pos_resposta_climax(state, resposta_final)
                 sincronizar_facts_basicos(state)
                 resultado["state"] = dict(state)
