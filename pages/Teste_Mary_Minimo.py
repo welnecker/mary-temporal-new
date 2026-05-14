@@ -1498,7 +1498,93 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
             ],
         )
 
+    if tipo == "tapa":
+        return _tem_algum(
+            contexto,
+            [
+                "tapa",
+                "palmada",
+                "palmadas",
+                "estalo",
+                "estala",
+                "estalou",
+                "bunda",
+                "nádega",
+                "nadega",
+                "palma",
+                "batida",
+                "bateu",
+                "batendo",
+                "tapinha",
+                "plaf",
+            ],
+        ) 
+
     return False
+
+def converter_onomatopeias_sociais_em_acao(texto: str, state: dict, fala_usuario: str) -> str:
+    """
+    Converte onomatopeias sociais simples em narração natural.
+    Ex:
+    Smack! PLAF! em despedida vira ação narrativa.
+    """
+    texto = str(texto or "")
+
+    if not texto.strip():
+        return texto
+
+    fala_norm = _texto_norm(fala_usuario)
+    tom = _texto_norm(state.get("tom_manual_da_cena", ""))
+    tipo = _texto_norm(state.get("tipo_de_cena", ""))
+    interlocutor = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor")
+        or "interlocutor"
+    ).strip()
+
+    tem_smack_usuario = "smack" in fala_norm
+    tem_plaf_usuario = "plaf" in fala_norm
+
+    cena_social = tom in ("neutro", "amizade", "segredo pendente", "decisao") or tipo in (
+        "neutra",
+        "amizade",
+        "segredo_pendente",
+        "decisao",
+    )
+
+    contexto_tapa = _tem_algum(
+        fala_norm,
+        [
+            "tapa",
+            "palmada",
+            "bunda",
+            "palma",
+            "estalo",
+            "plaf",
+        ],
+    )
+
+    if cena_social and tem_smack_usuario and tem_plaf_usuario and contexto_tapa:
+        frase = (
+            f"Mary recebe o beijo rápido de {interlocutor} e ri quando sente "
+            f"o tapa estalar em sua bunda."
+        )
+
+        # Remove blocos isolados [FALA] Smack/Plaf se existirem.
+        texto = re.sub(
+            r"\[FALA\]\s*\n\s*(smack|plaf)\s*[!.\u2026]*\s*",
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+
+        # Insere a frase no primeiro bloco de ação, se houver.
+        if "[ACAO]" in texto:
+            texto = texto.replace("[ACAO]", f"[ACAO]\n{frase}\n\n", 1)
+        else:
+            texto = f"[ACAO]\n{frase}\n\n{texto}"
+
+    return texto
 
 
 def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: str) -> str:
@@ -1518,6 +1604,7 @@ def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: 
         "chup": ha_acao_para_onomatopeia(state, fala_usuario, texto, "succao"),
         "slupt": ha_acao_para_onomatopeia(state, fala_usuario, texto, "succao"),
         "pop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "pop"),
+        "plaf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "tapa"),
     }
 
     for som, permitido in permissoes.items():
@@ -4986,6 +5073,13 @@ Você escreve SOMENTE como Mary, em PT-BR.
 - Onomatopeias só podem aparecer quando houver ação física correspondente no turno atual.
 - Não use onomatopeias como vício de fala, pontuação emocional, risada, ironia ou muleta narrativa.
 - Histórico antigo com onomatopeias não autoriza repetir sons na cena atual.
+- Se o usuário usar uma onomatopeia no turno atual, Mary pode reagir ao gesto, mas não precisa repetir o som literalmente.
+- Prefira transformar a onomatopeia em ação narrativa natural quando isso soar melhor.
+- Evite deixar onomatopeias isoladas em linhas próprias, como:
+  "Smack!"
+  "Plaf!"
+- Em vez disso, narre a consequência física:
+  "Mary recebe o beijo rápido de Bianca e ri quando sente o tapa estalar em sua bunda."
 
 SIGNIFICADO DOS SONS:
 - "Smack" significa beijo. Só use se houver beijo real acontecendo no turno atual.
@@ -4993,12 +5087,13 @@ SIGNIFICADO DOS SONS:
 - "LAMB!" significa lambida. Só use se houver língua/lambida acontecendo no turno atual.
 - "CHUP!" e "SLUPT!" significam chupada/sucção intensa. Só use se houver chupada/sucção acontecendo no turno atual.
 - "POP!" significa estalo após chupar, sugar ou soltar abruptamente com a boca. Só use se houver esse gesto acontecendo no turno atual.
+- "PLAF!" significa tapa, palmada ou estalo corporal. Só use se houver tapa, palmada, estalo, bunda, palma, batida ou contato corporal compatível no turno atual.
 
 REGRAS DE CONTEXTO:
 - Em conversa social, amizade, relato, lembrança, segredo ou decisão, não use onomatopeias corporais se a ação não estiver acontecendo agora.
-- Se Mary estiver apenas contando algo para Bianca, lembrando o que aconteceu com Rico ou relatando uma cena passada, descreva em palavras, mas não use "Smack", "FLOP", "LAMB", "CHUP", "SLUPT" ou "POP" como som atual.
+- Se Mary estiver apenas contando algo para Bianca, lembrando o que aconteceu com Rico ou relatando uma cena passada, descreva em palavras, mas não use "Smack", "FLOP", "LAMB", "CHUP", "SLUPT", "POP" ou "PLAF" como som atual.
 - Se o usuário usar uma onomatopeia no turno atual, Mary pode reagir a ela, desde que a ação correspondente esteja acontecendo na cena presente.
-
+- Se a onomatopeia do usuário representar beijo, tapa, palmada ou outro contato rápido de despedida, Mary deve preferir narrar a reação de forma natural em vez de repetir o som isoladamente.
 [FACTS HUMANOS DA CENA]
 {facts_txt}
 
@@ -5745,6 +5840,12 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
     # Evita que "Smack" vire muleta quando não há beijo no turno atual.
     # ======================================================
+    resposta_final_limpa = converter_onomatopeias_sociais_em_acao(
+        resposta_final_limpa,
+        state,
+        fala_usuario,
+    )
+    
     resposta_final_limpa = limpar_onomatopeias_fora_de_contexto(
         resposta_final_limpa,
         state,
