@@ -1867,6 +1867,50 @@ def detectar_climax_usuario(fala_usuario: str) -> bool:
     return _tem_algum(texto, sinais_climax_usuario)
 
 
+def detectar_climax_parceiro_na_resposta(resposta: str) -> bool:
+    """
+    Detecta quando a resposta da IA descreve que o parceiro/interlocutor concluiu o clímax.
+    Usado para sincronizar user_climax_done quando a confirmação aparece
+    na narração da Mary, e não diretamente na fala do usuário.
+    """
+    texto = _texto_norm(resposta)
+
+    negacoes = [
+        "nao gozou",
+        "não gozou",
+        "ainda nao gozou",
+        "ainda não gozou",
+        "quase gozou",
+        "quase gozando",
+        "sem gozar",
+        "segurou",
+        "segurando",
+    ]
+
+    if _tem_algum(texto, negacoes):
+        return False
+
+    sinais = [
+        "ele gozou",
+        "rico gozou",
+        "janio gozou",
+        "gozou dentro",
+        "jato quente",
+        "jato potente",
+        "despejou dentro",
+        "descarregou dentro",
+        "pulsacao ritmica",
+        "pulsação ritmica",
+        "pau dele latejar",
+        "latejar dentro",
+        "semen escorre",
+        "sêmen escorre",
+        "inundando tudo",
+    ]
+
+    return _tem_algum(texto, sinais)
+
+
 def detectar_climax_mary_na_resposta(resposta: str) -> bool:
     """
     Detecta se a resposta final verbalizou claramente o próprio pico.
@@ -1913,21 +1957,29 @@ def detectar_climax_mary_na_resposta(resposta: str) -> bool:
 
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
     """
-    Atualiza flags depois que a resposta do modelo já foi gerada.
-    Importante: o modelo pode verbalizar que Mary chegou ao pico;
-    o state precisa acompanhar isso.
+    Sincroniza flags de clímax depois que a resposta final foi gerada.
+    Importante:
+    - Mary pode verbalizar o próprio clímax na resposta.
+    - O parceiro/interlocutor também pode concluir dentro da narração da resposta.
     """
     if not isinstance(state, dict):
         return
 
-    if detectar_climax_mary_na_resposta(resposta_final):
-        user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
 
+    if detectar_climax_mary_na_resposta(resposta_final):
+        mary_done = True
         state["mary_climax_done"] = True
         state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
-        state["partner_climax_pending"] = not user_done
+
+    if detectar_climax_parceiro_na_resposta(resposta_final):
+        user_done = True
+        state["user_climax_done"] = True
+
+    state["partner_climax_pending"] = bool(mary_done and not user_done)
 
 
 def minimo_estimulos_para_mary(state: dict) -> int:
