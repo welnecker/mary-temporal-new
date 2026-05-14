@@ -5589,7 +5589,23 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     payload = {"model": model, "messages": mensagens, "temperature": 0.82, "top_p": 0.92, "max_tokens": 900}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://streamlit.app", "X-Title": "Mary Minimal Roleplay"}
     response = requests.post(url, headers=headers, json=payload, timeout=60)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        status_code = response.status_code
+    
+        try:
+            erro_api = response.json()
+        except Exception:
+            erro_api = response.text
+    
+        st.error(f"Erro HTTP OpenRouter: {status_code}")
+        st.code(str(erro_api)[:3000])
+    
+        raise RuntimeError(
+            f"OpenRouter retornou HTTP {status_code}: {str(erro_api)[:1000]}"
+        ) from e
+    
     data = response.json()
     return data["choices"][0]["message"]["content"]
 
