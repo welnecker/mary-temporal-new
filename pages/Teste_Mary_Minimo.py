@@ -1383,6 +1383,161 @@ def _tem_algum(texto: str, termos: list[str]) -> bool:
     texto = _texto_norm(texto)
     return any(_texto_norm(t) in texto for t in termos if str(t or "").strip())
 
+def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo: str) -> bool:
+    """
+    Verifica se há ação física correspondente para permitir determinada onomatopeia.
+    Evita que sons como Smack/FLOP/LAMB/CHUP/SLUPT/POP virem muleta fora de contexto.
+    """
+    contexto = _texto_norm(
+        "\n".join(
+            [
+                str(fala_usuario or ""),
+                str(resposta or ""),
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("scene_stage", "") or ""),
+                str(state.get("mary_intent", "") or ""),
+                str(state.get("tipo_de_cena", "") or ""),
+                str(state.get("tom_manual_da_cena", "") or ""),
+            ]
+        )
+    )
+
+    tipo = _texto_norm(tipo)
+
+    if tipo == "beijo":
+        return _tem_algum(
+            contexto,
+            [
+                "beijo",
+                "beija",
+                "beijando",
+                "beijou",
+                "selinho",
+                "labios",
+                "lábios",
+                "boca",
+                "beijo na boca",
+                "beijo os labios",
+                "beijo seus labios",
+                "beijo sua boca",
+                "mary beija",
+                "ela beija",
+                "nos beijamos",
+            ],
+        )
+
+    if tipo == "penetracao":
+        return _tem_algum(
+            contexto,
+            [
+                "penetracao",
+                "penetração",
+                "penetrando",
+                "estocada",
+                "estocadas",
+                "entra e sai",
+                "entrando e saindo",
+                "vai e vem",
+                "cavalgando",
+                "cavalga",
+                "montada",
+                "dentro de mim",
+                "dentro dela",
+                "pau dentro",
+                "sexo_ou_estimulo",
+                "pre_pico_mary",
+                "pico_mary",
+            ],
+        )
+
+    if tipo == "lambida":
+        return _tem_algum(
+            contexto,
+            [
+                "lambida",
+                "lambendo",
+                "lambe",
+                "lambo",
+                "lingua",
+                "língua",
+                "passa a lingua",
+                "passa a língua",
+            ],
+        )
+
+    if tipo == "succao":
+        return _tem_algum(
+            contexto,
+            [
+                "chupa",
+                "chupando",
+                "chupar",
+                "suga",
+                "sugando",
+                "sugar",
+                "succao",
+                "sucção",
+                "boca",
+                "oral",
+            ],
+        )
+
+    if tipo == "pop":
+        return _tem_algum(
+            contexto,
+            [
+                "solta com a boca",
+                "solta abruptamente",
+                "estalo",
+                "estala",
+                "chupando",
+                "sugando",
+                "sucção",
+                "succao",
+                "pop",
+            ],
+        )
+
+    return False
+
+
+def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: str) -> str:
+    """
+    Remove onomatopeias quando não há ação física correspondente no turno atual.
+    Mantém os sons quando eles fazem sentido na ação presente.
+    """
+    texto = str(texto or "")
+
+    if not texto.strip():
+        return texto
+
+    permissoes = {
+        "smack": ha_acao_para_onomatopeia(state, fala_usuario, texto, "beijo"),
+        "flop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "penetracao"),
+        "lamb": ha_acao_para_onomatopeia(state, fala_usuario, texto, "lambida"),
+        "chup": ha_acao_para_onomatopeia(state, fala_usuario, texto, "succao"),
+        "slupt": ha_acao_para_onomatopeia(state, fala_usuario, texto, "succao"),
+        "pop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "pop"),
+    }
+
+    for som, permitido in permissoes.items():
+        if permitido:
+            continue
+
+        texto = re.sub(
+            rf"\b{re.escape(som)}\s*[!.\u2026]*",
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+
+    # Limpeza leve de espaços deixados pela remoção.
+    texto = re.sub(r"[ \t]{2,}", " ", texto)
+    texto = re.sub(r"\n[ \t]+", "\n", texto)
+    texto = re.sub(r" +([,.!?])", r"\1", texto)
+
+    return texto.strip()
+
 
 def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
     if not isinstance(state, dict):
@@ -2654,6 +2809,31 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
+
+    # ======================================================
+    # 6.5) LIMPA RESÍDUO FÍSICO EM CENA SOCIAL / RELATO
+    # Não apaga fatos narrativos passados, como mary_climax_done.
+    # Apenas impede que uma cena atual de amizade/neutra carregue
+    # phase/stage de sexo ou pico anterior.
+    # ======================================================
+    tom_social_ou_reflexivo = tom_manual in (
+        "Neutro",
+        "Amizade",
+        "Segredo pendente",
+        "Decisão",
+    )
+    
+    sem_estimulo_atual = (
+        safe_int(state.get("mary_stimulation_turns", 0), 0) <= 0
+        and not normalizar_bool(state.get("force_resolution_now", False), default=False)
+        and not normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+    )
+    
+    if tom_social_ou_reflexivo and sem_estimulo_atual:
+        state["physical_phase"] = safe_int(cfg.get("physical_phase", 0), 0)
+        state["scene_stage"] = cfg.get("scene_stage", "inicio")
+        state["mary_intent"] = cfg.get("mary_intent", state.get("mary_intent", "responder_com_naturalidade"))
+        state["partner_climax_pending"] = False
 
     # ======================================================
     # 7) DETECTA CENA NEUTRA SOZINHA
@@ -4801,6 +4981,24 @@ Você escreve SOMENTE como Mary, em PT-BR.
 - Mary controla apenas o próprio corpo, fala, desejo e reação.
 - Mary não narra ação, decisão, clímax ou reação conclusiva do usuário.
 
+[ONOMATOPEIAS / SONS DE CONTATO]
+
+- Onomatopeias só podem aparecer quando houver ação física correspondente no turno atual.
+- Não use onomatopeias como vício de fala, pontuação emocional, risada, ironia ou muleta narrativa.
+- Histórico antigo com onomatopeias não autoriza repetir sons na cena atual.
+
+SIGNIFICADO DOS SONS:
+- "Smack" significa beijo. Só use se houver beijo real acontecendo no turno atual.
+- "FLOP! FLOP! FLOP!" significa movimento sexual de entra e sai. Só use se houver penetração ou movimento sexual explícito acontecendo no turno atual.
+- "LAMB!" significa lambida. Só use se houver língua/lambida acontecendo no turno atual.
+- "CHUP!" e "SLUPT!" significam chupada/sucção intensa. Só use se houver chupada/sucção acontecendo no turno atual.
+- "POP!" significa estalo após chupar, sugar ou soltar abruptamente com a boca. Só use se houver esse gesto acontecendo no turno atual.
+
+REGRAS DE CONTEXTO:
+- Em conversa social, amizade, relato, lembrança, segredo ou decisão, não use onomatopeias corporais se a ação não estiver acontecendo agora.
+- Se Mary estiver apenas contando algo para Bianca, lembrando o que aconteceu com Rico ou relatando uma cena passada, descreva em palavras, mas não use "Smack", "FLOP", "LAMB", "CHUP", "SLUPT" ou "POP" como som atual.
+- Se o usuário usar uma onomatopeia no turno atual, Mary pode reagir a ela, desde que a ação correspondente esteja acontecendo na cena presente.
+
 [FACTS HUMANOS DA CENA]
 {facts_txt}
 
@@ -5542,6 +5740,16 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     )
 
     resposta_final_limpa, update_final = separar_state_update(resposta_final_com_update)
+
+    # ======================================================
+    # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
+    # Evita que "Smack" vire muleta quando não há beijo no turno atual.
+    # ======================================================
+    resposta_final_limpa = limpar_onomatopeias_fora_de_contexto(
+        resposta_final_limpa,
+        state,
+        fala_usuario,
+    )
 
     # ======================================================
     # PÓS-RESPOSTA
