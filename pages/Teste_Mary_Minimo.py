@@ -59,6 +59,112 @@ OPCOES_ESTADO_EMOCIONAL_MARY = [
     "Euforia",
 ]
 
+def limite_fase_por_privacidade(privacidade: str) -> int:
+    privacidade = _texto_norm(privacidade)
+
+    if privacidade == "publico":
+        return 3
+
+    if privacidade == "semiprivado":
+        return 4
+
+    return 7
+
+SCENE_STAGES_VALIDOS = {
+    "inicio",
+    "cotidiano",
+    "cumplicidade",
+    "aproximacao",
+    "toque",
+    "flerte_direto",
+    "intimidade",
+    "intensidade",
+    "intensidade_contida",
+    "sexo_ou_estimulo",
+    "estimulo_corporal",
+    "buscar_privacidade",
+    "segredo_pendente",
+    "decisao",
+    "fuga_em_andamento",
+    "pre_pico_mary",
+    "pico_mary",
+    "desaceleracao",
+    "aftercare",
+}
+
+def normalizar_scene_stage(valor: str, padrao: str = "inicio") -> str:
+    valor = str(valor or "").strip()
+
+    aliases = {
+        "pico": "pico_mary",
+        "pre_pico": "pre_pico_mary",
+        "pre-pico": "pre_pico_mary",
+        "pré-pico": "pre_pico_mary",
+        "pre pico": "pre_pico_mary",
+        "pré pico": "pre_pico_mary",
+        "after care": "aftercare",
+        "pos_pico": "aftercare",
+        "pós-pico": "aftercare",
+        "pos-pico": "aftercare",
+    }
+
+    valor_norm = _texto_norm(valor).replace(" ", "_")
+    valor_norm = aliases.get(valor_norm, valor_norm)
+
+    if valor_norm in SCENE_STAGES_VALIDOS:
+        return valor_norm
+
+    return padrao
+
+MARY_INTENTS_VALIDOS = {
+    "responder_com_naturalidade",
+    "conversar_com_cumplicidade",
+    "dissimular_e_observar_brechas",
+    "provocar_sem_avanco_fisico",
+    "flerte_consciente",
+    "flerte_com_discricao",
+    "aproximar_com_intimidade",
+    "convidar_para_lugar_particular",
+    "aprofundar_com_cuidado",
+    "ponderar_risco_e_cumplicidade",
+    "assumir_vontade_e_definir_rumo",
+    "executar_plano_social",
+    "sentir_e_conduzir",
+    "sustentar_tensao_intensa",
+    "aproximar_do_pico",
+    "resolver_pico_mary",
+    "desacelerar_com_presenca",
+    "preparar_noite_refletindo",
+    "intensificar_com_cuidado",
+    "presenca_viva",
+}
+
+
+def normalizar_mary_intent(valor: str, padrao: str = "responder_com_naturalidade") -> str:
+    valor_norm = _texto_norm(valor).replace(" ", "_").replace("-", "_")
+
+    aliases = {
+        "naturalidade": "responder_com_naturalidade",
+        "neutro": "responder_com_naturalidade",
+        "amizade": "conversar_com_cumplicidade",
+        "cumplicidade": "conversar_com_cumplicidade",
+        "malicia": "dissimular_e_observar_brechas",
+        "flerte": "flerte_consciente",
+        "intimidade": "aproximar_com_intimidade",
+        "segredo": "ponderar_risco_e_cumplicidade",
+        "decisao": "assumir_vontade_e_definir_rumo",
+        "pre_pico": "aproximar_do_pico",
+        "pico": "resolver_pico_mary",
+        "aftercare": "desacelerar_com_presenca",
+    }
+
+    valor_norm = aliases.get(valor_norm, valor_norm)
+
+    if valor_norm in MARY_INTENTS_VALIDOS:
+        return valor_norm
+
+    return padrao
+
 MAPA_ESTADO_EMOCIONAL_MARY = {
     "Automático": "Mary escolhe dinamicamente a nuance emocional mais coerente com o enredo.",
     "Neutro": "calma, presença, naturalidade",
@@ -911,6 +1017,7 @@ def get_privacidade_por_local(local: str) -> str:
         return "publico"
 
     return "publico"
+
 
 def normalizar_opcao(valor: str, opcoes: list[str], padrao: str) -> str:
     valor = str(valor or "").strip()
@@ -2081,6 +2188,16 @@ def derivar_controles_de_cena(state: dict) -> None:
     # ======================================================
     normalizar_relacao_por_interlocutor(state)
 
+    # Guarda a relação estrutural antes dos presets do tom manual.
+    # O tom pode mudar a condução da cena, mas não deve apagar quem
+    # o interlocutor é para Mary.
+    relacao_base = str(state.get("relacao", "") or "")
+    modo_relacional_base = str(state.get("modo_relacional", "") or "")
+    tensao_romantica_base = normalizar_bool(
+        state.get("tensao_romantica_com_interlocutor", False),
+        default=False,
+    )
+
     # ======================================================
     # 3) PRESETS PRINCIPAIS
     # ======================================================
@@ -2439,11 +2556,47 @@ def derivar_controles_de_cena(state: dict) -> None:
         state["partner_climax_pending"] = False
 
     # ======================================================
+    # 5.5) AJUSTE SIMPLES: RELAÇÃO x TOM MANUAL
+    # A relação estrutural permanece.
+    # O tom manual continua controlando a cena.
+    # ======================================================
+    
+    # Preserva quem o interlocutor é para Mary.
+    if relacao_base:
+        state["relacao"] = relacao_base
+    
+    state["modo_relacional_base"] = modo_relacional_base
+    state["tensao_romantica_base"] = tensao_romantica_base
+    
+    # Se o tom já cria tensão, mantém True.
+    # Se o tom não cria tensão, preserva uma tensão estrutural já detectada.
+    if not cfg.get("tensao_romantica_com_interlocutor", False):
+        cfg["tensao_romantica_com_interlocutor"] = bool(tensao_romantica_base)
+    
+    # Toque íntimo continua obedecendo tom + privacidade.
+    # Público nunca permite.
+    # Semiprivado só permite em Intimidade.
+    # Privado permite em Flerte ou Intimidade.
+    if privacidade == "publico":
+        cfg["toque_intimo_permitido"] = False
+    elif privacidade == "semiprivado":
+        cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
+    else:
+        cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
+
+    # ======================================================
     # 6) APLICA CFG NO STATE
     # ======================================================
     state["tipo_de_cena"] = cfg["tipo_de_cena"]
     state["estilo_de_iniciativa"] = cfg["estilo_de_iniciativa"]
     state["tom_da_cena"] = cfg["tom_da_cena"]
+    
+    # Relação estrutural preservada.
+    state["relacao"] = relacao_base or state.get("relacao", "")
+    state["modo_relacional_base"] = modo_relacional_base
+    state["tensao_romantica_base"] = tensao_romantica_base
+    
+    # Estado final da cena atual.
     state["modo_relacional"] = cfg["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
     state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
@@ -2567,6 +2720,15 @@ def derivar_controles_de_cena(state: dict) -> None:
         if safe_int(state.get("physical_phase", 0), 0) < 6:
             state["resolution_done"] = False
             state["partner_climax_pending"] = False
+
+    # ======================================================
+    # 11) NORMALIZAÇÃO FINAL DO STAGE
+    # Evita valores inválidos ou variações textuais quebrando fluxo.
+    # ======================================================
+    state["scene_stage"] = normalizar_scene_stage(
+        state.get("scene_stage", ""),
+        padrao="inicio",
+    )
 
 
 def resetar_se_contexto_mudou(state: dict) -> None:
@@ -4111,8 +4273,10 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
 
     Importante:
     - Detecta aproximação, toque e beijo.
-    - Não deve resolver pico/clímax.
-    - Não deve chamar normalizações duplicadas que sobrescrevam o tom manual.
+    - Não resolve pico/clímax.
+    - Não sobrescreve relação nem tom manual.
+    - Respeita limite de privacidade.
+    - Normaliza scene_stage e mary_intent no final.
     """
     if not isinstance(state, dict):
         return
@@ -4282,34 +4446,71 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
         fase = max(fase, 3)
 
     # ======================================================
-    # LIMITES POR PRIVACIDADE
+    # LIMITE CENTRALIZADO POR PRIVACIDADE
     # ======================================================
     privacidade = _texto_norm(state.get("privacidade", ""))
 
-    if privacidade == "publico":
-        fase = min(fase, 3)
-    elif privacidade == "semiprivado":
-        fase = min(fase, 4)
+    fase = min(
+        fase,
+        limite_fase_por_privacidade(privacidade),
+    )
 
+    # ======================================================
+    # GRAVA NÍVEIS
+    # ======================================================
     state["desire_level"] = clamp(desejo)
     state["tension_level"] = clamp(tensao)
     state["connection_level"] = clamp(conexao)
 
     state["physical_phase"] = fase
-    state["scene_stage"] = {
+
+    # ======================================================
+    # STAGE PADRONIZADO POR FASE
+    # Mantém compatibilidade com os stages usados no restante do script.
+    # ======================================================
+    mapa_stage = {
         0: "inicio",
         1: "aproximacao",
         2: "toque",
-        3: "beijo",
-        4: "intensidade",
-        5: "pico",
+        3: "intimidade",
+        4: "sexo_ou_estimulo",
+        5: "pre_pico_mary",
         6: "pico_mary",
         7: "aftercare",
-    }.get(fase, "aproximacao")
+    }
 
-    # Normalização final sem duplicar relação/tom manual.
+    state["scene_stage"] = normalizar_scene_stage(
+        mapa_stage.get(fase, state.get("scene_stage", "inicio")),
+        padrao="inicio",
+    )
+
+    # ======================================================
+    # INTENÇÃO PADRÃO QUANDO A FUNÇÃO AVANÇA A FASE
+    # Não sobrescreve intenção forte já definida por outro motor.
+    # ======================================================
+    intent_atual = str(state.get("mary_intent", "") or "").strip()
+
+    if not intent_atual:
+        if fase >= 5:
+            state["mary_intent"] = "sustentar_tensao_intensa"
+        elif fase >= 3:
+            state["mary_intent"] = "aproximar_com_intimidade"
+        elif fase >= 1:
+            state["mary_intent"] = "flerte_consciente"
+        else:
+            state["mary_intent"] = "responder_com_naturalidade"
+
+    state["mary_intent"] = normalizar_mary_intent(
+        state.get("mary_intent", ""),
+        padrao="responder_com_naturalidade",
+    )
+
+    # ======================================================
+    # NORMALIZAÇÃO FINAL LEVE
+    # Não chama sincronizar_facts_basicos aqui para evitar ciclo:
+    # sincronizar_facts_basicos -> normalizar_estado -> derivar_controles...
+    # ======================================================
     normalizar_flags_booleanas_state(state)
-    sincronizar_facts_basicos(state)
 
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
@@ -4332,7 +4533,24 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     stage = _texto_norm(state.get("scene_stage", ""))
 
     if mary_done:
+        user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+    
         state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        state["partner_climax_pending"] = not user_done
+    
+        # Garante que o estado reflita que o pico de Mary já aconteceu.
+        # Não força novo orgasmo; apenas estabiliza a cena depois dele.
+        fase_atual = safe_int(state.get("physical_phase", 0), 0)
+    
+        if fase_atual < 6:
+            state["physical_phase"] = 6
+    
+        if _texto_norm(state.get("scene_stage", "")) in ("pre_pico_mary", "pico", "pico_mary"):
+            state["scene_stage"] = "aftercare"
+            state["mary_intent"] = "desacelerar_com_presenca"
+    
         return
 
     if not force_now:
