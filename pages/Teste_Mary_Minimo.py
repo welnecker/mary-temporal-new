@@ -5937,7 +5937,11 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     aplicar_state_update(state, update_final or update)
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
-
+    
+    # Recalcula a diretriz autônoma após possíveis updates do modelo,
+    # para evitar que o STATE_UPDATE ou pós-processamento deixe o campo vazio.
+    definir_acao_autonoma(state, fala_usuario)
+    
     normalizar_flags_booleanas_state(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
@@ -6513,6 +6517,10 @@ if fala_usuario:
                     state,
                     fala_usuario,
                 )
+
+                definir_acao_autonoma(state, fala_usuario)
+
+                sincronizar_facts_basicos(state)
         
                 # ==================================================
                 # 5) Sincroniza facts finais para o prompt
