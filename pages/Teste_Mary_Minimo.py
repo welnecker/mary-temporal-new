@@ -1337,30 +1337,57 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
 
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     """
-    Quando Mary está sozinha, em tom neutro e sem estímulo ativo,
+    Quando Mary está sozinha, em tom Natural / Amizade e sem estímulo ativo,
     limpa fase física herdada de cena anterior.
+
+    Importante:
+    - Não apaga fatos narrativos passados.
+    - Não altera mary_climax_done/user_climax_done.
+    - Apenas impede que uma cena atual sozinha e neutra carregue
+      resíduos de sexo, pico ou intimidade anterior.
     """
     if not isinstance(state, dict):
         return
 
-    interlocutor = remover_acentos(str(state.get("interlocutor", "") or "").strip().lower())
-    foco = remover_acentos(str(state.get("interlocutor_foco_turno", "") or "").strip().lower())
-    tom = remover_acentos(str(state.get("tom_manual_da_cena", "") or "").strip().lower())
-    tipo = remover_acentos(str(state.get("tipo_de_cena", "") or "").strip().lower())
+    interlocutor = _texto_norm(state.get("interlocutor", ""))
+    foco = _texto_norm(state.get("interlocutor_foco_turno", ""))
+    tom = _texto_norm(state.get("tom_manual_da_cena", ""))
+    tipo = _texto_norm(state.get("tipo_de_cena", ""))
 
     try:
         mary_stimulation_turns = int(state.get("mary_stimulation_turns", 0) or 0)
     except Exception:
         mary_stimulation_turns = 0
 
-    force_resolution_now = normalizar_bool(state.get("force_resolution_now", False), default=False)
-    mary_pre_orgasm_signals = normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+    force_resolution_now = normalizar_bool(
+        state.get("force_resolution_now", False),
+        default=False,
+    )
+
+    mary_pre_orgasm_signals = normalizar_bool(
+        state.get("mary_pre_orgasm_signals", False),
+        default=False,
+    )
+
+    tom_natural_ou_antigo = tom in (
+        "natural / amizade",
+        "natural_amizade",
+        "neutro",
+        "amizade",
+    )
+
+    tipo_natural_ou_antigo = tipo in (
+        "natural_amizade",
+        "neutra",
+        "amizade",
+        "cotidiano",
+    )
 
     if (
         eh_sem_interlocutor(interlocutor)
         and eh_sem_interlocutor(foco)
-        and tom == "neutro"
-        and tipo == "neutra"
+        and tom_natural_ou_antigo
+        and tipo_natural_ou_antigo
         and mary_stimulation_turns <= 0
         and not force_resolution_now
         and not mary_pre_orgasm_signals
@@ -1372,6 +1399,7 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
         state["tension_level"] = min(clamp(state.get("tension_level", 0.0)), 0.12)
         state["toque_intimo_permitido"] = False
         state["tensao_romantica_com_interlocutor"] = False
+        state["partner_climax_pending"] = False
 
 
 def _fase_atual(state: dict) -> int:
@@ -2527,82 +2555,48 @@ def derivar_controles_de_cena(state: dict) -> None:
     # 3) PRESETS PRINCIPAIS
     # ======================================================
     presets = {
-        "Neutro": {
-            "tipo_de_cena": "neutra",
-            "estilo_de_iniciativa": "resposta natural",
-            "tom_da_cena": "neutro",
+        "Natural / Amizade": {
+            "tipo_de_cena": "natural_amizade",
+            "estilo_de_iniciativa": "resposta natural e cumplicidade social",
+            "tom_da_cena": "naturalidade com amizade",
             "modo_relacional": "neutro",
             "tensao_romantica_com_interlocutor": False,
             "toque_intimo_permitido": False,
             "physical_phase": 0,
-            "scene_stage": "inicio",
+            "scene_stage": "cotidiano",
             "desire_level": 0.10,
-            "tension_level": 0.10,
-            "connection_level": 0.30,
-            "mary_intent": "responder_com_naturalidade",
-            "limite_ambiente": (
-                "Tom neutro: Mary responde com naturalidade, presença e clareza. "
-                "Não deve provocar tensão, flerte ou intimidade se isso não vier da cena."
-            ),
-        },
-        "Amizade": {
-            "tipo_de_cena": "amizade",
-            "estilo_de_iniciativa": "cumplicidade social",
-            "tom_da_cena": "amizade",
-            "modo_relacional": "amizade",
-            "tensao_romantica_com_interlocutor": False,
-            "toque_intimo_permitido": False,
-            "physical_phase": 0,
-            "scene_stage": "cumplicidade",
-            "desire_level": 0.10,
-            "tension_level": 0.20,
-            "connection_level": 0.70,
+            "tension_level": 0.12,
+            "connection_level": 0.45,
             "mary_intent": "conversar_com_cumplicidade",
             "limite_ambiente": (
-                "Tom de amizade: Mary pode ser viva, engraçada, cúmplice, próxima e expressiva. "
-                "Ela pode demonstrar afeto social, humor, confiança e parceria, sem transformar a cena em flerte direto."
+                "Tom Natural / Amizade: Mary responde com naturalidade, presença, humor leve, "
+                "cumplicidade social e afeto não necessariamente romântico. "
+                "Ela pode ser viva, expressiva e próxima, mas não deve criar flerte, desejo ou intimidade "
+                "se isso não vier da cena."
             ),
         },
-        "Malícia": {
-            "tipo_de_cena": "social_malicioso",
-            "estilo_de_iniciativa": "dissimulação estratégica",
-            "tom_da_cena": "malícia social e segredo",
-            "modo_relacional": "social_malicioso",
-            "tensao_romantica_com_interlocutor": True,
-            "toque_intimo_permitido": False,
-            "physical_phase": 1,
-            "scene_stage": "aproximacao",
-            "desire_level": 0.28,
-            "tension_level": 0.65,
-            "connection_level": 0.85,
-            "mary_intent": "dissimular_e_observar_brechas",
-            "limite_ambiente": (
-                "Tom de malícia: Mary percebe subtexto, desejo, oportunidade, risco e segredos. "
-                "Ela não é inocente: pode ser dissimulada, cúmplice, provocadora, estratégica e ambígua. "
-                "Se houver segredo ativo, Mary deve mantê-lo vivo no subtexto, fingindo naturalidade diante dos outros. "
-                "Ela pode observar reações, medir riscos, trocar olhares com cúmplices e procurar uma brecha narrativa, "
-                "mas não deve transformar a resposta em instruções operacionais detalhadas para crime. "
-                "A malícia pode ser carnal, social, emocional ou oportunista."
-            ),
-        },
-        "Flerte": {
-            "tipo_de_cena": "flerte",
-            "estilo_de_iniciativa": "flerte consciente",
-            "tom_da_cena": "flerte direto",
-            "modo_relacional": "flerte",
+
+        "Malícia / Flerte": {
+            "tipo_de_cena": "malicia_flerte",
+            "estilo_de_iniciativa": "provocação consciente",
+            "tom_da_cena": "malícia e flerte",
+            "modo_relacional": "tensao_social_ou_romantica",
             "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": False,
             "physical_phase": 2,
             "scene_stage": "flerte_direto",
-            "desire_level": 0.45,
-            "tension_level": 0.75,
-            "connection_level": 0.90,
+            "desire_level": 0.42,
+            "tension_level": 0.72,
+            "connection_level": 0.82,
             "mary_intent": "flerte_consciente",
             "limite_ambiente": (
-                "Tom de flerte: Mary assume interesse, sustenta tensão, aproxima a fala e o olhar, "
-                "mas ainda respeita progressão e ambiente. Não deve saltar para intimidade plena sem contexto."
+                "Tom Malícia / Flerte: Mary percebe subtexto, desejo, oportunidade, risco e brechas sociais. "
+                "Ela pode provocar, sustentar olhar, usar pausas, ironia, postura, charme e ambiguidade. "
+                "Se houver segredo ou plano ativo, isso deve aparecer no subtexto. "
+                "Ela não deve saltar para intimidade plena sem contexto, nem agir como se todo flerte já fosse sexo."
             ),
         },
+
         "Intimidade": {
             "tipo_de_cena": "intimidade",
             "estilo_de_iniciativa": "aproximação íntima",
@@ -2617,107 +2611,71 @@ def derivar_controles_de_cena(state: dict) -> None:
             "connection_level": 0.95,
             "mary_intent": "aproximar_com_intimidade",
             "limite_ambiente": (
-                "Tom de intimidade: Mary assume proximidade, desejo e condução íntima com progressão. "
-                "Ela mantém autoria própria e respeita o ambiente."
+                "Tom Intimidade: Mary assume proximidade, desejo e condução íntima com progressão. "
+                "Ela mantém autoria própria, presença corporal e continuidade da cena, respeitando o ambiente."
             ),
         },
-        "Segredo pendente": {
-            "tipo_de_cena": "segredo_pendente",
-            "estilo_de_iniciativa": "ponderação cúmplice",
-            "tom_da_cena": "segredo e risco",
-            "modo_relacional": "cumplicidade_tensa",
-            "tensao_romantica_com_interlocutor": False,
-            "toque_intimo_permitido": False,
-            "physical_phase": 0,
-            "scene_stage": "segredo_pendente",
-            "desire_level": 0.10,
-            "tension_level": 0.55,
-            "connection_level": 0.85,
-            "mary_intent": "ponderar_risco_e_cumplicidade",
-            "limite_ambiente": (
-                "Segredo pendente: Mary deve manter vivo o assunto não resolvido da cena. "
-                "Ela pode demonstrar cumplicidade, cautela, dúvida, tensão moral, hesitação ou estratégia. "
-                "Não deve esquecer o segredo, mas também não precisa mencioná-lo em todo turno. "
-                "O segredo deve influenciar olhares, pausas, decisões e subtexto."
-            ),
-        },
-        "Decisão": {
-            "tipo_de_cena": "decisao",
-            "estilo_de_iniciativa": "afirmação de vontade",
-            "tom_da_cena": "decisão orgânica",
+
+        "Pendência / Decisão": {
+            "tipo_de_cena": "pendencia_decisao",
+            "estilo_de_iniciativa": "cumplicidade cautelosa e afirmação de vontade",
+            "tom_da_cena": "pendência, risco e decisão",
             "modo_relacional": "autonomia",
             "tensao_romantica_com_interlocutor": False,
             "toque_intimo_permitido": False,
             "physical_phase": 0,
             "scene_stage": "decisao",
-            "desire_level": 0.15,
-            "tension_level": 0.85,
-            "connection_level": 0.45,
+            "desire_level": 0.12,
+            "tension_level": 0.78,
+            "connection_level": 0.50,
             "mary_intent": "assumir_vontade_e_definir_rumo",
             "limite_ambiente": (
-                "Tom de decisão: Mary deve transformar a tensão acumulada em uma escolha clara. "
-                "Ela pode aceitar, recusar, adiar com limite, impor condição, pedir espaço, ir embora, "
-                "confessar parcialmente, romper uma encenação ou terminar definitivamente. "
-                "A decisão deve nascer do contexto anterior e dos pensamentos que já consomem Mary. "
-                "Se Mary está sufocada, pressionada, usada como troféu ou emocionalmente distante, "
-                "ela pode dizer 'acabou', 'chega', 'eu não quero', 'você me sufoca' ou 'me leva embora'. "
-                "Não deve continuar cozinhando o interlocutor quando a cena exige escolha. "
-                "A resposta precisa mover a cena para uma consequência concreta."
+                "Tom Pendência / Decisão: Mary mantém vivo um segredo, plano, risco, suspeita, promessa "
+                "ou conflito pendente. Ela pode ponderar, dissimular, hesitar, confessar parcialmente, aceitar, "
+                "recusar, impor condição, pedir espaço, ir embora ou transformar a tensão em consequência clara. "
+                "A cena não deve ficar cozinhando quando já exige uma escolha concreta."
             ),
         },
     }
 
-    cfg = dict(presets.get(tom_manual, presets["Neutro"]))
-
+    cfg = dict(presets.get(tom_manual, presets["Natural / Amizade"]))
+   
     # ======================================================
     # 4) AJUSTE POR PRIVACIDADE
     # A privacidade NÃO muda o tom escolhido.
     # Ela muda a rota de execução.
     # ======================================================
     if privacidade == "publico":
-        if tom_manual == "Malícia":
+        if tom_manual == "Malícia / Flerte":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
 
-            cfg["tipo_de_cena"] = "malicia_publica"
-            cfg["tom_da_cena"] = "malícia pública"
-            cfg["estilo_de_iniciativa"] = "provocação social contida"
+            cfg["tipo_de_cena"] = "malicia_flerte_publico"
+            cfg["tom_da_cena"] = "malícia / flerte público contido"
+            cfg["estilo_de_iniciativa"] = "provocação social discreta"
             cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 1)
-            cfg["scene_stage"] = "aproximacao"
-            cfg["mary_intent"] = "provocar_sem_avanco_fisico"
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 2)
+            cfg["scene_stage"] = "flerte_direto"
+            cfg["mary_intent"] = "flerte_com_discricao"
             cfg["limite_ambiente"] = (
-                "Malícia em público: Mary pode brincar com o subtexto, olhar, postura, sorriso, ironia e cumplicidade. "
-                "Ela não deve agir como se estivesse em local privado. "
-                "Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
+                "Malícia / Flerte em público: Mary pode brincar com subtexto, olhar, postura, sorriso, "
+                "ironia, charme e cumplicidade. Ela pode provocar verbalmente e sustentar tensão social, "
+                "mas não deve agir como se estivesse em local privado. Deve evitar exposição, toque íntimo, "
+                "nudez, sexo ou clímax. Se a tensão aumentar demais, deve manter discrição ou sugerir outro lugar."
             )
 
             if segredo_ativo:
-                cfg["tipo_de_cena"] = "malicia_com_segredo"
-                cfg["tom_da_cena"] = "malícia social e segredo"
+                cfg["tipo_de_cena"] = "malicia_flerte_com_segredo"
+                cfg["tom_da_cena"] = "malícia, flerte e segredo"
                 cfg["estilo_de_iniciativa"] = "dissimulação estratégica"
                 cfg["mary_intent"] = "dissimular_e_observar_brechas"
                 cfg["limite_ambiente"] = (
-                    "Malícia com segredo ativo em público: Mary não é inocente. "
+                    "Malícia / Flerte com segredo ativo em público: Mary não é inocente. "
                     "Ela deve fingir naturalidade diante de quem não sabe do segredo, enquanto mantém a pendência viva no subtexto. "
                     "Ela pode trocar olhares cúmplices, usar pausas, indiretas, humor e postura para esconder intenção. "
                     "Ela pode avaliar risco, oportunidade e consequência dentro da narrativa. "
                     "Não deve esquecer o segredo ativo. "
                     "Não deve transformar a resposta em instruções operacionais detalhadas para furto, invasão, ocultação ou fuga."
                 )
-
-        elif tom_manual == "Flerte":
-            cfg["tipo_de_cena"] = "flerte_publico"
-            cfg["tom_da_cena"] = "flerte público contido"
-            cfg["estilo_de_iniciativa"] = "flerte discreto"
-            cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 2)
-            cfg["scene_stage"] = "flerte_direto"
-            cfg["mary_intent"] = "flerte_com_discricao"
-            cfg["limite_ambiente"] = (
-                "Flerte em público: Mary pode sustentar olhar, responder com charme, provocar verbalmente e sugerir proximidade, "
-                "mas deve evitar exposição, toque íntimo, nudez, sexo ou clímax. "
-                "Se quiser avançar, deve conduzir para local reservado."
-            )
 
         elif tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_contida_por_ambiente"
@@ -2732,28 +2690,12 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
             )
 
-        elif tom_manual == "Segredo pendente":
-            cfg["tipo_de_cena"] = "segredo_pendente"
-            cfg["tom_da_cena"] = "segredo e risco em público"
-            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa"
-            cfg["modo_relacional"] = "cumplicidade_tensa"
-            cfg["tensao_romantica_com_interlocutor"] = False
-            cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = 0
-            cfg["scene_stage"] = "segredo_pendente"
-            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
-            cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.55
-            cfg["limite_ambiente"] = (
-                "Segredo pendente em público: Mary deve manter o assunto vivo com discrição. "
-                "Ela pode usar olhares, pausas, frases ambíguas e cautela para não expor o segredo. "
-                "Não deve resolver, revelar ou abandonar a pendência sem ação clara do usuário."
-            )
+        elif tom_manual == "Pendência / Decisão":
+            segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
 
-        elif tom_manual == "Decisão":
-            cfg["tipo_de_cena"] = "decisao_publica"
-            cfg["tom_da_cena"] = "decisão pública"
-            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+            cfg["tipo_de_cena"] = "pendencia_decisao_publica"
+            cfg["tom_da_cena"] = "pendência / decisão pública"
+            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa e afirmação de vontade"
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
@@ -2761,17 +2703,45 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
             cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.85
+            cfg["tension_level"] = 0.85 if not segredo_ativo else 0.65
             cfg["limite_ambiente"] = (
-                "Decisão em público: Mary deve assumir uma posição clara mesmo diante de plateia, pressão social ou constrangimento. "
-                "Ela pode aceitar, recusar, adiar com limite, pedir para ir embora, romper uma encenação ou terminar definitivamente. "
-                "A decisão deve nascer do que já consome Mary internamente: desejo, incômodo, cansaço, segredo, raiva, medo ou verdade reprimida. "
-                "Ela não deve continuar cozinhando o interlocutor se a cena exige resposta. "
-                "Pode ser elegante, firme, fria, triste, explosiva ou libertadora, mas precisa mover a cena para uma consequência concreta."
+                "Pendência / Decisão em público: Mary deve manter vivo o segredo, plano, risco, suspeita, promessa "
+                "ou conflito pendente, mas também pode transformar a tensão acumulada em escolha concreta. "
+                "Ela pode usar olhares, pausas, frases ambíguas e cautela para não expor o que precisa ficar oculto. "
+                "Se a cena exige resposta, Mary deve aceitar, recusar, adiar com limite, pedir para ir embora, "
+                "romper uma encenação, confessar parcialmente ou tomar posição clara. "
+                "Ela não deve continuar cozinhando o interlocutor se a cena exige consequência."
             )
 
     elif privacidade == "semiprivado":
-        if tom_manual == "Intimidade":
+        if tom_manual == "Malícia / Flerte":
+            segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
+
+            cfg["tipo_de_cena"] = "malicia_flerte_semiprivado"
+            cfg["tom_da_cena"] = "malícia / flerte com discrição"
+            cfg["estilo_de_iniciativa"] = "provocação cuidadosa"
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 3)
+            cfg["scene_stage"] = "flerte_direto"
+            cfg["mary_intent"] = "flerte_com_discricao"
+            cfg["limite_ambiente"] = (
+                "Malícia / Flerte em local semiprivado: Mary pode aumentar a tensão, provocar mais claramente "
+                "e usar proximidade, mas ainda com cautela e atenção ao risco de exposição. "
+                "Não deve tratar o ambiente como totalmente privado."
+            )
+
+            if segredo_ativo:
+                cfg["tipo_de_cena"] = "malicia_flerte_com_segredo"
+                cfg["tom_da_cena"] = "malícia, flerte e segredo"
+                cfg["estilo_de_iniciativa"] = "dissimulação estratégica"
+                cfg["mary_intent"] = "dissimular_e_observar_brechas"
+                cfg["limite_ambiente"] = (
+                    "Malícia / Flerte com segredo ativo em local semiprivado: Mary pode falar com mais liberdade, "
+                    "mas ainda deve medir risco, observar quem pode ouvir e manter o segredo vivo no subtexto. "
+                    "Não deve revelar, resolver ou abandonar a pendência sem ação clara do usuário."
+                )
+
+        elif tom_manual == "Intimidade":
             cfg["tipo_de_cena"] = "intimidade_semiprivada"
             cfg["tom_da_cena"] = "intimidade contida"
             cfg["estilo_de_iniciativa"] = "aproximação cuidadosa"
@@ -2784,27 +2754,12 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "mas com cuidado, discrição e atenção ao risco de exposição."
             )
 
-        elif tom_manual == "Segredo pendente":
-            cfg["tipo_de_cena"] = "segredo_pendente"
-            cfg["tom_da_cena"] = "segredo e risco"
-            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa"
-            cfg["modo_relacional"] = "cumplicidade_tensa"
-            cfg["tensao_romantica_com_interlocutor"] = False
-            cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = 0
-            cfg["scene_stage"] = "segredo_pendente"
-            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
-            cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.60
-            cfg["limite_ambiente"] = (
-                "Segredo pendente em local semiprivado: Mary pode falar com mais clareza, mas ainda com cautela. "
-                "Ela deve manter a pendência viva, medir riscos, observar quem pode ouvir e evitar decisões precipitadas."
-            )
+        elif tom_manual == "Pendência / Decisão":
+            segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
 
-        elif tom_manual == "Decisão":
-            cfg["tipo_de_cena"] = "decisao_semiprivada"
-            cfg["tom_da_cena"] = "decisão com tensão contida"
-            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+            cfg["tipo_de_cena"] = "pendencia_decisao_semiprivada"
+            cfg["tom_da_cena"] = "pendência / decisão com tensão contida"
+            cfg["estilo_de_iniciativa"] = "cumplicidade cautelosa e afirmação de vontade"
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
@@ -2812,68 +2767,56 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
             cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.85
+            cfg["tension_level"] = 0.85 if not segredo_ativo else 0.65
             cfg["limite_ambiente"] = (
-                "Decisão em local semiprivado: Mary pode falar com mais firmeza e menos encenação. "
-                "Ela deve transformar a tensão acumulada em escolha concreta: aceitar, recusar, impor condição, pedir distância, ir embora ou romper. "
-                "Se ela está sufocada, pressionada ou usada como troféu, pode dizer claramente 'chega', 'acabou', 'eu não quero' ou 'me leva embora'. "
-                "A decisão não deve virar nova sedução, suspense ou adiamento vazio."
+                "Pendência / Decisão em local semiprivado: Mary pode falar com mais firmeza e menos encenação, "
+                "mas ainda deve medir o risco do ambiente. Ela deve manter pendências relevantes vivas e, se a cena exigir, "
+                "transformar a tensão acumulada em escolha concreta: aceitar, recusar, impor condição, pedir distância, "
+                "ir embora, revelar parcialmente ou romper. A decisão não deve virar nova sedução, suspense vazio ou adiamento sem consequência."
             )
 
     else:
         # Privado: o tom manual pode ser executado com mais liberdade,
-        # exceto Segredo pendente e Decisão, que trocam o eixo da cena.
-        if tom_manual in ("Malícia", "Flerte", "Intimidade"):
-            cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
-
-        elif tom_manual == "Segredo pendente":
-            cfg["tipo_de_cena"] = "segredo_pendente"
-            cfg["tom_da_cena"] = "segredo e risco"
-            cfg["estilo_de_iniciativa"] = "ponderação cúmplice"
-            cfg["modo_relacional"] = "cumplicidade_tensa"
-            cfg["tensao_romantica_com_interlocutor"] = False
+        # exceto Pendência / Decisão, que troca o eixo da cena.
+        if tom_manual == "Malícia / Flerte":
             cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = 0
-            cfg["scene_stage"] = "segredo_pendente"
-            cfg["mary_intent"] = "ponderar_risco_e_cumplicidade"
-            cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.65
-            cfg["limite_ambiente"] = (
-                "Segredo pendente em local privado: Mary deve tratar a pendência como eixo principal da cena. "
-                "Ela pode ser cúmplice, cautelosa, estratégica ou hesitante. "
-                "O segredo deve influenciar subtexto, olhar, pausas e decisões. "
-                "Não deve resolver, revelar, esquecer ou abandonar o segredo sem ação clara do usuário."
-            )
+            cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 3)
+            cfg["scene_stage"] = cfg.get("scene_stage", "flerte_direto")
+            cfg["mary_intent"] = cfg.get("mary_intent", "flerte_consciente")
 
-        elif tom_manual == "Decisão":
-            cfg["tipo_de_cena"] = "decisao_privada"
-            cfg["tom_da_cena"] = "decisão íntima e direta"
-            cfg["estilo_de_iniciativa"] = "afirmação de vontade"
+        elif tom_manual == "Intimidade":
+            cfg["toque_intimo_permitido"] = True
+
+        elif tom_manual == "Pendência / Decisão":
+            segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
+
+            cfg["tipo_de_cena"] = "pendencia_decisao_privada"
+            cfg["tom_da_cena"] = "pendência / decisão íntima e direta"
+            cfg["estilo_de_iniciativa"] = "ponderação cúmplice e afirmação de vontade"
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
             cfg["physical_phase"] = 0
-            cfg["scene_stage"] = "decisao"
-            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
+            cfg["scene_stage"] = "decisao" if not segredo_ativo else "segredo_pendente"
+            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo" if not segredo_ativo else "ponderar_risco_e_cumplicidade"
             cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.90
+            cfg["tension_level"] = 0.90 if not segredo_ativo else 0.70
             cfg["limite_ambiente"] = (
-                "Decisão em local privado: Mary deve falar de forma mais direta e verdadeira. "
-                "Ela pode aceitar, recusar, terminar, confessar parcialmente, pedir espaço, impor condição ou romper definitivamente. "
-                "A escolha deve nascer do que ela já sente e pensa, não de uma mudança brusca. "
-                "Se algo a consome por dentro, ela não deve simplesmente ignorar. "
-                "Se está sufocada, pressionada ou cansada de fingir, pode dizer 'acabou', 'chega', 'você me sufoca', 'eu não quero isso' ou 'me deixa em paz'. "
+                "Pendência / Decisão em local privado: Mary deve tratar segredo, plano, risco, suspeita, promessa "
+                "ou conflito como eixo principal quando isso existir. Ela pode ser cúmplice, cautelosa, estratégica, hesitante "
+                "ou direta. Se a cena exige decisão, Mary deve aceitar, recusar, terminar, confessar parcialmente, pedir espaço, "
+                "impor condição ou romper definitivamente. A escolha deve nascer do que ela já sente e pensa, não de uma mudança brusca. "
                 "Depois da decisão, a cena deve mostrar a consequência imediata."
             )
 
     # ======================================================
-    # 5) RESET TEMPORÁRIO QUANDO O TOM MUDA PARA SEGREDO PENDENTE
+    # 5) RESET TEMPORÁRIO QUANDO O TOM MUDA PARA PENDÊNCIA / DECISÃO
     # Importante:
     # - Limpa gatilhos momentâneos.
     # - NÃO apaga mary_climax_done/user_climax_done, pois isso pode
     #   ser fato narrativo já ocorrido.
     # ======================================================
-    if tom_manual == "Segredo pendente":
+    if tom_manual == "Pendência / Decisão":
         state["force_resolution_now"] = False
         state["resolution_done"] = False
         state["mary_pre_orgasm_signals"] = False
@@ -2885,29 +2828,29 @@ def derivar_controles_de_cena(state: dict) -> None:
     # A relação estrutural permanece.
     # O tom manual continua controlando a cena.
     # ======================================================
-    
+
     # Preserva quem o interlocutor é para Mary.
     if relacao_base:
         state["relacao"] = relacao_base
-    
+
     state["modo_relacional_base"] = modo_relacional_base
     state["tensao_romantica_base"] = tensao_romantica_base
-    
+
     # Se o tom já cria tensão, mantém True.
     # Se o tom não cria tensão, preserva uma tensão estrutural já detectada.
     if not cfg.get("tensao_romantica_com_interlocutor", False):
         cfg["tensao_romantica_com_interlocutor"] = bool(tensao_romantica_base)
-    
+
     # Toque íntimo continua obedecendo tom + privacidade.
     # Público nunca permite.
     # Semiprivado só permite em Intimidade.
-    # Privado permite em Flerte ou Intimidade.
+    # Privado só permite em Intimidade.
     if privacidade == "publico":
         cfg["toque_intimo_permitido"] = False
     elif privacidade == "semiprivado":
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
     else:
-        cfg["toque_intimo_permitido"] = tom_manual in ("Flerte", "Intimidade")
+        cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
 
     # ======================================================
     # 6) APLICA CFG NO STATE
@@ -2915,12 +2858,12 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["tipo_de_cena"] = cfg["tipo_de_cena"]
     state["estilo_de_iniciativa"] = cfg["estilo_de_iniciativa"]
     state["tom_da_cena"] = cfg["tom_da_cena"]
-    
+
     # Relação estrutural preservada.
     state["relacao"] = relacao_base or state.get("relacao", "")
     state["modo_relacional_base"] = modo_relacional_base
     state["tensao_romantica_base"] = tensao_romantica_base
-    
+
     # Estado final da cena atual.
     state["modo_relacional"] = cfg["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
@@ -2931,30 +2874,31 @@ def derivar_controles_de_cena(state: dict) -> None:
     # ======================================================
     # 6.5) LIMPA RESÍDUO FÍSICO EM CENA SOCIAL / RELATO
     # Não apaga fatos narrativos passados, como mary_climax_done.
-    # Apenas impede que uma cena atual de amizade/neutra carregue
-    # phase/stage de sexo ou pico anterior.
+    # Apenas impede que uma cena atual Natural/Amizade ou Pendência/Decisão
+    # carregue phase/stage de sexo ou pico anterior.
     # ======================================================
     tom_social_ou_reflexivo = tom_manual in (
-        "Neutro",
-        "Amizade",
-        "Segredo pendente",
-        "Decisão",
+        "Natural / Amizade",
+        "Pendência / Decisão",
     )
-    
+
     sem_estimulo_atual = (
         safe_int(state.get("mary_stimulation_turns", 0), 0) <= 0
         and not normalizar_bool(state.get("force_resolution_now", False), default=False)
         and not normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
     )
-    
+
     if tom_social_ou_reflexivo and sem_estimulo_atual:
         state["physical_phase"] = safe_int(cfg.get("physical_phase", 0), 0)
         state["scene_stage"] = cfg.get("scene_stage", "inicio")
-        state["mary_intent"] = cfg.get("mary_intent", state.get("mary_intent", "responder_com_naturalidade"))
+        state["mary_intent"] = cfg.get(
+            "mary_intent",
+            state.get("mary_intent", "responder_com_naturalidade"),
+        )
         state["partner_climax_pending"] = False
 
     # ======================================================
-    # 7) DETECTA CENA NEUTRA SOZINHA
+    # 7) DETECTA CENA NATURAL SOZINHA
     # ======================================================
     interlocutor_norm = _texto_norm(state.get("interlocutor", ""))
     foco_norm = _texto_norm(state.get("interlocutor_foco_turno", ""))
@@ -2978,8 +2922,8 @@ def derivar_controles_de_cena(state: dict) -> None:
     cena_neutra_sozinha = (
         interlocutor_norm in sem_interlocutor
         and foco_norm in sem_interlocutor
-        and tom_norm == "neutro"
-        and tipo_norm == "neutra"
+        and tom_norm in ("natural / amizade", "natural_amizade", "neutro", "amizade")
+        and tipo_norm in ("natural_amizade", "neutra", "amizade")
         and not force_resolution
         and not mary_done
         and not pre_signals
@@ -3053,7 +2997,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             )
 
     # ======================================================
-    # 9) LIMPEZA FINAL DE CENA NEUTRA SOZINHA
+    # 9) LIMPEZA FINAL DE CENA NATURAL SOZINHA
     # Não recalcula relação aqui para não sobrescrever o tom manual.
     # ======================================================
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
@@ -4924,7 +4868,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     if not isinstance(state, dict):
         return
 
-    tipo = _texto_norm(state.get("tipo_de_cena", "neutra"))
+    tipo = _texto_norm(state.get("tipo_de_cena", "natural_amizade"))
     tom_manual = normalizar_tom_manual_cena(
         state.get("tom_manual_da_cena", "Natural / Amizade")
     )
@@ -4952,91 +4896,75 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
         return
 
     # ======================================================
-    # SEGREDO / PENDÊNCIA TEM PRIORIDADE NARRATIVA
+    # PENDÊNCIA / DECISÃO
+    # Junta antigo Segredo pendente + antiga Decisão.
     # ======================================================
-    if tom_manual == "Segredo pendente" or tipo == "segredo_pendente":
-        state["mary_autonomous_action"] = (
-            "Mary deve manter o segredo ou pendência vivo no subtexto da cena. "
-            "Ela pode demonstrar cautela, cumplicidade, hesitação, cálculo ou tensão interna, "
-            "sem esquecer o assunto e sem resolvê-lo sozinha."
-        )
-        return
-
-    # ======================================================
-    # DECISÃO
-    # ======================================================
-    if tom_manual == "Decisão" or tipo.startswith("decisao"):
-        state["mary_autonomous_action"] = (
-            "Mary deve transformar a tensão acumulada em uma escolha concreta. "
-            "Ela pode aceitar, recusar, impor condição, pedir espaço, ir embora, confessar parcialmente "
-            "ou romper uma encenação. A resposta deve mover a cena para uma consequência clara."
-        )
-        return
-
-    # ======================================================
-    # NEUTRO
-    # ======================================================
-    if tom_manual == "Neutro":
-        state["mary_autonomous_action"] = (
-            "Mary responde com naturalidade, presença e clareza, "
-            "sem criar tensão, flerte ou intimidade que não exista na cena."
-        )
-        return
-
-    # ======================================================
-    # AMIZADE
-    # ======================================================
-    if tom_manual == "Amizade":
-        state["mary_autonomous_action"] = (
-            "Mary responde com cumplicidade, humor e proximidade social. "
-            "Ela pode ser viva, expressiva e afetuosa, sem transformar a cena em flerte direto."
-        )
-        return
-
-    # ======================================================
-    # MALÍCIA
-    # ======================================================
-    if tom_manual == "Malícia":
+    if tom_manual == "Pendência / Decisão" or tipo in (
+        "pendencia_decisao",
+        "pendencia_decisao_publica",
+        "pendencia_decisao_semiprivada",
+        "pendencia_decisao_privada",
+        "segredo_pendente",
+    ) or tipo.startswith("decisao"):
         if segredo_ativo or plano_ativo:
             state["mary_autonomous_action"] = (
-                "Mary percebe subtexto, risco e oportunidade. "
-                "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura e dissimulação, "
+                "Mary deve manter a pendência, segredo, plano ou risco vivo no subtexto da cena. "
+                "Ela pode demonstrar cautela, cumplicidade, hesitação, cálculo, tensão interna ou afirmação de vontade. "
+                "Se a cena exigir decisão, ela deve mover a situação para uma consequência concreta, "
+                "mas sem resolver tudo sozinha e sem esquecer o que está pendente."
+            )
+        else:
+            state["mary_autonomous_action"] = (
+                "Mary deve transformar a tensão acumulada em uma escolha concreta. "
+                "Ela pode aceitar, recusar, impor condição, pedir espaço, ir embora, confessar parcialmente "
+                "ou romper uma encenação. A resposta deve mover a cena para uma consequência clara."
+            )
+        return
+
+    # ======================================================
+    # NATURAL / AMIZADE
+    # Junta antigo Neutro + antiga Amizade.
+    # ======================================================
+    if tom_manual == "Natural / Amizade":
+        state["mary_autonomous_action"] = (
+            "Mary responde com naturalidade, presença, clareza, humor leve e cumplicidade social. "
+            "Ela pode ser viva, expressiva, próxima e afetuosa, mas não deve criar tensão romântica, "
+            "flerte direto ou intimidade física se isso não vier da cena."
+        )
+        return
+
+    # ======================================================
+    # MALÍCIA / FLERTE
+    # Junta antiga Malícia + antigo Flerte.
+    # ======================================================
+    if tom_manual == "Malícia / Flerte":
+        if segredo_ativo or plano_ativo:
+            state["mary_autonomous_action"] = (
+                "Mary percebe subtexto, risco, desejo e oportunidade. "
+                "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação, "
                 "sem entregar tudo de forma direta e sem pular para intimidade física."
             )
         elif priv == "publico":
             state["mary_autonomous_action"] = (
-                "Mary brinca com a tensão de forma social e discreta: olhar, pausa, ironia, postura e provocação contida. "
-                "Ela sabe o efeito que causa, mas respeita o ambiente público."
-            )
-        else:
-            state["mary_autonomous_action"] = (
-                "Mary percebe o subtexto e brinca com a tensão por olhar, pausa, postura, humor e provocação. "
-                "Ela sabe o efeito que causa, mas não atropela a progressão física."
-            )
-        return
-
-    # ======================================================
-    # FLERTE
-    # ======================================================
-    if tom_manual == "Flerte":
-        if priv == "publico":
-            state["mary_autonomous_action"] = (
-                "Mary flerta com discrição: sustenta olhar, responde com charme, provoca verbalmente "
-                "e mantém controle do ambiente, sem agir como se estivesse em local privado."
+                "Mary brinca com a tensão de forma social e discreta: olhar, pausa, ironia, charme, postura "
+                "e provocação contida. Ela sabe o efeito que causa, mas respeita o ambiente público "
+                "e não age como se estivesse em local privado."
             )
         elif priv == "semiprivado":
             state["mary_autonomous_action"] = (
-                "Mary assume o flerte com mais proximidade, mas ainda mede risco, exposição e progressão."
+                "Mary assume a malícia e o flerte com mais proximidade, mas ainda mede risco, exposição "
+                "e progressão. Ela pode provocar com mais clareza, sem atropelar a continuidade física."
             )
         else:
             state["mary_autonomous_action"] = (
-                "Mary assume o flerte com presença, aproximação e intenção, "
-                "sem atropelar a continuidade nem transformar tudo em resumo."
+                "Mary assume malícia e flerte com presença, aproximação, olhar, pausa, postura, humor e intenção. "
+                "Ela pode provocar e sustentar desejo, mas não deve transformar automaticamente o flerte em intimidade plena."
             )
         return
 
     # ======================================================
     # INTIMIDADE
+    # Fica sozinha porque é o único tom que autoriza avanço íntimo real.
     # ======================================================
     if tom_manual == "Intimidade":
         if priv == "publico":
