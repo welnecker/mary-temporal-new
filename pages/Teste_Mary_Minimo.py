@@ -6284,6 +6284,77 @@ st.caption("Roleplay contínuo com facts humanos, memórias shared e controle de
 
 state = init_state()
 
+def aplicar_estilo_sidebar_controles():
+    st.markdown(
+        """
+        <style>
+        /* Sidebar geral */
+        section[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #101018 0%, #171724 100%);
+        }
+
+        /* Labels */
+        section[data-testid="stSidebar"] label {
+            font-size: 0.96rem !important;
+            font-weight: 800 !important;
+            color: #f5f5f5 !important;
+        }
+
+        /* Textos auxiliares */
+        section[data-testid="stSidebar"] small,
+        section[data-testid="stSidebar"] .stCaptionContainer {
+            color: #d2d2d2 !important;
+        }
+
+        /* Inputs */
+        section[data-testid="stSidebar"] input,
+        section[data-testid="stSidebar"] textarea {
+            background-color: #f7f7fb !important;
+            color: #111111 !important;
+            border-radius: 10px !important;
+            font-size: 0.92rem !important;
+        }
+
+        /* Textarea */
+        section[data-testid="stSidebar"] textarea {
+            line-height: 1.35rem !important;
+        }
+
+        /* Selectbox */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+            background-color: #f7f7fb !important;
+            color: #111111 !important;
+            border-radius: 10px !important;
+        }
+
+        /* Títulos visuais dos blocos */
+        .sidebar-box-title {
+            margin-top: 16px;
+            margin-bottom: 10px;
+            padding: 9px 11px;
+            border-radius: 11px;
+            background: #292943;
+            color: #ffffff;
+            font-weight: 900;
+            font-size: 0.98rem;
+            border-left: 5px solid #ffcc66;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+        }
+
+        .sidebar-soft-note {
+            padding: 9px 11px;
+            border-radius: 10px;
+            background: rgba(255, 204, 102, 0.10);
+            border: 1px solid rgba(255, 204, 102, 0.32);
+            color: #f4f4f4;
+            font-size: 0.86rem;
+            margin-bottom: 10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 with st.sidebar:
 
     if st.button("🚪 Sair", use_container_width=True):
@@ -6334,87 +6405,105 @@ with st.sidebar:
             st.caption(f"Modelo testado: `{teste_modelo.get('model')}`")
             st.code(teste_modelo.get("erro", ""), language="text")
     
-    st.divider()
-    st.subheader("📌 Cena")
-    
+        st.divider()
+
+    # ======================================================
+    # ESTADO MANUAL DA CENA
+    # ======================================================
+    st.markdown(
+        '<div class="sidebar-box-title">📌 Estado manual da cena</div>',
+        unsafe_allow_html=True,
+    )
+
     state["local"] = st.text_input(
-        "Local",
+        "📍 Local",
         value=state.get("local", "quarto"),
+        help="Onde a cena está acontecendo agora.",
     )
-    
+
     state["tempo"] = st.text_input(
-        "Tempo",
+        "⏰ Tempo",
         value=state.get("tempo", "noite"),
+        help="Momento da cena: manhã, noite, chuva, depois da aula, sábado etc.",
     )
-    
+
     state["interlocutor"] = st.text_input(
-        "Interlocutor ativo",
+        "🗣️ Interlocutor ativo",
         value=state.get("interlocutor", "Janio Donisete"),
         help=(
             "Personagem ou grupo com quem Mary está interagindo agora. "
             "Ex: Silvia | Joselina | Joselina, Anthony"
         ),
     )
-    
+
     sincronizar_interlocutor_manual(state)
-    
-    state["interlocutor_ativo_persistente"] = st.text_input(
-        "Interlocutor persistente",
-        value=state.get(
-            "interlocutor_ativo_persistente",
-            state.get("interlocutor", "Janio Donisete"),
-        ),
-        help=(
-            "Personagem que continua interagindo com Mary até outro personagem "
-            "ser explicitamente introduzido."
-        ),
-    )
-    
-    state["janio_status_na_cena"] = st.selectbox(
-        "Status de Janio na cena",
-        options=[
-            "presente",
-            "ausente",
-            "ausente_ou_observador",
-            "mencionado",
-            "roteirista",
-        ],
-        index=[
-            "presente",
-            "ausente",
-            "ausente_ou_observador",
-            "mencionado",
-            "roteirista",
-        ].index(
-            state.get("janio_status_na_cena", "presente")
-            if state.get("janio_status_na_cena", "presente") in [
+
+    with st.expander("⚙️ Interlocutor avançado", expanded=False):
+        state["interlocutor_ativo_persistente"] = st.text_input(
+            "Interlocutor persistente",
+            value=state.get(
+                "interlocutor_ativo_persistente",
+                state.get("interlocutor", "Janio Donisete"),
+            ),
+            help=(
+                "Personagem que continua interagindo com Mary até outro personagem "
+                "ser explicitamente introduzido."
+            ),
+        )
+
+        state["janio_status_na_cena"] = st.selectbox(
+            "Status de Janio na cena",
+            options=[
                 "presente",
                 "ausente",
                 "ausente_ou_observador",
                 "mencionado",
                 "roteirista",
-            ]
-            else "presente"
-        ),
+            ],
+            index=[
+                "presente",
+                "ausente",
+                "ausente_ou_observador",
+                "mencionado",
+                "roteirista",
+            ].index(
+                state.get("janio_status_na_cena", "presente")
+                if state.get("janio_status_na_cena", "presente") in [
+                    "presente",
+                    "ausente",
+                    "ausente_ou_observador",
+                    "mencionado",
+                    "roteirista",
+                ]
+                else "presente"
+            ),
+        )
+
+        state["ultimo_interlocutor_explicito"] = st.text_input(
+            "Último interlocutor explícito",
+            value=state.get(
+                "ultimo_interlocutor_explicito",
+                state.get("interlocutor", "Janio Donisete"),
+            ),
+            help="Último personagem que apareceu claramente falando/agindo com Mary.",
+        )
+
+    # ======================================================
+    # DIREÇÃO NARRATIVA
+    # ======================================================
+    st.markdown(
+        '<div class="sidebar-box-title">🎛️ Direção narrativa</div>',
+        unsafe_allow_html=True,
     )
-    
-    state["ultimo_interlocutor_explicito"] = st.text_input(
-        "Último interlocutor explícito",
-        value=state.get(
-            "ultimo_interlocutor_explicito",
-            state.get("interlocutor", "Janio Donisete"),
-        ),
-        help="Último personagem que apareceu claramente falando/agindo com Mary.",
-    )
-    
+
     tom_atual = normalizar_tom_manual_cena(
         state.get("tom_manual_da_cena")
         or state.get("estado_emocional")
         or "Neutro"
     )
-    
+
     state["tom_manual_da_cena"] = st.selectbox(
-        "Tom manual da cena",
+        "🎭 Tom manual da cena",
         options=OPCOES_TOM_MANUAL_CENA,
         index=OPCOES_TOM_MANUAL_CENA.index(tom_atual),
         help=(
@@ -6422,15 +6511,36 @@ with st.sidebar:
             "A privacidade detectada apenas limita ou redireciona esse tom."
         ),
     )
-    
-       
+
+    estado_emocional_atual = normalizar_consciencia_cena_mary(
+        state.get("estado_emocional", "Automático")
+    )
+
+    if estado_emocional_atual not in OPCOES_ESTADO_EMOCIONAL_MARY:
+        estado_emocional_atual = "Automático"
+
+    state["estado_emocional"] = st.selectbox(
+        "🧭 Consciência da cena",
+        options=OPCOES_ESTADO_EMOCIONAL_MARY,
+        index=OPCOES_ESTADO_EMOCIONAL_MARY.index(estado_emocional_atual),
+        help=(
+            "Define como Mary percebe o peso do ato: impulso, cautela, conflito "
+            "ou risco assumido. Isso deve aparecer em falas e gestos, sem explicação psicológica."
+        ),
+    )
+
     # ======================================================
-    # SEGREDO / PENDÊNCIA ATIVA
+    # SEGREDOS, PLANO E CONTINUIDADE
     # ======================================================
+    st.markdown(
+        '<div class="sidebar-box-title">🧠 Segredos, plano e continuidade</div>',
+        unsafe_allow_html=True,
+    )
+
     state["segredo_ativo"] = st.text_area(
-        "Segredo ativo",
+        "🔒 Segredo ativo",
         value=state.get("segredo_ativo", ""),
-        height=100,
+        height=130,
         placeholder=(
             "Ex: Silvia quer ficar com o colar valioso de Nando. "
             "Mary sabe do segredo e precisa lidar com as consequências."
@@ -6446,9 +6556,9 @@ with st.sidebar:
         state["relacao"] = "contextual"
 
     state["plano_ativo"] = st.text_area(
-        "Plano ativo",
+        "🎯 Plano ativo",
         value=state.get("plano_ativo", ""),
-        height=100,
+        height=110,
         placeholder=(
             "Ex: Mary precisa arrumar a mochila e dormir.\n"
             "Ex: Amanhã ela precisa falar com Anthony na faculdade.\n"
@@ -6462,9 +6572,9 @@ with st.sidebar:
     )
 
     state["eventos_recentes"] = st.text_area(
-        "Eventos recentes",
+        "🧾 Eventos recentes",
         value=state.get("eventos_recentes", ""),
-        height=100,
+        height=110,
         placeholder=(
             "Ex: Mary esteve no Maracanã.\n"
             "Ex: Anthony apareceu de surpresa.\n"
@@ -6477,9 +6587,9 @@ with st.sidebar:
     )
 
     state["mary_acao"] = st.text_area(
-        "Ação atual de Mary",
+        "🎬 Ação atual de Mary",
         value=state.get("mary_acao", ""),
-        height=90,
+        height=100,
         placeholder=(
             "Ex: Mary está no banheiro, terminando de apagar o batom do espelho "
             "com um lenço, vestindo o roupão de seda."
@@ -6491,28 +6601,13 @@ with st.sidebar:
     )
 
     # ======================================================
-    # CONSCIÊNCIA DA CENA
+    # VISUAL DE MARY
     # ======================================================
-    estado_emocional_atual = normalizar_consciencia_cena_mary(
-        state.get("estado_emocional", "Automático")
+    st.markdown(
+        '<div class="sidebar-box-title">👗 Visual de Mary</div>',
+        unsafe_allow_html=True,
     )
-    
-    if estado_emocional_atual not in OPCOES_ESTADO_EMOCIONAL_MARY:
-        estado_emocional_atual = "Automático"
-    
-    state["estado_emocional"] = st.selectbox(
-        "Consciência da cena",
-        options=OPCOES_ESTADO_EMOCIONAL_MARY,
-        index=OPCOES_ESTADO_EMOCIONAL_MARY.index(estado_emocional_atual),
-        help=(
-            "Define como Mary percebe o peso do ato: impulso, cautela, conflito "
-            "ou risco assumido. Isso deve aparecer em falas e gestos, sem explicação psicológica."
-        ),
-    )
-    
-    # ======================================================
-    # VISUAL AUTOMÁTICO / MANUAL
-    # ======================================================
+
     state["usar_visual_automatico"] = st.checkbox(
         "Gerar visual automaticamente",
         value=bool(state.get("usar_visual_automatico", True)),
@@ -6521,60 +6616,72 @@ with st.sidebar:
             "com base no local, tempo e tom da cena."
         ),
     )
-    
+
     state["visual_atual_manual"] = st.text_area(
-        "Visual manual de Mary (opcional)",
+        "👗 Visual manual de Mary (opcional)",
         value=state.get("visual_atual_manual", ""),
-        height=90,
+        height=95,
         placeholder=(
             "Se quiser, descreva manualmente o visual. "
             "Se deixar em branco, o script gera automaticamente."
         ),
     )
-    
+
     state["visual_atual"] = resolver_visual_atual_mary(state)
-    
+
     with st.expander("👗 Visual resolvido", expanded=False):
         st.write(state.get("visual_atual", ""))
-
-    modo_surpresa_atual = state.get("modo_surpresa", "Desligado")
-
-    if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
-        modo_surpresa_atual = "Desligado"
 
     # ======================================================
     # MODO SURPRESA
     # ======================================================
+    st.markdown(
+        '<div class="sidebar-box-title">⚡ Modo surpresa</div>',
+        unsafe_allow_html=True,
+    )
+
     modo_surpresa_atual = normalizar_modo_surpresa(
         state.get("modo_surpresa", "Desligado")
     )
-    
+
     if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
         modo_surpresa_atual = "Desligado"
-    
+
     state["modo_surpresa"] = st.selectbox(
-        "Modo surpresa",
+        "⚡ Modo surpresa",
         options=OPCOES_MODO_SURPRESA,
         index=OPCOES_MODO_SURPRESA.index(modo_surpresa_atual),
         help=(
             "Define o tipo de gancho inesperado que Mary pode abrir. "
-            "Ela deve anunciar ou iniciar a surpresa, mas não resolver tudo sozinha."
+            "Ela deve anunciar ou iniciar a surpresa, parar em um ponto jogável "
+            "e não resolver tudo sozinha. Após o disparo, o ideal é voltar para Desligado."
         ),
     )
 
     state["direcao_surpresa"] = st.text_area(
-        "Direção da surpresa",
+        "🧩 Direção da surpresa",
         value=state.get("direcao_surpresa", ""),
-        height=80,
+        height=85,
         placeholder=(
-            "Ex: cotidiano, mensagens inesperadas, encontros sociais, "
-            "pequenos conflitos, lembranças, oportunidades ou complicações."
+            "Opcional. Exemplos:\n"
+            "- Bianca manda mensagem.\n"
+            "- Renan liga.\n"
+            "- O celular fica destravado.\n"
+            "- Uma foto do biquíni aparece.\n"
+            "- Silvia aparece chamando Mary."
         ),
         help=(
-            "Descreva o tipo de surpresa que pode surgir. "
-            "Não escreva a ação exata; deixe Mary improvisar."
+            "Use apenas para orientar o gancho. "
+            "Mary deve abrir a oportunidade, dizer claramente o que surgiu "
+            "e deixar o usuário decidir a continuação."
         ),
     )
+
+    if state.get("modo_surpresa") != "Desligado":
+        st.caption(
+            "⚠️ Surpresa armada: Mary deve abrir apenas um gancho e parar, "
+            "sem resolver a ligação, mensagem, segredo ou complicação sozinha."
+        )
     
 
     normalizar_estado(state)
