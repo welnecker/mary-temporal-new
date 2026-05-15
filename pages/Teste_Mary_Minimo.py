@@ -26,13 +26,10 @@ MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 12
 
 OPCOES_TOM_MANUAL_CENA = [
-    "Neutro",
-    "Amizade",
-    "Malícia",
-    "Flerte",
+    "Natural / Amizade",
+    "Malícia / Flerte",
     "Intimidade",
-    "Segredo pendente",
-    "Decisão",
+    "Pendência / Decisão",
 ]
 
 OPCOES_MODO_SURPRESA = [
@@ -182,20 +179,54 @@ MAPA_ESTADO_EMOCIONAL_MARY = {
 
 def normalizar_tom_manual_cena(valor: str) -> str:
     valor = str(valor or "").strip()
+    valor_norm = _texto_norm(valor)
 
     mapa = {
-        "neutro": "Neutro",
-        "amizade": "Amizade",
-        "malícia": "Malícia",
-        "malicia": "Malícia",
-        "flerte": "Flerte",
+        # ==================================================
+        # NATURAL / AMIZADE
+        # ==================================================
+        "neutro": "Natural / Amizade",
+        "natural": "Natural / Amizade",
+        "amizade": "Natural / Amizade",
+        "natural / amizade": "Natural / Amizade",
+        "natural/amizade": "Natural / Amizade",
+        "natural_amizade": "Natural / Amizade",
+
+        # ==================================================
+        # MALÍCIA / FLERTE
+        # ==================================================
+        "malicia": "Malícia / Flerte",
+        "malícia": "Malícia / Flerte",
+        "flerte": "Malícia / Flerte",
+        "malicia / flerte": "Malícia / Flerte",
+        "malícia / flerte": "Malícia / Flerte",
+        "malicia/flerte": "Malícia / Flerte",
+        "malícia/flerte": "Malícia / Flerte",
+        "malicia_flerte": "Malícia / Flerte",
+
+        # ==================================================
+        # INTIMIDADE
+        # ==================================================
         "intimidade": "Intimidade",
-        "segredo pendente": "Segredo pendente",
-        "segredo_pendente": "Segredo pendente",
-        "segredo": "Segredo pendente",
+
+        # ==================================================
+        # PENDÊNCIA / DECISÃO
+        # ==================================================
+        "segredo pendente": "Pendência / Decisão",
+        "segredo_pendente": "Pendência / Decisão",
+        "segredo": "Pendência / Decisão",
+        "pendencia": "Pendência / Decisão",
+        "pendência": "Pendência / Decisão",
+        "decisao": "Pendência / Decisão",
+        "decisão": "Pendência / Decisão",
+        "pendencia / decisao": "Pendência / Decisão",
+        "pendência / decisão": "Pendência / Decisão",
+        "pendencia/decisao": "Pendência / Decisão",
+        "pendência/decisão": "Pendência / Decisão",
+        "pendencia_decisao": "Pendência / Decisão",
     }
 
-    return mapa.get(valor.lower(), "Neutro")
+    return mapa.get(valor_norm, "Natural / Amizade")
 
 OPENROUTER_MODELS = {
      "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
@@ -2469,7 +2500,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     tom_manual = normalizar_tom_manual_cena(
         state.get("tom_manual_da_cena")
         or state.get("estado_emocional")
-        or "Neutro"
+        or "Natural / Amizade"
     )
 
     state["tom_manual_da_cena"] = tom_manual
@@ -4895,7 +4926,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 
     tipo = _texto_norm(state.get("tipo_de_cena", "neutra"))
     tom_manual = normalizar_tom_manual_cena(
-        state.get("tom_manual_da_cena", "Neutro")
+        state.get("tom_manual_da_cena", "Natural / Amizade")
     )
     priv = _texto_norm(state.get("privacidade", "publico"))
     fala_norm = _texto_norm(fala_usuario)
