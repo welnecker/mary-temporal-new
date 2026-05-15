@@ -44,16 +44,10 @@ OPCOES_MODO_SURPRESA = [
 
 OPCOES_ESTADO_EMOCIONAL_MARY = [
     "Automático",
-    "Neutro",
-    "Leveza",
-    "Cumplicidade",
-    "Desejo",
-    "Pressão",
-    "Ferida",
+    "Impulso",
+    "Cautela",
     "Conflito",
-    "Decidida",
-    "Vulnerável",
-    "Euforia",
+    "Assumindo o risco",
 ]
 
 def limite_fase_por_privacidade(privacidade: str) -> int:
@@ -163,18 +157,69 @@ def normalizar_mary_intent(valor: str, padrao: str = "responder_com_naturalidade
     return padrao
 
 MAPA_ESTADO_EMOCIONAL_MARY = {
-    "Automático": "Mary escolhe dinamicamente a nuance emocional mais coerente com o enredo.",
-    "Neutro": "calma, presença, naturalidade",
-    "Leveza": "humor, ironia leve, descontração",
-    "Cumplicidade": "carinho, parceria, confiança",
-    "Desejo": "atração, inquietação, provocação, saudade física",
-    "Pressão": "sufocamento, irritação, defesa, impaciência",
-    "Ferida": "mágoa, tristeza, recolhimento, decepção",
-    "Conflito": "culpa, dúvida, hesitação, divisão interna",
-    "Decidida": "firmeza, frieza, corte, resolução",
-    "Vulnerável": "honestidade, insegurança, sensibilidade, medo de perder",
-    "Euforia": "intensidade, impulso, alegria, excitação emocional",
+    "Automático": (
+        "Mary escolhe a postura de consciência mais coerente com a cena, "
+        "sem explicar essa escolha em texto. A consciência deve aparecer em atos e falas."
+    ),
+
+    "Impulso": (
+        "Mary age mais tomada pelo momento: desejo, curiosidade, adrenalina, vaidade, raiva, "
+        "saudade ou vontade de experimentar algo. Ela pensa menos antes de agir, mas não deve "
+        "parecer burra nem completamente inconsciente do ambiente."
+    ),
+
+    "Cautela": (
+        "Mary percebe risco, exposição, ambiente, poder do outro, vergonha possível ou consequência. "
+        "Ela não trava a cena: mede o terreno por gesto curto, pergunta, condição, recuo mínimo ou olhar atento."
+    ),
+
+    "Conflito": (
+        "Mary quer algo, mas existe uma força interna contrária: medo, culpa, vergonha, lealdade, "
+        "arrependimento, segredo ou dúvida. Isso deve aparecer por hesitação, pausa, fala ambígua "
+        "ou gesto contraditório, não por explicação psicológica."
+    ),
+
+    "Assumindo o risco": (
+        "Mary entende que há custo, exposição, perigo, perda de controle ou consequência emocional, "
+        "mas escolhe seguir. Ela não romantiza o risco nem age como ingênua: assume por fala ou gesto curto."
+    ),
 }
+
+def normalizar_consciencia_cena_mary(valor: str) -> str:
+    """
+    Normaliza o antigo estado emocional para o novo conceito:
+    Consciência da cena.
+
+    Mantém compatibilidade com facts antigos salvos na planilha.
+    """
+    valor_norm = _texto_norm(valor)
+
+    mapa = {
+        # Novo menu
+        "automatico": "Automático",
+        "automático": "Automático",
+        "impulso": "Impulso",
+        "cautela": "Cautela",
+        "conflito": "Conflito",
+        "assumindo o risco": "Assumindo o risco",
+        "assumindo_o_risco": "Assumindo o risco",
+        "risco": "Assumindo o risco",
+
+        # Compatibilidade com menu antigo
+        "neutro": "Automático",
+        "leveza": "Impulso",
+        "euforia": "Impulso",
+        "desejo": "Impulso",
+        "cumplicidade": "Cautela",
+        "pressao": "Cautela",
+        "pressão": "Cautela",
+        "ferida": "Conflito",
+        "vulneravel": "Conflito",
+        "vulnerável": "Conflito",
+        "decidida": "Assumindo o risco",
+    }
+
+    return mapa.get(valor_norm, "Automático")
 
 
 def normalizar_tom_manual_cena(valor: str) -> str:
@@ -3441,40 +3486,92 @@ def normalizar_estado(state: dict) -> None:
 
 
 def resolver_estado_emocional_mary(state: dict) -> str:
+    """
+    Resolve o campo estado_emocional como Consciência da Cena.
+
+    O nome interno permanece estado_emocional para evitar refatoração ampla,
+    mas o significado narrativo agora é:
+    - como Mary percebe o peso do ato;
+    - não como ela explica sentimentos em parágrafos.
+    """
     if not isinstance(state, dict):
         return "Automático"
 
-    estado = str(state.get("estado_emocional", "Automático") or "Automático").strip()
+    estado = normalizar_consciencia_cena_mary(
+        state.get("estado_emocional", "Automático")
+    )
 
     if estado not in OPCOES_ESTADO_EMOCIONAL_MARY:
         estado = "Automático"
 
+    state["estado_emocional"] = estado
     return estado
 
 
 def formatar_estado_emocional_para_prompt(state: dict) -> str:
-    estado = resolver_estado_emocional_mary(state)
+    consciencia = resolver_estado_emocional_mary(state)
     descricao = MAPA_ESTADO_EMOCIONAL_MARY.get(
-        estado,
+        consciencia,
         MAPA_ESTADO_EMOCIONAL_MARY["Automático"],
     )
 
     return f"""
-[ESTADO EMOCIONAL DINÂMICO]
-Estado emocional selecionado:
-{estado}
+[CONSCIÊNCIA DA CENA]
+Consciência selecionada:
+{consciencia}
 
-Campo emocional permitido:
+Função prática:
 {descricao}
 
-REGRAS:
-- O estado emocional selecionado não é uma emoção única e rígida.
-- Ele define um campo emocional dentro do qual Mary pode reagir dinamicamente.
-- Mary deve escolher a nuance emocional mais coerente com o enredo, interlocutor, segredo ativo, plano ativo e fala recente do usuário.
-- O tom_manual_da_cena continua definindo a direção principal da cena.
-- O estado emocional apenas colore a forma como Mary vive essa direção.
-- Se o estado for "Automático", Mary escolhe livremente a nuance emocional mais coerente com a cena atual.
-- Se houver conflito entre tom manual e estado emocional, o tom manual vence.
+REGRAS CENTRAIS:
+- Este campo NÃO muda o tipo da cena.
+- O tom_manual_da_cena define o eixo externo da cena.
+- A consciência da cena define como Mary percebe o peso do ato, risco, exposição, desejo, vergonha, consequência ou perda de controle.
+- Mary pode escolher qualquer caminho, mas não deve agir como se escolhas não tivessem peso.
+- A consciência deve aparecer implicitamente em atos e falas, NÃO em explicações psicológicas.
+
+ECONOMIA OBRIGATÓRIA:
+- Não escrever parágrafos explicando o que Mary sente.
+- Não nomear culpa, medo, arrependimento, desejo ou conflito de forma didática.
+- Não transformar a resposta em análise moral.
+- Não romantizar risco real.
+- Não parar a cena para explicar a mente de Mary.
+
+COMO MOSTRAR:
+Use no máximo UM ou DOIS sinais concretos:
+- uma pausa;
+- um olhar para a porta, janela, celular, chão ou interlocutor;
+- uma frase curta;
+- um gesto de recuo ou avanço;
+- uma pergunta objetiva;
+- uma condição imposta;
+- uma hesitação breve;
+- uma decisão assumida.
+
+EXEMPLOS DE ESTILO:
+Ruim:
+"Mary sente um conflito moral profundo e percebe todas as consequências da proposta."
+
+Bom:
+"Mary olha para a folha, depois para Renan.
+'Professor... isso ainda é sobre a prova?'"
+
+Ruim:
+"Mary sente medo das consequências."
+
+Bom:
+"Mary confere a porta antes de responder."
+
+Ruim:
+"Mary sabe que está assumindo o risco e decide seguir mesmo assim."
+
+Bom:
+"Mary dobra a folha devagar.
+'Então eu passo. Depois a gente conversa sobre essa dívida.'"
+
+REGRA FINAL:
+Mary deve continuar agindo dentro da cena.
+A consciência muda a precisão da ação, não o tamanho da resposta.
 """.strip()
 
 # ==========================================================
@@ -5132,7 +5229,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     modo_surpresa = str(state.get("modo_surpresa", "Desligado") or "Desligado").strip()
     direcao_surpresa = str(state.get("direcao_surpresa", "") or "").strip()
 
-    estado_emocional_txt = formatar_estado_emocional_para_prompt(state)
+    consciencia_cena_txt = formatar_estado_emocional_para_prompt(state)
     evento_inesperado_txt = preparar_evento_inesperado_para_prompt(state)
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
@@ -5313,7 +5410,7 @@ TIPOS:
 - Janio só deve voltar como interlocutor se for explicitamente introduzido, se o status dele for "presente", ou se os facts indicarem isso claramente.
 
 [DECISÃO DE MARY]
-- Se tom_manual_da_cena for "Decisão", Mary deve assumir uma consequência clara.
+- Se tom_manual_da_cena for "Pendência / Decisão", Mary deve assumir uma consequência clara quando a cena exigir escolha, limite, confissão, recusa, aceitação ou mudança de rumo.
 - A decisão deve nascer do que já consome Mary internamente: desejo, incômodo, culpa, segredo, cansaço, medo, raiva, atração ou verdade reprimida.
 - Mary não deve ignorar pensamentos, segredos ou desejos que já estão dominando a cena.
 - Se Mary está sufocada, pressionada, usada como troféu ou emocionalmente distante, ela pode romper de forma definitiva.
@@ -5325,6 +5422,7 @@ TIPOS:
 - A decisão pode ser dura, delicada, fria, triste, impulsiva, libertadora ou estratégica.
 - Depois da decisão, a cena deve mostrar a consequência prática imediata.
 - Mary não precisa explicar tudo, mas precisa deixar claro o rumo escolhido.
+- A decisão deve aparecer em fala, gesto ou ação concreta, não em análise psicológica longa.
 
 [CENA COM MÚLTIPLOS INTERLOCUTORES]
 - O campo "interlocutor" pode conter mais de uma pessoa, como "Silvia, Anthony".
@@ -5349,8 +5447,7 @@ TIPOS:
 - Mary pode dizer o que quer, mas evita pressão seca.
 - Mary não termina com pergunta genérica.
 - Mary prefere gesto, convite suave ou fala íntima natural.
-- Exceto quando tom_manual_da_cena for "Decisão"; nesse caso, clareza e consequência vencem suavidade.
-
+- Exceto quando tom_manual_da_cena for "Pendência / Decisão"; nesse caso, clareza e consequência vencem suavidade.
 
 [AMPLITUDE EMOCIONAL DE MARY]
 - Mary pode rir, chorar, hesitar, se irritar, se calar, se afastar, sentir culpa, medo, ciúme, ternura, saudade, vergonha, raiva, desejo, orgulho ou arrependimento.
@@ -5361,12 +5458,16 @@ TIPOS:
 - Se estiver magoada, pode chorar ou se fechar.
 - Se estiver decidida, pode cortar a cena com firmeza.
 - A emoção deve nascer dos facts, do histórico recente, do segredo ativo e do interlocutor atual.
+- A emoção deve aparecer por atos, falas, pausas e escolhas concretas.
+- Não explicar a emoção em parágrafos.
+- Não transformar emoção em análise psicológica.
+- Não romantizar risco, culpa, medo ou perigo.
+- Não repetir o mesmo estado emocional em todo turno se a cena já mostrou isso o suficiente.
 
-{estado_emocional_txt}
+{consciencia_cena_txt}
 
 [ASSINATURA FÍSICA FIXA DE MARY]
 {physical_txt}
-
 
 [MEMÓRIAS SHARED]
 {shared_txt}
@@ -6226,20 +6327,22 @@ with st.sidebar:
     )
 
     # ======================================================
-    # ESTADO EMOCIONAL DINÂMICO
+    # CONSCIÊNCIA DA CENA
     # ======================================================
-    estado_emocional_atual = state.get("estado_emocional", "Automático")
+    estado_emocional_atual = normalizar_consciencia_cena_mary(
+        state.get("estado_emocional", "Automático")
+    )
     
     if estado_emocional_atual not in OPCOES_ESTADO_EMOCIONAL_MARY:
         estado_emocional_atual = "Automático"
     
     state["estado_emocional"] = st.selectbox(
-        "Estado emocional",
+        "Consciência da cena",
         options=OPCOES_ESTADO_EMOCIONAL_MARY,
         index=OPCOES_ESTADO_EMOCIONAL_MARY.index(estado_emocional_atual),
         help=(
-            "Define o campo emocional dominante. "
-            "Mary escolhe dinamicamente a nuance específica dentro desse bloco."
+            "Define como Mary percebe o peso do ato: impulso, cautela, conflito "
+            "ou risco assumido. Isso deve aparecer em falas e gestos, sem explicação psicológica."
         ),
     )
     
