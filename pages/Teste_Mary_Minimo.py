@@ -5038,6 +5038,85 @@ def atualizar_psique_e_fase(state: dict, fala_usuario: str, resposta_limpa: str)
     # ======================================================
     normalizar_flags_booleanas_state(state)
 
+def resetar_climax_se_nova_sequencia_intima(state: dict, fala_usuario: str = "") -> None:
+    """
+    Reseta flags de clímax quando uma nova sequência íntima começa
+    e não há verbalização clara de orgasmo no turno atual.
+
+    Evita que mary_climax_done/user_climax_done herdados de cena anterior
+    bloqueiem o disparo do orgasmo nesta nova cena.
+    """
+    if not isinstance(state, dict):
+        return
+
+    texto = remover_acentos(str(fala_usuario or "").lower())
+
+    tipo = remover_acentos(str(state.get("tipo_de_cena", "") or "").lower())
+    tom = remover_acentos(str(state.get("tom_manual_da_cena", "") or "").lower())
+    privacidade = remover_acentos(str(state.get("privacidade", "") or "").lower())
+    acao = remover_acentos(str(state.get("mary_acao", "") or "").lower())
+
+    cena_intima = (
+        tipo == "intimidade"
+        or tom == "intimidade"
+        or privacidade == "privado"
+    )
+
+    ha_estimulo_atual = any(palavra in (texto + " " + acao) for palavra in [
+        "penetra",
+        "penetracao",
+        "estoca",
+        "estocada",
+        "flop",
+        "foder",
+        "fodendo",
+        "sexo",
+        "oral",
+        "chupa",
+        "chupando",
+        "clitoris",
+        "buceta",
+        "dedo",
+        "masturb",
+        "friccao",
+        "encaixa",
+        "entrada",
+        "vara",
+        "pau",
+    ])
+
+    verbalizou_climax_mary = any(p in texto for p in [
+        "mary gozou",
+        "mary esta gozando",
+        "mary está gozando",
+        "eu gozei",
+        "estou gozando",
+        "tô gozando",
+        "to gozando",
+        "gozei",
+    ])
+
+    verbalizou_climax_usuario = any(p in texto for p in [
+        "eu gozei",
+        "gozei",
+        "estou gozando",
+        "tô gozando",
+        "to gozando",
+        "vou gozar",
+        "gozando",
+        "explodi",
+        "terminei",
+    ])
+
+    if cena_intima and ha_estimulo_atual and not verbalizou_climax_mary:
+        # Se a cena está em estímulo ativo e Mary não verbalizou clímax,
+        # não permita que um true herdado bloqueie o gate.
+        state["mary_climax_done"] = False
+
+    if cena_intima and ha_estimulo_atual and not verbalizou_climax_usuario:
+        # O usuário também não deve ser marcado como concluído por inferência.
+        state["user_climax_done"] = False
+
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
@@ -6112,6 +6191,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     definir_acao_autonoma(state, fala_usuario)
     
     # Gate conservador. Não deve resolver rápido demais.
+    resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
     atualizar_gate_orgasmo_mary(state, fala_usuario)
     
     sincronizar_facts_basicos(state)
