@@ -2841,15 +2841,26 @@ def derivar_controles_de_cena(state: dict) -> None:
     if not cfg.get("tensao_romantica_com_interlocutor", False):
         cfg["tensao_romantica_com_interlocutor"] = bool(tensao_romantica_base)
 
-    # Toque íntimo continua obedecendo tom + privacidade.
-    # Público nunca permite.
-    # Semiprivado só permite em Intimidade.
-    # Privado só permite em Intimidade.
+    # ======================================================
+    # TOQUE PROVOCATIVO x TOQUE ÍNTIMO
+    # ======================================================
+    # toque_provocativo_permitido:
+    # - permite tensão corporal, mão na coxa, pressão por cima da roupa,
+    #   proximidade física e provocação controlada.
+    #
+    # toque_intimo_permitido:
+    # - permite avanço íntimo real, nudez, sexo, estímulo direto e progressão plena.
+    # ======================================================
     if privacidade == "publico":
+        cfg["toque_provocativo_permitido"] = tom_manual == "Malícia / Flerte"
         cfg["toque_intimo_permitido"] = False
+    
     elif privacidade == "semiprivado":
+        cfg["toque_provocativo_permitido"] = tom_manual in ("Malícia / Flerte", "Intimidade")
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
+    
     else:
+        cfg["toque_provocativo_permitido"] = tom_manual in ("Malícia / Flerte", "Intimidade")
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
 
     # ======================================================
@@ -2867,6 +2878,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     # Estado final da cena atual.
     state["modo_relacional"] = cfg["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
+    state["toque_provocativo_permitido"] = cfg.get("toque_provocativo_permitido", False)
     state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
@@ -2929,52 +2941,114 @@ def derivar_controles_de_cena(state: dict) -> None:
         and not pre_signals
         and stimulation_turns <= 0
     )
-
+   
     # ======================================================
     # 8) FASE / STAGE / NÍVEIS
     # ======================================================
-    if not force_resolution and not mary_done:
+    # Importante:
+    # - mary_climax_done/user_climax_done são fatos narrativos passados.
+    # - Eles NÃO devem impedir recalibração da cena atual.
+    # - A cena atual deve obedecer tom_manual + privacidade + cfg.
+    # - O stage NÃO deve ser derivado cegamente da fase quando o tom
+    #   não é Intimidade.
+    # ======================================================
+    if not force_resolution:
         fase_atual = safe_int(state.get("physical_phase", 0), 0)
         fase_base = safe_int(cfg.get("physical_phase", 0), 0)
-
-        mapa_stage = {
-            0: "inicio",
-            1: "aproximacao",
-            2: "toque",
-            3: "intimidade",
-            4: "sexo_ou_estimulo",
-            5: "pre_pico_mary",
-            6: "pico_mary",
-            7: "aftercare",
-        }
 
         if cena_neutra_sozinha:
             state["physical_phase"] = 0
             state["scene_stage"] = "cotidiano"
             state["mary_intent"] = "preparar_noite_refletindo"
+
             state["desire_level"] = min(
                 safe_float(state.get("desire_level", 0.0), 0.0),
                 safe_float(cfg.get("desire_level", 0.0), 0.0),
             )
+
             state["tension_level"] = min(
                 safe_float(state.get("tension_level", 0.0), 0.0),
                 safe_float(cfg.get("tension_level", 0.0), 0.0),
             )
+
             state["connection_level"] = max(
                 safe_float(state.get("connection_level", 0.0), 0.0),
                 safe_float(cfg.get("connection_level", 0.0), 0.0),
             )
+
             state["toque_intimo_permitido"] = False
             state["tensao_romantica_com_interlocutor"] = False
 
         else:
-            # Cena com interlocutor ou tensão ativa:
-            # preserva progressão já conquistada.
-            nova_fase = max(fase_atual, fase_base)
+            # ==================================================
+            # Fase:
+            # - Natural / Amizade e Pendência / Decisão usam cfg.
+            # - Malícia / Flerte preserva tensão, mas não vira intimidade plena.
+            # - Intimidade pode preservar progressão maior.
+            # ==================================================
+            if tom_manual in ("Natural / Amizade", "Pendência / Decisão"):
+                nova_fase = fase_base
+
+            elif tom_manual == "Malícia / Flerte":
+                nova_fase = max(fase_atual, fase_base)
+
+                if privacidade == "publico":
+                    nova_fase = min(nova_fase, 2)
+
+                elif privacidade == "semiprivado":
+                    nova_fase = min(nova_fase, 3)
+
+                else:
+                    nova_fase = min(nova_fase, 3)
+
+            elif tom_manual == "Intimidade":
+                nova_fase = max(fase_atual, fase_base)
+
+                if privacidade == "publico":
+                    nova_fase = min(nova_fase, 2)
+
+                elif privacidade == "semiprivado":
+                    nova_fase = min(nova_fase, 4)
+
+            else:
+                nova_fase = fase_base
 
             state["physical_phase"] = nova_fase
-            state["scene_stage"] = mapa_stage.get(nova_fase, cfg["scene_stage"])
 
+            # ==================================================
+            # Stage:
+            # Não usar mapa_stage cego para Malícia / Flerte,
+            # porque fase 3 viraria "intimidade".
+            # ==================================================
+            if tom_manual == "Natural / Amizade":
+                state["scene_stage"] = cfg.get("scene_stage", "cotidiano")
+
+            elif tom_manual == "Malícia / Flerte":
+                if privacidade == "publico":
+                    state["scene_stage"] = "flerte_direto"
+                elif privacidade == "semiprivado":
+                    state["scene_stage"] = "intensidade_contida"
+                else:
+                    state["scene_stage"] = "flerte_direto"
+
+            elif tom_manual == "Intimidade":
+                if privacidade == "publico":
+                    state["scene_stage"] = "buscar_privacidade"
+                elif privacidade == "semiprivado":
+                    state["scene_stage"] = "intensidade_contida"
+                else:
+                    state["scene_stage"] = "intimidade"
+
+            elif tom_manual == "Pendência / Decisão":
+                state["scene_stage"] = cfg.get("scene_stage", "decisao")
+
+            else:
+                state["scene_stage"] = cfg.get("scene_stage", "inicio")
+
+            # ==================================================
+            # Níveis emocionais:
+            # Preserva intensidade já construída, mas aplica piso do preset.
+            # ==================================================
             state["desire_level"] = clamp(
                 max(
                     safe_float(state.get("desire_level", 0.0), 0.0),
@@ -4936,30 +5010,59 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     # MALÍCIA / FLERTE
     # Junta antiga Malícia + antigo Flerte.
+    # Permite provocação física contida, mas NÃO intimidade plena.
     # ======================================================
     if tom_manual == "Malícia / Flerte":
         if segredo_ativo or plano_ativo:
-            state["mary_autonomous_action"] = (
-                "Mary percebe subtexto, risco, desejo e oportunidade. "
-                "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação, "
-                "sem entregar tudo de forma direta e sem pular para intimidade física."
-            )
+            if priv == "semiprivado":
+                state["mary_autonomous_action"] = (
+                    "Mary percebe subtexto, risco, desejo e oportunidade. "
+                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação. "
+                    "Como está em ambiente semiprivado, pode usar provocação física contida — mão na coxa, aproximação, "
+                    "pressão por cima da roupa, respiração próxima e tensão corporal — sem transformar isso em intimidade plena, "
+                    "sexo direto, nudez ou clímax. "
+                    "Ela deve sustentar a tensão e, se o desejo crescer demais, conduzir a promessa para um local privado."
+                )
+
+            elif priv == "publico":
+                state["mary_autonomous_action"] = (
+                    "Mary percebe subtexto, risco, desejo e oportunidade. "
+                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação, "
+                    "mas respeita o ambiente público. "
+                    "A provocação deve ser social e discreta, sem toque íntimo, exposição ou avanço físico evidente."
+                )
+
+            else:
+                state["mary_autonomous_action"] = (
+                    "Mary percebe subtexto, risco, desejo e oportunidade. "
+                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação. "
+                    "Em ambiente privado, pode intensificar a provocação física e o desejo, mas ainda não deve transformar "
+                    "automaticamente Malícia / Flerte em intimidade plena; esse avanço depende do tom Intimidade ou de uma virada clara da cena."
+                )
+
         elif priv == "publico":
             state["mary_autonomous_action"] = (
                 "Mary brinca com a tensão de forma social e discreta: olhar, pausa, ironia, charme, postura "
                 "e provocação contida. Ela sabe o efeito que causa, mas respeita o ambiente público "
                 "e não age como se estivesse em local privado."
             )
+
         elif priv == "semiprivado":
             state["mary_autonomous_action"] = (
-                "Mary assume a malícia e o flerte com mais proximidade, mas ainda mede risco, exposição "
-                "e progressão. Ela pode provocar com mais clareza, sem atropelar a continuidade física."
+                "Mary assume a malícia e o flerte com mais proximidade, medindo risco, exposição e progressão. "
+                "Ela pode usar provocação física contida — mão na coxa, aproximação, pressão por cima da roupa, "
+                "respiração próxima e tensão corporal — sem atropelar a continuidade, sem nudez, sem sexo direto "
+                "e sem transformar o flerte em intimidade plena. "
+                "Se a tensão aumentar demais, deve jogar a promessa para um local privado."
             )
+
         else:
             state["mary_autonomous_action"] = (
                 "Mary assume malícia e flerte com presença, aproximação, olhar, pausa, postura, humor e intenção. "
-                "Ela pode provocar e sustentar desejo, mas não deve transformar automaticamente o flerte em intimidade plena."
+                "Ela pode provocar, tocar de forma insinuante e sustentar desejo, mas não deve transformar automaticamente "
+                "o flerte em intimidade plena sem uma virada clara da cena ou sem o tom Intimidade."
             )
+
         return
 
     # ======================================================
