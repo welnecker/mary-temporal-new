@@ -892,6 +892,7 @@ def normalizar_flags_booleanas_state(state: dict) -> None:
         "mary_climax_done",
         "user_climax_done",
         "partner_climax_pending",
+        "toque_provocativo_permitido",
         "toque_intimo_permitido",
         "tensao_romantica_com_interlocutor",
         "resolution_done",
@@ -4205,11 +4206,29 @@ def sincronizar_facts_basicos(state: dict) -> dict:
     # normalizar_estado já chama derivar_controles_de_cena(),
     # e derivar_controles_de_cena já normaliza relação no ponto correto.
     normalizar_estado(state)
-
+    
     # Não chamar normalizar_relacao_por_interlocutor aqui,
     # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
-
+    
+    # ======================================================
+    # DIRETRIZ AUTÔNOMA FINAL
+    # Precisa acontecer AQUI porque sincronizar_facts_basicos()
+    # é chamada dentro de montar_prompt_para_modelo().
+    # Assim mary_autonomous_action sempre reflete o state final
+    # usado no prompt e no debug.
+    # ======================================================
+    fala_atual = str(state.get("_fala_usuario_atual", "") or "")
+    
+    try:
+        definir_acao_autonoma(state, fala_atual)
+    except NameError:
+        # Segurança para caso a função ainda não esteja disponível
+        # em algum carregamento parcial.
+        state["mary_autonomous_action"] = str(
+            state.get("mary_autonomous_action", "") or ""
+        )
+    
     state["visual_atual"] = resolver_visual_atual_mary(state)
     estado_emocional_resolvido = resolver_estado_emocional_mary(state)
 
@@ -4269,6 +4288,13 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "physical_phase": safe_int(state.get("physical_phase", 0), 0),
         "scene_stage": state.get("scene_stage", "inicio"),
         "mary_intent": state.get("mary_intent", "presenca_viva"),
+        "mary_autonomous_action": str(
+            state.get("mary_autonomous_action", "") or ""
+        ),
+        "toque_provocativo_permitido": normalizar_bool(
+            state.get("toque_provocativo_permitido", False),
+            default=False,
+        ),
         "force_resolution_now": normalizar_bool(
             state.get("force_resolution_now", False),
             default=False,
@@ -5110,6 +5136,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     evento_inesperado_txt = preparar_evento_inesperado_para_prompt(state)
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
+    acao_autonoma_txt = str(state.get("mary_autonomous_action", "") or "").strip()
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
@@ -5172,6 +5199,15 @@ REGRAS DE CONTEXTO:
 10. Cânone e memórias como contexto.
 11. Histórico antigo.
 12. Fase técnica como sugestão fraca.
+
+[DIRETRIZ AUTÔNOMA DA MARY]
+{acao_autonoma_txt if acao_autonoma_txt else "Sem diretriz autônoma específica neste turno."}
+
+REGRAS:
+- Esta diretriz traduz o tom manual, privacidade, plano ativo e segredo ativo em comportamento prático.
+- Ela não substitui os facts humanos.
+- Se houver conflito, facts humanos e fala mais recente do usuário vencem.
+- Use como orientação de presença, subtexto, iniciativa e contenção da Mary neste turno.
 
 [VISUAL ATUAL DE MARY]
 {state.get("visual_atual", "") or "Não especificado."}
