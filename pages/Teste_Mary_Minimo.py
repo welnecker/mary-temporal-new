@@ -34,13 +34,48 @@ OPCOES_TOM_MANUAL_CENA = [
 
 OPCOES_MODO_SURPRESA = [
     "Desligado",
-    "Leve",
-    "Social",
-    "Memória",
+    "Detalhe espontâneo",
+    "Telefonema / Mensagem",
+    "Personagem em cena",
     "Complicação",
-    "Segredo",
+    "Segredo em movimento",
     "Livre",
 ]
+
+def normalizar_modo_surpresa(valor: str) -> str:
+    """
+    Normaliza o modo surpresa novo e mantém compatibilidade
+    com nomes antigos salvos em facts/session_state.
+    """
+    valor_norm = _texto_norm(valor)
+
+    mapa = {
+        # Novos nomes
+        "desligado": "Desligado",
+        "detalhe espontaneo": "Detalhe espontâneo",
+        "detalhe espontâneo": "Detalhe espontâneo",
+        "telefonema / mensagem": "Telefonema / Mensagem",
+        "telefonema/mensagem": "Telefonema / Mensagem",
+        "telefonema": "Telefonema / Mensagem",
+        "mensagem": "Telefonema / Mensagem",
+        "whatsapp": "Telefonema / Mensagem",
+        "personagem em cena": "Personagem em cena",
+        "personagem": "Personagem em cena",
+        "complicacao": "Complicação",
+        "complicação": "Complicação",
+        "segredo em movimento": "Segredo em movimento",
+        "segredo_em_movimento": "Segredo em movimento",
+        "livre": "Livre",
+
+        # Compatibilidade com nomes antigos
+        "leve": "Detalhe espontâneo",
+        "social": "Telefonema / Mensagem",
+        "memoria": "Personagem em cena",
+        "memória": "Personagem em cena",
+        "segredo": "Segredo em movimento",
+    }
+
+    return mapa.get(valor_norm, "Desligado")
 
 OPCOES_ESTADO_EMOCIONAL_MARY = [
     "Automático",
@@ -5226,7 +5261,10 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
-    modo_surpresa = str(state.get("modo_surpresa", "Desligado") or "Desligado").strip()
+    modo_surpresa = normalizar_modo_surpresa(
+        state.get("modo_surpresa", "Desligado")
+    )
+    state["modo_surpresa"] = modo_surpresa
     direcao_surpresa = str(state.get("direcao_surpresa", "") or "").strip()
 
     consciencia_cena_txt = formatar_estado_emocional_para_prompt(state)
@@ -5382,10 +5420,17 @@ Modo:
 Direção:
 {direcao_surpresa if direcao_surpresa else "Nenhuma direção específica."}
 
-REGRAS:
+REGRA CENTRAL:
+- O modo surpresa deve abrir um gancho jogável, não resolver a cena sozinho.
+- Mary pode perceber, anunciar, iniciar ou preparar a surpresa.
+- Mary NÃO deve concluir ligação, encontro, revelação, decisão ou consequência sem resposta do usuário.
+- Ao criar uma surpresa, Mary deve deixar claro o que aconteceu e parar em um ponto natural para o usuário continuar.
+- Prefira terminar com ação pendente, fala curta ou oportunidade clara de continuidade.
+
+REGRAS GERAIS:
 - Se o modo for "Desligado", Mary não deve criar surpresa nova.
 - Se o modo não for "Desligado", Mary pode criar UMA iniciativa inesperada quando a cena estiver estável.
-- A surpresa deve nascer de local, tempo, plano ativo, segredo ativo, memórias, cânone e tom manual.
+- A surpresa deve nascer de local, tempo, plano ativo, segredo ativo, memórias, cânone, shared_memories e tom manual.
 - Mary não deve usar surpresa se a fala do usuário exigir resposta direta e imediata.
 - Mary não deve abandonar a cena atual sem transição.
 - Mary não deve repetir a mesma surpresa em turnos consecutivos.
@@ -5394,12 +5439,25 @@ REGRAS:
 - Se houver [EVENTO INESPERADO] ativo, ele tem prioridade e Mary não deve criar outra surpresa adicional neste turno.
 
 TIPOS:
-- Leve: detalhe cotidiano, humor, pequeno improviso.
-- Social: mensagem, ligação, encontro, conversa paralela.
-- Memória: recuperar alguém, lugar ou assunto do cânone/memórias.
-- Complicação: pequeno obstáculo narrativo.
-- Segredo: tensão discreta ligada ao segredo/plano ativo.
-- Livre: Mary escolhe qualquer surpresa coerente.
+- Detalhe espontâneo: Mary cria um detalhe pequeno de ambiente, humor, gesto ou situação, sem mudar drasticamente a cena.
+- Telefonema / Mensagem: Mary recebe ligação, WhatsApp, áudio, foto ou notificação de personagem conhecido. Ela deve dizer quem está ligando ou mandando mensagem, mas não deve atender, abrir, responder nem revelar tudo sem o usuário continuar.
+- Personagem em cena: Mary escolhe, nota ou lembra de um personagem conhecido e abre possibilidade de interação, convite, encontro ou conversa. Ela não deve concluir a interação sozinha.
+- Complicação: Mary cria uma saia justa real: celular destravado, mensagem visível, foto comprometedora, objeto fora do lugar, pergunta difícil, alguém quase vendo ou situação que a pressione. Deve parar no momento da tensão, sem resolver.
+- Segredo em movimento: Mary começa a mover o segredo/plano mais próximo: ligar, marcar, esconder, responder, decidir ou combinar. Deve avançar um passo inicial, mas não concluir tudo sozinha.
+- Livre: Mary escolhe qualquer surpresa coerente com local, tempo, tom, segredo, plano, cânone e memórias, mas ainda deve abrir gancho e respeitar a continuação do usuário.
+
+EXEMPLOS BONS:
+- "Opa... a Silvia está me ligando. Vamos ver o que ela quer?"
+- "Ih... a Bianca acabou de mandar mensagem."
+- "Amor... meu celular acendeu ali. Acho que é o Renan."
+- "Espera... por que essa foto do biquíni apareceu agora?"
+- "A Bianca está digitando. Acho que ela vai falar do sábado."
+
+EXEMPLOS RUINS:
+- Mary atende, conversa por dez minutos, combina tudo, desliga e conta o resultado.
+- Mary abre a mensagem, resolve o segredo, apaga tudo e muda de assunto.
+- Mary marca o encontro, decide o horário, confirma a carona e encerra o plano sozinha.
+- Mary revela um segredo inteiro sem gatilho claro do usuário.
 
 
 [PROGRESSÃO LÓGICA DA CENA]
@@ -6404,13 +6462,23 @@ with st.sidebar:
     if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
         modo_surpresa_atual = "Desligado"
 
+    # ======================================================
+    # MODO SURPRESA
+    # ======================================================
+    modo_surpresa_atual = normalizar_modo_surpresa(
+        state.get("modo_surpresa", "Desligado")
+    )
+    
+    if modo_surpresa_atual not in OPCOES_MODO_SURPRESA:
+        modo_surpresa_atual = "Desligado"
+    
     state["modo_surpresa"] = st.selectbox(
-        "Modo de surpresa",
+        "Modo surpresa",
         options=OPCOES_MODO_SURPRESA,
         index=OPCOES_MODO_SURPRESA.index(modo_surpresa_atual),
         help=(
-            "Permite que Mary crie uma iniciativa inesperada, coerente com a cena. "
-            "Ela não deve usar isso todo turno; é apenas uma chance narrativa."
+            "Define o tipo de gancho inesperado que Mary pode abrir. "
+            "Ela deve anunciar ou iniciar a surpresa, mas não resolver tudo sozinha."
         ),
     )
 
