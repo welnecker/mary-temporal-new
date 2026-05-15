@@ -6586,20 +6586,7 @@ with st.sidebar:
         ),
     )
 
-    state["mary_acao"] = st.text_area(
-        "🎬 Ação atual de Mary",
-        value=state.get("mary_acao", ""),
-        height=100,
-        placeholder=(
-            "Ex: Mary está no banheiro, terminando de apagar o batom do espelho "
-            "com um lenço, vestindo o roupão de seda."
-        ),
-        help=(
-            "Descreva o estado físico e a ação imediata de Mary no momento atual da cena. "
-            "Este campo deve representar o agora, não o passado."
-        ),
-    )
-
+    
     # ======================================================
     # VISUAL DE MARY
     # ======================================================
@@ -6682,6 +6669,22 @@ with st.sidebar:
             "⚠️ Surpresa armada: Mary deve abrir apenas um gancho e parar, "
             "sem resolver a ligação, mensagem, segredo ou complicação sozinha."
         )
+
+    state["mary_acao"] = st.text_area(
+        "🎬 Ação atual de Mary",
+        value=state.get("mary_acao", ""),
+        height=100,
+        placeholder=(
+            "Ex: Mary está no banheiro, terminando de apagar o batom do espelho "
+            "com um lenço, vestindo o roupão de seda."
+        ),
+        help=(
+            "Descreva o estado físico e a ação imediata de Mary no momento atual da cena. "
+            "Este campo deve representar o agora, não o passado."
+        ),
+    )
+
+    
     
 
     normalizar_estado(state)
