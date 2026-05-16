@@ -6872,120 +6872,149 @@ with st.sidebar:
     )
 
     with st.expander("📘 Guia dos campos editáveis", expanded=False):
-        st.markdown(
-            """
-### 📍 Local
-Descreve onde a cena acontece agora.
+        aba_cena, aba_memoria, aba_direcao, aba_surpresa = st.tabs(
+            ["Cena", "Memória", "Direção", "Surpresa"]
+        )
 
-**Exemplos:**
-- `sala de aula na UFRJ`
-- `apartamento de Mary`
-- `carro SUV de Janio`
-- `banheiro feminino do clube`
-- `sala trancada do professor Renan`
+        with aba_cena:
+            st.markdown("### 📍 Local")
+            st.write("Descreve onde a cena acontece agora.")
+            st.code(
+                "sala de aula na UFRJ\n"
+                "apartamento de Mary\n"
+                "carro SUV de Janio\n"
+                "banheiro feminino do clube\n"
+                "sala trancada do professor Renan",
+                language="text",
+            )
 
----
+            st.markdown("### ⏰ Tempo")
+            st.write("Define o momento da cena.")
+            st.code(
+                "manhã chuvosa de 5ª feira\n"
+                "fim de tarde de sábado\n"
+                "noite após o jogo no Maracanã\n"
+                "intervalo entre aulas\n"
+                "madrugada",
+                language="text",
+            )
 
-### ⏰ Tempo
-Define o momento da cena.
+            st.markdown("### 🗣️ Interlocutor ativo")
+            st.write("Quem está na cena com Mary. Se houver mais de uma pessoa, separe por vírgula.")
+            st.code(
+                "Janio\n"
+                "Silvia\n"
+                "Renan\n"
+                "Bianca\n"
+                "Janio, Joselina\n"
+                "Silvia, Professora Glória",
+                language="text",
+            )
 
-**Exemplos:**
-- `manhã chuvosa de 5ª feira`
-- `fim de tarde de sábado`
-- `noite após o jogo no Maracanã`
-- `intervalo entre aulas`
-- `madrugada`
+        with aba_memoria:
+            st.markdown("### 🔒 Segredo ativo")
+            st.write("Use apenas para o que está pressionando a cena agora.")
+            st.code(
+                "Janio não sabe do envolvimento de Mary com Renan.\n"
+                "Renan pode mandar mensagem a qualquer momento.\n"
+                "Silvia sabe parte do segredo e está pressionando Mary.\n"
+                "Bianca espera resposta sobre o pagode na Rocinha.",
+                language="text",
+            )
 
----
+            st.markdown("### 🎯 Plano ativo")
+            st.write("O que Mary pretende fazer ou resolver em breve.")
+            st.code(
+                "Mary precisa assistir à aula da Professora Glória sem chamar atenção.\n"
+                "Mary quer falar com Silvia no fundo da sala.\n"
+                "Mary pretende sair da UFRJ sem encontrar Renan.\n"
+                "Mary quer convencer Janio de que estudou a manhã toda.",
+                language="text",
+            )
 
-### 🗣️ Interlocutor ativo
-Quem está na cena com Mary.
+            st.markdown("### 🧾 Eventos recentes")
+            st.write("Fatos que acabaram de acontecer e ainda influenciam a cena.")
+            st.code(
+                "Mary saiu da sala de Renan com aprovação garantida.\n"
+                "Silvia sugeriu que Mary poderia manipular Renan.\n"
+                "Joselina quase encontrou Janio escondido no quarto.\n"
+                "Janio perguntou sobre a nota 10 de Perícia.",
+                language="text",
+            )
 
-**Exemplos:**
-- `Janio`
-- `Silvia`
-- `Renan`
-- `Bianca`
-- `Janio, Joselina`
-- `Silvia, Professora Glória`
+            st.markdown("### 🗄️ Memórias ocultas / itens guardados")
+            st.write(
+                "Use para fatos passados, segredos arquivados, objetos guardados "
+                "e riscos latentes que não devem contaminar a cena atual."
+            )
+            st.code(
+                "[segredo_oculto]\n"
+                "Mary teve envolvimento com Rico na mansão de Nando.\n\n"
+                "[segredo_oculto]\n"
+                "Mary teve envolvimento com Renan em troca da aprovação em Perícia.\n\n"
+                "[objeto_guardado]\n"
+                "Biquíni de crochê laranja dado por Rico. Está guardado; Mary não está usando.\n\n"
+                "[evento_passado]\n"
+                "Mary fez fotos de biquíni para Rico em um catálogo de Instagram.\n\n"
+                "[risco_latente]\n"
+                "Janio não sabe dos envolvimentos ocultos de Mary.",
+                language="text",
+            )
 
-**Dica:** se houver mais de uma pessoa, separe por vírgula.
+        with aba_direcao:
+            st.markdown("### 🎭 Tom manual da cena")
+            st.code(
+                "Natural / Amizade: conversa comum, aula, cotidiano.\n"
+                "Malícia / Flerte: provocação, tensão, charme.\n"
+                "Intimidade: cena íntima normal, emocional e física.\n"
+                "Nsfw: roteiro íntimo adulto, com condução mais direta.\n"
+                "Pendência / Decisão: segredo, escolha, consequência, limite.",
+                language="text",
+            )
 
----
+            st.markdown("### 🧭 Consciência da cena")
+            st.code(
+                "Automático: Mary decide pela cena.\n"
+                "Impulso: age mais tomada pelo momento.\n"
+                "Cautela: percebe risco e mede consequência.\n"
+                "Conflito: quer algo, mas sente tensão interna.\n"
+                "Assumindo o risco: sabe do custo e segue mesmo assim.",
+                language="text",
+            )
 
-### 🎭 Tom manual da cena
-Define a direção principal da cena.
+            st.markdown("### 👗 Visual manual de Mary")
+            st.write("O visual atual real de Mary. Este campo vence objetos guardados.")
+            st.code(
+                "top UFRJ, saia, calcinha e sandália baixa\n"
+                "camiseta UFRJ, calcinha e tênis\n"
+                "vestido preto curto e cabelo solto\n"
+                "uniforme de aula, mochila no ombro\n"
+                "biquíni de crochê laranja, se estiver realmente usando",
+                language="text",
+            )
 
-**Exemplos de uso:**
-- `Natural / Amizade`: conversa comum, aula, cotidiano.
-- `Malícia / Flerte`: provocação, tensão, charme.
-- `Intimidade`: cena íntima normal, emocional e física.
-- `Nsfw`: roteiro íntimo adulto, com condução mais direta.
-- `Pendência / Decisão`: segredo, escolha, consequência, limite.
+        with aba_surpresa:
+            st.markdown("### ⚡ Modo surpresa")
+            st.code(
+                "Desligado: Mary não cria surpresa.\n"
+                "Telefonema / Mensagem: alguém liga ou manda WhatsApp.\n"
+                "Personagem em cena: alguém aparece ou é chamado.\n"
+                "Complicação: algo dá errado ou cria saia justa.\n"
+                "Segredo em movimento: segredo começa a andar.\n"
+                "Livre: Mary escolhe o gancho.",
+                language="text",
+            )
 
----
-
-### 🔒 Segredo ativo
-Use apenas para o que está pressionando a cena agora.
-
-**Exemplos bons:**
-- `Janio não sabe do envolvimento de Mary com Renan.`
-- `Renan pode mandar mensagem a qualquer momento.`
-- `Silvia sabe parte do segredo e está pressionando Mary.`
-- `Bianca espera resposta sobre o pagode na Rocinha.`
-
-**Evite colocar aqui:**
-- objetos guardados;
-- eventos já encerrados;
-- roupas antigas;
-- memórias que não estão pressionando a cena atual.
-
----
-
-### 🎯 Plano ativo
-O que Mary pretende fazer ou resolver em breve.
-
-**Exemplos:**
-- `Mary precisa assistir à aula da Professora Glória sem chamar atenção.`
-- `Mary quer falar com Silvia no fundo da sala.`
-- `Mary pretende sair da UFRJ sem encontrar Renan.`
-- `Mary quer convencer Janio de que estudou a manhã toda.`
-
----
-
-### 🧾 Eventos recentes
-Fatos que acabaram de acontecer e ainda influenciam a cena.
-
-**Exemplos:**
-- `Mary saiu da sala de Renan com aprovação garantida.`
-- `Silvia sugeriu que Mary poderia manipular Renan.`
-- `Joselina quase encontrou Janio escondido no quarto.`
-- `Janio perguntou sobre a nota 10 de Perícia.`
-
-**Dica:** eventos recentes devem ser limpos depois de alguns turnos.
-
----
-
-### 🗄️ Memórias ocultas / itens guardados
-Use para fatos passados, segredos arquivados, objetos e riscos latentes que não devem contaminar a cena atual.
-
-**Modelo recomendado:**
-
-```text
-[segredo_oculto]
-Mary teve envolvimento com Rico na mansão de Nando.
-
-[segredo_oculto]
-Mary teve envolvimento com Renan em troca da aprovação em Perícia.
-
-[objeto_guardado]
-Biquíni de crochê laranja dado por Rico. Está guardado; Mary não está usando.
-
-[evento_passado]
-Mary fez fotos de biquíni para Rico em um catálogo de Instagram.
-
-[risco_latente]
-Janio não sabe dos envolvimentos ocultos de Mary.
+            st.markdown("### 🧩 Direção da surpresa")
+            st.write("Oriente o tipo de surpresa, sem resolver por Mary.")
+            st.code(
+                "Bianca manda mensagem perguntando do pagode.\n"
+                "Renan liga enquanto Janio está perto.\n"
+                "O celular acende com uma notificação suspeita.\n"
+                "Joselina aparece antes do esperado.\n"
+                "Silvia cochicha algo perigoso no meio da aula.",
+                language="text",
+            )
     
     st.session_state["modelo_nome_mary"] = modelo_nome
     
