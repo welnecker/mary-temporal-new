@@ -4751,6 +4751,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "segredo_ativo": state.get("segredo_ativo", ""),
         "plano_ativo": state.get("plano_ativo", ""),
         "eventos_recentes": state.get("eventos_recentes", ""),
+        "mentiras_desculpas": state.get("mentiras_desculpas", ""),
         "memorias_ocultas_itens_guardados": state.get(
             "memorias_ocultas_itens_guardados",
             "",
@@ -4850,6 +4851,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "segredo_ativo",
         "plano_ativo",
         "eventos_recentes",
+        "mentiras_desculpas",
         "memorias_ocultas_itens_guardados",
         "modo_surpresa",
         "direcao_surpresa",
@@ -4893,6 +4895,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
 
     if not state.get("eventos_recentes"):
         state["eventos_recentes"] = ""
+
+    if not state.get("mentiras_desculpas"):
+        state["mentiras_desculpas"] = "" 
 
     if not state.get("memorias_ocultas_itens_guardados"):
         state["memorias_ocultas_itens_guardados"] = ""
@@ -5023,6 +5028,8 @@ def init_state() -> dict:
         "segredo_ativo": "",
         "plano_ativo": "",
         "eventos_recentes": "",
+        "mentiras_desculpas": "",
+        "memorias_ocultas_itens_guardados": "",
         "evento_inesperado": "",
         "disparar_evento_inesperado": False,
         "modo_surpresa": "Desligado",
@@ -5725,6 +5732,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
+    mentiras_desculpas = str(
+        state.get("mentiras_desculpas", "") or ""
+    ).strip()
     memorias_ocultas_itens_guardados = str(
         state.get("memorias_ocultas_itens_guardados", "") or ""
     ).strip()
@@ -5832,6 +5842,35 @@ Segredo ativo:
 
 Plano ativo:
 {plano_ativo if plano_ativo else "Nenhum."}
+
+[VERSÕES CONTADAS / DESCULPAS]
+{mentiras_desculpas if mentiras_desculpas else "Nenhuma."}
+
+INTERPRETAÇÃO:
+- Este campo registra versões, desculpas, omissões, promessas e justificativas que Mary já contou para outras pessoas.
+- Ele NÃO representa necessariamente a verdade.
+- Ele representa o que Mary disse, insinuou, prometeu ou omitiu para sustentar sua liberdade de escolha.
+- Mary deve lembrar o que já disse para cada pessoa.
+- Mary não deve contradizer uma versão anterior sem perceber o risco.
+- Se precisar mentir de novo, deve tentar manter coerência com a mentira anterior.
+- Se uma versão começar a ruir, Mary pode hesitar, improvisar, dobrar a aposta, se irritar, confessar parcialmente ou tentar redirecionar a conversa.
+- Este campo deve gerar continuidade, tensão, culpa, cálculo e consequência.
+- Se algo der errado, Mary pode refletir no que perdeu, no que ainda pode salvar e no preço da própria liberdade.
+
+MARCADORES:
+- [para_janio]&#58; versão que Mary contou para Janio.
+- [para_silvia]&#58; versão que Mary contou para Silvia.
+- [para_bianca]&#58; versão que Mary contou para Bianca.
+- [para_renan]&#58; versão que Mary contou para Renan.
+- [para_familia]&#58; versão que Mary contou para família.
+- [risco]&#58; contradição ou ponto frágil que pode explodir.
+
+REGRAS:
+- Não tratar mentiras como fatos reais.
+- Não transformar desculpa em verdade objetiva do mundo.
+- Se Janio, Silvia, Bianca, Renan ou outro personagem confrontar Mary, ela deve considerar a versão que já contou.
+- Mary pode usar uma mentira antiga para sustentar uma nova, mas deve sentir o peso da contradição quando a situação apertar.
+- Este campo não decide a escolha de Mary; ele apenas mantém coerência com o que ela já disse.
 
 [MEMÓRIAS OCULTAS / ITENS GUARDADOS]
 {memorias_ocultas_itens_guardados if memorias_ocultas_itens_guardados else "Nenhum."}
@@ -6953,6 +6992,25 @@ with st.sidebar:
                 language="text",
             )
 
+            st.markdown("### 🎭 Versões contadas / desculpas")
+            st.write(
+                "Registre o que Mary já disse, prometeu, omitiu ou inventou "
+                "para sustentar sua liberdade de escolha."
+            )
+            st.code(
+                "[para_janio]\n"
+                "Mary disse que talvez não consiga ir ao Maracanã por causa da faculdade.\n\n"
+                "[para_janio]\n"
+                "Mary disse que estava em aula pesada de Psicologia e queria ouvir a voz dele.\n\n"
+                "[para_silvia]\n"
+                "Mary disse que o sábado com Bianca representa liberdade, mas não quer que Janio saiba.\n\n"
+                "[para_renan]\n"
+                "Mary deixou Renan acreditar que pode aceitar outro encontro mais privado.\n\n"
+                "[risco]\n"
+                "Se Janio falar com Silvia, as versões de Mary podem entrar em conflito.",
+                language="text",
+            )
+
             st.markdown("### 🗄️ Memórias ocultas / itens guardados")
             st.write(
                 "Use para fatos passados, segredos arquivados, objetos guardados "
@@ -7238,6 +7296,28 @@ with st.sidebar:
         help=(
             "Use este campo para fatos que já aconteceram e ainda influenciam a cena, "
             "mas que não são mais o plano ativo."
+        ),
+    )
+
+    state["mentiras_desculpas"] = st.text_area(
+        "🎭 Versões contadas / desculpas",
+        value=state.get("mentiras_desculpas", ""),
+        height=130,
+        placeholder=(
+            "[para_janio]\n"
+            "Mary disse que talvez não consiga ir ao Maracanã por causa da faculdade.\n\n"
+            "[para_janio]\n"
+            "Mary disse que estava em aula pesada de Psicologia e queria ouvir a voz dele.\n\n"
+            "[para_silvia]\n"
+            "Mary disse que o sábado com Bianca representa liberdade, mas não quer que Janio saiba.\n\n"
+            "[para_renan]\n"
+            "Mary deixou Renan acreditar que pode aceitar outro encontro mais privado.\n\n"
+            "[risco]\n"
+            "Se Janio falar com Silvia, as versões de Mary podem entrar em conflito."
+        ),
+        help=(
+            "Registre versões, desculpas, omissões e promessas que Mary já contou. "
+            "Este campo ajuda Mary a manter coerência nas mentiras e sentir o peso das contradições."
         ),
     )
 
