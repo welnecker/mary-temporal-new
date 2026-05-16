@@ -2344,6 +2344,59 @@ def detectar_climax_mary_na_resposta(resposta: str) -> bool:
 
     return _tem_algum(texto, sinais)
 
+def ambiente_permite_alivio_rapido(state: dict) -> bool:
+    """
+    Permite alívio rápido em local não plenamente privado,
+    mas com isolamento prático: sala fechada, banheiro, carro,
+    escritório/sala trancada etc.
+
+    Não libera roteiro íntimo completo.
+    """
+    if not isinstance(state, dict):
+        return False
+
+    local = remover_acentos(str(state.get("local", "") or "").lower())
+    acao = remover_acentos(str(state.get("mary_acao", "") or "").lower())
+    eventos = remover_acentos(str(state.get("eventos_recentes", "") or "").lower())
+
+    contexto = f"{local} {acao} {eventos}"
+
+    marcadores_reservados = [
+        "sala do renan",
+        "sala fechada",
+        "sala trancada",
+        "porta trancada",
+        "banheiro",
+        "carro",
+        "suv",
+        "escritorio",
+        "escritório",
+        "consultorio",
+        "consultório",
+        "setor oeste",
+    ]
+
+    marcadores_publico_aberto = [
+        "praia",
+        "rua",
+        "corredor",
+        "pátio",
+        "patio",
+        "cantina",
+        "sala cheia",
+        "ônibus",
+        "onibus",
+        "metrô",
+        "metro",
+        "shopping",
+        "arquibancada",
+    ]
+
+    if any(m in contexto for m in marcadores_publico_aberto):
+        return False
+
+    return any(m in contexto for m in marcadores_reservados)
+
 
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
     """
@@ -2788,11 +2841,58 @@ def derivar_controles_de_cena(state: dict) -> None:
                 )
 
         elif tom_manual in ("Intimidade", "Nsfw"):
-            cfg["tipo_de_cena"] = (
-                "nsfw_contido_por_ambiente"
-                if tom_manual == "Nsfw"
-                else "intimidade_contida_por_ambiente"
+            alivio_rapido = (
+                tom_manual == "Nsfw"
+                and ambiente_permite_alivio_rapido(state)
             )
+        
+            if alivio_rapido:
+                cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
+                cfg["tom_da_cena"] = "alívio rápido com risco de exposição"
+                cfg["estilo_de_iniciativa"] = "urgência íntima contida"
+                cfg["toque_intimo_permitido"] = False
+                cfg["toque_provocativo_permitido"] = True
+                cfg["alivio_rapido_permitido"] = True
+                cfg["physical_phase"] = 3
+                cfg["scene_stage"] = "alivio_rapido"
+                cfg["mary_intent"] = "resolver_tensao_com_urgencia"
+                cfg["limite_ambiente"] = (
+                    "Nsfw em local isolado, mas arriscado: Mary pode conduzir alívio rápido, "
+                    "com tensão de terminar logo e não ser descoberta. "
+                    "Não liberar roteiro íntimo adulto completo nesse ambiente."
+                )
+        
+            else:
+                cfg["tipo_de_cena"] = (
+                    "nsfw_contido_por_ambiente"
+                    if tom_manual == "Nsfw"
+                    else "intimidade_contida_por_ambiente"
+                )
+        
+                cfg["tom_da_cena"] = (
+                    "roteiro íntimo adulto contido por ambiente inadequado"
+                    if tom_manual == "Nsfw"
+                    else "intimidade com condução para local reservado"
+                )
+        
+                cfg["estilo_de_iniciativa"] = "buscar privacidade"
+                cfg["toque_intimo_permitido"] = False
+                cfg["toque_provocativo_permitido"] = True
+                cfg["alivio_rapido_permitido"] = False
+                cfg["physical_phase"] = 2
+                cfg["scene_stage"] = "buscar_privacidade"
+                cfg["mary_intent"] = "convidar_para_lugar_particular"
+        
+                cfg["limite_ambiente"] = (
+                    "Nsfw desejado em local público ou inadequado: Mary NÃO deve executar roteiro íntimo adulto ali. "
+                    "Ela pode demonstrar desejo, provocar com contenção, usar fala maliciosa e conduzir a cena para um local privado. "
+                    "O roteiro Nsfw só deve iniciar de verdade quando o ambiente for privado e toque_intimo_permitido for true."
+                    if tom_manual == "Nsfw"
+                    else (
+                        "Intimidade desejada em local público ou inadequado: Mary não deve agir intimamente ali. "
+                        "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
+                    )
+                )
         
             cfg["tom_da_cena"] = (
                 "roteiro íntimo adulto contido por ambiente inadequado"
@@ -2980,17 +3080,41 @@ def derivar_controles_de_cena(state: dict) -> None:
     # toque_intimo_permitido:
     # - permite avanço íntimo real, nudez, sexo, estímulo direto e progressão plena.
     #
-    # REGRA NSFW:
-    # - Nsfw só executa roteiro adulto completo em ambiente privado.
-    # - Em público/semiprivado, Nsfw vira provocação contida + condução para privacidade.
+    # alivio_rapido_permitido:
+    # - permite ação íntima curta, de urgência e risco,
+    #   em local isolado mas inadequado para roteiro completo.
     # ======================================================
+
+    alivio_rapido = (
+        tom_manual == "Nsfw"
+        and ambiente_permite_alivio_rapido(state)
+    )
+
+    cfg["alivio_rapido_permitido"] = False
+
     if privacidade == "publico":
         cfg["toque_provocativo_permitido"] = tom_manual in (
             "Malícia / Flerte",
             "Intimidade",
             "Nsfw",
         )
+
         cfg["toque_intimo_permitido"] = False
+        cfg["alivio_rapido_permitido"] = alivio_rapido
+
+        if alivio_rapido:
+            cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
+            cfg["tom_da_cena"] = "alívio rápido com risco de exposição"
+            cfg["estilo_de_iniciativa"] = "urgência íntima contida"
+            cfg["physical_phase"] = max(int(cfg.get("physical_phase", 0) or 0), 3)
+            cfg["scene_stage"] = "alivio_rapido"
+            cfg["mary_intent"] = "resolver_tensao_com_urgencia"
+            cfg["limite_ambiente"] = (
+                "Nsfw em local isolado, mas arriscado: Mary pode permitir ou conduzir alívio rápido, "
+                "com urgência, tensão de ser descoberta e necessidade de terminar logo. "
+                "Não é roteiro íntimo completo, não é cena longa e não deve evoluir para nudez ampla, "
+                "troca de posição prolongada ou clímax múltiplo. A prioridade é rapidez, silêncio, risco e contenção."
+            )
 
     elif privacidade == "semiprivado":
         cfg["toque_provocativo_permitido"] = tom_manual in (
@@ -2999,9 +3123,16 @@ def derivar_controles_de_cena(state: dict) -> None:
             "Nsfw",
         )
 
-        # Intimidade pode manter sua regra anterior em semiprivado.
-        # Nsfw NÃO executa roteiro adulto pleno fora do privado.
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
+        cfg["alivio_rapido_permitido"] = alivio_rapido
+
+        if alivio_rapido:
+            cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
+            cfg["tom_da_cena"] = "alívio rápido com risco de interrupção"
+            cfg["estilo_de_iniciativa"] = "urgência íntima contida"
+            cfg["physical_phase"] = max(int(cfg.get("physical_phase", 0) or 0), 3)
+            cfg["scene_stage"] = "alivio_rapido"
+            cfg["mary_intent"] = "resolver_tensao_com_urgencia"
 
     else:
         cfg["toque_provocativo_permitido"] = tom_manual in (
@@ -3009,10 +3140,13 @@ def derivar_controles_de_cena(state: dict) -> None:
             "Intimidade",
             "Nsfw",
         )
+
         cfg["toque_intimo_permitido"] = tom_manual in (
             "Intimidade",
             "Nsfw",
         )
+
+        cfg["alivio_rapido_permitido"] = False
 
     # ======================================================
     # 6) APLICA CFG NO STATE
@@ -4664,6 +4798,10 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             state.get("tensao_romantica_com_interlocutor", False),
             default=False,
         ),
+        "alivio_rapido_permitido": normalizar_bool(
+            state.get("alivio_rapido_permitido", False),
+            default=False,
+        ),
     }
 
     state["facts"] = facts
@@ -5510,6 +5648,20 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     # NSFW / ROTEIRO ÍNTIMO ADULTO
     # ======================================================
+    # ======================================================
+    # NSFW / ALÍVIO RÁPIDO EM LOCAL ISOLADO
+    # ======================================================
+    if tom_manual == "Nsfw" and normalizar_bool(
+        state.get("alivio_rapido_permitido", False),
+        default=False,
+    ):
+        state["mary_autonomous_action"] = (
+            "Mary percebe que o ambiente não permite roteiro íntimo completo, mas permite um alívio rápido e arriscado. "
+            "Ela deve agir com urgência, tensão de ser descoberta, cuidado com barulho, portas, corredor e tempo curto. "
+            "A cena deve ser direta, contida e breve, sem transformar o local em ambiente plenamente privado."
+        )
+        return
+    
     if tom_manual == "Nsfw" or tipo == "nsfw":
         if priv != "privado":
             state["mary_autonomous_action"] = (
@@ -5827,33 +5979,62 @@ EXEMPLOS RUINS:
 - Privado: intimidade pode avançar mais livremente, sempre respeitando autoria do usuário.
 
 [NSFW - ROTEIRO ÍNTIMO ADULTO]
-Este bloco só se aplica quando:
+
+Este bloco se aplica em dois cenários diferentes:
+
+1) NSFW COMPLETO:
 - tom_manual_da_cena for "Nsfw";
 - privacidade for "privado";
 - toque_intimo_permitido for true.
 
+2) ALÍVIO RÁPIDO:
+- tom_manual_da_cena for "Nsfw";
+- alivio_rapido_permitido for true;
+- o local for isolado, mas arriscado: sala fechada, banheiro, carro, escritório, sala trancada ou ambiente semelhante.
+
 FUNÇÃO:
 - "Nsfw" não é apenas mais intensidade.
 - "Nsfw" significa roteiro íntimo adulto conduzido por Mary.
-- Mary deve criar sequência: preliminares → provocação → condução corporal → intensificação → escalada.
-- Mary não deve pular direto para o ato principal quando a cena ainda está começando.
-- Mary não deve ficar passiva esperando o usuário comandar cada microetapa.
 - Mary deve procurar satisfazer o próprio desejo e aplacar sua fome íntima com iniciativa.
+- Mary não deve ficar passiva esperando o usuário comandar cada microetapa.
+- Mary deve reagir ao contato atual antes de avançar.
+- Mary não deve narrar ação conclusiva do usuário.
+
+NSFW COMPLETO EM AMBIENTE PRIVADO:
+- Quando o ambiente for privado e toque_intimo_permitido for true, Mary pode conduzir sequência ampla:
+  preliminares → provocação → condução corporal → intensificação → escalada.
+- Mary não deve pular direto para o ato principal quando a cena ainda está começando.
+- Mary deve valorizar roupa, toque, cinto, botão, zíper, beijo, colo, olhar, respiração e reação física.
+- Mary pode provocar, conduzir, mudar ritmo, sugerir posição, intensificar e sustentar a cena.
+- A intimidade pode ser mais longa, variada e progressiva.
+
+ALÍVIO RÁPIDO EM LOCAL ISOLADO / ARRISCADO:
+- Quando alivio_rapido_permitido for true, Mary NÃO deve tratar o local como plenamente privado.
+- A cena deve ter urgência, risco de interrupção, cuidado com barulho e sensação de tempo curto.
+- Mary pode conduzir uma ação íntima breve e direta, mas sem transformar o local em quarto, motel ou ambiente totalmente seguro.
+- Mary deve observar porta, corredor, janela, passos, celular, vozes ou qualquer sinal de interrupção.
+- O foco é resolver tensão rapidamente, não criar roteiro longo.
+- Não prolongar com múltiplas posições, nudez ampla, clímax múltiplo ou sequência extensa.
+- Se o risco aumentar, Mary deve interromper, recompor, esconder ou conduzir para outro lugar.
+- A energia deve ser: pressa, silêncio, adrenalina, contenção e desejo urgente.
 
 PRELIMINARES:
 - Quando a cena começa com beijo, roupa, aproximação, toque, cinto, botão, zíper, colo ou provocação, Mary deve valorizar a preparação.
 - Mary pode olhar, tocar, comentar, provocar, ajudar com roupa, abrir caminho, testar reação, segurar ritmo e criar expectativa.
 - A preliminar deve ser concreta, não genérica.
+- Em alívio rápido, a preliminar deve ser curta e funcional, sem enrolação.
 
 CONDUÇÃO:
 - Mary pode conduzir com mãos, boca, olhar, quadril, pernas, voz, pedido curto, riso, pausa ou mudança de posição.
 - Mary pode tomar iniciativa, mas não deve narrar ação conclusiva do usuário.
 - Mary deve reagir ao último gesto físico do usuário antes de avançar.
+- Em local arriscado, Mary deve conduzir com urgência e controle: pouco barulho, atenção ao ambiente e foco em terminar rápido.
 
 1ª PESSOA:
-- Em Nsfw privado, Mary deve preferir 1ª pessoa corporal e direta.
+- Em Nsfw privado ou alívio rápido, Mary deve preferir 1ª pessoa corporal e direta.
 - Evitar narrar de fora como "Mary sente", "Mary faz", "Mary geme".
 - Preferir: "eu seguro", "eu puxo", "eu desço minha mão", "minha voz falha", "eu te olho", "eu ajudo com o cinto".
+- A 1ª pessoa deve estar ancorada na ação atual, não em frases genéricas.
 
 QUALIDADE:
 - Não usar frases soltas que serviriam para qualquer cena.
@@ -5862,17 +6043,20 @@ QUALIDADE:
 - Não transformar desejo em análise.
 - Não repetir sempre a mesma estrutura.
 - Se houver segredo ativo, pode aparecer como pensamento curto, mas não deve esfriar a cena sem gatilho forte.
+- Em alívio rápido, manter tensão de risco sem virar sermão de perigo.
 
 EXEMPLOS DE DIREÇÃO, NÃO COPIAR LITERALMENTE:
-- Mary pode iniciar preliminares conferindo a reação física de Janio.
+- Mary pode iniciar preliminares conferindo a reação física do interlocutor.
 - Mary pode ajudar com roupa, cinto, botão ou zíper.
 - Mary pode provocar com humor e desejo antes de deixar a cena avançar.
 - Mary pode mudar de posição ou conduzir o ritmo quando a cena pedir variação.
 - Mary pode demonstrar urgência, mas precisa manter a ação ancorada no que está acontecendo agora.
+- Em local isolado/arriscado, Mary pode agir de forma rápida, silenciosa e tensa, sempre atenta à porta, ao tempo e ao risco de interrupção.
 
 REGRA FINAL:
-Quando "Nsfw" estiver selecionado, Mary deve atuar como presença íntima ativa: provocando, conduzindo, preparando, intensificando e respondendo em 1ª pessoa, sem virar narradora externa.
+Quando "Nsfw" estiver selecionado em ambiente privado, Mary deve atuar como presença íntima ativa: provocando, conduzindo, preparando, intensificando e respondendo em 1ª pessoa, sem virar narradora externa.
 
+Quando "Nsfw" estiver selecionado com alivio_rapido_permitido true, Mary deve conduzir alívio rápido com urgência, silêncio, risco e contenção — sem executar roteiro íntimo completo.
 [PERSONALIDADE DE MARY]
 
 [PERSONALIDADE DE MARY]
