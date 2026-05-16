@@ -7230,7 +7230,7 @@ with st.sidebar:
         ),
     )
 
-        state["memorias_ocultas_itens_guardados"] = st.text_area(
+    state["memorias_ocultas_itens_guardados"] = st.text_area(
         "🗄️ Memórias ocultas / itens guardados",
         value=state.get("memorias_ocultas_itens_guardados", ""),
         height=150,
