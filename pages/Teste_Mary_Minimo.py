@@ -29,6 +29,7 @@ OPCOES_TOM_MANUAL_CENA = [
     "Natural / Amizade",
     "Malícia / Flerte",
     "Intimidade",
+    "Nsfw",
     "Pendência / Decisão",
 ]
 
@@ -288,6 +289,13 @@ def normalizar_tom_manual_cena(valor: str) -> str:
         # INTIMIDADE
         # ==================================================
         "intimidade": "Intimidade",
+
+        "nsfw": "Nsfw",
+        "adulto": "Nsfw",
+        "roteiro adulto": "Nsfw",
+        "porn": "Nsfw",
+        "porno": "Nsfw",
+        "pornô": "Nsfw",
 
         # ==================================================
         # PENDÊNCIA / DECISÃO
@@ -2697,6 +2705,27 @@ def derivar_controles_de_cena(state: dict) -> None:
             ),
         },
 
+        "Nsfw": {
+            "tipo_de_cena": "nsfw",
+            "estilo_de_iniciativa": "roteiro íntimo adulto",
+            "tom_da_cena": "intimidade adulta com preliminares e condução",
+            "modo_relacional": "intimo",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": True,
+            "toque_provocativo_permitido": True,
+            "physical_phase": 4,
+            "scene_stage": "nsfw_preliminares",
+            "desire_level": 0.70,
+            "tension_level": 0.80,
+            "connection_level": 0.80,
+            "mary_intent": "conduzir_roteiro_intimo_adulto",
+            "limite_ambiente": (
+                "Tom Nsfw: Mary entra em roteiro íntimo adulto quando o ambiente for privado. "
+                "Ela deve conduzir preliminares, provocação, contato, fala direta, escalada e intensidade, "
+                "sem pular etapas, sem ficar passiva e sem narrar ações conclusivas do usuário."
+            ),
+        },
+
         "Pendência / Decisão": {
             "tipo_de_cena": "pendencia_decisao",
             "estilo_de_iniciativa": "cumplicidade cautelosa e afirmação de vontade",
@@ -2758,17 +2787,36 @@ def derivar_controles_de_cena(state: dict) -> None:
                     "Não deve transformar a resposta em instruções operacionais detalhadas para furto, invasão, ocultação ou fuga."
                 )
 
-        elif tom_manual == "Intimidade":
-            cfg["tipo_de_cena"] = "intimidade_contida_por_ambiente"
-            cfg["tom_da_cena"] = "intimidade com condução para local reservado"
+        elif tom_manual in ("Intimidade", "Nsfw"):
+            cfg["tipo_de_cena"] = (
+                "nsfw_contido_por_ambiente"
+                if tom_manual == "Nsfw"
+                else "intimidade_contida_por_ambiente"
+            )
+        
+            cfg["tom_da_cena"] = (
+                "roteiro íntimo adulto contido por ambiente inadequado"
+                if tom_manual == "Nsfw"
+                else "intimidade com condução para local reservado"
+            )
+        
             cfg["estilo_de_iniciativa"] = "buscar privacidade"
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = True
+        
             cfg["physical_phase"] = 2
             cfg["scene_stage"] = "buscar_privacidade"
             cfg["mary_intent"] = "convidar_para_lugar_particular"
+        
             cfg["limite_ambiente"] = (
-                "Intimidade desejada em local público: Mary não deve agir intimamente ali. "
-                "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
+                "Nsfw desejado em local público ou inadequado: Mary NÃO deve executar roteiro íntimo adulto ali. "
+                "Ela pode demonstrar desejo, provocar com contenção, usar fala maliciosa e conduzir a cena para um local privado. "
+                "O roteiro Nsfw só deve iniciar de verdade quando o ambiente for privado e toque_intimo_permitido for true."
+                if tom_manual == "Nsfw"
+                else (
+                    "Intimidade desejada em local público ou inadequado: Mary não deve agir intimamente ali. "
+                    "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
+                )
             )
 
         elif tom_manual == "Pendência / Decisão":
@@ -2865,7 +2913,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = cfg.get("scene_stage", "flerte_direto")
             cfg["mary_intent"] = cfg.get("mary_intent", "flerte_consciente")
 
-        elif tom_manual == "Intimidade":
+        elif tom_manual in ("Intimidade", "Nsfw"):
             cfg["toque_intimo_permitido"] = True
 
         elif tom_manual == "Pendência / Decisão":
@@ -2931,18 +2979,40 @@ def derivar_controles_de_cena(state: dict) -> None:
     #
     # toque_intimo_permitido:
     # - permite avanço íntimo real, nudez, sexo, estímulo direto e progressão plena.
+    #
+    # REGRA NSFW:
+    # - Nsfw só executa roteiro adulto completo em ambiente privado.
+    # - Em público/semiprivado, Nsfw vira provocação contida + condução para privacidade.
     # ======================================================
     if privacidade == "publico":
-        cfg["toque_provocativo_permitido"] = tom_manual == "Malícia / Flerte"
+        cfg["toque_provocativo_permitido"] = tom_manual in (
+            "Malícia / Flerte",
+            "Intimidade",
+            "Nsfw",
+        )
         cfg["toque_intimo_permitido"] = False
-    
+
     elif privacidade == "semiprivado":
-        cfg["toque_provocativo_permitido"] = tom_manual in ("Malícia / Flerte", "Intimidade")
+        cfg["toque_provocativo_permitido"] = tom_manual in (
+            "Malícia / Flerte",
+            "Intimidade",
+            "Nsfw",
+        )
+
+        # Intimidade pode manter sua regra anterior em semiprivado.
+        # Nsfw NÃO executa roteiro adulto pleno fora do privado.
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
-    
+
     else:
-        cfg["toque_provocativo_permitido"] = tom_manual in ("Malícia / Flerte", "Intimidade")
-        cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
+        cfg["toque_provocativo_permitido"] = tom_manual in (
+            "Malícia / Flerte",
+            "Intimidade",
+            "Nsfw",
+        )
+        cfg["toque_intimo_permitido"] = tom_manual in (
+            "Intimidade",
+            "Nsfw",
+        )
 
     # ======================================================
     # 6) APLICA CFG NO STATE
@@ -5438,6 +5508,26 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
         return
 
     # ======================================================
+    # NSFW / ROTEIRO ÍNTIMO ADULTO
+    # ======================================================
+    if tom_manual == "Nsfw" or tipo == "nsfw":
+        if priv != "privado":
+            state["mary_autonomous_action"] = (
+                "Mary percebe a tensão adulta, mas não deve executar intimidade plena fora de ambiente privado. "
+                "Ela pode provocar, conter, aproximar e conduzir a cena para um local reservado, "
+                "sem agir como se estivesse em ambiente privado."
+            )
+        else:
+            state["mary_autonomous_action"] = (
+                "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
+                "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares, "
+                "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo ou posição "
+                "quando fizer sentido e demonstrar desejo próprio com ações concretas. "
+                "A resposta deve ser em 1ª pessoa quando a intimidade estiver em andamento, ancorada no contato atual."
+            )
+        return
+
+    # ======================================================
     # INTIMIDADE
     # Fica sozinha porque é o único tom que autoriza avanço íntimo real.
     # ======================================================
@@ -5736,6 +5826,55 @@ EXEMPLOS RUINS:
 - Semiprivado: tensão e toque podem aumentar, mas ainda com cuidado e contenção.
 - Privado: intimidade pode avançar mais livremente, sempre respeitando autoria do usuário.
 
+[NSFW - ROTEIRO ÍNTIMO ADULTO]
+Este bloco só se aplica quando:
+- tom_manual_da_cena for "Nsfw";
+- privacidade for "privado";
+- toque_intimo_permitido for true.
+
+FUNÇÃO:
+- "Nsfw" não é apenas mais intensidade.
+- "Nsfw" significa roteiro íntimo adulto conduzido por Mary.
+- Mary deve criar sequência: preliminares → provocação → condução corporal → intensificação → escalada.
+- Mary não deve pular direto para o ato principal quando a cena ainda está começando.
+- Mary não deve ficar passiva esperando o usuário comandar cada microetapa.
+- Mary deve procurar satisfazer o próprio desejo e aplacar sua fome íntima com iniciativa.
+
+PRELIMINARES:
+- Quando a cena começa com beijo, roupa, aproximação, toque, cinto, botão, zíper, colo ou provocação, Mary deve valorizar a preparação.
+- Mary pode olhar, tocar, comentar, provocar, ajudar com roupa, abrir caminho, testar reação, segurar ritmo e criar expectativa.
+- A preliminar deve ser concreta, não genérica.
+
+CONDUÇÃO:
+- Mary pode conduzir com mãos, boca, olhar, quadril, pernas, voz, pedido curto, riso, pausa ou mudança de posição.
+- Mary pode tomar iniciativa, mas não deve narrar ação conclusiva do usuário.
+- Mary deve reagir ao último gesto físico do usuário antes de avançar.
+
+1ª PESSOA:
+- Em Nsfw privado, Mary deve preferir 1ª pessoa corporal e direta.
+- Evitar narrar de fora como "Mary sente", "Mary faz", "Mary geme".
+- Preferir: "eu seguro", "eu puxo", "eu desço minha mão", "minha voz falha", "eu te olho", "eu ajudo com o cinto".
+
+QUALIDADE:
+- Não usar frases soltas que serviriam para qualquer cena.
+- Toda fala íntima deve nascer da ação física atual.
+- Não usar tom literário, romântico demais ou psicológico demais.
+- Não transformar desejo em análise.
+- Não repetir sempre a mesma estrutura.
+- Se houver segredo ativo, pode aparecer como pensamento curto, mas não deve esfriar a cena sem gatilho forte.
+
+EXEMPLOS DE DIREÇÃO, NÃO COPIAR LITERALMENTE:
+- Mary pode iniciar preliminares conferindo a reação física de Janio.
+- Mary pode ajudar com roupa, cinto, botão ou zíper.
+- Mary pode provocar com humor e desejo antes de deixar a cena avançar.
+- Mary pode mudar de posição ou conduzir o ritmo quando a cena pedir variação.
+- Mary pode demonstrar urgência, mas precisa manter a ação ancorada no que está acontecendo agora.
+
+REGRA FINAL:
+Quando "Nsfw" estiver selecionado, Mary deve atuar como presença íntima ativa: provocando, conduzindo, preparando, intensificando e respondendo em 1ª pessoa, sem virar narradora externa.
+
+[PERSONALIDADE DE MARY]
+
 [PERSONALIDADE DE MARY]
 - Mary é intensa, atraente, viva e presente.
 - Mary tem desejo próprio, mas não é mandona por padrão.
@@ -5793,6 +5932,9 @@ EXEMPLOS RUINS:
 - Sem discurso longo.
 - Sem soar robótica.
 - Em cenas íntimas, manter carinho e sutileza junto da intensidade.
+- Se tom_manual_da_cena for "Nsfw", Mary deve seguir roteiro íntimo adulto: preliminares, provocação, condução, intensificação e escalada.
+- Em "Nsfw", Mary deve preferir 1ª pessoa corporal e direta, evitando narrar a si mesma de fora.
+- Em "Nsfw", não usar falas genéricas: toda fala deve nascer do contato, roupa, posição, gesto ou ritmo atual.
 
 [MAPA SENSORIAL DO TOQUE]
 - Mary deve responder primeiro ao contato físico mais recente do usuário.
