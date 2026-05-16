@@ -4725,7 +4725,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         # Relação já normalizada dentro de derivar_controles_de_cena().
         "relacao": state.get("relacao", "contextual"),
 
-        "tipo_de_cena": state.get("tipo_de_cena", "flerte leve"),
+        "tipo_de_cena": state.get("tipo_de_cena", "natural_amizade"),
         "privacidade": state.get(
             "privacidade",
             get_privacidade_por_local(state.get("local", "")),
@@ -4744,13 +4744,17 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             state.get("disparar_evento_inesperado", False),
             default=False,
         ),
-        "tom_manual_da_cena": state.get("tom_manual_da_cena", "Neutro"),
+        "tom_manual_da_cena": state.get("tom_manual_da_cena", "Natural / Amizade"),
         "tom_da_cena": state.get("tom_da_cena", "sensual carinhoso"),
 
         # Campos narrativos avançados.
         "segredo_ativo": state.get("segredo_ativo", ""),
         "plano_ativo": state.get("plano_ativo", ""),
         "eventos_recentes": state.get("eventos_recentes", ""),
+        "memorias_ocultas_itens_guardados": state.get(
+            "memorias_ocultas_itens_guardados",
+            "",
+        ),
         "modo_surpresa": state.get("modo_surpresa", "Desligado"),
         "direcao_surpresa": state.get("direcao_surpresa", ""),
 
@@ -4846,6 +4850,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
         "segredo_ativo",
         "plano_ativo",
         "eventos_recentes",
+        "memorias_ocultas_itens_guardados",
         "modo_surpresa",
         "direcao_surpresa",
         "usar_visual_automatico",
@@ -4888,6 +4893,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
 
     if not state.get("eventos_recentes"):
         state["eventos_recentes"] = ""
+
+    if not state.get("memorias_ocultas_itens_guardados"):
+        state["memorias_ocultas_itens_guardados"] = ""
 
     # Normalização de tipos antes de recalcular estado
     normalizar_flags_booleanas_state(state)
@@ -5717,6 +5725,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
+    memorias_ocultas_itens_guardados = str(
+        state.get("memorias_ocultas_itens_guardados", "") or ""
+    ).strip()
     modo_surpresa = normalizar_modo_surpresa(
         state.get("modo_surpresa", "Desligado")
     )
@@ -5821,6 +5832,33 @@ Segredo ativo:
 
 Plano ativo:
 {plano_ativo if plano_ativo else "Nenhum."}
+
+[MEMÓRIAS OCULTAS / ITENS GUARDADOS]
+{memorias_ocultas_itens_guardados if memorias_ocultas_itens_guardados else "Nenhum."}
+
+INTERPRETAÇÃO:
+- Este campo contém fatos passados, segredos arquivados, objetos guardados e riscos latentes.
+- Ele NÃO é ação atual.
+- Ele NÃO é visual atual.
+- Ele NÃO é plano ativo.
+- Ele NÃO deve contaminar toda resposta.
+
+MARCADORES:
+- [segredo_oculto]&#58; fato passado que continua escondido de quem não sabe.
+- [objeto_guardado]&#58; item existente, mas que não está sendo usado agora.
+- [evento_passado]&#58; fato concluído que serve apenas como contexto.
+- [risco_latente]&#58; risco que pode voltar se houver gatilho claro.
+- [publico]&#58; fato normal que pode ser mencionado naturalmente.
+
+REGRAS:
+- Visual atual vence qualquer objeto guardado.
+- Local atual vence evento passado.
+- Ação atual de Mary vence memória antiga.
+- [objeto_guardado] nunca vira roupa atual sozinho.
+- [evento_passado] não deve ser reencenado como se estivesse acontecendo agora.
+- [segredo_oculto] não deve ser comentado naturalmente com personagens que não sabem.
+- [risco_latente] só pressiona a cena se houver gatilho claro.
+- Só trazer este campo se houver gatilho real: personagem citado, objeto encontrado, mensagem, pergunta direta, local relacionado ou risco de descoberta.
 
 INTERPRETAÇÃO DOS CAMPOS:
 - Segredo ativo e plano ativo são direções manuais do roteirista.
@@ -6832,6 +6870,122 @@ with st.sidebar:
         if st.session_state.get("modelo_nome_mary", "Gemini 3 Flash Preview") in OPENROUTER_MODELS
         else 0,
     )
+
+    with st.expander("📘 Guia dos campos editáveis", expanded=False):
+        st.markdown(
+            """
+### 📍 Local
+Descreve onde a cena acontece agora.
+
+**Exemplos:**
+- `sala de aula na UFRJ`
+- `apartamento de Mary`
+- `carro SUV de Janio`
+- `banheiro feminino do clube`
+- `sala trancada do professor Renan`
+
+---
+
+### ⏰ Tempo
+Define o momento da cena.
+
+**Exemplos:**
+- `manhã chuvosa de 5ª feira`
+- `fim de tarde de sábado`
+- `noite após o jogo no Maracanã`
+- `intervalo entre aulas`
+- `madrugada`
+
+---
+
+### 🗣️ Interlocutor ativo
+Quem está na cena com Mary.
+
+**Exemplos:**
+- `Janio`
+- `Silvia`
+- `Renan`
+- `Bianca`
+- `Janio, Joselina`
+- `Silvia, Professora Glória`
+
+**Dica:** se houver mais de uma pessoa, separe por vírgula.
+
+---
+
+### 🎭 Tom manual da cena
+Define a direção principal da cena.
+
+**Exemplos de uso:**
+- `Natural / Amizade`: conversa comum, aula, cotidiano.
+- `Malícia / Flerte`: provocação, tensão, charme.
+- `Intimidade`: cena íntima normal, emocional e física.
+- `Nsfw`: roteiro íntimo adulto, com condução mais direta.
+- `Pendência / Decisão`: segredo, escolha, consequência, limite.
+
+---
+
+### 🔒 Segredo ativo
+Use apenas para o que está pressionando a cena agora.
+
+**Exemplos bons:**
+- `Janio não sabe do envolvimento de Mary com Renan.`
+- `Renan pode mandar mensagem a qualquer momento.`
+- `Silvia sabe parte do segredo e está pressionando Mary.`
+- `Bianca espera resposta sobre o pagode na Rocinha.`
+
+**Evite colocar aqui:**
+- objetos guardados;
+- eventos já encerrados;
+- roupas antigas;
+- memórias que não estão pressionando a cena atual.
+
+---
+
+### 🎯 Plano ativo
+O que Mary pretende fazer ou resolver em breve.
+
+**Exemplos:**
+- `Mary precisa assistir à aula da Professora Glória sem chamar atenção.`
+- `Mary quer falar com Silvia no fundo da sala.`
+- `Mary pretende sair da UFRJ sem encontrar Renan.`
+- `Mary quer convencer Janio de que estudou a manhã toda.`
+
+---
+
+### 🧾 Eventos recentes
+Fatos que acabaram de acontecer e ainda influenciam a cena.
+
+**Exemplos:**
+- `Mary saiu da sala de Renan com aprovação garantida.`
+- `Silvia sugeriu que Mary poderia manipular Renan.`
+- `Joselina quase encontrou Janio escondido no quarto.`
+- `Janio perguntou sobre a nota 10 de Perícia.`
+
+**Dica:** eventos recentes devem ser limpos depois de alguns turnos.
+
+---
+
+### 🗄️ Memórias ocultas / itens guardados
+Use para fatos passados, segredos arquivados, objetos e riscos latentes que não devem contaminar a cena atual.
+
+**Modelo recomendado:**
+
+```text
+[segredo_oculto]
+Mary teve envolvimento com Rico na mansão de Nando.
+
+[segredo_oculto]
+Mary teve envolvimento com Renan em troca da aprovação em Perícia.
+
+[objeto_guardado]
+Biquíni de crochê laranja dado por Rico. Está guardado; Mary não está usando.
+
+[evento_passado]
+Mary fez fotos de biquíni para Rico em um catálogo de Instagram.
+
+[risco_latente]
+Janio não sabe dos envolvimentos ocultos de Mary.
     
     st.session_state["modelo_nome_mary"] = modelo_nome
     
@@ -7044,6 +7198,27 @@ with st.sidebar:
         help=(
             "Use este campo para fatos que já aconteceram e ainda influenciam a cena, "
             "mas que não são mais o plano ativo."
+        ),
+    )
+
+        state["memorias_ocultas_itens_guardados"] = st.text_area(
+        "🗄️ Memórias ocultas / itens guardados",
+        value=state.get("memorias_ocultas_itens_guardados", ""),
+        height=150,
+        placeholder=(
+            "[segredo_oculto]\n"
+            "Mary teve envolvimento com Rico na mansão de Nando.\n\n"
+            "[objeto_guardado]\n"
+            "Biquíni de crochê laranja dado por Rico. Está guardado; Mary não está usando.\n\n"
+            "[evento_passado]\n"
+            "Mary fez fotos de biquíni para Rico em um catálogo de vendas no Instagram.\n\n"
+            "[risco_latente]\n"
+            "Janio não sabe dos envolvimentos ocultos de Mary."
+        ),
+        help=(
+            "Use este campo para segredos passados, objetos guardados, eventos concluídos "
+            "e riscos latentes. Eles não devem contaminar a cena atual automaticamente. "
+            "Visual atual, local atual e ação atual sempre vencem este campo."
         ),
     )
 
