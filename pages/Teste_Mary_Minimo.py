@@ -3299,7 +3299,9 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
 
     Regra central:
     - Se um personagem é citado explicitamente como quem entrou, falou ou agiu,
-      ele vira o interlocutor ativo persistente.
+      ele vira o foco do turno.
+    - Em cenas com múltiplos interlocutores, o campo "interlocutor" pode continuar
+      contendo o grupo, mas "interlocutor_foco_turno" deve apontar quem falou/agiu agora.
     - Se nenhum novo personagem for introduzido,
       mantém o último interlocutor persistente.
     - Janio não volta automaticamente só por ser usuario_real.
@@ -3310,76 +3312,132 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     texto = _texto_norm(fala_usuario)
     interlocutor_campo = str(state.get("interlocutor", "") or "").strip()
 
-    if any(sep in interlocutor_campo for sep in [",", ";", "/", "|"]):
-        foco = detectar_foco_do_turno(fala_usuario, interlocutor_campo)
+    personagens = {
+        "Janio": ["janio", "jânio", "janio donisete", "jânio donisete"],
+        "Joselina": ["joselina", "mãe", "mae"],
+        "Silvia": ["silvia", "sílvia"],
+        "Bianca": ["bianca"],
+        "Renan": ["renan", "professor renan"],
+        "Rico": ["rico", "ricardo"],
+        "Anthony": ["anthony", "antony"],
+        "Nando": ["nando"],
+    }
 
-        state["interlocutor_foco_turno"] = foco
-        state["interlocutor_ativo_persistente"] = foco
-        state["ultimo_interlocutor_explicito"] = foco
+    padroes = [
+        # Ex: "Joselina diz": ...
+        r"\b{nome}\s+(diz|fala|pergunta|responde|grita|sussurra|chama)\b",
 
-        if eh_janio(foco):
+        # Ex: Joselina:
+        r"\b{nome}\s*:\s*",
+
+        # Ex: Joselina entra / chega / se aproxima
+        r"\b{nome}\s+(se aproxima|aproxima|entra|chega|aparece|volta|olha|sorri|toca|segura|puxa|pega)\b",
+
+        # Ex: sou Joselina / eu sou Joselina
+        r"\b(sou|eu sou)\s+{nome}\b",
+
+        # Ex: como Joselina / na voz de Joselina
+        r"\bcomo\s+{nome}\b",
+        r"\bna voz de\s+{nome}\b",
+
+        # Ex: Joselina está perto de Mary
+        r"\b{nome}\s+(está|esta|fica|permanece|continua)\s+(com|perto de|ao lado de)\s+mary\b",
+    ]
+
+    def detectar_personagem_explicito(texto_norm: str) -> str:
+        for nome_canonico, aliases in personagens.items():
+            for alias in aliases:
+                alias_regex = re.escape(_texto_norm(alias))
+
+                for padrao in padroes:
+                    if re.search(
+                        padrao.format(nome=alias_regex),
+                        texto_norm,
+                        flags=re.IGNORECASE,
+                    ):
+                        return nome_canonico
+
+        return ""
+
+    def campo_tem_multiplos_interlocutores(valor: str) -> bool:
+        return any(sep in valor for sep in [",", ";", "/", "|"])
+
+    def janio_esta_no_campo(valor: str) -> bool:
+        valor_norm = _texto_norm(valor)
+        return "janio" in valor_norm or "janio donisete" in valor_norm
+
+    # ======================================================
+    # 1) Falante/personagem explícito no texto vence tudo.
+    # Ex: "Joselina diz": ...
+    # ======================================================
+    novo_interlocutor = detectar_personagem_explicito(texto)
+
+    if novo_interlocutor:
+        if campo_tem_multiplos_interlocutores(interlocutor_campo):
+            # Mantém o grupo na cena, muda só o foco do turno.
+            state["interlocutor"] = interlocutor_campo
+        else:
+            state["interlocutor"] = novo_interlocutor
+
+        state["interlocutor_foco_turno"] = novo_interlocutor
+        state["interlocutor_ativo_persistente"] = novo_interlocutor
+        state["ultimo_interlocutor_explicito"] = novo_interlocutor
+
+        if eh_janio(novo_interlocutor) or janio_esta_no_campo(interlocutor_campo):
             state["janio_status_na_cena"] = "presente"
         else:
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
 
         return
 
+    # ======================================================
+    # 2) Se há múltiplos interlocutores, tenta detectar foco
+    # dentro do grupo atual.
+    # ======================================================
+    if campo_tem_multiplos_interlocutores(interlocutor_campo):
+        foco = detectar_foco_do_turno(fala_usuario, interlocutor_campo)
+
+        # Segurança: se detectar_foco_do_turno falhar, mantém foco persistente.
+        if not foco:
+            foco = str(
+                state.get("interlocutor_ativo_persistente")
+                or state.get("ultimo_interlocutor_explicito")
+                or ""
+            ).strip()
+
+        # Se ainda assim não houver foco, usa o primeiro nome do grupo.
+        if not foco:
+            foco = re.split(r"[,;/|]", interlocutor_campo)[0].strip()
+
+        state["interlocutor"] = interlocutor_campo
+        state["interlocutor_foco_turno"] = foco
+        state["interlocutor_ativo_persistente"] = foco
+        state["ultimo_interlocutor_explicito"] = foco
+
+        if eh_janio(foco) or janio_esta_no_campo(interlocutor_campo):
+            state["janio_status_na_cena"] = "presente"
+        else:
+            state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
+
+        return
+
+    # ======================================================
+    # 3) Se ninguém novo apareceu, mantém quem já estava persistente.
+    # ======================================================
     interlocutor_atual = str(
         state.get("interlocutor_ativo_persistente")
         or state.get("interlocutor")
         or "Janio Donisete"
     ).strip()
 
-    personagens = {
-        "Anthony": ["anthony", "antony"],
-        "Silvia": ["silvia", "sílvia"],
-        "Janio": ["janio", "jânio", "janio donisete", "jânio donisete"],
-    }
-
-    padroes = [
-        r"\b{nome}\s+(se aproxima|aproxima|entra|chega|fala|diz|pergunta|responde|olha|sorri|toca|segura|puxa|chama)\b",
-        r"\b{nome}\s*:\s*",
-        r"\b(sou|eu sou)\s+{nome}\b",
-        r"\bcomo\s+{nome}\b",
-        r"\bna voz de\s+{nome}\b",
-        r"\b{nome}\s+(está|esta|fica|permanece|continua)\s+(com|perto de|ao lado de)\s+mary\b",
-    ]
-
-    novo_interlocutor = None
-
-    for nome_canonico, aliases in personagens.items():
-        for alias in aliases:
-            alias_regex = re.escape(_texto_norm(alias))
-
-            for padrao in padroes:
-                if re.search(padrao.format(nome=alias_regex), texto, flags=re.IGNORECASE):
-                    novo_interlocutor = nome_canonico
-                    break
-
-            if novo_interlocutor:
-                break
-
-        if novo_interlocutor:
-            break
-
-    if novo_interlocutor:
-        state["interlocutor"] = novo_interlocutor
-        state["interlocutor_ativo_persistente"] = novo_interlocutor
-        state["ultimo_interlocutor_explicito"] = novo_interlocutor
-
-        if eh_janio(novo_interlocutor):
-            state["janio_status_na_cena"] = "presente"
-        else:
-            state["janio_status_na_cena"] = "roteirista"
-
-        return
-
-    # Se ninguém novo apareceu, mantém quem já estava persistente.
     if interlocutor_atual:
         state["interlocutor"] = interlocutor_atual
+        state["interlocutor_foco_turno"] = interlocutor_atual
         state["interlocutor_ativo_persistente"] = interlocutor_atual
 
-        if not eh_janio(interlocutor_atual):
+        if eh_janio(interlocutor_atual):
+            state["janio_status_na_cena"] = "presente"
+        else:
             state["janio_status_na_cena"] = state.get("janio_status_na_cena") or "roteirista"
 
 
@@ -3421,6 +3479,53 @@ def sincronizar_interlocutor_manual(state: dict) -> None:
             state["janio_status_na_cena"] = "presente"
         elif state.get("janio_status_na_cena") == "presente":
             state["janio_status_na_cena"] = "roteirista"
+
+def detectar_falante_explicito(fala_usuario: str, personagens_conhecidos=None) -> str:
+    """
+    Detecta padrões como:
+    "Joselina diz": ...
+    Joselina:
+    Bianca fala:
+    Renan pergunta:
+    """
+    texto = remover_acentos(str(fala_usuario or "").lower())
+
+    personagens_base = personagens_conhecidos or [
+        "Janio",
+        "Joselina",
+        "Silvia",
+        "Bianca",
+        "Renan",
+        "Rico",
+        "Anthony",
+        "Nando",
+    ]
+
+    verbos = [
+        "diz",
+        "fala",
+        "pergunta",
+        "responde",
+        "grita",
+        "sussurra",
+        "chama",
+    ]
+
+    for nome in personagens_base:
+        nome_norm = remover_acentos(nome.lower())
+
+        for verbo in verbos:
+            padroes = [
+                f'"{nome_norm} {verbo}"',
+                f"{nome_norm} {verbo}",
+                f"{nome_norm}:",
+                f'"{nome_norm}:',
+            ]
+
+            if any(p in texto for p in padroes):
+                return nome
+
+    return ""
 
 
 def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
@@ -3608,6 +3713,36 @@ REGRA FINAL:
 Mary deve continuar agindo dentro da cena.
 A consciência muda a precisão da ação, não o tamanho da resposta.
 """.strip()
+
+def limpar_acao_intima_incompativel_com_foco(state: dict) -> None:
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip()
+    tipo = remover_acentos(str(state.get("tipo_de_cena", "") or "").lower())
+    tom = str(state.get("tom_manual_da_cena", "") or "")
+    acao = remover_acentos(str(state.get("mary_acao", "") or "").lower())
+
+    termos_intimos = [
+        "calcinha afastada",
+        "apertando a coxa",
+        "por baixo da mesa",
+        "erecao",
+        "pau",
+        "buceta",
+        "estocada",
+        "sexo",
+        "foder",
+        "penetra",
+    ]
+
+    if not any(t in acao for t in termos_intimos):
+        return
+
+    # Se o foco do turno é social/familiar e o tom não é Intimidade/Nsfw,
+    # a ação íntima anterior não pode continuar como ação atual.
+    if tom not in ("Intimidade", "Nsfw"):
+        state["mary_acao"] = (
+            f"Mary está diante de {foco or 'o interlocutor atual'}, tentando agir normalmente "
+            "e disfarçar a tensão da situação anterior."
+        )
 
 # ==========================================================
 # VISUAL AUTOMÁTICO DE MARY
@@ -6901,6 +7036,7 @@ if fala_usuario:
                 # 1) Atualiza interlocutor e progressão social
                 # ==================================================
                 atualizar_interlocutor_ativo(state, fala_usuario)
+                limpar_acao_intima_incompativel_com_foco(state)
                 atualizar_progressao_social(state, fala_usuario)
 
                 # ==================================================
