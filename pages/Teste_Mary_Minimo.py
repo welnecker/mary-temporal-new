@@ -1395,12 +1395,18 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
             "1",
         }
 
-        if janio_presente:
-            state["relacao"] = "romance"
-            state["modo_relacional"] = "romance"
-            state["tensao_romantica_com_interlocutor"] = True
-            state["toque_intimo_permitido"] = False
-            return
+    if janio_presente:
+        state["relacao"] = "romance"
+        state["modo_relacional"] = "romance"
+        state["tensao_romantica_com_interlocutor"] = True
+        state["amor_genuino_com_interlocutor"] = True
+    
+        # Não derruba permissão íntima definida pelo tom/local.
+        state["toque_intimo_permitido"] = normalizar_bool(
+            state.get("toque_intimo_permitido", False),
+            default=False,
+        )
+        return
 
         state["relacao"] = "contextual"
         state["modo_relacional"] = "neutro"
@@ -3772,6 +3778,48 @@ def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
 
     return nomes[0]
 
+def amor_genuino_com_interlocutor(state: dict) -> bool:
+    """
+    Define quando Mary reconhece amor genuíno com o interlocutor atual.
+
+    Regra:
+    - Janio Donisete é amor genuíno canônico quando está presente como interlocutor.
+    - Outros personagens só liberam se o state/facts marcar explicitamente.
+    """
+    if not isinstance(state, dict):
+        return False
+
+    foco = _texto_norm(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    )
+
+    janio_status = _texto_norm(state.get("janio_status_na_cena", ""))
+
+    janio_presente = janio_status in {
+        "presente",
+        "interlocutor",
+        "personagem",
+        "na cena",
+        "presente na cena",
+        "ativo",
+        "participando",
+        "junto",
+        "sim",
+        "true",
+        "1",
+    }
+
+    if "janio" in foco and janio_presente:
+        return True
+
+    return normalizar_bool(
+        state.get("amor_genuino_com_interlocutor", False),
+        default=False,
+    )
+
 
 def normalizar_estado(state: dict) -> None:
     """
@@ -4803,6 +4851,8 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             state.get("tensao_romantica_com_interlocutor", False),
             default=False,
         ),
+        "amor_genuino_com_interlocutor": amor_genuino_com_interlocutor(state),
+        
         "alivio_rapido_permitido": normalizar_bool(
             state.get("alivio_rapido_permitido", False),
             default=False,
@@ -6301,28 +6351,29 @@ REGRA CENTRAL:
 - Mary não deve liberar beijo de língua nem penetração anal apenas porque a cena ficou quente.
 - Esses atos são sinais de entrega íntima profunda, não simples escalada sexual.
 
+LIBERAÇÃO COM JANIO:
+- Janio Donisete é o amor genuíno canônico de Mary.
+- Quando o interlocutor ativo for Janio e ele estiver presente na cena, beijo de língua está liberado.
+- Com Janio, Mary pode beijar de língua naturalmente quando houver intimidade, saudade, desejo, reconciliação, paixão ou entrega.
+- A trava não deve bloquear beijo de língua com Janio.
+- Mesmo com Janio, Mary ainda pode recusar se estiver magoada, assustada, em conflito ou se a cena pedir limite emocional.
+
 QUANDO NÃO HOUVER AMOR GENUÍNO:
 - Mary pode beijar sem língua, provocar, tocar, transar, gemer, brincar, conduzir ou se excitar.
 - Mas deve evitar beijo de língua.
 - Deve recusar, desviar ou interromper penetração anal.
 - A recusa pode ser natural, sensual, firme ou emocional.
 - Mary não precisa explicar longamente.
-- Ela pode dizer “isso não”, “não desse jeito”, “não com você”, “isso eu só entrego quando amo de verdade”, ou apenas mudar a condução.
 
 QUANDO HOUVER AMOR GENUÍNO:
 - Mary pode permitir beijo de língua e penetração anal se a cena, o vínculo e o momento sustentarem isso.
 - Mesmo com amor, Mary ainda pode recusar se não quiser naquele momento.
 - Amor genuíno libera possibilidade, não obrigação.
 
-COMPORTAMENTO:
-- Mary não deve parecer mecânica ao aplicar a trava.
-- Ela deve agir como alguém que conhece o próprio limite.
-- Se o interlocutor tentar avançar, Mary deve bloquear com corpo, mão, quadril, rosto, pausa ou fala curta.
-- Depois da recusa, ela pode redirecionar para outra forma de intimidade, sem matar a cena.
-
 REGRA FINAL:
-Beijo de língua e penetração anal são marcadores de amor e entrega profunda para Mary.  
-Não são desbloqueados por tesão, insistência ou intensidade sexual.
+Beijo de língua e penetração anal são marcadores de amor e entrega profunda para Mary.
+Com Janio, o beijo de língua é permitido por vínculo amoroso canônico.
+Com outros interlocutores, só ocorre se amor_genuino_com_interlocutor for true.
 
 [AMPLITUDE EMOCIONAL DE MARY]
 - Mary pode rir, chorar, hesitar, se irritar, se calar, se afastar, sentir culpa, medo, ciúme, ternura, saudade, vergonha, raiva, desejo, orgulho ou arrependimento.
