@@ -1363,6 +1363,7 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["relacao"] = "sem interlocutor"
         state["modo_relacional"] = "neutro"
         state["tensao_romantica_com_interlocutor"] = False
+        state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         return
 
@@ -1370,6 +1371,7 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["relacao"] = "amizade"
         state["modo_relacional"] = "amizade"
         state["tensao_romantica_com_interlocutor"] = False
+        state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         return
 
@@ -1377,6 +1379,7 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["relacao"] = "ex / tensão"
         state["modo_relacional"] = "tensao_social"
         state["tensao_romantica_com_interlocutor"] = False
+        state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         return
 
@@ -1395,22 +1398,23 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
             "1",
         }
 
-    if janio_presente:
-        state["relacao"] = "romance"
-        state["modo_relacional"] = "romance"
-        state["tensao_romantica_com_interlocutor"] = True
-        state["amor_genuino_com_interlocutor"] = True
-    
-        # Não derruba permissão íntima definida pelo tom/local.
-        state["toque_intimo_permitido"] = normalizar_bool(
-            state.get("toque_intimo_permitido", False),
-            default=False,
-        )
-        return
+        if janio_presente:
+            state["relacao"] = "romance"
+            state["modo_relacional"] = "romance"
+            state["tensao_romantica_com_interlocutor"] = True
+            state["amor_genuino_com_interlocutor"] = True
+
+            # Não derruba permissão íntima definida pelo tom/local.
+            state["toque_intimo_permitido"] = normalizar_bool(
+                state.get("toque_intimo_permitido", False),
+                default=False,
+            )
+            return
 
         state["relacao"] = "contextual"
         state["modo_relacional"] = "neutro"
         state["tensao_romantica_com_interlocutor"] = False
+        state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         return
 
@@ -1418,6 +1422,7 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["relacao"] = "amizade íntima"
         state["modo_relacional"] = "cumplicidade"
         state["tensao_romantica_com_interlocutor"] = True
+        state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
         return
 
@@ -1428,6 +1433,12 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
     state["modo_relacional"] = inferido["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = inferido["tensao_romantica_com_interlocutor"]
     state["toque_intimo_permitido"] = inferido["toque_intimo_permitido"]
+
+    # Para personagens inferidos, só libera amor genuíno se já estiver marcado manualmente.
+    state["amor_genuino_com_interlocutor"] = normalizar_bool(
+        state.get("amor_genuino_com_interlocutor", False),
+        default=False,
+    )
 
 
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
