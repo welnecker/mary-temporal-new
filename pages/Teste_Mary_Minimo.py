@@ -5838,7 +5838,6 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     if tom_manual == "Nsfw":
         if privacidade == "privado" and toque_intimo:
             nsfw_prompt_txt = """
-            nsfw_prompt_txt = """
 [NSFW - ROTEIRO ÍNTIMO PRIVADO]
 
 Este bloco só vale quando:
