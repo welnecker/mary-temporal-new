@@ -5188,6 +5188,7 @@ def init_state() -> dict:
                 "e consciência do próprio impacto"
             ),
         },
+    }
 
     if "mary_state_minimo" not in st.session_state:
         st.session_state.mary_state_minimo = dict(estado_inicial)
