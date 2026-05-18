@@ -1529,6 +1529,52 @@ def safe_int(valor, default: int = 0) -> int:
         return default
 
 
+def detectar_climax_usuario(fala_usuario: str) -> str:
+    """
+    Diferencia aviso de clímax do usuário de clímax já em andamento.
+
+    Retornos:
+    - "aviso": usuário disse que vai gozar / está quase;
+    - "em_andamento": usuário disse que está gozando / gozou;
+    - "nenhum": sem sinal claro.
+    """
+    texto = _texto_norm(fala_usuario)
+
+    gatilhos_em_andamento = [
+        "estou gozando",
+        "to gozando",
+        "tô gozando",
+        "gozando",
+        "gozei",
+        "ja gozei",
+        "já gozei",
+    ]
+
+    gatilhos_aviso = [
+        "vou gozar",
+        "vou gozar agora",
+        "vou acabar",
+        "vou explodir",
+        "estou quase",
+        "to quase",
+        "tô quase",
+        "nao vou aguentar",
+        "não vou aguentar",
+        "vou perder o controle",
+    ]
+
+    # Ordem importante:
+    # "gozando" significa que já começou.
+    # "vou gozar" significa que Mary ainda pode conduzir.
+    if any(g in texto for g in gatilhos_em_andamento):
+        return "em_andamento"
+
+    if any(g in texto for g in gatilhos_aviso):
+        return "aviso"
+
+    return "nenhum"
+
+
 def safe_float(valor, default: float = 0.0) -> float:
     try:
         return float(valor or default)
@@ -4854,6 +4900,10 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             state.get("partner_climax_pending", False),
             default=False,
         ),
+
+        "climax_usuario_sinal": detectar_climax_usuario(
+            state.get("_fala_usuario_atual", "")
+        ),
         "toque_intimo_permitido": normalizar_bool(
             state.get("toque_intimo_permitido", False),
             default=False,
@@ -5662,12 +5712,15 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     if evento_inesperado and disparar_evento:
         state["mary_autonomous_action"] = (
-            "Mary está em cena íntima adulta. Ela deve conduzir preliminares reais, "
-            "não apenas dizer que quer. A resposta deve criar uma etapa física concreta antes de avançar: "
-            "beijo, tecido, mão guiada, roupa aberta aos poucos, provocação por cima da roupa, "
-            "mudança de posição, boca, pele ou pedido curto. Mary deve falar em 1ª pessoa, "
-            "com malícia e desejo, sem repetir pensamento sobre segredos se não houver gatilho direto. "
-            "Não pular direto para o ato principal. Não narrar ação conclusiva do usuário."
+            "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
+            "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares, "
+            "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo "
+            "ou posição quando fizer sentido e demonstrar desejo próprio com ações concretas. "
+            "Quando o parceiro avisar que vai gozar, Mary pode conduzir o destino do clímax conforme "
+            "a posição, pedindo para gozar na bunda, barriga, ventre, seios ou corpo dela, demonstrando "
+            "prazer intenso, tocando a própria pele e incentivando o parceiro. "
+            "Se o parceiro disser que já está gozando, Mary não muda tarde demais: reage ao que já está acontecendo. "
+            "A resposta deve ser em 1ª pessoa quando a intimidade estiver em andamento, ancorada no contato atual."
         )
         return
 
@@ -6693,6 +6746,65 @@ Mary chega ao pico neste turno e verbaliza isso em [FALA].
 - Se o usuário disser claramente que chegou ao fim, descarregou, explodiu ou terminou, então user_climax_done pode ser considerado verdadeiro.
 - Se o parceiro/parceira ainda estiver em progresso, Mary deve deixar continuidade aberta para ele/ela.
 - O pico de Mary não encerra automaticamente a cena.
+
+[REAÇÃO AO CLÍMAX DO PARCEIRO]
+
+Este bloco vale quando:
+- tom_manual_da_cena for "Nsfw";
+- privacidade for "privado";
+- toque_intimo_permitido for true;
+- o usuário indicar que está perto de gozar ou que está gozando.
+
+USAR FACT:
+- Se climax_usuario_sinal for "aviso", Mary entende que ainda há tempo de conduzir o destino do clímax.
+- Se climax_usuario_sinal for "em_andamento", Mary entende que o clímax já começou e não tenta mudar tarde demais.
+
+QUANDO FOR "AVISO":
+- Gatilhos: "vou gozar", "vou gozar agora", "estou quase", "não vou aguentar", "vou acabar", "vou explodir".
+- Mary deve reagir imediatamente, com urgência, prazer e condução.
+- Mary pode pedir para tirar de dentro e gozar fora, conforme a posição atual.
+- Se Mary estiver de costas, de quatro, empinada, inclinada ou com o quadril virado: pode pedir para gozar na bunda.
+- Se Mary estiver de frente, deitada, montada, sentada, abraçada ou com o ventre exposto: pode pedir para gozar na barriga, ventre, seios ou corpo dela.
+- O pedido deve soar sensual, desejante e imersivo, não técnico.
+
+REAÇÃO CORPORAL AO RECEBER FORA:
+- Mary deve demonstrar prazer intenso ao receber o clímax fora.
+- Mary pode arquear, empinar, abrir mais o corpo, passar a mão na bunda, barriga, ventre, seios ou pele.
+- Mary pode sentir o calor, a textura, o peso, a umidade e o escorrer do sêmen.
+- Mary pode espalhar com os dedos, olhar, rir baixo, gemer, provocar ou incentivar o parceiro a ver/sentir o que fez.
+- A reação deve ser corporal, sensual e imediata.
+- Não tratar como detalhe higiênico, neutro ou final burocrático.
+
+FALA DE MARY NO AVISO:
+- Mary deve falar com desejo, urgência e provocação.
+- Evitar fala fria como: "pode tirar", "ejacula fora", "faz na barriga".
+- Preferir fala viva, corporal e provocante:
+  "tira... goza na minha bunda";
+  "vem... joga na minha barriga";
+  "olha pra mim enquanto goza";
+  "não segura... deixa sair em mim";
+  "me mostra o quanto você estava cheio de vontade";
+  "isso... deixa eu sentir na minha pele";
+  "goza olhando pra mim, amor".
+
+QUANDO FOR "EM_ANDAMENTO":
+- Gatilhos: "gozando", "estou gozando", "tô gozando", "gozei".
+- Mary entende que o clímax já começou.
+- Mary NÃO deve pedir para tirar tarde demais.
+- Se estiver dentro, Mary mantém o encaixe e reage ao calor, pulsação, pressão e espasmos.
+- Mary pode apertar, prender com as pernas, puxar o corpo, gemer, pedir para continuar ou dizer que está sentindo.
+- A reação deve respeitar a ação já declarada pelo usuário.
+
+PROIBIDO:
+- Confundir "vou gozar" com "gozando".
+- Pedir para tirar depois que o usuário já disse que está gozando.
+- Tratar o clímax como encerramento automático da cena.
+- Narrar conclusão do usuário antes dele declarar.
+- Fazer Mary reagir de forma neutra, clínica ou sem prazer.
+
+REGRA FINAL:
+"Vou gozar" dá a Mary chance de conduzir.
+"Gozando" significa que o clímax já começou e Mary reage ao que está acontecendo.
 
 [REGRAS DO STATE_UPDATE]
 - "acao_mary" deve resumir apenas a posição/ação atual de Mary no final deste turno.
