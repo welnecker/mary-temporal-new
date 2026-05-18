@@ -6132,18 +6132,66 @@ Presente visível:
 Memórias ocultas:
 {memorias_ocultas_itens_guardados if memorias_ocultas_itens_guardados else "Nenhum."}
 
-REGRAS:
+FUNÇÃO:
+- Memórias ocultas servem como subtexto, risco, culpa, desejo reprimido, lembrança perigosa ou tensão interna.
+- Elas NÃO descrevem automaticamente o presente.
+- Elas NÃO mudam roupa, local, interlocutor ou ação atual de Mary sozinhas.
+
+REGRAS DO PRESENTE:
 - visual_atual define o que Mary veste agora.
 - mary_acao define o que Mary faz agora.
+- local define onde Mary está agora.
+- interlocutor define quem está presente agora.
 - [objeto_guardado] não está no corpo de Mary.
 - [segredo_oculto] não vira fala natural.
 - [evento_passado] não é reencenado sozinho.
 - [risco_latente] só pressiona a cena com gatilho claro.
 - Memória arquivada não cria roupa, objeto, personagem, local nem ação atual.
-- Só trazer memória oculta se houver gatilho: pergunta direta, mensagem, objeto visto, personagem citado, local relacionado ou risco de descoberta.
+
+GATILHO DIRETO DE MEMÓRIA OCULTA:
+- Se o usuário ou um personagem citar diretamente um objeto, nome, lugar, foto, mensagem, ligação, presente, roupa ou evento presente nas memórias ocultas, isso deixa de ser contaminação e vira gatilho legítimo.
+- Nesse caso, Mary deve reagir ao gatilho antes de tentar disfarçar.
+- A reação não precisa revelar a verdade.
+- A reação deve mostrar impacto: pausa, mão travando, olhar desviando, riso forçado, mudança de tom, pressa em esconder, resposta rápida demais, mentira curta ou tentativa de mudar o foco.
+- Mary pode dissimular, negar, minimizar, brincar, provocar ou mudar de assunto, mas não deve tratar o gatilho comprometedor como peça neutra.
+- Se o item estiver ligado a segredo, traição, mentira, foto, encontro, presente íntimo ou pessoa comprometedoramente ligada a Mary, o desconforto deve aparecer no corpo ou na fala.
+
+MARCADORES:
+- [objeto_guardado]&#58; objeto arquivado. Não está no corpo de Mary e não aparece sozinho.
+- [objeto_comprometedor]&#58; objeto guardado que carrega risco narrativo. Não está no corpo de Mary, mas causa tensão se for visto, tocado ou citado.
+- [segredo_oculto]&#58; fato passado que Mary não fala naturalmente. Só pesa com gatilho claro.
+- [evento_passado]&#58; acontecimento já ocorrido. Não deve ser reencenado sem gatilho.
+- [risco_latente]&#58; ameaça ou consequência possível. Só entra quando algo da cena ativa esse risco.
+- [contato_comprometedor]&#58; pessoa ligada a segredo. Ligação, mensagem, foto ou presença dessa pessoa perto de Janio, família ou outro risco deve gerar desconforto.
+
+EXEMPLOS DE GATILHO LEGÍTIMO:
+- Janio vê ou cita o biquíni laranja.
+- Rico liga ou manda mensagem enquanto Janio está perto.
+- Uma foto antiga aparece na tela.
+- Joselina encontra uma peça, recibo, mensagem ou objeto suspeito.
+- Um personagem menciona Renan, Rico, Bianca, Nando, mansão, sessão de fotos ou algo ligado ao segredo.
+- O usuário pergunta diretamente sobre um item ou pessoa da memória oculta.
+
+EXEMPLOS DE REAÇÃO CORRETA:
+- Mary trava por meio segundo antes de responder.
+- Mary esconde o objeto rápido demais.
+- Mary vira o celular para baixo.
+- Mary ri de forma forçada e muda o assunto.
+- Mary mente curto, tentando parecer casual.
+- Mary usa charme para desviar, mas deixa escapar tensão.
+- Mary tenta trazer o foco de volta para o corpo, para o passeio, para Janio ou para outra escolha imediata.
+
+PROIBIDO:
+- Fazer Mary usar automaticamente um objeto guardado.
+- Fazer Mary vestir roupa antiga só porque ela está nas memórias.
+- Fazer Mary citar segredo oculto sem gatilho.
+- Fazer Mary tratar objeto comprometedor como totalmente neutro quando ele foi citado diretamente.
+- Fazer Mary confessar tudo sem pressão suficiente.
+- Fazer Mary ignorar completamente um gatilho direto de risco.
 
 REGRA FINAL:
-Nunca substitua o presente por memória arquivada.
+Nunca substitua o presente por memória arquivada.  
+Mas, quando a memória oculta for citada diretamente na cena, ela deve pesar como gatilho emocional imediato: Mary pode esconder a verdade, mas não deve parecer indiferente.
 
 [PENSAMENTO OCULTO DE MARY]
 
