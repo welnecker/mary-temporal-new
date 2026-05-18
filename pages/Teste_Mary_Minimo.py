@@ -7889,22 +7889,78 @@ with st.sidebar:
     n_turnos = st.number_input("Turnos para apagar", min_value=1, max_value=50, value=1, step=1)
     confirmar_turnos = st.checkbox("Confirmar apagamento de turnos", value=False)
     if st.button("Apagar últimos turnos", use_container_width=True, disabled=not confirmar_turnos):
-        qtd = apagar_ultimos_turnos_da_planilha(int(n_turnos))
-        if qtd > 0:
-            limpar_cache_planilhas()
+    qtd = apagar_ultimos_turnos_da_planilha(int(n_turnos))
 
-            # Atualiza localmente para evitar nova leitura imediata do Sheets.
-            linhas_para_remover = min(qtd, len(state.get("history", [])))
-            if linhas_para_remover > 0:
-                state["history"] = state.get("history", [])[:-linhas_para_remover]
+    if qtd > 0:
+        limpar_cache_planilhas()
+
+        # Atualiza localmente para evitar nova leitura imediata do Sheets.
+        linhas_para_remover = min(qtd, len(state.get("history", [])))
+
+        if linhas_para_remover > 0:
+            state["history"] = state.get("history", [])[:-linhas_para_remover]
+
+        state["turno"] = max(0, len(state.get("history", [])) // 2)
+
+        # Garante que a cópia local do Streamlit acompanhe o corte.
+        st.session_state["mary_state_minimo"] = state
+
+        # Limpa debug antigo para não reaparecer resposta de turno apagado.
+        for chave in [
+            "mary_last_debug",
+            "mary_last_model_eval",
+            "mary_model_ping_result",
+        ]:
+            if chave in st.session_state:
+                del st.session_state[chave]
+
+        st.success(f"{qtd} linha(s) apagada(s).")
+        st.rerun()
+
+    else:
+        st.warning("Nenhum turno foi apagado.")
+
+        st.divider()
+        st.subheader("🧹 Reset local da conversa")
         
-            state["turno"] = max(0, len(state.get("history", [])) // 2)
-            st.session_state.mary_state_minimo = state
+        if st.button("Limpar histórico local da sessão", use_container_width=True):
+            # Limpa o histórico preso no state atual.
+            state["history"] = []
+            state["turno"] = 0
         
-            st.success(f"{qtd} linha(s) apagada(s).")
+            # Limpa a cópia persistida na sessão do Streamlit.
+            if "mary_state_minimo" in st.session_state:
+                st.session_state["mary_state_minimo"]["history"] = []
+                st.session_state["mary_state_minimo"]["turno"] = 0
+        
+            # Remove restos visuais/debug de interações anteriores.
+            for chave in [
+                "history",
+                "mary_last_debug",
+                "mary_last_model_eval",
+                "mary_model_ping_result",
+            ]:
+                if chave in st.session_state:
+                    del st.session_state[chave]
+        
+            limpar_cache_planilhas()
+        
+            st.session_state["mary_state_minimo"] = state
+            st.success("Histórico local limpo.")
             st.rerun()
-        else:
-            st.warning("Nenhum turno foi apagado.")
+
+        if st.button("Reset total da sessão local", use_container_width=True):
+            manter_login = st.session_state.get("mary_app_autenticado", False)
+        
+            for chave in list(st.session_state.keys()):
+                del st.session_state[chave]
+        
+            st.session_state["mary_app_autenticado"] = manter_login
+        
+            limpar_cache_planilhas()
+            st.rerun()
+
+    
     st.divider()
     with st.expander("🧩 Facts avançados", expanded=False):
         st.json(state.get("facts", {}))
