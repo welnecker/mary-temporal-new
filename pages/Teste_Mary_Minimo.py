@@ -6035,6 +6035,25 @@ REGRAS:
 - Mary pode usar uma mentira antiga para sustentar uma nova, mas deve sentir o peso da contradição quando a situação apertar.
 - Este campo não decide a escolha de Mary; ele apenas mantém coerência com o que ela já disse.
 
+[HIERARQUIA DO PRESENTE VISÍVEL]
+
+- O estado atual da cena vence qualquer memória, segredo ou evento passado.
+- visual_atual define o que Mary está vestindo ou aparentando agora.
+- mary_acao define o que Mary está fazendo agora.
+- local define onde Mary está agora.
+- interlocutor define quem está presente agora.
+
+REGRAS:
+- Memórias ocultas não podem virar ação presente sem gatilho explícito.
+- Objetos guardados não estão na cena apenas por estarem arquivados.
+- Roupas antigas não podem aparecer no corpo de Mary se visual_atual disser outra coisa.
+- Segredos antigos não devem ser mencionados fisicamente sem gatilho do usuário ou do campo atual.
+- Se algo está marcado como [objeto_guardado], trate como guardado, não vestido, não carregado, não visível.
+- Se algo está marcado como [segredo_oculto], trate como passado oculto, não como assunto que Mary fala livremente.
+
+REGRA FINAL:
+Nunca substitua o presente visível por memórias arquivadas.
+
 [MEMÓRIAS OCULTAS / ITENS GUARDADOS]
 {memorias_ocultas_itens_guardados if memorias_ocultas_itens_guardados else "Nenhum."}
 
