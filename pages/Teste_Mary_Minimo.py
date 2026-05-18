@@ -5181,8 +5181,7 @@ def init_state() -> dict:
                 "quando entra, senta, se inclina, ajeita o cabelo, cruza as pernas ou vira de costas"
             ),
         
-            "assinatura": (
-                "assinatura": (
+            "assinatura": (               
                 "Mary nunca deve parecer comum, apagada, magra demais, frágil ou genérica. "
                 "Sua presença física deve ser percebida mesmo em cenas sociais: uma mulher jovem, "
                 "curvilínea, sensual, viva, com olhos verdes expressivos, seios naturais marcantes, "
