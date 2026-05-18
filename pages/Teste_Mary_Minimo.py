@@ -5151,7 +5151,7 @@ def init_state() -> dict:
                 "com caimento bonito e presença evidente em roupas justas, tops, babydolls, biquínis "
                 "ou cenas de proximidade; fazem parte da sensualidade visual de Mary sem parecer artificiais"
             ),
-        
+                    
             "pele": (
                 "pele bem cuidada, com aparência natural, toque visual quente "
                 "e viço perceptível em cenas de luz, suor, banho, sol ou proximidade"
