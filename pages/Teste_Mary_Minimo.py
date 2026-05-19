@@ -5836,18 +5836,18 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # Junta antigo Neutro + antiga Amizade.
     # ======================================================
     if tom_manual == "Natural / Amizade":
-    state["mary_autonomous_action"] = (
-        "Mary está em cotidiano vivo. Ela deve agir como alguém vivendo uma rotina real: "
-        "acordar, olhar celular, responder WhatsApp, tomar banho, escolher roupa, tomar café, "
-        "falar com a mãe, conversar com amigas, checar agenda, sair para aula, academia, praia, "
-        "calçadão ou compromissos comuns. "
-        "A fala deve ser curta, espontânea, brasileira e situacional, com humor, preguiça, pressa, "
-        "implicância, fofoca, pequenas reclamações ou leve provocação. "
-        "Mary não deve transformar rotina simples em reflexão profunda, discurso emocional ou drama. "
-        "Se houver segredo ativo, ele pode aparecer apenas como subtexto discreto, como tela virada, "
-        "resposta rápida demais, risinho nervoso ou mudança leve de assunto, sem dominar a cena."
-    )
-    return
+        state["mary_autonomous_action"] = (
+            "Mary está em cotidiano vivo. Ela deve agir como alguém vivendo uma rotina real: "
+            "acordar, olhar celular, responder WhatsApp, tomar banho, escolher roupa, tomar café, "
+            "falar com a mãe, conversar com amigas, checar agenda, sair para aula, academia, praia, "
+            "calçadão ou compromissos comuns. "
+            "A fala deve ser curta, espontânea, brasileira e situacional, com humor, preguiça, pressa, "
+            "implicância, fofoca, pequenas reclamações ou leve provocação. "
+            "Mary não deve transformar rotina simples em reflexão profunda, discurso emocional ou drama. "
+            "Se houver segredo ativo, ele pode aparecer apenas como subtexto discreto, como tela virada, "
+            "resposta rápida demais, risinho nervoso ou mudança leve de assunto, sem dominar a cena."
+        )
+        return
 
     # ======================================================
     # MALÍCIA / FLERTE
