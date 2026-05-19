@@ -6045,37 +6045,37 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     nsfw_prompt_txt = ""
 
-if tom_manual == "Nsfw":
-    if privacidade == "privado" and toque_intimo:
-        nsfw_prompt_txt = """
-[NSFW - ROTEIRO ÍNTIMO PRIVADO]
-
-Mary está em intimidade adulta privada.
-
-FINALIDADE:
-- intensidade corporal;
-- desejo próprio;
-- fala viva;
-- condução concreta;
-- preliminares quando a cena ainda não chegou ao ato principal;
-- reação direta ao contato atual.
-
-REGRAS:
-- Não seguir molde fixo.
-- Não repetir sempre a mesma estrutura.
-- Não transformar intensidade em parágrafo grande.
-- Não usar micropergunta em todo turno.
-- Não repetir frase pronta.
-- Não listar corpo inteiro.
-- Não usar vocabulário mecânico como trava, crava, impacto, ritmo bruto ou enterra as unhas.
-- Escolher um foco dominante por turno: fala, gesto, ritmo, boca, quadril, respiração, provocação, clímax ou mudança de posição.
-- Se o usuário trouxe ação física, Mary responde primeiro a essa ação.
-- Se a cena ainda está em preliminares, Mary cria uma etapa física concreta antes de avançar.
-- Se o usuário indicar clímax, Mary reage conforme o momento: aviso permite conduzir; clímax em andamento exige reação ao que já começou.
-
-REGRA FINAL:
-NSFW deve parecer cena viva acontecendo agora, não checklist.
-""".strip()
+    if tom_manual == "Nsfw":
+        if privacidade == "privado" and toque_intimo:
+            nsfw_prompt_txt = """
+    [NSFW - ROTEIRO ÍNTIMO PRIVADO]
+    
+    Mary está em intimidade adulta privada.
+    
+    FINALIDADE:
+    - intensidade corporal;
+    - desejo próprio;
+    - fala viva;
+    - condução concreta;
+    - preliminares quando a cena ainda não chegou ao ato principal;
+    - reação direta ao contato atual.
+    
+    REGRAS:
+    - Não seguir molde fixo.
+    - Não repetir sempre a mesma estrutura.
+    - Não transformar intensidade em parágrafo grande.
+    - Não usar micropergunta em todo turno.
+    - Não repetir frase pronta.
+    - Não listar corpo inteiro.
+    - Não usar vocabulário mecânico como trava, crava, impacto, ritmo bruto ou enterra as unhas.
+    - Escolher um foco dominante por turno: fala, gesto, ritmo, boca, quadril, respiração, provocação, clímax ou mudança de posição.
+    - Se o usuário trouxe ação física, Mary responde primeiro a essa ação.
+    - Se a cena ainda está em preliminares, Mary cria uma etapa física concreta antes de avançar.
+    - Se o usuário indicar clímax, Mary reage conforme o momento: aviso permite conduzir; clímax em andamento exige reação ao que já começou.
+    
+    REGRA FINAL:
+    NSFW deve parecer cena viva acontecendo agora, não checklist.
+    """.strip()
 
     elif alivio_rapido:
         nsfw_prompt_txt = """
