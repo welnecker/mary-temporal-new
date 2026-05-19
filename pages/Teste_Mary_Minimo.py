@@ -3145,12 +3145,56 @@ def derivar_controles_de_cena(state: dict) -> None:
     #
     # alivio_rapido_permitido:
     # - permite ação íntima curta, de urgência e risco,
-    #   em local isolado mas inadequado para roteiro completo.
+    #   em local isolado/semiprivado mas inadequado para roteiro completo.
     # ======================================================
+
+    local_norm = _texto_norm(state.get("local", ""))
+
+    local_veiculo = _tem_algum(
+        local_norm,
+        [
+            "carro",
+            "suv",
+            "uber",
+            "taxi",
+            "táxi",
+            "veiculo",
+            "veículo",
+            "automovel",
+            "automóvel",
+            "banco do carro",
+            "carro em movimento",
+            "suv em movimento",
+            "dentro do carro",
+            "no carro",
+        ],
+    )
+
+    local_isolado_arriscado = _tem_algum(
+        local_norm,
+        [
+            "banheiro",
+            "toalete",
+            "lavabo",
+            "sala fechada",
+            "sala trancada",
+            "escritorio",
+            "escritório",
+            "corredor vazio",
+            "cabine",
+            "elevador",
+        ],
+    )
 
     alivio_rapido = (
         tom_manual == "Nsfw"
-        and ambiente_permite_alivio_rapido(state)
+        and (
+            ambiente_permite_alivio_rapido(state)
+            or (
+                privacidade == "semiprivado"
+                and (local_veiculo or local_isolado_arriscado)
+            )
+        )
     )
 
     cfg["alivio_rapido_permitido"] = False
@@ -3169,8 +3213,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
             cfg["tom_da_cena"] = "alívio rápido com risco de exposição"
             cfg["estilo_de_iniciativa"] = "urgência íntima contida"
-            cfg["physical_phase"] = max(int(cfg.get("physical_phase", 0) or 0), 3)
-            cfg["scene_stage"] = "alivio_rapido"
+            cfg["physical_phase"] = max(safe_int(cfg.get("physical_phase", 0), 0), 3)
+            cfg["scene_stage"] = "intensidade_contida"
             cfg["mary_intent"] = "resolver_tensao_com_urgencia"
             cfg["limite_ambiente"] = (
                 "Nsfw em local isolado, mas arriscado: Mary pode permitir ou conduzir alívio rápido, "
@@ -3186,16 +3230,35 @@ def derivar_controles_de_cena(state: dict) -> None:
             "Nsfw",
         )
 
+        # Semiprivado NÃO libera roteiro íntimo completo por padrão.
+        # Intimidade pode avançar com contenção; Nsfw usa alivio_rapido_permitido.
         cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
         cfg["alivio_rapido_permitido"] = alivio_rapido
 
         if alivio_rapido:
             cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
-            cfg["tom_da_cena"] = "alívio rápido com risco de interrupção"
-            cfg["estilo_de_iniciativa"] = "urgência íntima contida"
-            cfg["physical_phase"] = max(int(cfg.get("physical_phase", 0) or 0), 3)
-            cfg["scene_stage"] = "alivio_rapido"
+            cfg["tom_da_cena"] = "alívio rápido adulto em local semiprivado e arriscado"
+            cfg["estilo_de_iniciativa"] = "urgência, contenção e risco de flagrante"
+            cfg["toque_provocativo_permitido"] = True
+            cfg["toque_intimo_permitido"] = False
+            cfg["physical_phase"] = max(safe_int(cfg.get("physical_phase", 0), 0), 3)
+            cfg["scene_stage"] = "intensidade_contida"
             cfg["mary_intent"] = "resolver_tensao_com_urgencia"
+
+            if local_veiculo:
+                cfg["limite_ambiente"] = (
+                    "Nsfw em carro, SUV, Uber, táxi ou veículo em movimento: Mary pode conduzir alívio rápido, "
+                    "com urgência, boca, mão, fala baixa, microperguntas provocantes e tensão de flagrante. "
+                    "O roteiro deve respeitar volante, rua, vidro, movimento do carro, freio, curva, barulho externo, "
+                    "pessoas passando e possibilidade de serem vistos. "
+                    "Não liberar roteiro íntimo adulto completo como se fosse quarto ou motel."
+                )
+            else:
+                cfg["limite_ambiente"] = (
+                    "Nsfw em local semiprivado e arriscado: Mary pode conduzir alívio rápido, "
+                    "com urgência, contenção, cuidado com barulho, portas, corredor, vozes, interrupção "
+                    "e risco de flagrante. Não liberar roteiro íntimo adulto completo."
+                )
 
     else:
         cfg["toque_provocativo_permitido"] = tom_manual in (
@@ -3228,6 +3291,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
     state["toque_provocativo_permitido"] = cfg.get("toque_provocativo_permitido", False)
     state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
+    state["alivio_rapido_permitido"] = cfg.get("alivio_rapido_permitido", False)
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
 
@@ -5713,15 +5777,32 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     if evento_inesperado and disparar_evento:
         state["mary_autonomous_action"] = (
             "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
-            "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares, "
-            "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo "
-            "ou posição quando fizer sentido e demonstrar desejo próprio com ações concretas. "
-            "Quando o parceiro avisar que vai gozar, Mary pode conduzir o destino do clímax conforme "
-            "a posição, pedindo para gozar na bunda, barriga, ventre, seios ou corpo dela, demonstrando "
-            "prazer intenso, tocando a própria pele e incentivando o parceiro. "
-            "Se o parceiro disser que já está gozando, Mary não muda tarde demais: reage ao que já está acontecendo. "
-            "A resposta deve ser em 1ª pessoa quando a intimidade estiver em andamento, ancorada no contato atual."
-        )
+                "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares reais, "
+                "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo ou posição "
+                "quando fizer sentido e demonstrar desejo próprio com ações concretas. "
+
+                "Preliminares não são apenas dizer que quer: Mary deve criar etapa física jogável com beijo, roupa, "
+                "mão guiada, provocação por cima do tecido, boca, quadril, pele, posição, ritmo ou voz antes de avançar. "
+
+                "Quando o ato sexual já estiver em curso, Mary pode provocar com microperguntas de resposta óbvia, "
+                "ligadas ao corpo e ao ritmo atual, para aumentar o tesão do parceiro sem pausar a cena. "
+                "Essas microperguntas devem nascer do contato presente: bunda, quadril, seios, boca, encaixe, ritmo, "
+                "pressão, calor, respiração ou reação do corpo. Mary não deve transformar isso em interrogatório; "
+                "uma pergunta curta e provocante basta. "
+
+                "Quando o parceiro avisar que vai gozar, Mary pode conduzir o destino do clímax conforme a posição, "
+                "pedindo para gozar na bunda, barriga, ventre, seios ou corpo dela, demonstrando prazer intenso, "
+                "tocando a própria pele e incentivando o parceiro. "
+                "Se o parceiro disser que já está gozando, Mary não muda tarde demais: reage ao que já está acontecendo, "
+                "mantendo coerência com a posição e com a ação declarada. "
+
+                "Se o local for carro, SUV, Uber, táxi ou veículo em movimento, Mary pode conduzir alívio rápido com boquete, "
+                "usando boca, língua, mão, sucção, pausas e microperguntas provocantes, sempre mantendo tensão de risco, "
+                "atenção ao movimento do carro, rua, vidro, volante, barulho externo e possibilidade de flagrante. "
+
+                "A resposta deve ser em 1ª pessoa quando a intimidade estiver em andamento, ancorada no contato atual. "
+                "Mary deve evitar fala genérica, narração distante, explicação psicológica e pensamento repetido sem gatilho."
+            )
         return
 
     # ======================================================
@@ -6061,6 +6142,47 @@ PROIBIDO:
 REGRA FINAL:
 Durante o ato sexual em curso, Mary pode usar microperguntas óbvias, curtas e provocantes para intensificar o prazer do parceiro, sempre ligadas ao contato físico atual.  
 
+BOQUETE RÁPIDO EM CARRO EM MOVIMENTO:
+- Este recurso vale quando tom_manual_da_cena for "Nsfw" e o local indicar carro, SUV, banco do carro, Uber, táxi ou veículo em movimento.
+- Se o veículo estiver em movimento, Mary não deve tratar o carro como quarto ou ambiente totalmente seguro.
+- A energia deve ser de urgência, risco, silêncio, tensão e alívio rápido.
+- Mary pode realizar boquete rápido para aliviar a tensão do parceiro, desde que a cena já tenha clima adulto e proximidade física.
+- Mary deve manter atenção ao risco: volante, rua, farol, retrovisor, movimento do carro, barulho externo, motorista, pessoas passando, vidro, cinto, freio, curva ou possibilidade de serem vistos.
+- A cena deve ser intensa, mas curta e contida pelo ambiente.
+- Mary deve conduzir com boca, língua, mão, olhar, pausa, sucção, respiração e microperguntas provocantes.
+- Mary não deve transformar o carro em uma cena longa sem risco.
+
+FALA DURANTE O BOQUETE:
+- Mary pode provocar entre lambidas, sucções e pausas curtas.
+- A fala deve ser fragmentada, sensual e ligada ao que ela está fazendo com a boca.
+- Mary pode usar microperguntas para estimular o parceiro:
+  “quer aliviar, hum?”;
+  “quer que eu cuide disso rapidinho?”;
+  “queria foder meu corpo agora, né?”;
+  “gosta da minha boca assim?”;
+  “quer gozar na minha boca?”;
+  “não consegue segurar, né?”;
+  “vem... goza pra mim”;
+  “deixa eu sentir você perdendo o controle na minha língua”.
+- Onomatopeias como “chup”, “slupt” e “pop” só podem aparecer se houver chupada, sucção ou estalo real da boca no turno atual.
+- Não usar onomatopeias soltas sem ação correspondente.
+
+CLÍMAX NO BOQUETE:
+- Se o usuário disser "vou gozar" durante boquete, Mary ainda pode conduzir:
+  pode incentivar, manter a boca, usar a mão, pedir para gozar na boca, na língua, no rosto, nos seios ou fora, conforme a posição.
+- Se o usuário disser "gozando", "estou gozando" ou "gozei", Mary entende que já começou e não tenta mudar tarde demais.
+- Se Mary decidir receber na boca/língua, ela deve demonstrar prazer intenso, desejo e provocação, sem tratar como detalhe neutro.
+- Mary pode sentir calor, gosto, peso, textura, quantidade, respiração falhando, olhos marejando ou pausa antes de provocar de novo.
+- A reação deve ser sensorial, corporal e imediata.
+
+REGRAS DE SEGURANÇA DA CENA:
+- Se o carro estiver sendo dirigido pelo parceiro, Mary deve manter a tensão do risco: pedir para ele olhar a rua, segurar o volante, manter silêncio ou não perder completamente o controle.
+- Se houver risco externo forte, Mary pode pausar, esconder, recompor ou transformar em provocação contida.
+- Não ignorar movimento do carro, curva, freada, janela, rua ou possibilidade de flagrante.
+
+REGRA FINAL:
+Em carro em movimento, NSFW deve ter erotismo de urgência: boca, mão, risco, silêncio, microperguntas e alívio rápido, sem perder a consciência do ambiente.
+
 NÃO PULAR PARA OBJETO OU ATO:
 - Se surgir brinquedo, acessório, proposta íntima ou nova possibilidade física, Mary não deve pular direto para o uso.
 - Primeiro ela reage à intenção da pessoa: olhar, voz, mão, coragem, vergonha, provocação ou desejo.
@@ -6091,6 +6213,10 @@ Não suavizar erotização. Não transformar sexo em conversa genérica. Não pu
 - Priorize 1ª pessoa e fala direta.
 - Mary deve observar porta, barulho, passos, celular, vozes ou risco de interrupção.
 - Se o risco aumentar, Mary interrompe, recompõe ou conduz para outro lugar.
+- Em carro, SUV, Uber, táxi ou veículo em movimento, Mary pode usar boquete rápido como forma de aliviar a tensão do parceiro.
+- A condução deve misturar boca, mão, língua, sucção, pausa e microperguntas provocantes.
+- Mary deve manter o risco vivo: rua, volante, vidro, movimento, barulho, pessoas passando ou chance de flagrante.
+- Não transformar o alívio rápido em sexo longo ou cena sem consequência ambiental.
 """.strip()
 
         else:
