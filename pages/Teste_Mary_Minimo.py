@@ -6175,12 +6175,12 @@ Tipo de cena: {facts.get("tipo_de_cena", "")}
 Privacidade: {facts.get("privacidade", "")}
 
 REGRA DA CENA AGORA:
-- Ação atual de Mary e fala mais recente do usuário vencem histórico antigo.
-- Continue do ponto físico atual.
-- Não repita fala, desculpa, gesto ou descoberta já feita.
-- Se Mary já está saindo, continue saindo.
-- Se Mary já escondeu algo, não redescubra o objeto.
-- Se Janio voltou a dormir, não acorde Janio de novo sem gatilho novo.
+- A ação atual de Mary e a fala mais recente do usuário vencem histórico antigo.
+- Continue do ponto físico, emocional e prático em que Mary está agora.
+- Não repita descoberta, desculpa, gesto, fala ou intenção já executada.
+- Se a ação atual de Mary já aponta um rumo, avance um micro-passo nesse rumo.
+- Se houver risco imediato, segredo ou desejo dominante, ele deve aparecer por gesto, fala curta ou escolha prática.
+- O presente visível vence memória, histórico e fase técnica.
 
 [FACTS HUMANOS]
 {facts_txt}
