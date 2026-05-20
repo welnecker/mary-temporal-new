@@ -6002,7 +6002,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 # PROMPT
 # ==========================================================
 
-def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
+def montar_prompt_legacy_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
     plano_ativo = str(state.get("plano_ativo", "") or "").strip()
@@ -7766,6 +7766,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     - NSFW usa prompt isolado novo.
     - Demais modos continuam no prompt legacy.
     """
+    if not isinstance(state, dict):
+        state = {}
+
     facts = sincronizar_facts_basicos(state)
 
     tom_manual = normalizar_tom_manual_cena(
@@ -7775,7 +7778,19 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
         )
     )
 
+    # Mantém state e facts alinhados para debug/sidebar/prompt.
+    state["tom_manual_da_cena"] = tom_manual
+    facts["tom_manual_da_cena"] = tom_manual
+
+    # ======================================================
+    # NSFW ISOLADO
+    # ======================================================
     if tom_manual == "Nsfw":
+        try:
+            st.sidebar.success("✅ Usando prompt NSFW isolado")
+        except Exception:
+            pass
+
         contexto_comum = montar_contexto_comum_prompt(
             state=state,
             fala_usuario=fala_usuario,
@@ -7788,11 +7803,18 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
             fala_usuario=fala_usuario,
         )
 
+    # ======================================================
+    # LEGACY PARA OS OUTROS MODOS
+    # ======================================================
+    try:
+        st.sidebar.info("ℹ️ Usando prompt legacy")
+    except Exception:
+        pass
+
     return montar_prompt_legacy_para_modelo(
         state=state,
         fala_usuario=fala_usuario,
     )
-
 # ==========================================================
 # PROCESSAMENTO DO TURNO
 # ==========================================================
