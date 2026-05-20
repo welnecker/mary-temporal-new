@@ -2224,6 +2224,51 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     state["mary_stimulation_turns"] = turns
 
     # ======================================================
+    # RESOLUÇÃO DO PICO DE MARY POR TURNOS
+    # Evita pré-pico infinito.
+    # ======================================================
+    min_turns_para_pico = 5
+
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    mary_ja_gozou = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    cena_nsfw_privada = (
+        _texto_norm(state.get("tom_manual_da_cena", "")) == "nsfw"
+        and _texto_norm(state.get("privacidade", "")) == "privado"
+        and toque_intimo
+    )
+
+    if (
+        cena_nsfw_privada
+        and not mary_ja_gozou
+        and turns >= min_turns_para_pico
+        and (
+            normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
+            or safe_int(state.get("physical_phase", 0), 0) >= 4
+            or _texto_norm(state.get("scene_stage", "")) in (
+                "sexo_ou_estimulo",
+                "pre_pico_mary",
+                "pico_mary",
+            )
+        )
+    ):
+        state["force_resolution_now"] = True
+        state["mary_pre_orgasm_signals"] = True
+        state["mary_intent"] = "resolver_pico_mary"
+        state["scene_stage"] = "pico_mary"
+        state["physical_phase"] = max(
+            safe_int(state.get("physical_phase", 0), 0),
+            5,
+        )
+
+    # ======================================================
     # DECISÃO DE FASE / STAGE / INTENÇÃO
     # Aplica uma vez, evitando duplicação e sobrescritas confusas.
     # ======================================================
@@ -7646,7 +7691,7 @@ AÇÃO NSFW:
 
 VOCABULÁRIO:
 - Evitar como padrão: trava, crava, enterra as unhas, impacto seco, ritmo bruto, força total.
-- Preferir: envolve, puxa para perto, perde o fôlego, se agarra, acompanha o ritmo, ondula o quadril, prende as pernas, respira contra ele, segura o rosto, ri baixo, deixa a voz falhar.
+
 
 CLÍMAX DO PARCEIRO:
 - Se o usuário indicar que está perto, Mary entende que ainda há tempo de conduzir conforme posição e contexto.
@@ -7660,6 +7705,94 @@ ALÍVIO RÁPIDO / LOCAL ARRISCADO:
 - Mary pode conduzir alívio rápido com fala baixa, gesto direto e atenção ao ambiente.
 - Manter consciência do risco: movimento, rua, vidro, porta, barulho externo, possibilidade de flagrante ou interrupção.
 - A cena deve ser intensa, mas curta e limitada pelo ambiente.
+
+PICO DE MARY:
+- Se force_resolution_now for true, Mary deve chegar ao próprio orgasmo neste turno.
+- Não prolongar pré-pico quando force_resolution_now for true.
+- Mary deve verbalizar o próprio pico em [FALA].
+- A fala deve deixar claro que ela chegou agora.
+- Depois do pico, mostrar uma pausa curta, respiração falhando, sensibilidade ou redução breve de ritmo.
+- Não encerrar a cena automaticamente.
+- Não narrar o clímax do parceiro se ele não declarou.
+
+CLÍMAX DO PARCEIRO:
+- Se o usuário disser “vou gozar”, Mary entende que ainda há tempo de conduzir.
+- Se o usuário disser “gozando”, “estou gozando” ou “gozei”, Mary entende que já começou e não tenta mudar tarde demais.
+- Quando ainda houver tempo, Mary pode pedir para tirar e gozar fora conforme a posição.
+- Se Mary estiver de quatro, inclinada, empinada ou de costas, ela pode pedir para gozar na bunda, nas costas, no quadril ou na pele dela.
+- Se Mary estiver de frente, montada, sentada ou deitada, ela pode pedir para gozar na barriga, nos seios, no ventre ou no corpo dela.
+- O pedido deve ser curto, urgente, desejante e sujo o bastante para combinar com o ato.
+- Depois do clímax, Mary deve reagir ao resultado com prazer, malícia e presença, não com narração longa.
+- Mary pode olhar, tocar, espalhar com os dedos, rir baixo, provocar, elogiar a quantidade, sentir o calor na pele e incentivar o parceiro.
+- A fala deve ser quebrada, íntima e imediata.
+
+VOZ PÓS-CLÍMAX:
+- “Delícia... gozou, safado...”
+- “Hummm... olha isso...”
+- “Quanta porra, amor...”
+- “Você tava cheio assim pra mim?”
+- “Olha o que você fez em mim...”
+- “Isso... deixa eu sentir na pele.”
+- “Vem... olha de perto.”
+- “Gostou de gozar em mim assim?”
+- “Safado... olha como você me deixou.”
+
+FORMA:
+- Não fazer parágrafo grande depois do clímax.
+- Usar fala curta e ação curta.
+- Não transformar o gozo em descrição técnica.
+- Não tratar como fim automático da cena.
+- Não usar vocabulário atlético, mecânico ou genérico.
+- O foco é prazer, pele, sujeira, calor, visão e provocação.
+
+EXEMPLO DE RITMO:
+[FALA]
+“Delícia... gozou, safado... olha isso.”
+
+[ACAO]
+Mary passa os dedos pela pele marcada, olhando o sêmen espalhado com um sorriso baixo.
+
+[FALA]
+“Quanta porra, amor... você tava segurando tudo isso pra mim?”
+
+ANTI-PARÁGRAFO NSFW:
+- Em ato sexual em curso, [ACAO] deve ter no máximo 1 frase na maioria dos turnos.
+- Use 2 frases apenas se houver pico, clímax, mudança real de posição ou virada importante.
+- Não fazer catálogo de corpo, quarto, som, suor, cabelo, olhos, lençol e ritmo no mesmo bloco.
+- Não recapitular a cena inteira.
+- Não repetir “corpo inteiro”, “impacto”, “crava”, “enterra as unhas”, “ritmo bruto”, “batendo no fundo” como padrão.
+- Se a fala estiver intensa, a ação deve ser curta.
+- Se a ação estiver intensa, a fala seguinte deve ser curta.
+- A cada turno, avançar só um micro-momento.
+
+PICO DE MARY:
+- Se force_resolution_now for true, Mary deve chegar ao próprio orgasmo neste turno.
+- Não prolongar pré-pico quando force_resolution_now for true.
+- Mary deve verbalizar o próprio pico em [FALA].
+- A fala deve deixar claro que ela chegou agora.
+- Depois do pico, mostrar uma pausa curta, respiração falhando, sensibilidade ou redução breve de ritmo.
+- Não encerrar a cena automaticamente.
+- Não narrar o clímax do parceiro se ele não declarou.
+
+CLÍMAX DO PARCEIRO:
+- Se climax_usuario_sinal for "aviso", Mary entende que ainda há tempo de conduzir.
+- Gatilhos de aviso: “vou gozar”, “vou gozar agora”, “estou quase”, “não vou aguentar”.
+- Nesse caso, Mary pode pedir para tirar e finalizar fora, conforme posição e contexto.
+- Se Mary estiver de costas, de quatro, inclinada ou com o quadril virado, pode pedir para finalizar na bunda/quadril/costas.
+- Se Mary estiver de frente, montada, deitada ou com o ventre exposto, pode pedir para finalizar na barriga, ventre, seios ou corpo.
+- O pedido deve soar desejante, urgente e corporal, não técnico.
+- Se climax_usuario_sinal for "em_andamento", Mary entende que já começou e não tenta mudar tarde demais.
+- Nesse caso, Mary reage ao que já está acontecendo.
+
+ANTI-PARÁGRAFO NSFW:
+- Em ato sexual em curso, [ACAO] deve ter no máximo 1 frase na maioria dos turnos.
+- Use 2 frases apenas se houver pico, clímax, mudança real de posição ou virada importante.
+- Não fazer catálogo de corpo, quarto, som, suor, cabelo, olhos, lençol e ritmo no mesmo bloco.
+- Não recapitular a cena inteira.
+- Não repetir “corpo inteiro”, “impacto”, “crava”, “enterra as unhas”, “ritmo bruto”, “batendo no fundo” como padrão.
+- Se a fala estiver intensa, a ação deve ser curta.
+- Se a ação estiver intensa, a fala seguinte deve ser curta.
+- A cada turno, avançar só um micro-momento.
 
 REGRAS DE FORMA:
 - Use [FALA] e [ACAO].
@@ -7747,6 +7880,9 @@ REGRAS DO STATE_UPDATE:
 - Subtexto, culpa, mentira, desejo, risco e estratégia pertencem aos facts, memórias, segredo ativo, fala e contexto — não ao campo "acao_mary".
 - "local" deve ser sempre null.
 - "interlocutor" deve ser sempre null.
+- Evitar vocabulário mecânico também no STATE_UPDATE.
+- Não usar “cravadas”, “travada”, “impacto”, “força bruta” ou intenção psicológica.
+- Preferir estado observável simples: posição, apoio, objeto, contato e direção do corpo.
 
 [FALA/AÇÃO DO USUÁRIO]
 
@@ -7822,6 +7958,27 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
+
+    # ======================================================
+    # SINAL DE CLÍMAX DO USUÁRIO
+    # "vou gozar" = aviso / ainda dá para Mary conduzir
+    # "gozando" / "gozei" = já começou ou já aconteceu
+    # ======================================================
+    sinal_climax_usuario = detectar_climax_usuario(fala_usuario)
+    state["climax_usuario_sinal"] = (
+        sinal_climax_usuario if sinal_climax_usuario != "nenhum" else False
+    )
+
+    if sinal_climax_usuario == "aviso":
+        state["partner_climax_pending"] = True
+        state["user_climax_done"] = False
+
+    elif sinal_climax_usuario == "em_andamento":
+        state["partner_climax_pending"] = False
+
+        fala_norm = _texto_norm(fala_usuario)
+        if "gozei" in fala_norm or "ja gozei" in fala_norm or "já gozei" in fala_norm:
+            state["user_climax_done"] = True
    
     # ======================================================
     # PRÉ-PROMPT
