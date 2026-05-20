@@ -25,6 +25,8 @@ from model_eval import salvar_model_eval_na_planilha
 MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 12
 
+MIN_TURNS_PRE_PICO_MARY = 3
+
 OPCOES_TOM_MANUAL_CENA = [
     "Natural / Amizade",
     "Malícia / Flerte",
@@ -77,7 +79,8 @@ def normalizar_modo_surpresa(valor: str) -> str:
     }
 
     return mapa.get(valor_norm, "Desligado")
-
+    
+# OPCOES_CONSCIENCIA_CENA_MARY
 OPCOES_ESTADO_EMOCIONAL_MARY = [
     "Automático",
     "Impulso",
@@ -89,14 +92,14 @@ OPCOES_ESTADO_EMOCIONAL_MARY = [
 def limite_fase_por_privacidade(privacidade: str) -> int:
     privacidade = _texto_norm(privacidade)
 
-    if privacidade == "publico":
-        return 3
+    if privacidade == "privado":
+        return 7
 
     if privacidade == "semiprivado":
         return 4
 
-    return 7
-
+    return 3
+    
 SCENE_STAGES_VALIDOS = {
     "inicio",
     "cotidiano",
@@ -120,22 +123,17 @@ SCENE_STAGES_VALIDOS = {
 }
 
 def normalizar_scene_stage(valor: str, padrao: str = "inicio") -> str:
-    valor = str(valor or "").strip()
+    valor_norm = _texto_norm(valor).replace(" ", "_")
 
     aliases = {
         "pico": "pico_mary",
         "pre_pico": "pre_pico_mary",
         "pre-pico": "pre_pico_mary",
-        "pré-pico": "pre_pico_mary",
-        "pre pico": "pre_pico_mary",
-        "pré pico": "pre_pico_mary",
-        "after care": "aftercare",
+        "after_care": "aftercare",
         "pos_pico": "aftercare",
-        "pós-pico": "aftercare",
         "pos-pico": "aftercare",
     }
 
-    valor_norm = _texto_norm(valor).replace(" ", "_")
     valor_norm = aliases.get(valor_norm, valor_norm)
 
     if valor_norm in SCENE_STAGES_VALIDOS:
@@ -169,6 +167,7 @@ MARY_INTENTS_VALIDOS = {
 
 def normalizar_mary_intent(valor: str, padrao: str = "responder_com_naturalidade") -> str:
     valor_norm = _texto_norm(valor).replace(" ", "_").replace("-", "_")
+    padrao_norm = _texto_norm(padrao).replace(" ", "_").replace("-", "_")
 
     aliases = {
         "naturalidade": "responder_com_naturalidade",
@@ -183,41 +182,60 @@ def normalizar_mary_intent(valor: str, padrao: str = "responder_com_naturalidade
         "pre_pico": "aproximar_do_pico",
         "pico": "resolver_pico_mary",
         "aftercare": "desacelerar_com_presenca",
+
+        "intensidade": "sustentar_tensao_intensa",
+        "intensidade_contida": "sustentar_tensao_intensa",
+        "intensificar": "intensificar_com_cuidado",
+        "estimulo": "sentir_e_conduzir",
+        "estimulo_corporal": "sentir_e_conduzir",
+        "sexo_ou_estimulo": "sentir_e_conduzir",
+        "presenca": "presenca_viva",
     }
 
     valor_norm = aliases.get(valor_norm, valor_norm)
+    padrao_norm = aliases.get(padrao_norm, padrao_norm)
 
     if valor_norm in MARY_INTENTS_VALIDOS:
         return valor_norm
 
-    return padrao
+    if padrao_norm in MARY_INTENTS_VALIDOS:
+        return padrao_norm
+
+    return "responder_com_naturalidade"
 
 MAPA_ESTADO_EMOCIONAL_MARY = {
     "Automático": (
-        "Mary escolhe a postura de consciência mais coerente com a cena, "
-        "sem explicar essa escolha em texto. A consciência deve aparecer em atos e falas."
+        "Use a reação mais adequada ao contexto atual. "
+        "Não explique o estado interno de Mary. "
+        "Mostre a escolha apenas por fala direta, ação física curta ou mudança de atitude."
     ),
 
     "Impulso": (
-        "Mary age mais tomada pelo momento: desejo, curiosidade, adrenalina, vaidade, raiva, "
-        "saudade ou vontade de experimentar algo. Ela pensa menos antes de agir, mas não deve "
-        "parecer burra nem completamente inconsciente do ambiente."
+        "Mary deve agir antes de refletir longamente. "
+        "Priorize uma ação imediata, uma fala direta ou aproximação física/social. "
+        "Não use justificativas psicológicas. "
+        "Não transforme impulso em imprudência absurda: Mary ainda percebe o ambiente."
     ),
 
     "Cautela": (
-        "Mary percebe risco, exposição, ambiente, poder do outro, vergonha possível ou consequência. "
-        "Ela não trava a cena: mede o terreno por gesto curto, pergunta, condição, recuo mínimo ou olhar atento."
+        "Mary deve perceber risco ou exposição, mas não deve travar a cena. "
+        "Ela deve reagir com uma destas formas: recuar pouco, olhar ao redor, falar baixo, "
+        "impor uma condição curta, fazer uma pergunta objetiva ou testar a situação antes de avançar. "
+        "Não escreva sermões, explicações morais ou longas análises internas."
     ),
 
     "Conflito": (
-        "Mary quer algo, mas existe uma força interna contrária: medo, culpa, vergonha, lealdade, "
-        "arrependimento, segredo ou dúvida. Isso deve aparecer por hesitação, pausa, fala ambígua "
-        "ou gesto contraditório, não por explicação psicológica."
+        "Mary deve demonstrar desejo e resistência ao mesmo tempo. "
+        "Use gesto contraditório: aproximar e parar, tocar e hesitar, sorrir e desviar o olhar, "
+        "aceitar parcialmente ou responder com fala ambígua. "
+        "Não explique o conflito em texto psicológico."
     ),
 
     "Assumindo o risco": (
-        "Mary entende que há custo, exposição, perigo, perda de controle ou consequência emocional, "
-        "mas escolhe seguir. Ela não romantiza o risco nem age como ingênua: assume por fala ou gesto curto."
+        "Mary deve reconhecer o risco de forma curta e continuar por escolha própria. "
+        "Use fala direta ou gesto decidido. "
+        "Ela não deve parecer ingênua, confusa ou arrastada pela cena. "
+        "Não romantize o risco e não transforme a decisão em monólogo."
     ),
 }
 
@@ -1208,9 +1226,12 @@ def buscar_contexto_do_personagem(state: dict, alvo: str) -> str:
         return ""
 
     linhas_relevantes = []
+
     for linha in contexto_total.splitlines():
-        if any(tok in linha for tok in tokens_alvo):
-            linhas_relevantes.append(linha)
+        for tok in tokens_alvo:
+            if re.search(rf"\b{re.escape(tok)}\b", linha):
+                linhas_relevantes.append(linha)
+                break
 
     return "\n".join(linhas_relevantes)
 
@@ -1260,7 +1281,11 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
 
     texto = f"{alvo}\n{contexto}"
 
-    if contem_termo(texto, ["mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao", "tia", "tio", "prima", "primo"]):
+    # 1) Família: prioridade máxima. Não deve virar ambiguidade romântica.
+    if contem_termo(texto, [
+        "mãe", "mae", "pai", "irmã", "irma", "irmão", "irmao",
+        "tia", "tio", "prima", "primo"
+    ]):
         return {
             "relacao": "família",
             "modo_relacional": "familia",
@@ -1268,7 +1293,11 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    if contem_termo(texto, ["professor", "professora", "docente", "orientador", "reitor", "reitoria", "coordenador"]):
+    # 2) Autoridade: também deve vencer interesse genérico.
+    if contem_termo(texto, [
+        "professor", "professora", "docente", "orientador",
+        "reitor", "reitoria", "coordenador"
+    ]):
         return {
             "relacao": "autoridade acadêmica",
             "modo_relacional": "formal",
@@ -1276,23 +1305,12 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    if contem_termo(texto, ["colega", "aluno", "aluna", "turma", "classe", "paciente", "divã", "diva", "aula prática", "aula pratica"]):
-        return {
-            "relacao": "colega de faculdade",
-            "modo_relacional": "academico",
-            "tensao_romantica_com_interlocutor": False,
-            "toque_intimo_permitido": False,
-        }
-
-    if contem_termo(texto, ["amiga", "amigo", "cúmplice", "cumplice", "confidente"]):
-        return {
-            "relacao": "amizade",
-            "modo_relacional": "amizade",
-            "tensao_romantica_com_interlocutor": False,
-            "toque_intimo_permitido": False,
-        }
-
-    if contem_termo(texto, ["ex", "rival", "ciúme", "ciume", "obcecado", "apaixonado por mary", "quer voltar"]):
+    # 3) Rival/ex/tensão social.
+    if contem_termo(texto, [
+        "ex-namorado", "ex namorado", "ex de mary", "ex ficante",
+        "rival", "ciúme", "ciume", "obcecado",
+        "apaixonado por mary", "quer voltar"
+    ]):
         return {
             "relacao": "tensão social",
             "modo_relacional": "tensao_social",
@@ -1300,7 +1318,49 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    if contem_termo(texto, ["fotógrafo", "fotografo", "fotografia", "projeto", "ong", "contrato", "negócio", "negocio", "represento", "centro de idiomas"]):
+    # 4) Possível interesse deve vir antes de amizade/colega.
+    if contem_termo(texto, [
+        "paquera", "ficante", "atração", "atracao",
+        "interesse romântico", "interesse romantico",
+        "interesse por mary", "deseja mary",
+        "elogia mary", "flerta com mary", "convite íntimo", "convite intimo"
+    ]):
+        return {
+            "relacao": "contato com possível interesse",
+            "modo_relacional": "social_ambíguo",
+            "tensao_romantica_com_interlocutor": True,
+            "toque_intimo_permitido": False,
+        }
+
+    # 5) Amizade.
+    if contem_termo(texto, [
+        "amiga", "amigo", "cúmplice", "cumplice", "confidente"
+    ]):
+        return {
+            "relacao": "amizade",
+            "modo_relacional": "amizade",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # 6) Colega/faculdade.
+    if contem_termo(texto, [
+        "colega", "aluno", "aluna", "turma", "classe",
+        "aula prática", "aula pratica"
+    ]):
+        return {
+            "relacao": "colega de faculdade",
+            "modo_relacional": "academico",
+            "tensao_romantica_com_interlocutor": False,
+            "toque_intimo_permitido": False,
+        }
+
+    # 7) Contato profissional/social.
+    if contem_termo(texto, [
+        "fotógrafo", "fotografo", "fotografia",
+        "ong", "contrato", "negócio", "negocio",
+        "represento", "centro de idiomas"
+    ]):
         return {
             "relacao": "contato profissional / social",
             "modo_relacional": "social",
@@ -1308,19 +1368,16 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
             "toque_intimo_permitido": False,
         }
 
-    if contem_termo(texto, ["mansão", "mansao", "dono da mansão", "orla de botafogo", "piscina particular", "praia particular", "all inclusive"]):
+    # 8) Anfitrião/conhecido influente.
+    if contem_termo(texto, [
+        "mansão", "mansao", "dono da mansão", "dono da mansao",
+        "orla de botafogo", "piscina particular",
+        "praia particular", "all inclusive"
+    ]):
         return {
             "relacao": "anfitrião / conhecido influente",
             "modo_relacional": "cautela_social",
             "tensao_romantica_com_interlocutor": False,
-            "toque_intimo_permitido": False,
-        }
-
-    if contem_termo(texto, ["paquera", "ficante", "atração", "atracao", "interesse", "elogio", "convite"]):
-        return {
-            "relacao": "contato com possível interesse",
-            "modo_relacional": "social_ambíguo",
-            "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": False,
         }
 
@@ -1383,34 +1440,31 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state["toque_intimo_permitido"] = False
         return
 
-    if "janio" in alvo:
-        janio_presente = janio_status in {
-            "presente",
-            "interlocutor",
-            "personagem",
-            "na cena",
-            "presente na cena",
-            "ativo",
-            "participando",
-            "junto",
-            "sim",
-            "true",
-            "1",
+    if contem_termo(alvo, ["janio"]):
+        janio_ausente = janio_status in {
+            "ausente",
+            "ausente_ou_observador",
+            "mencionado",
+            "roteirista",
+            "fora da cena",
+            "nao",
+            "não",
+            "false",
+            "0",
         }
-
-        if janio_presente:
+    
+        if not janio_ausente:
             state["relacao"] = "romance"
             state["modo_relacional"] = "romance"
             state["tensao_romantica_com_interlocutor"] = True
             state["amor_genuino_com_interlocutor"] = True
-
-            # Não derruba permissão íntima definida pelo tom/local.
+    
             state["toque_intimo_permitido"] = normalizar_bool(
                 state.get("toque_intimo_permitido", False),
                 default=False,
             )
             return
-
+    
         state["relacao"] = "contextual"
         state["modo_relacional"] = "neutro"
         state["tensao_romantica_com_interlocutor"] = False
@@ -1446,17 +1500,19 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     Quando Mary está sozinha, em tom Natural / Amizade e sem estímulo ativo,
     limpa fase física herdada de cena anterior.
 
-    Importante:
-    - Não apaga fatos narrativos passados.
-    - Não altera mary_climax_done/user_climax_done.
-    - Apenas impede que uma cena atual sozinha e neutra carregue
-      resíduos de sexo, pico ou intimidade anterior.
+    Não apaga fatos narrativos passados.
+    Não altera mary_climax_done/user_climax_done.
+    Apenas impede que uma cena atual sozinha e neutra carregue
+    resíduos de sexo, pico ou intimidade anterior.
     """
     if not isinstance(state, dict):
         return
 
     interlocutor = _texto_norm(state.get("interlocutor", ""))
     foco = _texto_norm(state.get("interlocutor_foco_turno", ""))
+    persistente = _texto_norm(state.get("interlocutor_ativo_persistente", ""))
+    ultimo = _texto_norm(state.get("ultimo_interlocutor_explicito", ""))
+
     tom = _texto_norm(state.get("tom_manual_da_cena", ""))
     tipo = _texto_norm(state.get("tipo_de_cena", ""))
 
@@ -1477,6 +1533,7 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
 
     tom_natural_ou_antigo = tom in (
         "natural / amizade",
+        "natural/amizade",
         "natural_amizade",
         "neutro",
         "amizade",
@@ -1484,6 +1541,8 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
 
     tipo_natural_ou_antigo = tipo in (
         "natural_amizade",
+        "natural / amizade",
+        "natural/amizade",
         "neutra",
         "amizade",
         "cotidiano",
@@ -1492,6 +1551,8 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
     if (
         eh_sem_interlocutor(interlocutor)
         and eh_sem_interlocutor(foco)
+        and eh_sem_interlocutor(persistente)
+        and eh_sem_interlocutor(ultimo)
         and tom_natural_ou_antigo
         and tipo_natural_ou_antigo
         and mary_stimulation_turns <= 0
@@ -1507,15 +1568,16 @@ def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
         state["tensao_romantica_com_interlocutor"] = False
         state["partner_climax_pending"] = False
 
-
 def _fase_atual(state: dict) -> int:
     if not isinstance(state, dict):
         return 0
 
     try:
-        return int(state.get("physical_phase", 0) or 0)
+        fase = int(state.get("physical_phase", 0) or 0)
     except Exception:
         return 0
+
+    return max(0, min(7, fase))
 
 
 # ==========================================================
@@ -1524,21 +1586,27 @@ def _fase_atual(state: dict) -> int:
 
 def safe_int(valor, default: int = 0) -> int:
     try:
-        return int(valor or default)
+        if valor is None or valor == "":
+            return default
+        return int(valor)
     except Exception:
         return default
 
 
 def detectar_climax_usuario(fala_usuario: str) -> str:
-    """
-    Diferencia aviso de clímax do usuário de clímax já em andamento.
-
-    Retornos:
-    - "aviso": usuário disse que vai gozar / está quase;
-    - "em_andamento": usuário disse que está gozando / gozou;
-    - "nenhum": sem sinal claro.
-    """
     texto = _texto_norm(fala_usuario)
+
+    negacoes = [
+        "nao estou gozando",
+        "não estou gozando",
+        "nao gozei",
+        "não gozei",
+        "ainda nao",
+        "ainda não",
+    ]
+
+    if any(n in texto for n in negacoes):
+        return "nenhum"
 
     gatilhos_em_andamento = [
         "estou gozando",
@@ -1563,9 +1631,6 @@ def detectar_climax_usuario(fala_usuario: str) -> str:
         "vou perder o controle",
     ]
 
-    # Ordem importante:
-    # "gozando" significa que já começou.
-    # "vou gozar" significa que Mary ainda pode conduzir.
     if any(g in texto for g in gatilhos_em_andamento):
         return "em_andamento"
 
@@ -1577,7 +1642,9 @@ def detectar_climax_usuario(fala_usuario: str) -> str:
 
 def safe_float(valor, default: float = 0.0) -> float:
     try:
-        return float(valor or default)
+        if valor is None or valor == "":
+            return default
+        return float(valor)
     except Exception:
         return default
 
@@ -1591,8 +1658,21 @@ def _texto_norm(valor: str) -> str:
 
 
 def _tem_algum(texto: str, termos: list[str]) -> bool:
-    texto = _texto_norm(texto)
-    return any(_texto_norm(t) in texto for t in termos if str(t or "").strip())
+    texto_norm = _texto_norm(texto)
+
+    for termo in termos:
+        termo_norm = _texto_norm(termo)
+        if not termo_norm:
+            continue
+
+        if " " in termo_norm:
+            if termo_norm in texto_norm:
+                return True
+        else:
+            if re.search(rf"\b{re.escape(termo_norm)}\b", texto_norm):
+                return True
+
+    return False
 
 def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo: str) -> bool:
     """
@@ -1688,8 +1768,12 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                 "sugar",
                 "succao",
                 "sucção",
-                "boca",
-                "oral",
+                "sexo oral",
+                "minha boca em",
+                "boca em voce",
+                "boca em você",
+                "boca nela",
+                "leva a boca",
             ],
         )
 
@@ -1705,7 +1789,6 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                 "sugando",
                 "sucção",
                 "succao",
-                "pop",
             ],
         )
 
@@ -1727,7 +1810,6 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                 "bateu",
                 "batendo",
                 "tapinha",
-                "plaf",
             ],
         ) 
 
@@ -1747,19 +1829,38 @@ def converter_onomatopeias_sociais_em_acao(texto: str, state: dict, fala_usuario
     fala_norm = _texto_norm(fala_usuario)
     tom = _texto_norm(state.get("tom_manual_da_cena", ""))
     tipo = _texto_norm(state.get("tipo_de_cena", ""))
+
     interlocutor = str(
         state.get("interlocutor_foco_turno")
         or state.get("interlocutor")
         or "interlocutor"
     ).strip()
 
-    tem_smack_usuario = "smack" in fala_norm
-    tem_plaf_usuario = "plaf" in fala_norm
+    tem_smack_usuario = re.search(r"\bsmack\b", fala_norm, flags=re.IGNORECASE) is not None
+    tem_plaf_usuario = re.search(r"\bplaf\b", fala_norm, flags=re.IGNORECASE) is not None
 
-    cena_social = tom in ("neutro", "amizade", "segredo pendente", "decisao") or tipo in (
+    cena_social = tom in (
+        "natural / amizade",
+        "natural/amizade",
+        "natural_amizade",
+        "neutro",
+        "amizade",
+        "pendencia / decisao",
+        "pendencia/decisao",
+        "pendencia_decisao",
+        "segredo pendente",
+        "decisao",
+    ) or tipo in (
+        "natural / amizade",
+        "natural/amizade",
+        "natural_amizade",
         "neutra",
         "amizade",
+        "cotidiano",
         "segredo_pendente",
+        "pendencia / decisao",
+        "pendencia/decisao",
+        "pendencia_decisao",
         "decisao",
     )
 
@@ -1777,19 +1878,17 @@ def converter_onomatopeias_sociais_em_acao(texto: str, state: dict, fala_usuario
 
     if cena_social and tem_smack_usuario and tem_plaf_usuario and contexto_tapa:
         frase = (
-            f"Mary recebe o beijo rápido de {interlocutor} e ri quando sente "
-            f"o tapa estalar em sua bunda."
+            f"Mary recebe o beijo rápido de {interlocutor} e sente o tapa em sua bunda, "
+            f"reagindo no mesmo clima da cena."
         )
 
-        # Remove blocos isolados [FALA] Smack/Plaf se existirem.
         texto = re.sub(
-            r"\[FALA\]\s*\n\s*(smack|plaf)\s*[!.\u2026]*\s*",
+            r"\[FALA\]\s*\n\s*(?:(?:smack|plaf)\s*[!.\u2026]*\s*)+",
             "",
             texto,
             flags=re.IGNORECASE,
         )
 
-        # Insere a frase no primeiro bloco de ação, se houver.
         if "[ACAO]" in texto:
             texto = texto.replace("[ACAO]", f"[ACAO]\n{frase}\n\n", 1)
         else:
@@ -1829,10 +1928,19 @@ def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: 
             flags=re.IGNORECASE,
         )
 
-    # Limpeza leve de espaços deixados pela remoção.
     texto = re.sub(r"[ \t]{2,}", " ", texto)
     texto = re.sub(r"\n[ \t]+", "\n", texto)
     texto = re.sub(r" +([,.!?])", r"\1", texto)
+
+    # Remove marcadores que ficaram vazios depois da limpeza.
+    texto = re.sub(
+        r"\[(FALA|ACAO|AÇÃO)\]\s*(?=\n\s*\[|\s*$)",
+        "",
+        texto,
+        flags=re.IGNORECASE,
+    )
+
+    texto = re.sub(r"\n{3,}", "\n\n", texto)
 
     return texto.strip()
 
@@ -1850,9 +1958,9 @@ def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
         0: "inicio",
         1: "aproximacao",
         2: "toque",
-        3: "beijo",
+        3: "flerte_direto",
         4: "intensidade",
-        5: "pico",
+        5: "pre_pico_mary",
         6: "desaceleracao",
         7: "aftercare",
     }
@@ -1907,27 +2015,24 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
         )
     )
 
-    contexto_penetracao_ativo = (
-        fase >= 4
-        or _tem_algum(
-            contexto_fisico_salvo,
-            [
-                "penetração",
-                "penetracao",
-                "penetrando",
-                "cavalgando",
-                "cavalga",
-                "montada",
-                "entra e sai",
-                "entrar e sair",
-                "dentro de mim",
-                "dentro dela",
-                "estocadas",
-                "estocada",
-                "sexo_ou_estimulo",
-                "pre_pico_mary",
-            ],
-        )
+    contexto_penetracao_ativo = _tem_algum(
+        contexto_fisico_salvo,
+        [
+            "penetração",
+            "penetracao",
+            "penetrando",
+            "cavalgando",
+            "cavalga",
+            "montada",
+            "entra e sai",
+            "entrar e sair",
+            "dentro de mim",
+            "dentro dela",
+            "estocadas",
+            "estocada",
+            "sexo_ou_estimulo",
+            "pre_pico_mary",
+        ],
     )
 
     contexto_oral_ativo = _tem_algum(
@@ -2197,11 +2302,6 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     )
 
     # ======================================================
-    # CONTADOR DE ESTIMULAÇÃO
-    # ======================================================
-    turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
-
-    # ======================================================
     # CONTADOR DE ESTIMULAÇÃO DIRETA
     # Só conta turnos depois de estímulo sexual direto real.
     # ======================================================
@@ -2241,7 +2341,7 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     # de estímulo direto, ou se houver sinal explícito forte.
     # ======================================================
     
-    min_turns_pre_pico = 3
+    min_turns_pre_pico = MIN_TURNS_PRE_PICO_MARY
     
     if tem_pre_orgasmo_explicito and turns >= 2:
         fase = max(fase, 5)
@@ -2279,18 +2379,14 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     state["force_resolution_now"] = False
 
 
-def detectar_climax_usuario(fala_usuario: str) -> bool:
+def detectar_climax_usuario_concluido(fala_usuario: str) -> bool:
     texto = _texto_norm(fala_usuario)
 
     negacoes = [
         "nao gozei",
-        "não gozei",
         "ainda nao gozei",
-        "ainda não gozei",
         "nao estou gozando",
-        "não estou gozando",
         "nao acabei",
-        "não acabei",
         "segurei",
         "estou segurando",
         "to segurando",
@@ -2318,6 +2414,37 @@ def detectar_climax_usuario(fala_usuario: str) -> bool:
     ]
 
     return _tem_algum(texto, sinais_climax_usuario)
+
+def detectar_aviso_climax_usuario(fala_usuario: str) -> bool:
+    texto = _texto_norm(fala_usuario)
+
+    negacoes = [
+        "nao vou gozar",
+        "não vou gozar",
+        "ainda nao",
+        "ainda não",
+        "segurei",
+        "estou segurando",
+        "to segurando",
+        "tô segurando",
+    ]
+
+    if _tem_algum(texto, negacoes):
+        return False
+
+    sinais_aviso = [
+        "vou gozar",
+        "vou acabar",
+        "vou explodir",
+        "estou quase",
+        "to quase",
+        "tô quase",
+        "nao vou aguentar",
+        "não vou aguentar",
+        "vou perder o controle",
+    ]
+
+    return _tem_algum(texto, sinais_aviso)
 
 
 def detectar_climax_parceiro_na_resposta(resposta: str) -> bool:
@@ -2365,19 +2492,12 @@ def detectar_climax_parceiro_na_resposta(resposta: str) -> bool:
 
 
 def detectar_climax_mary_na_resposta(resposta: str) -> bool:
-    """
-    Detecta se a resposta final verbalizou claramente o próprio pico.
-    Isso sincroniza o state com a narrativa.
-    """
     texto = _texto_norm(resposta)
 
     negacoes = [
         "nao gozei",
-        "não gozei",
         "ainda nao gozei",
-        "ainda não gozei",
         "nao estou gozando",
-        "não estou gozando",
         "quase gozei",
         "quase gozando",
         "sem gozar",
@@ -2403,6 +2523,15 @@ def detectar_climax_mary_na_resposta(resposta: str) -> bool:
         "eu nao aguentei e gozei",
         "não aguentei e gozei",
         "nao aguentei e gozei",
+
+        "mary gozou",
+        "mary chega ao climax",
+        "mary chegou ao climax",
+        "mary atinge o climax",
+        "mary atingiu o climax",
+        "ela gozou",
+        "ela chega ao climax",
+        "ela chegou ao climax",
     ]
 
     return _tem_algum(texto, sinais)
@@ -2410,8 +2539,8 @@ def detectar_climax_mary_na_resposta(resposta: str) -> bool:
 def ambiente_permite_alivio_rapido(state: dict) -> bool:
     """
     Permite alívio rápido em local não plenamente privado,
-    mas com isolamento prático: sala fechada, banheiro, carro,
-    escritório/sala trancada etc.
+    mas com isolamento prático: sala fechada, banheiro trancado,
+    carro, escritório/sala trancada etc.
 
     Não libera roteiro íntimo completo.
     """
@@ -2424,49 +2553,58 @@ def ambiente_permite_alivio_rapido(state: dict) -> bool:
 
     contexto = f"{local} {acao} {eventos}"
 
-    marcadores_reservados = [
-        "sala do renan",
-        "sala fechada",
-        "sala trancada",
+    reservados_fortes = [
         "porta trancada",
+        "sala trancada",
+        "sala fechada",
+        "banheiro trancado",
+        "cabine trancada",
+        "cabine fechada",
+        "carro fechado",
+        "vidros fechados",
+        "escritorio trancado",
+        "consultorio trancado",
+    ]
+
+    reservados_comuns = [
+        "sala do renan",
         "banheiro",
+        "cabine",
         "carro",
         "suv",
         "escritorio",
-        "escritório",
         "consultorio",
-        "consultório",
         "setor oeste",
     ]
 
-    marcadores_publico_aberto = [
+    publico_aberto = [
         "praia",
         "rua",
         "corredor",
-        "pátio",
         "patio",
         "cantina",
         "sala cheia",
-        "ônibus",
         "onibus",
-        "metrô",
         "metro",
         "shopping",
         "arquibancada",
     ]
 
-    if any(m in contexto for m in marcadores_publico_aberto):
+    if any(m in contexto for m in reservados_fortes):
+        return True
+
+    if any(m in contexto for m in publico_aberto):
         return False
 
-    return any(m in contexto for m in marcadores_reservados)
+    return any(m in contexto for m in reservados_comuns)
 
 
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
     """
     Sincroniza flags de clímax depois que a resposta final foi gerada.
-    Importante:
-    - Mary pode verbalizar o próprio clímax na resposta.
-    - O parceiro/interlocutor também pode concluir dentro da narração da resposta.
+
+    Mary pode verbalizar o próprio clímax na resposta.
+    O parceiro/interlocutor também pode concluir dentro da narração da resposta.
     """
     if not isinstance(state, dict):
         return
@@ -2481,22 +2619,28 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
 
+        state["physical_phase"] = max(_fase_atual(state), 6)
+        state["scene_stage"] = "desaceleracao"
+        state["mary_intent"] = "desacelerar_com_presenca"
+
     if detectar_climax_parceiro_na_resposta(resposta_final):
         user_done = True
         state["user_climax_done"] = True
 
     state["partner_climax_pending"] = bool(mary_done and not user_done)
 
+    if mary_done and user_done:
+        state["resolution_done"] = True
+        state["partner_climax_pending"] = False
+
 
 def minimo_estimulos_para_mary(state: dict) -> int:
     """
-    Define quantos turnos de estímulo sexual direto são necessários
+    Define quantos turnos de estímulo direto são necessários
     antes de Mary poder resolver o pico.
 
-    Regra geral:
-    - Funciona para Janio, Rico, Bianca ou qualquer novo interlocutor.
-    - O nome do interlocutor só ajusta levemente o ritmo.
-    - A base da decisão é o estímulo direto real, não a identidade da pessoa.
+    A base da decisão é o estímulo direto real; o interlocutor
+    só ajusta levemente o ritmo.
     """
     if not isinstance(state, dict):
         return 5
@@ -2509,28 +2653,23 @@ def minimo_estimulos_para_mary(state: dict) -> int:
 
     relacao = _texto_norm(state.get("relacao", ""))
     tipo = _texto_norm(state.get("tipo_de_cena", ""))
+    tom = _texto_norm(state.get("tom_manual_da_cena", ""))
 
-    # Relações centrais / mais carregadas emocionalmente:
-    # segura um pouco mais para manter tensão e reciprocidade.
     if "janio" in interlocutor:
         return 6
 
     if "bianca" in interlocutor:
         return 6
 
-    # Rico ou novo amigo íntimo: padrão com leve sustentação.
     if "rico" in interlocutor or "ricardo" in interlocutor:
         return 5
 
-    # Qualquer relação íntima, ficante, paquera, interesse ou contato ambíguo.
-    if any(t in relacao for t in ["intima", "íntima", "ficante", "paquera", "interesse", "ambigua", "ambígua"]):
+    if any(t in relacao for t in ["intima", "ficante", "paquera", "interesse", "ambigua"]):
         return 5
 
-    # Se o tom da cena já é intimidade, vale para qualquer pessoa.
-    if "intimidade" in tipo:
+    if "intimidade" in tipo or "intimidade" in tom:
         return 5
 
-    # Default para qualquer novo personagem.
     return 5
 
 
@@ -2539,16 +2678,14 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
     Decide quando o turno deve resolver o pico de Mary.
 
     Regra:
-    - O orgasmo é liberado por contagem de turnos de estímulo direto.
-    - A contagem começa com penetração explícita, clitóris, masturbação, oral
-      ou fricção genital clara.
+    - A resolução é liberada por contagem de turnos de estímulo direto.
+    - A contagem começa com estímulo direto real.
     - Depois de minimo_estimulos_para_mary(), Mary pode resolver naturalmente.
     - Não depende de comando direto do usuário.
     """
     if not isinstance(state, dict):
         return
 
-    texto = _texto_norm(fala_usuario)
     privacidade = _texto_norm(state.get("privacidade", ""))
 
     if privacidade != "privado":
@@ -2569,11 +2706,6 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
 
     min_turns = minimo_estimulos_para_mary(state)
 
-    # ======================================================
-    # SINAIS QUE CONFIRMAM QUE A CENA CONTINUA INTENSA
-    # Não são obrigatórios, mas ajudam a evitar orgasmo seco
-    # quando a cena esfriou.
-    # ======================================================
     sinais_intensidade_atual = [
         "continua",
         "nao para",
@@ -2583,7 +2715,6 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "mais rápido",
         "ritmo",
         "dentro",
-        "entra",
         "entrando",
         "mete",
         "metendo",
@@ -2604,11 +2735,19 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "humm",
     ]
 
-    cena_ainda_intensa = _tem_algum(texto, sinais_intensidade_atual) or fase >= 5
+    contexto_intensidade = _texto_norm(
+        "\n".join(
+            [
+                str(fala_usuario or ""),
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("scene_stage", "") or ""),
+                str(state.get("mary_intent", "") or ""),
+            ]
+        )
+    )
 
-    # ======================================================
-    # LIBERAÇÃO POR TURNO
-    # ======================================================
+    cena_ainda_intensa = _tem_algum(contexto_intensidade, sinais_intensidade_atual)
+
     if (
         fase >= 5
         and pre_pico
@@ -2621,16 +2760,14 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         state["physical_phase"] = 6
         return
 
-    # ======================================================
-    # AINDA NÃO CHEGOU: sustenta tensão.
-    # ======================================================
     state["force_resolution_now"] = False
 
-    if stimulation_turns >= 3 or pre_pico or fase >= 5:
+    if stimulation_turns >= MIN_TURNS_PRE_PICO_MARY or pre_pico or fase >= 5:
         state["physical_phase"] = 5
         state["scene_stage"] = "pre_pico_mary"
         state["mary_intent"] = "sustentar_tensao_intensa"
         state["mary_pre_orgasm_signals"] = True
+
     elif stimulation_turns > 0:
         state["physical_phase"] = max(fase, 4)
         state["scene_stage"] = "sexo_ou_estimulo"
