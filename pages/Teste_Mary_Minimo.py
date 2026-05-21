@@ -2224,51 +2224,6 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     state["mary_stimulation_turns"] = turns
 
     # ======================================================
-    # RESOLUÇÃO DO PICO DE MARY POR TURNOS
-    # Evita pré-pico infinito.
-    # ======================================================
-    min_turns_para_pico = 5
-
-    toque_intimo = normalizar_bool(
-        state.get("toque_intimo_permitido", False),
-        default=False,
-    )
-
-    mary_ja_gozou = normalizar_bool(
-        state.get("mary_climax_done", False),
-        default=False,
-    )
-
-    cena_nsfw_privada = (
-        _texto_norm(state.get("tom_manual_da_cena", "")) == "nsfw"
-        and _texto_norm(state.get("privacidade", "")) == "privado"
-        and toque_intimo
-    )
-
-    if (
-        cena_nsfw_privada
-        and not mary_ja_gozou
-        and turns >= min_turns_para_pico
-        and (
-            normalizar_bool(state.get("mary_pre_orgasm_signals", False), default=False)
-            or safe_int(state.get("physical_phase", 0), 0) >= 4
-            or _texto_norm(state.get("scene_stage", "")) in (
-                "sexo_ou_estimulo",
-                "pre_pico_mary",
-                "pico_mary",
-            )
-        )
-    ):
-        state["force_resolution_now"] = True
-        state["mary_pre_orgasm_signals"] = True
-        state["mary_intent"] = "resolver_pico_mary"
-        state["scene_stage"] = "pico_mary"
-        state["physical_phase"] = max(
-            safe_int(state.get("physical_phase", 0), 0),
-            5,
-        )
-
-    # ======================================================
     # DECISÃO DE FASE / STAGE / INTENÇÃO
     # Aplica uma vez, evitando duplicação e sobrescritas confusas.
     # ======================================================
@@ -2319,11 +2274,7 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     state["scene_stage"] = novo_stage
     state["mary_intent"] = nova_intencao
 
-    # Não força resolução imediatamente aqui.
-    # A resolução deve ser decidida por preparar_resolucao_mary_se_necessario().
-    state["force_resolution_now"] = False
-
-
+    
 def detectar_climax_usuario(fala_usuario: str) -> bool:
     texto = _texto_norm(fala_usuario)
 
@@ -2661,6 +2612,7 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         and cena_ainda_intensa
     ):
         state["force_resolution_now"] = True
+        state["mary_pre_orgasm_signals"] = True
         state["mary_intent"] = "resolver_pico_mary"
         state["scene_stage"] = "pico_mary"
         state["physical_phase"] = 6
