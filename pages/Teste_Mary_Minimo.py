@@ -414,10 +414,12 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 
+@st.cache_resource(show_spinner=False)
 def _get_spreadsheet():
     return get_gspread_client().open_by_key(SPREADSHEET_ID)
 
 
+@st.cache_resource(show_spinner=False)
 def get_interacoes_sheet():
     ss = _get_spreadsheet()
 
@@ -427,6 +429,33 @@ def get_interacoes_sheet():
         ws = ss.add_worksheet(title=SHEET_INTERACOES, rows=3000, cols=8)
         ws.append_row(
             ["timestamp", "role", "content", "turno", "personagem", "timeline", "local", "interlocutor"],
+            value_input_option="USER_ENTERED",
+        )
+        return ws
+
+
+@st.cache_resource(show_spinner=False)
+def get_facts_sheet():
+    ss = _get_spreadsheet()
+
+    try:
+        return ss.worksheet(SHEET_FACTS)
+    except gspread.WorksheetNotFound:
+        ws = ss.add_worksheet(title=SHEET_FACTS, rows=500, cols=2)
+        ws.append_row(["chave", "valor"], value_input_option="USER_ENTERED")
+        return ws
+
+
+@st.cache_resource(show_spinner=False)
+def get_shared_memories_sheet():
+    ss = _get_spreadsheet()
+
+    try:
+        return ss.worksheet(SHEET_SHARED_MEMORIES)
+    except gspread.WorksheetNotFound:
+        ws = ss.add_worksheet(title=SHEET_SHARED_MEMORIES, rows=1000, cols=6)
+        ws.append_row(
+            ["id", "tipo", "memoria", "ativa", "peso", "timestamp"],
             value_input_option="USER_ENTERED",
         )
         return ws
@@ -501,6 +530,58 @@ def salvar_interacao_na_planilha(state: dict, role: str, content: str) -> None:
 
     except Exception as e:
         st.warning(f"Não foi possível salvar interação: {type(e).__name__}: {e}")
+
+def salvar_turno_na_planilha(state: dict, fala_usuario: str, resposta_mary: str) -> None:
+    """
+    Salva user + assistant em uma única chamada ao Google Sheets.
+    Evita duas chamadas seguidas para get_interacoes_sheet() e append_row().
+    """
+    try:
+        fala_usuario = str(fala_usuario or "").strip()
+        resposta_mary = str(resposta_mary or "").strip()
+
+        linhas = []
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if fala_usuario:
+            linhas.append(
+                [
+                    timestamp,
+                    "user",
+                    fala_usuario,
+                    int(state.get("turno", 0) or 0),
+                    state.get("personagem", "Mary"),
+                    state.get("timeline", "universitaria_creator"),
+                    state.get("local", ""),
+                    state.get("interlocutor", ""),
+                ]
+            )
+
+        if resposta_mary:
+            linhas.append(
+                [
+                    timestamp,
+                    "assistant",
+                    resposta_mary,
+                    int(state.get("turno", 0) or 0),
+                    state.get("personagem", "Mary"),
+                    state.get("timeline", "universitaria_creator"),
+                    state.get("local", ""),
+                    state.get("interlocutor", ""),
+                ]
+            )
+
+        if not linhas:
+            return
+
+        ws = get_interacoes_sheet()
+        ws.append_rows(
+            linhas,
+            value_input_option="USER_ENTERED",
+        )
+
+    except Exception as e:
+        st.warning(f"Não foi possível salvar turno: {type(e).__name__}: {e}")
 
 def testar_modelo_openrouter(model: str) -> dict:
     """
@@ -7509,10 +7590,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # ======================================================
     # SALVAMENTO
     # ======================================================
-    salvar_interacao_na_planilha(state, "user", fala_usuario)
-    salvar_interacao_na_planilha(state, "assistant", resposta_final_limpa)
+    salvar_turno_na_planilha(state, fala_usuario, resposta_final_limpa)
     salvar_facts_na_planilha(state["facts"])
-
     st.session_state.mary_state_minimo = state
 
     return {
