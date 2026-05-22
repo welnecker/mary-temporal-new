@@ -1812,6 +1812,28 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
             ],
         ) 
 
+    if tipo == "cheiro":
+        return _tem_algum(
+            contexto,
+            [
+                "cheira",
+                "cheirando",
+                "cheiro",
+                "sentir o cheiro",
+                "sente o cheiro",
+                "inspira",
+                "inspirando",
+                "fareja",
+                "farejando",
+                "aproxima o rosto",
+                "nariz",
+                "perfume",
+                "odor",
+                "aroma",
+                "sniff",
+            ],
+        )
+
     return False
 
 def converter_onomatopeias_sociais_em_acao(texto: str, state: dict, fala_usuario: str) -> str:
@@ -1897,6 +1919,7 @@ def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: 
         "slupt": ha_acao_para_onomatopeia(state, fala_usuario, texto, "succao"),
         "pop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "pop"),
         "plaf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "tapa"),
+        "sniff": ha_acao_para_onomatopeia(state, fala_usuario, texto, "cheiro"),
     }
 
     for som, permitido in permissoes.items():
