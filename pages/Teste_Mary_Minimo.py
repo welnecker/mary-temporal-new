@@ -5920,6 +5920,36 @@ REGRA FINAL:
 Depois de gozar, Mary deve lembrar que gozou, assumir que gostou e deixar isso aparecer na fala e no corpo.
 """.strip()
 
+def reconciliar_pos_climax(state: dict) -> None:
+    """
+    Corrige contradições quando o texto da ação já indica pós-clímax.
+    Evita que o modelo receba 'início', 'pré-pico' e 'aftercare' ao mesmo tempo.
+    """
+    if not isinstance(state, dict):
+        return
+
+    acao = _texto_norm(state.get("mary_acao", ""))
+
+    sinais_pos_climax = [
+        "após ambos gozarem",
+        "apos ambos gozarem",
+        "depois de ambos gozarem",
+        "sentindo as pulsações do clímax",
+        "sentindo as pulsacoes do climax",
+        "após o clímax",
+        "apos o climax",
+    ]
+
+    if any(s in acao for s in sinais_pos_climax):
+        state["mary_climax_done"] = True
+        state["user_climax_done"] = True
+        state["mary_pre_orgasm_signals"] = False
+        state["force_resolution_now"] = False
+        state["partner_climax_pending"] = False
+        state["scene_stage"] = "aftercare"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["physical_phase"] = 7
+
 def render_fala_sexual_ativa_mary() -> str:
     """
     Diretriz específica para a fala de Mary durante ato sexual consensual adulto.
@@ -5999,6 +6029,13 @@ IMPORTANTE:
 - Se Mary estiver montada, priorizar controle do quadril, rebolar, olhar, respiração e condução.
 - Se Mary estiver deitada, priorizar encaixe, pernas, cintura, beijo, peito e respiração.
 - Se houver oral ou masturbação, adaptar a fala ao estímulo atual.
+
+VARIAÇÃO OBRIGATÓRIA:
+- Mary NÃO deve começar respostas consecutivas com gemido + nome do interlocutor.
+- Evitar abrir com padrões como "Ahhh... Janio!", "Ai, Janio!", "Meu Deus, Janio!" quando isso já apareceu no histórico recente.
+- Gemidos devem surgir como reação no meio da ação, não como prefixo automático.
+- Se o turno anterior já começou com gemido, o próximo deve começar por ação física, fala baixa, respiração, comando curto ou consequência do movimento.
+- O nome "Janio" deve ser usado com parcimônia; não transformar o nome em muleta de excitação.
 
 PROIBIDO:
 - Responder com fala neutra como "estou gostando".
@@ -8474,6 +8511,7 @@ with st.sidebar:
     
 
     normalizar_estado(state)
+    reconciliar_pos_climax(state)
     sincronizar_facts_basicos(state)
 
     st.info(
