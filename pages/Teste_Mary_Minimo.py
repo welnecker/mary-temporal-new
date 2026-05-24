@@ -6351,6 +6351,258 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 # PROMPT
 # ==========================================================
 
+def _dividir_blocos_texto(texto: str) -> list[str]:
+    """
+    Divide texto longo em blocos narrativos.
+    Usado para filtrar memórias ocultas sem carregar tudo no prompt.
+    """
+    texto = str(texto or "").strip()
+
+    if not texto:
+        return []
+
+    blocos = re.split(r"\n\s*\n", texto)
+    return [b.strip() for b in blocos if b.strip()]
+
+
+def _texto_busca_do_turno(state: dict, fala_usuario: str) -> str:
+    """
+    Monta o texto usado para decidir o que foi acionado NESTE turno.
+
+    Importante:
+    - Não inclui memorias_ocultas_itens_guardados.
+    - Não inclui segredo_ativo.
+    - Isso evita gatilho circular, onde o segredo ativa a si mesmo.
+    """
+    partes = [
+        fala_usuario,
+        state.get("local", ""),
+        state.get("tempo", ""),
+        state.get("interlocutor", ""),
+        state.get("interlocutor_foco_turno", ""),
+        state.get("interlocutor_ativo_persistente", ""),
+        state.get("ultimo_interlocutor_explicito", ""),
+        state.get("tipo_de_cena", ""),
+        state.get("tom_manual_da_cena", ""),
+        state.get("tom_da_cena", ""),
+        state.get("plano_ativo", ""),
+        state.get("eventos_recentes", ""),
+        state.get("evento_inesperado", ""),
+        state.get("direcao_surpresa", ""),
+        state.get("modo_surpresa", ""),
+        state.get("mary_acao", ""),
+    ]
+
+    return _texto_norm("\n".join(str(p or "") for p in partes))
+
+
+def detectar_gatilhos_de_memoria_turno(state: dict, fala_usuario: str) -> set[str]:
+    """
+    Detecta nomes/objetos/assuntos que realmente apareceram no turno atual.
+
+    A ideia não é apagar a memória da Mary.
+    A ideia é só evitar que todos os segredos entrem no prompt
+    quando a cena ainda está em fase social, pública ou introdutória.
+    """
+    texto = _texto_busca_do_turno(state, fala_usuario)
+
+    gatilhos_possiveis = {
+        # Pessoas centrais
+        "janio": ["janio", "jânio"],
+        "rico": ["rico", "ricardo"],
+        "renan": ["renan", "professor renan", "professor"],
+        "bianca": ["bianca"],
+        "nando": ["nando"],
+        "enzo": ["enzo"],
+        "joselina": ["joselina", "mae", "mãe"],
+        "silvia": ["silvia", "sílvia"],
+        "anthony": ["anthony"],
+
+        # Objetos/assuntos comprometidos
+        "biquini": ["biquini", "biquíni", "croche", "crochê"],
+        "mansao": ["mansao", "mansão", "praia particular", "piscina particular"],
+        "fotos": ["foto", "fotos", "sessao", "sessão", "fotografia"],
+        "nota": ["nota", "prova", "nota 10"],
+        "celular": ["celular", "telefone", "ligacao", "ligação", "mensagem", "audio", "áudio", "whatsapp"],
+        "sugar_baby": ["sugar baby", "clube", "banheiro do clube"],
+    }
+
+    acionados = set()
+
+    for chave, termos in gatilhos_possiveis.items():
+        if any(_texto_norm(t) in texto for t in termos):
+            acionados.add(chave)
+
+    return acionados
+
+
+def _bloco_tem_gatilho(bloco: str, gatilhos: set[str]) -> bool:
+    """
+    Verifica se um bloco de memória/segredo conversa com os gatilhos do turno.
+    """
+    bloco_norm = _texto_norm(bloco)
+
+    mapa_gatilho_termos = {
+        "janio": ["janio", "jânio"],
+        "rico": ["rico", "ricardo"],
+        "renan": ["renan", "professor"],
+        "bianca": ["bianca"],
+        "nando": ["nando"],
+        "enzo": ["enzo"],
+        "joselina": ["joselina", "mae", "mãe"],
+        "silvia": ["silvia", "sílvia"],
+        "anthony": ["anthony"],
+        "biquini": ["biquini", "biquíni", "croche", "crochê"],
+        "mansao": ["mansao", "mansão"],
+        "fotos": ["foto", "fotos", "sessao", "sessão", "fotografia"],
+        "nota": ["nota", "prova"],
+        "celular": ["celular", "telefone", "ligacao", "ligação", "mensagem", "audio", "áudio", "whatsapp"],
+        "sugar_baby": ["sugar baby", "clube"],
+    }
+
+    for gatilho in gatilhos:
+        termos = mapa_gatilho_termos.get(gatilho, [gatilho])
+        if any(_texto_norm(t) in bloco_norm for t in termos):
+            return True
+
+    return False
+
+
+def filtrar_blocos_ocultos_para_turno(texto: str, gatilhos: set[str]) -> str:
+    """
+    Filtra memorias_ocultas_itens_guardados.
+
+    Se nenhum gatilho apareceu, não envia segredos ocultos.
+    Se apareceu gatilho, envia apenas blocos relacionados.
+    """
+    blocos = _dividir_blocos_texto(texto)
+
+    if not blocos or not gatilhos:
+        return ""
+
+    blocos_filtrados = [
+        bloco for bloco in blocos
+        if _bloco_tem_gatilho(bloco, gatilhos)
+    ]
+
+    return "\n\n".join(blocos_filtrados).strip()
+
+
+def filtrar_shared_memories_para_turno(memories: list[dict], gatilhos: set[str]) -> list[dict]:
+    """
+    Filtra memórias shared para não jogar todo o passado no prompt.
+
+    Cânone continua separado e pode permanecer mais estável.
+    Shared memory só entra quando tem relação com o turno.
+    """
+    if not memories:
+        return []
+
+    if not gatilhos:
+        return []
+
+    filtradas = []
+
+    for mem in memories:
+        memoria_txt = ""
+
+        if isinstance(mem, dict):
+            memoria_txt = str(mem.get("memoria", "") or "")
+        else:
+            memoria_txt = str(mem or "")
+
+        if _bloco_tem_gatilho(memoria_txt, gatilhos):
+            filtradas.append(mem)
+
+    return filtradas
+
+
+def filtrar_contexto_para_turno(state: dict, fala_usuario: str) -> dict:
+    """
+    Cria uma cópia do state apenas para montar o prompt.
+
+    Esta função NÃO apaga memória real.
+    Esta função NÃO altera a planilha.
+    Esta função NÃO impede cena nova.
+
+    Ela apenas evita que segredos/memórias ocultas entrem no prompt
+    quando o turno atual ainda não acionou esses elementos.
+    """
+    if not isinstance(state, dict):
+        return {}
+
+    contexto = dict(state)
+
+    gatilhos = detectar_gatilhos_de_memoria_turno(state, fala_usuario)
+
+    modo_surpresa = normalizar_modo_surpresa(
+        contexto.get("modo_surpresa", "Desligado")
+    )
+    contexto["modo_surpresa"] = modo_surpresa
+
+    direcao_surpresa = str(contexto.get("direcao_surpresa", "") or "").strip()
+    evento_inesperado = str(contexto.get("evento_inesperado", "") or "").strip()
+    plano_ativo = str(contexto.get("plano_ativo", "") or "").strip()
+
+    # ======================================================
+    # 1) PLANO ATIVO NÃO DEVE SER APAGADO
+    # Ex: visita ao museu, chuva, vento, deslocamento, guia.
+    # Isso é o fio da cena atual, não excesso de lore.
+    # ======================================================
+    contexto["plano_ativo"] = plano_ativo
+
+    # ======================================================
+    # 2) SURPRESA / EVENTO NÃO DEVE SER APAGADO
+    # Pode ser justamente a entrada de um novo personagem.
+    # ======================================================
+    contexto["evento_inesperado"] = evento_inesperado
+    contexto["direcao_surpresa"] = direcao_surpresa
+
+    # ======================================================
+    # 3) SEGREDO ATIVO SÓ ENTRA SE FOI ACIONADO
+    # Evita Mary parecer culpada/assombrada em todo lugar.
+    # ======================================================
+    if not gatilhos:
+        contexto["_segredo_ativo_original"] = contexto.get("segredo_ativo", "")
+        contexto["segredo_ativo"] = ""
+
+    # ======================================================
+    # 4) MEMÓRIAS OCULTAS SÓ ENTRAM POR GATILHO
+    # ======================================================
+    contexto["memorias_ocultas_itens_guardados"] = filtrar_blocos_ocultos_para_turno(
+        contexto.get("memorias_ocultas_itens_guardados", ""),
+        gatilhos,
+    )
+
+    # ======================================================
+    # 5) SHARED MEMORIES SÓ ENTRAM SE RELACIONADAS AO TURNO
+    # Cuidado: montar_prompt_para_modelo precisa respeitar a flag abaixo.
+    # ======================================================
+    shared_originais = contexto.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
+    contexto["shared_memories"] = filtrar_shared_memories_para_turno(
+        shared_originais,
+        gatilhos,
+    )
+    contexto["_usar_shared_memories_filtradas_para_prompt"] = True
+
+    # ======================================================
+    # 6) ORIENTAÇÃO PARA CENA INTRODUTÓRIA / PERSONAGEM NOVO
+    # Isso resolve o caso do museu.
+    # ======================================================
+    contexto["_orientacao_contexto_turno"] = (
+        "Use apenas o que está ativo no agora da cena. "
+        "O plano ativo, o local, o visual, o clima e o interlocutor atual continuam válidos. "
+        "Não puxe segredos antigos se nenhum gatilho apareceu no turno. "
+        "Se a cena estiver em local público como museu, rua, restaurante, faculdade ou evento social, "
+        "Mary pode observar o ambiente e reagir a detalhes novos. "
+        "Se um personagem novo surgir, Mary deve percebê-lo como novo, sem inventar passado íntimo, "
+        "a menos que o cânone, a memória filtrada ou a fala do usuário indiquem relação anterior."
+    )
+
+    contexto["_gatilhos_memoria_turno"] = sorted(gatilhos)
+
+    return contexto
+
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     facts = sincronizar_facts_basicos(state)
     segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
@@ -6372,6 +6624,9 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     acao_autonoma_txt = str(state.get("mary_autonomous_action", "") or "").strip()
+    orientacao_contexto_turno = str(
+        state.get("_orientacao_contexto_turno", "") or ""
+    ).strip()
     shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
@@ -6814,6 +7069,9 @@ REGRAS DE CONTEXTO:
 - Se a onomatopeia do usuário representar beijo, tapa, palmada ou outro contato rápido de despedida, Mary deve preferir narrar a reação de forma natural em vez de repetir o som isoladamente.
 [FACTS HUMANOS DA CENA]
 {facts_txt}
+
+[CONTEXTO FILTRADO DO TURNO]
+{orientacao_contexto_turno if orientacao_contexto_turno else "Sem filtro especial neste turno."}
 
 [HIERARQUIA]
 1. Facts humanos explícitos do presente.
@@ -7574,13 +7832,35 @@ STATE_UPDATE:
 """.strip()
 
 def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
-    mensagens = [{"role": "system", "content": "Você é Mary. Responda apenas como Mary, em PT-BR. Natural, viva, direta, carinhosa quando houver cuidado, e coerente com o ambiente."}]
+    mensagens = [
+        {
+            "role": "system",
+            "content": (
+                "Você é Mary. Responda apenas como Mary, em PT-BR. "
+                "Natural, viva, direta, carinhosa quando houver cuidado, "
+                "e coerente com o ambiente."
+            ),
+        }
+    ]
+
     for msg in state.get("history", [])[-MAX_HISTORY * 2:]:
         role = msg.get("role")
         content = str(msg.get("content", "") or "").strip()
+
         if role in ("user", "assistant") and content:
             mensagens.append({"role": role, "content": content})
-    mensagens.append({"role": "user", "content": montar_prompt_para_modelo(state, fala_usuario)})
+
+    # Cópia filtrada apenas para o prompt.
+    # O state real continua intacto.
+    contexto_prompt = filtrar_contexto_para_turno(state, fala_usuario)
+
+    mensagens.append(
+        {
+            "role": "user",
+            "content": montar_prompt_para_modelo(contexto_prompt, fala_usuario),
+        }
+    )
+
     return mensagens
 
 
