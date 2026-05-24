@@ -6749,6 +6749,317 @@ def detectar_continuidade_dialogo_turno(state: dict, fala_usuario: str) -> str:
 
     return ""
 
+def detectar_convite_para_deslocamento(fala_usuario: str) -> dict:
+    """
+    Detecta se o interlocutor está convidando Mary para ir a outro lugar.
+
+    Retorna:
+    {
+        "detectado": bool,
+        "destino": str,
+        "risco": "baixo" | "medio" | "alto"
+    }
+    """
+    texto = _texto_norm(fala_usuario)
+
+    if not texto:
+        return {"detectado": False, "destino": "", "risco": "baixo"}
+
+    sinais_convite = [
+        "quer conhecer",
+        "quer ir",
+        "quer vir",
+        "vamos para",
+        "vamos pra",
+        "vamos ao",
+        "vamos a",
+        "bora para",
+        "bora pra",
+        "vem comigo",
+        "venha comigo",
+        "te levo",
+        "posso te levar",
+        "me acompanha",
+        "passa la",
+        "passa lá",
+        "ir comigo",
+        "vir comigo",
+        "te convido",
+    ]
+
+    if not any(s in texto for s in sinais_convite):
+        return {"detectado": False, "destino": "", "risco": "baixo"}
+
+    destinos_alto_risco = [
+        "meu apartamento",
+        "meu ap",
+        "meu apto",
+        "minha casa",
+        "meu quarto",
+        "meu estudio",
+        "meu estúdio",
+        "minha cobertura",
+        "meu flat",
+        "meu hotel",
+        "motel",
+        "apartamento",
+        "casa",
+        "quarto",
+        "endereco",
+        "endereço",
+        "rua ",
+    ]
+
+    destinos_medio_risco = [
+        "bar",
+        "restaurante",
+        "shopping",
+        "cinema",
+        "praia",
+        "parque",
+        "uber",
+        "carro",
+        "faculdade",
+        "campus",
+        "biblioteca",
+        "livraria",
+    ]
+
+    destinos_baixo_risco = [
+        "cantina",
+        "cafeteria",
+        "cafe",
+        "café",
+        "lanchonete",
+        "recepcao",
+        "recepção",
+        "sala ao lado",
+        "outra sala",
+    ]
+
+    risco = "baixo"
+    destino = ""
+
+    for d in destinos_alto_risco:
+        if d in texto:
+            risco = "alto"
+            destino = d
+            break
+
+    if not destino:
+        for d in destinos_medio_risco:
+            if d in texto:
+                risco = "medio"
+                destino = d
+                break
+
+    if not destino:
+        for d in destinos_baixo_risco:
+            if d in texto:
+                risco = "baixo"
+                destino = d
+                break
+
+    if not destino:
+        destino = "outro lugar"
+
+    return {
+        "detectado": True,
+        "destino": destino,
+        "risco": risco,
+    }
+
+
+def interlocutor_parece_recente_ou_pouco_confiavel(state: dict) -> bool:
+    """
+    Decide se Mary ainda deve tratar o interlocutor como alguém novo/pouco confiável.
+
+    Não depende só do nome estar em memória.
+    Mesmo que o personagem tenha sido salvo em shared_memories,
+    ele pode continuar sendo recém-conhecido dentro da cena.
+    """
+    if not isinstance(state, dict):
+        return True
+
+    interlocutor = _texto_norm(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    )
+
+    relacao = _texto_norm(state.get("relacao", ""))
+    modo_relacional = _texto_norm(state.get("modo_relacional", ""))
+
+    connection = safe_float(state.get("connection_level", 0.0), 0.0)
+    tension = safe_float(state.get("tension_level", 0.0), 0.0)
+
+    if eh_sem_interlocutor(interlocutor):
+        return False
+
+    # Pessoas já íntimas/consolidadas.
+    if "janio" in interlocutor:
+        return False
+
+    if relacao in {"romance", "amizade", "familia", "família"}:
+        return False
+
+    # Relações contextuais/neutras ainda exigem cautela.
+    if relacao in {"contextual", "contato profissional / social", "tensao social", "tensão social"}:
+        return True
+
+    if modo_relacional in {"neutro", "social", "cautela_social", "contextual"}:
+        return True
+
+    # Mesmo com conversa boa, abaixo disso ainda é recente.
+    if connection < 0.68:
+        return True
+
+    # Se tensão social subiu, Mary deve ser ainda mais cuidadosa.
+    if tension >= 0.55 and connection < 0.78:
+        return True
+
+    return False
+
+
+def atualizar_trava_hesitacao_convite(state: dict, fala_usuario: str) -> None:
+    """
+    Cria uma trava de hesitação quando alguém recém-conhecido convida Mary
+    para ir a outro lugar.
+
+    Regra:
+    - Convite para local privado: mínimo 3 turnos de hesitação.
+    - Convite para local médio: mínimo 2 turnos.
+    - Convite baixo risco dentro do mesmo ambiente pode ser aceito com cautela.
+    """
+    if not isinstance(state, dict):
+        return
+
+    convite = detectar_convite_para_deslocamento(fala_usuario)
+
+    interlocutor = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    ).strip()
+
+    interlocutor_norm = _texto_norm(interlocutor)
+    recente = interlocutor_parece_recente_ou_pouco_confiavel(state)
+
+    trava = state.get("trava_hesitacao_convite")
+
+    if not isinstance(trava, dict):
+        trava = {}
+
+    # Se há convite novo, inicia ou atualiza a trava.
+    if convite.get("detectado") and recente:
+        risco = convite.get("risco", "baixo")
+        destino = convite.get("destino", "outro lugar")
+
+        min_turnos = 3 if risco == "alto" else 2 if risco == "medio" else 1
+
+        mesma_trava = (
+            _texto_norm(trava.get("interlocutor", "")) == interlocutor_norm
+            and _texto_norm(trava.get("destino", "")) == _texto_norm(destino)
+        )
+
+        if mesma_trava:
+            turnos = safe_int(trava.get("turnos", 0), 0) + 1
+        else:
+            turnos = 1
+
+        liberado = turnos >= min_turnos
+
+        trava = {
+            "ativa": not liberado,
+            "liberado": liberado,
+            "interlocutor": interlocutor,
+            "destino": destino,
+            "risco": risco,
+            "turnos": turnos,
+            "min_turnos": min_turnos,
+            "ultimo_convite": fala_usuario,
+        }
+
+        state["trava_hesitacao_convite"] = trava
+        return
+
+    # Se não houve convite novo, mas existe trava ativa, ela permanece
+    # por alguns turnos para orientar Mary a continuar cautelosa.
+    if trava.get("ativa"):
+        trava["turnos"] = safe_int(trava.get("turnos", 0), 0) + 1
+
+        min_turnos = safe_int(trava.get("min_turnos", 3), 3)
+        trava["liberado"] = trava["turnos"] >= min_turnos
+        trava["ativa"] = not trava["liberado"]
+
+        state["trava_hesitacao_convite"] = trava
+
+
+def render_trava_hesitacao_convite_para_prompt(state: dict) -> str:
+    """
+    Renderiza a trava para o prompt.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    trava = state.get("trava_hesitacao_convite")
+
+    if not isinstance(trava, dict):
+        return ""
+
+    destino = str(trava.get("destino", "outro lugar") or "outro lugar")
+    interlocutor = str(trava.get("interlocutor", "o interlocutor") or "o interlocutor")
+    risco = str(trava.get("risco", "baixo") or "baixo")
+    turnos = safe_int(trava.get("turnos", 0), 0)
+    min_turnos = safe_int(trava.get("min_turnos", 3), 3)
+    liberado = normalizar_bool(trava.get("liberado", False), default=False)
+
+    if liberado:
+        return f"""
+[TRAVA DE HESITAÇÃO - CONVITE]
+Mary já hesitou o suficiente diante do convite de {interlocutor} para ir a {destino}.
+
+Estado:
+- risco do convite: {risco}
+- turnos de hesitação: {turnos}/{min_turnos}
+- a trava não obriga Mary a aceitar; apenas permite que ela aceite se a cena construiu confiança.
+
+Regra:
+Mary pode aceitar, adiar, impor condição, pedir mais informação, sugerir alternativa pública ou recusar.
+Se aceitar, deve parecer uma decisão consciente, não impulso ingênuo.
+""".strip()
+
+    return f"""
+[TRAVA DE HESITAÇÃO - CONVITE]
+{interlocutor} convidou Mary para ir a {destino}.
+
+Estado:
+- risco do convite: {risco}
+- turnos de hesitação: {turnos}/{min_turnos}
+- Mary ainda NÃO deve aceitar de cara.
+
+Regra obrigatória:
+Mary deve hesitar, ganhar tempo ou testar a confiança antes de aceitar.
+
+Como Mary pode reagir:
+- perguntar quem estará lá;
+- perguntar se é longe;
+- sugerir continuar em local público;
+- brincar para aliviar a tensão;
+- dizer "calma, eu acabei de te conhecer";
+- aceitar apenas uma alternativa mais segura;
+- impor uma condição concreta;
+- observar a reação do interlocutor.
+
+Proibido neste momento:
+- aceitar imediatamente ir a local privado;
+- pedir endereço como se já estivesse decidido;
+- sair andando sem ponderar;
+- tratar convite de recém-conhecido como confiança plena.
+""".strip()
+
 
 def filtrar_contexto_para_turno(state: dict, fala_usuario: str) -> dict:
     """
@@ -6866,6 +7177,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
     acao_autonoma_txt = str(state.get("mary_autonomous_action", "") or "").strip()
+    trava_hesitacao_convite_txt = render_trava_hesitacao_convite_para_prompt(state)
     orientacao_contexto_turno = str(
         state.get("_orientacao_contexto_turno", "") or ""
     ).strip()
@@ -7314,6 +7626,8 @@ REGRAS DE CONTEXTO:
 
 [CONTEXTO FILTRADO DO TURNO]
 {orientacao_contexto_turno if orientacao_contexto_turno else "Sem filtro especial neste turno."}
+
+{trava_hesitacao_convite_txt}
 
 [HIERARQUIA]
 1. Facts humanos explícitos do presente.
@@ -8338,6 +8652,7 @@ def renderizar_resposta_mary(texto: str) -> None:
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
+    atualizar_trava_hesitacao_convite(state, fala_usuario)
    
     # ======================================================
     # PRÉ-PROMPT
