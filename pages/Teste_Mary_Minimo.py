@@ -4277,12 +4277,22 @@ def limpar_acao_incompativel_com_janio_ausente(state: dict) -> None:
     if not janio_ausente or not menciona_janio:
         return
 
-    foco = str(
-        state.get("interlocutor_foco_turno")
-        or state.get("interlocutor_ativo_persistente")
-        or state.get("interlocutor")
-        or ""
-    ).strip()
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip()
+    persistente = str(state.get("interlocutor_ativo_persistente", "") or "").strip()
+    interlocutor = str(state.get("interlocutor", "") or "").strip()
+    
+    foco_norm = _texto_norm(foco)
+    persistente_norm = _texto_norm(persistente)
+    interlocutor_norm = _texto_norm(interlocutor)
+    
+    # Se o foco antigo ainda for guia, mas o interlocutor persistente já for jovem,
+    # o persistente vence.
+    if "guia" in foco_norm and "jovem" in persistente_norm:
+        foco = persistente
+    elif "guia" in foco_norm and "jovem" in interlocutor_norm:
+        foco = interlocutor
+    elif not foco:
+        foco = persistente or interlocutor
 
     local = str(state.get("local", "") or "").strip()
     plano = str(state.get("plano_ativo", "") or "").strip()
@@ -4303,6 +4313,43 @@ def limpar_acao_incompativel_com_janio_ausente(state: dict) -> None:
     else:
         state["mary_acao"] = (
             "Mary está atenta ao momento atual da cena."
+        )
+
+def limpar_acao_incompativel_com_interlocutor_foco(state: dict) -> None:
+    """
+    Corrige mary_acao quando ela menciona um interlocutor antigo,
+    mas o foco atual já mudou.
+    """
+    if not isinstance(state, dict):
+        return
+
+    acao = str(state.get("mary_acao", "") or "").strip()
+    acao_norm = _texto_norm(acao)
+
+    if not acao:
+        return
+
+    foco = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    ).strip()
+
+    foco_norm = _texto_norm(foco)
+
+    if not foco or eh_sem_interlocutor(foco):
+        return
+
+    menciona_guia = "guia" in acao_norm
+    foco_jovem = "jovem" in foco_norm
+
+    if menciona_guia and foco_jovem:
+        local = str(state.get("local", "") or "").strip()
+
+        state["mary_acao"] = (
+            f"Mary está diante de {foco}, mantendo a conversa no ambiente atual"
+            f"{f' em {local}' if local else ''}."
         )
 
 # ==========================================================
@@ -5039,6 +5086,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
     # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     limpar_acao_incompativel_com_janio_ausente(state)
+    limpar_acao_incompativel_com_interlocutor_foco(state)
     
     # ======================================================
     # DIRETRIZ AUTÔNOMA FINAL
@@ -6584,6 +6632,123 @@ def filtrar_shared_memories_para_turno(memories: list[dict], gatilhos: set[str])
 
     return filtradas
 
+def detectar_continuidade_dialogo_turno(state: dict, fala_usuario: str) -> str:
+    """
+    Interpreta a função pragmática da fala atual do usuário.
+
+    Objetivo:
+    - Evitar que o modelo transforme concordância, brincadeira ou eco da fala anterior
+      em convite, ordem ou mudança de cena.
+    - Preservar continuidade fina de diálogo.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    fala = str(fala_usuario or "").strip()
+    fala_norm = _texto_norm(fala)
+
+    history = state.get("history", []) or []
+    ultima_mary = ""
+
+    for msg in reversed(history):
+        if msg.get("role") == "assistant":
+            ultima_mary = str(msg.get("content", "") or "").strip()
+            break
+
+    ultima_mary_norm = _texto_norm(ultima_mary)
+
+    # ======================================================
+    # CASO: Mary mencionou shopping e o usuário apenas concorda/comenta.
+    # Ex:
+    # Mary: "Eu sozinha ia direto pro shopping..."
+    # Usuário: "kkkk... pro shopping, né? eu entendo..."
+    # Isso NÃO é convite.
+    # ======================================================
+    mary_mencionou_shopping = "shopping" in ultima_mary_norm
+    usuario_menciona_shopping = "shopping" in fala_norm
+
+    sinais_concordancia_ou_comentario = [
+        "kkkk",
+        "kkk",
+        "entendo",
+        "eu entendo",
+        "né",
+        "ne",
+        "pois é",
+        "pois e",
+        "verdade",
+        "faz sentido",
+        "tambem",
+        "também",
+        "nao acha",
+        "não acha",
+    ]
+
+    sinais_convite_real = [
+        "vamos ao shopping",
+        "vamos pro shopping",
+        "vamos para o shopping",
+        "bora pro shopping",
+        "bora para o shopping",
+        "quer ir ao shopping",
+        "quer ir pro shopping",
+        "quer ir para o shopping",
+        "te levo ao shopping",
+        "te levo pro shopping",
+        "vamos sair daqui",
+        "vamos agora",
+    ]
+
+    tem_concordancia = any(s in fala_norm for s in sinais_concordancia_ou_comentario)
+    tem_convite_real = any(s in fala_norm for s in sinais_convite_real)
+
+    if mary_mencionou_shopping and usuario_menciona_shopping and tem_concordancia and not tem_convite_real:
+        return (
+            "A fala atual do interlocutor é uma continuidade/comentário sobre a fala anterior de Mary "
+            "a respeito de shopping. Ele NÃO está convidando Mary para ir ao shopping agora. "
+            "Mary deve responder à ideia de que até no shopping é possível se divertir e aprender, "
+            "mantendo a cena no museu e a conversa com o jovem."
+        )
+
+    # ======================================================
+    # REGRA GERAL:
+    # Se o usuário ecoa um tema recém-dito por Mary, trate como continuidade,
+    # a menos que haja verbo claro de ação/convite.
+    # ======================================================
+    sinais_eco = [
+        "né",
+        "ne",
+        "eu entendo",
+        "faz sentido",
+        "verdade",
+        "kkkk",
+        "pois é",
+        "pois e",
+        "não acha",
+        "nao acha",
+    ]
+
+    verbos_mudanca_acao = [
+        "vamos",
+        "bora",
+        "vem",
+        "me acompanha",
+        "sai comigo",
+        "vamos sair",
+        "vamos embora",
+        "quero te levar",
+        "te levo",
+    ]
+
+    if any(s in fala_norm for s in sinais_eco) and not any(v in fala_norm for v in verbos_mudanca_acao):
+        return (
+            "A fala atual parece continuidade de diálogo, concordância, provocação leve ou comentário "
+            "sobre algo recém-dito. Mary deve responder ao sentido da fala, sem presumir convite, "
+            "mudança de local ou nova ação física se isso não foi dito claramente."
+        )
+
+    return ""
+
 
 def filtrar_contexto_para_turno(state: dict, fala_usuario: str) -> dict:
     """
@@ -6657,6 +6822,10 @@ def filtrar_contexto_para_turno(state: dict, fala_usuario: str) -> dict:
     # 6) ORIENTAÇÃO PARA CENA INTRODUTÓRIA / PERSONAGEM NOVO
     # Isso resolve o caso do museu.
     # ======================================================
+    continuidade_dialogo = detectar_continuidade_dialogo_turno(state, fala_usuario)
+    contexto["_continuidade_dialogo_turno"] = continuidade_dialogo
+
+    
     contexto["_orientacao_contexto_turno"] = (
         "Use apenas o que está ativo no agora da cena. "
         "O plano ativo, o local, o visual, o clima e o interlocutor atual continuam válidos. "
@@ -6664,7 +6833,12 @@ def filtrar_contexto_para_turno(state: dict, fala_usuario: str) -> dict:
         "Se a cena estiver em local público como museu, rua, restaurante, faculdade ou evento social, "
         "Mary pode observar o ambiente e reagir a detalhes novos. "
         "Se um personagem novo surgir, Mary deve percebê-lo como novo, sem inventar passado íntimo, "
-        "a menos que o cânone, a memória filtrada ou a fala do usuário indiquem relação anterior."
+        "a menos que o cânone, a memória filtrada ou a fala do usuário indiquem relação anterior. "
+        + (
+            f"\n\nCONTINUIDADE IMEDIATA DO DIÁLOGO:\n{continuidade_dialogo}"
+            if continuidade_dialogo
+            else ""
+        )
     )
 
     contexto["_gatilhos_memoria_turno"] = sorted(gatilhos)
