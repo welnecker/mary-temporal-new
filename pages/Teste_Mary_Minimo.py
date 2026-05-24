@@ -3608,6 +3608,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     # Não recalcula relação aqui para não sobrescrever o tom manual.
     # ======================================================
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+    
 
     # ======================================================
     # 10) SEGURANÇA FINAL POR AMBIENTE
@@ -4236,6 +4237,72 @@ def limpar_acao_intima_incompativel_com_foco(state: dict) -> None:
         state["mary_acao"] = (
             f"Mary está diante de {foco or 'o interlocutor atual'}, tentando agir normalmente "
             "e disfarçar a tensão da situação anterior."
+        )
+
+def limpar_acao_incompativel_com_janio_ausente(state: dict) -> None:
+    """
+    Remove da ação atual referências a Janio quando Janio não está
+    fisicamente presente na cena.
+
+    Importante:
+    - Não apaga memórias.
+    - Não muda relação.
+    - Não altera Janio como usuário real/roteirista.
+    - Só corrige mary_acao quando ela contradiz janio_status_na_cena.
+    """
+    if not isinstance(state, dict):
+        return
+
+    janio_status = _texto_norm(state.get("janio_status_na_cena", ""))
+    acao_original = str(state.get("mary_acao", "") or "").strip()
+    acao_norm = _texto_norm(acao_original)
+
+    if not acao_original:
+        return
+
+    janio_ausente = janio_status in {
+        "ausente",
+        "ausente_ou_observador",
+        "observador",
+        "roteirista",
+        "fora_da_cena",
+        "fora da cena",
+    }
+
+    menciona_janio = (
+        "janio" in acao_norm
+        or "janio donisete" in acao_norm
+    )
+
+    if not janio_ausente or not menciona_janio:
+        return
+
+    foco = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    ).strip()
+
+    local = str(state.get("local", "") or "").strip()
+    plano = str(state.get("plano_ativo", "") or "").strip()
+
+    if foco and not eh_sem_interlocutor(foco):
+        state["mary_acao"] = (
+            f"Mary está diante de {foco}, acompanhando a situação atual"
+            f"{f' em {local}' if local else ''}."
+        )
+    elif plano:
+        state["mary_acao"] = (
+            f"Mary está envolvida no momento atual da cena, seguindo o plano em andamento: {plano}."
+        )
+    elif local:
+        state["mary_acao"] = (
+            f"Mary está em {local}, atenta ao que acontece ao redor."
+        )
+    else:
+        state["mary_acao"] = (
+            "Mary está atenta ao momento atual da cena."
         )
 
 # ==========================================================
@@ -4971,6 +5038,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
     # Não chamar normalizar_relacao_por_interlocutor aqui,
     # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+    limpar_acao_incompativel_com_janio_ausente(state)
     
     # ======================================================
     # DIRETRIZ AUTÔNOMA FINAL
