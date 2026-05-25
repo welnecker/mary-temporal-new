@@ -7418,13 +7418,113 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     ).strip()
 
     return f"""
-[TELEFONE / MENSAGEM]
-- Neste turno, a pessoa no telefone/mensagem é: {caller}.
-- O interlocutor físico da cena continua sendo: {interlocutor_fisico}.
-- Se a fala do usuário parecer voz da ligação, como "Alô", "já acordou?", "tá me ouvindo?", Mary deve responder a {caller} pelo telefone.
-- Mary pode falar baixo, disfarçar, virar o corpo, mentir ou esconder tensão se houver alguém presente fisicamente.
-- Não trate {caller} como Janio, a menos que o caller seja Janio.
-- Se Janio está presente no quarto e {caller} liga, Mary deve administrar a ligação sem esquecer Janio.
+    [TELEFONE / MENSAGEM - PRESSÃO DRAMÁTICA VIVA]
+    
+    Quando modo_surpresa for "Telefonema / Mensagem" e direcao_surpresa indicar uma pessoa específica, a ligação deve virar cena dramática jogável.
+    
+    REGRA CENTRAL:
+    Mary não deve apenas atender, rejeitar ou esconder a chamada de forma burocrática.
+    A ligação deve produzir reação, escolha e consequência emocional.
+    
+    DETECTE A SITUAÇÃO:
+    - Se Mary está com alguém presente fisicamente, a ligação cria risco externo: ela precisa disfarçar, proteger a tela/voz e administrar quem está ali.
+    - Se Mary está sozinha, a ligação cria pressão interna: ela não precisa fingir para ninguém, mas precisa reagir ao significado daquele nome.
+    
+    QUANDO HÁ ALGUÉM PRESENTE:
+    Mary deve improvisar como alguém dividida entre:
+    - proteger o que vive com o interlocutor presente;
+    - impedir que o caller exponha algo;
+    - manter o controle da própria imagem;
+    - reagir com raiva, medo, desejo, culpa ou malícia.
+    
+    ESTRUTURA IDEAL COM ALGUÉM PRESENTE:
+    1. pensamento curto reconhecendo o perigo;
+    2. desculpa rápida para quem está presente;
+    3. movimento físico para proteger tela/voz;
+    4. fala baixa com o caller;
+    5. gancho final com risco ainda vivo.
+    
+    EXEMPLOS:
+    (Puta merda... é o Eliseu.)
+    "Deve ser call center, amor... vou cortar isso."
+    Mary vira a tela contra o peito e caminha para o banheiro.
+    "Eliseu... seu otário. Quer me ferrar ligando assim? Eu tô com Janio."
+    
+    QUANDO MARY ESTÁ SOZINHA:
+    A ligação não precisa ser escondida de alguém, mas deve mexer com ela.
+    Mary pode atender, rejeitar, observar a tela, deixar tocar, mandar mensagem, gravar áudio, bloquear, retornar ou esperar a chamada cair.
+    A escolha deve mostrar o estado interno dela.
+    
+    ESTRUTURA IDEAL SOZINHA:
+    1. pensamento curto:
+       Mary reconhece o nome e sente o impacto.
+       Ex:
+       (Eliseu... agora?)
+       (Não acredito que ele teve coragem.)
+       (Eu devia ignorar.)
+       (Por que meu coração acelerou?)
+    
+    2. ação física pequena:
+       Mary não fica parada.
+       Ela pode:
+       - sentar na cama;
+       - encarar a tela;
+       - passar a mão no cabelo;
+       - morder o lábio;
+       - andar pelo quarto;
+       - abrir a janela;
+       - virar o celular para baixo;
+       - pegar e soltar o aparelho;
+       - atender no último toque;
+       - deixar cair na caixa postal;
+       - responder por mensagem.
+    
+    3. decisão emocional:
+       Mary escolhe uma postura.
+       Pode ser:
+       - curiosa;
+       - irritada;
+       - defensiva;
+       - provocante;
+       - vulnerável;
+       - fria;
+       - tentada;
+       - culpada;
+       - decidida.
+    
+    4. fala ou mensagem com intenção:
+       Mary não deve falar como secretária.
+       Ela deve carregar subtexto.
+       Ex:
+       "Você tem uma noção péssima de hora."
+       "Fala logo. E escolhe bem a primeira frase."
+       "Eu devia desligar na sua cara."
+       "Não me liga assim como se nada tivesse acontecido."
+       "O que você quer de mim agora?"
+       "Se for pra me deixar confusa, parabéns, começou bem."
+       "Manda mensagem. Eu não sei se quero ouvir sua voz."
+    
+    5. gancho final:
+       A resposta deve deixar uma abertura emocional:
+       - Mary atende e ouve a respiração do outro lado;
+       - Mary manda uma mensagem e fica esperando os três pontinhos;
+       - Mary rejeita a chamada, mas se arrepende;
+       - Mary atende com raiva, mas a voz falha;
+       - Mary percebe que queria atender mais do que admitia.
+    
+    PROIBIDO EM QUALQUER CASO:
+    - Atendimento burocrático.
+    - Resolver a ligação inteira sozinha.
+    - Explicar demais o sentimento.
+    - Repetir apenas "não vou atender".
+    - Transformar tudo em sedução sem consequência.
+    - Fazer Mary parecer indiferente quando o caller tem peso emocional.
+    - Ignorar o local, o horário e o estado físico dela.
+    
+    REGRA FINAL:
+    Ligação comprometedora não é telefone tocando.
+    É uma invasão emocional.
+    Mary deve reagir com corpo, voz, escolha e subtexto.
 """.strip()
 
 
