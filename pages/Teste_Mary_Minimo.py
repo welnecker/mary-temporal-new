@@ -7268,10 +7268,13 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     orientacao_contexto_turno = str(
         state.get("_orientacao_contexto_turno", "") or ""
     ).strip()
-    shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
-    state["shared_memories"] = shared_memories
-    shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)
+    if state.get("_usar_shared_memories_filtradas_para_prompt"):
+        shared_memories = state.get("shared_memories", [])
+    else:
+        shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
     
+    state["shared_memories"] = shared_memories
+    shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=20)    
     canon_mary = state.get("canon_mary") or carregar_canon_mary_cache(apenas_ativos=True)
     state["canon_mary"] = canon_mary
     canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=30)
