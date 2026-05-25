@@ -7550,83 +7550,97 @@ def selecionar_exemplos_por_tom(tom: str, state: dict) -> str:
         for i, exemplo in enumerate(selecionados[:2])
     )
 
-def resolver_tom_fala_caller(
-    contato: dict,
-    state: dict,
-    caller: str,
-    interlocutor_fisico: str,
-    mary_esta_sozinha: bool,
-) -> str:
+def buscar_contexto_memorial_do_caller(state: dict, caller: str, contato: dict | None = None) -> str:
     """
-    Resolve o tom real da fala de Mary com quem ligou.
-
-    O tom depende de:
-    - perfil salvo na agenda;
-    - relação/cânone/memórias;
-    - Mary estar sozinha ou acompanhada;
-    - quem está presente fisicamente;
-    - risco de exposição.
+    Junta todas as memórias/cânone/facts que mencionam o caller.
+    Isso evita duplicar tipo, risco, pressão e tom na agenda_telefonica.
     """
-    contato = contato if isinstance(contato, dict) else {}
-    state = state if isinstance(state, dict) else {}
+    if not isinstance(state, dict):
+        return ""
 
     caller_norm = _texto_norm(caller)
+    contato = contato if isinstance(contato, dict) else {}
+
+    aliases = contato.get("aliases", []) or []
+    termos = [caller_norm] + [_texto_norm(a) for a in aliases]
+
+    termos = [t for t in termos if t]
+
+    if not termos:
+        return ""
+
+    fontes = []
+
+    # Shared memories
+    for mem in state.get("shared_memories", []) or []:
+        if isinstance(mem, dict):
+            texto = str(mem.get("memoria", "") or "")
+        else:
+            texto = str(mem or "")
+
+        texto_norm = _texto_norm(texto)
+
+        if any(t in texto_norm for t in termos):
+            fontes.append(texto)
+
+    # Cânone
+    for item in state.get("canon_mary", []) or []:
+        if isinstance(item, dict):
+            texto = str(item.get("fato", "") or "")
+        else:
+            texto = str(item or "")
+
+        texto_norm = _texto_norm(texto)
+
+        if any(t in texto_norm for t in termos):
+            fontes.append(texto)
+
+    # Memórias ocultas / segredos / plano ativo
+    campos_state = [
+        "segredo_ativo",
+        "memorias_ocultas_itens_guardados",
+        "mentiras_desculpas",
+        "plano_ativo",
+        "eventos_recentes",
+    ]
+
+    for campo in campos_state:
+        texto = str(state.get(campo, "") or "")
+        texto_norm = _texto_norm(texto)
+
+        if any(t in texto_norm for t in termos):
+            fontes.append(texto)
+
+    # Agenda observações, se houver
+    for campo in ["relacao", "observacoes", "tipo", "risco", "pressao", "tom_fala"]:
+        texto = str(contato.get(campo, "") or "")
+        if texto:
+            fontes.append(texto)
+
+    # Remove duplicatas mantendo ordem
+    unicos = []
+    vistos = set()
+
+    for f in fontes:
+        chave = _texto_norm(f)
+        if chave and chave not in vistos:
+            vistos.add(chave)
+            unicos.append(f.strip())
+
+    return "\n".join(unicos)
+
+def inferir_pressao_do_caller_por_memoria(
+    caller: str,
+    contexto_memorial: str,
+    interlocutor_fisico: str,
+    mary_esta_sozinha: bool,
+) -> dict:
+    """
+    Infere tipo, risco, pressão e tom a partir das memórias do personagem.
+    """
+    caller_norm = _texto_norm(caller)
+    contexto = _texto_norm(contexto_memorial)
     interlocutor_norm = _texto_norm(interlocutor_fisico)
-
-    tipo = str(contato.get("tipo", "") or "").strip()
-    risco = str(contato.get("risco", "") or "").strip()
-    relacao = str(contato.get("relacao", "") or "").strip()
-    tom_base = str(contato.get("tom_fala", "") or "").strip()
-    observacoes = str(contato.get("observacoes", "") or "").strip()
-
-    contexto_memoria = _texto_norm(
-        "\n".join(
-            [
-                str(contato.get("pressao", "") or ""),
-                tipo,
-                risco,
-                relacao,
-                observacoes,
-                str(state.get("segredo_ativo", "") or ""),
-                str(state.get("memorias_ocultas_itens_guardados", "") or ""),
-                "\n".join(
-                    str(m.get("memoria", "") or "")
-                    for m in state.get("shared_memories", []) or []
-                    if isinstance(m, dict)
-                ),
-                "\n".join(
-                    str(c.get("fato", "") or "")
-                    for c in state.get("canon_mary", []) or []
-                    if isinstance(c, dict)
-                ),
-            ]
-        )
-    )
-
-    risco_comprometedor = any(
-        termo in contexto_memoria
-        for termo in [
-            "segredo",
-            "comprometedor",
-            "envolvimento",
-            "transou",
-            "fodeu",
-            "ciume",
-            "ciúme",
-            "exposicao",
-            "exposição",
-            "trai",
-            "mentira",
-            "risco",
-            "foto",
-            "biquini",
-            "biquíni",
-            "mansao",
-            "mansão",
-            "nota 10",
-            "sugar baby",
-        ]
-    )
 
     janio_presente = "janio" in interlocutor_norm and not mary_esta_sozinha
     joselina_presente = (
@@ -7635,65 +7649,131 @@ def resolver_tom_fala_caller(
         or "mãe" in interlocutor_norm
     ) and not mary_esta_sozinha
 
+    # Marcadores de risco
+    tem_segredo = any(t in contexto for t in [
+        "segredo", "risco", "comprometedor", "mentira", "oculto", "não sabe", "nao sabe"
+    ])
+
+    tem_intimo = any(t in contexto for t in [
+        "fodeu", "transou", "envolvimento íntimo", "envolvimento intimo",
+        "beijou", "sexo", "banheiro", "mansão", "mansao", "bikini", "biquini", "biquíni"
+    ])
+
+    tem_professor = any(t in contexto for t in [
+        "professor", "nota", "prova", "aula", "faculdade", "ufrj"
+    ])
+
+    tem_familia = any(t in contexto for t in [
+        "mãe", "mae", "pai", "família", "familia", "joselina"
+    ]) or "joselina" in caller_norm
+
+    tem_amizade = any(t in contexto for t in [
+        "amiga", "amigo", "classe", "cúmplice", "cumplice"
+    ])
+
+    tem_rival = any(t in contexto for t in [
+        "rival", "anthony", "apaixonado por mary", "ciúme", "ciume"
+    ])
+
+    tem_contato_social = any(t in contexto for t in [
+        "artes", "fotografia", "puc", "mora", "leblon", "centro", "convite"
+    ])
+
+    # Tipo
+    if tem_familia:
+        tipo = "família"
+    elif tem_professor and tem_segredo:
+        tipo = "autoridade / segredo acadêmico"
+    elif tem_intimo and tem_segredo:
+        tipo = "contato comprometedor"
+    elif tem_rival:
+        tipo = "rival / tensão social"
+    elif tem_amizade and tem_intimo:
+        tipo = "amizade íntima / risco emocional"
+    elif tem_amizade:
+        tipo = "amiga / cúmplice social"
+    elif tem_contato_social:
+        tipo = "contato social ambíguo"
+    else:
+        tipo = "contato contextual"
+
+    # Risco
+    if tem_intimo and janio_presente:
+        risco = "alto: segredo íntimo pode ameaçar a confiança de Janio"
+    elif tem_segredo and janio_presente:
+        risco = "alto: informação pode expor contradição diante de Janio"
+    elif tem_segredo and joselina_presente:
+        risco = "alto: risco de suspeita familiar"
+    elif tem_segredo:
+        risco = "médio/alto: memória comprometedora"
+    elif tem_familia:
+        risco = "rotina, controle familiar ou suspeita"
+    elif tem_rival:
+        risco = "ciúme, rivalidade ou tensão social"
+    else:
+        risco = "contextual"
+
+    # Pressão
     if mary_esta_sozinha:
-        if risco_comprometedor:
-            return (
-                f"{tom_base or 'baixo, tenso e íntimo'}, mas sem disfarce externo. "
-                "Mary fala como quem pode admitir mais emoção porque está sozinha: "
-                "raiva, curiosidade, culpa, desejo, irritação ou vulnerabilidade podem aparecer."
+        if tem_intimo or tem_segredo:
+            pressao = (
+                "Mary não precisa disfarçar para ninguém, mas o nome mexe com ela. "
+                "A ligação deve trazer raiva, curiosidade, culpa, tentação ou medo de consequência."
+            )
+        else:
+            pressao = (
+                "Mary está sozinha; a ligação deve revelar escolha interna, humor, incômodo, curiosidade ou decisão."
+            )
+    else:
+        if janio_presente and (tem_intimo or tem_segredo):
+            pressao = (
+                "Mary precisa proteger a tela e a voz diante de Janio. "
+                "Ela deve improvisar uma desculpa, se mover para afastar o celular e falar baixo com o caller."
+            )
+        elif joselina_presente and (tem_intimo or tem_segredo):
+            pressao = (
+                "Mary precisa parecer normal diante da mãe, medir palavras e evitar qualquer sinal de vida secreta."
+            )
+        else:
+            pressao = (
+                "Mary deve administrar a ligação sem parecer mecânica: reagir ao horário, insistência e relação com o caller."
             )
 
-        return (
-            f"{tom_base or 'natural e direto'}, com liberdade emocional maior porque Mary está sozinha. "
-            "Ela não precisa fingir para ninguém, mas a ligação ainda deve mexer com ela."
-        )
+    # Tom de fala
+    if mary_esta_sozinha:
+        if tem_intimo:
+            tom = "mais livre, tenso, íntimo, irritado ou tentado; Mary não precisa fingir, mas ainda sente o peso da memória"
+        elif tem_professor:
+            tom = "contido, sério, cauteloso, medindo palavras"
+        elif tem_familia:
+            tom = "natural de filha, impaciente ou carinhoso"
+        else:
+            tom = "natural, curioso, irritado ou intrigado"
+    else:
+        if janio_presente and (tem_intimo or tem_segredo):
+            tom = "baixo, rápido, defensivo, cortado; por fora casual para Janio, por baixo tenso com o caller"
+        elif joselina_presente and (tem_intimo or tem_segredo):
+            tom = "educado por fora, tenso por baixo, tentando parecer rotina"
+        elif tem_familia:
+            tom = "natural controlado, familiar e discreto"
+        else:
+            tom = "casual forçado, breve e justificável diante de quem está presente"
 
-    if janio_presente:
-        if "janio" in caller_norm:
-            return (
-                f"{tom_base or 'íntimo e afetivo'}, sem disfarce. "
-                "Mary pode falar com carinho, desejo, humor ou preocupação."
-            )
-
-        if risco_comprometedor:
-            return (
-                "baixo, controlado, rápido e defensivo. "
-                "Mary tenta parecer casual para Janio, mas fala com o caller como quem está segurando uma bomba. "
-                "Pode usar frases curtas, sussurradas, irritadas ou ameaçadoramente íntimas."
-            )
-
-        return (
-            "casual forçado, breve e justificável diante de Janio. "
-            "Mary tenta fazer a ligação parecer comum, sem entregar tensão demais."
-        )
-
-    if joselina_presente:
-        if risco_comprometedor:
-            return (
-                "educado por fora, tenso por baixo, com pressa de encerrar. "
-                "Mary tenta parecer normal diante da mãe, mas mede cada palavra."
-            )
-
-        return (
-            "natural, familiarmente controlado e discreto. "
-            "Mary evita parecer nervosa ou ocupada demais."
-        )
-
-    if risco_comprometedor:
-        return (
-            f"{tom_base or 'baixo e cauteloso'}, adaptado à presença de outra pessoa. "
-            "Mary não pode falar livremente; precisa cortar palavras, disfarçar sentido e controlar a voz."
-        )
-
-    return tom_base or "natural, cauteloso ou intrigado conforme a cena"
-
+    return {
+        "tipo": tipo,
+        "risco": risco,
+        "pressao": pressao,
+        "tom_fala": tom,
+        "contexto_memorial": contexto_memorial.strip(),
+    }
 
 def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) -> str:
     """
     Gera o bloco de telefone/mensagem para o prompt.
 
     Esta é a ÚNICA função de telefone.
-    Ela busca detalhes na aba agenda_telefonica com base no campo direcao_surpresa.
+    Ela usa a aba agenda_telefonica apenas para identificar o contato,
+    mas infere tipo, risco, pressão e tom a partir das memórias/cânone/segredos.
     """
     if not isinstance(state, dict):
         return ""
@@ -7708,29 +7788,25 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     direcao = str(state.get("direcao_surpresa", "") or "").strip()
     fala = str(fala_usuario or "").strip()
 
+    # ======================================================
+    # 1. EXTRAI CALLER
+    # ======================================================
     caller_extraido = extrair_caller_da_direcao_surpresa(direcao, fala)
 
     agenda = carregar_agenda_telefonica_cache(apenas_ativos=True)
     contato = buscar_contato_na_agenda_telefonica(caller_extraido, agenda)
 
-    caller = contato.get("nome", caller_extraido or "número desconhecido")
-    tipo_caller = contato.get("tipo", "contato não classificado")
-    risco_caller = contato.get("risco", "contextual")
-    pressao_caller = contato.get(
-        "pressao",
-        "Mary deve reagir ao horário, insistência, relação presumida e contexto atual.",
-    )
-    tom_fala_caller = resolver_tom_fala_caller(
-        contato=contato,
-        state=state,
-        caller=caller,
-        interlocutor_fisico=interlocutor_fisico,
-        mary_esta_sozinha=mary_esta_sozinha,
-    )
-    relacao_caller = contato.get("relacao", "")
-    observacoes_caller = contato.get("observacoes", "")
-    contato_encontrado = contato.get("encontrado", False)
+    caller = str(
+        contato.get("nome")
+        or caller_extraido
+        or "número desconhecido"
+    ).strip()
 
+    contato_encontrado = bool(contato.get("encontrado", False))
+
+    # ======================================================
+    # 2. DEFINE PRESENÇA FÍSICA
+    # ======================================================
     interlocutor_fisico = str(
         state.get("interlocutor_foco_turno")
         or state.get("interlocutor")
@@ -7739,6 +7815,43 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
 
     mary_esta_sozinha = eh_sem_interlocutor(interlocutor_fisico)
 
+    # ======================================================
+    # 3. BUSCA MEMÓRIAS DO CALLER E INFERE PERFIL
+    # ======================================================
+    contexto_memorial_caller = buscar_contexto_memorial_do_caller(
+        state=state,
+        caller=caller,
+        contato=contato,
+    )
+
+    perfil_inferido = inferir_pressao_do_caller_por_memoria(
+        caller=caller,
+        contexto_memorial=contexto_memorial_caller,
+        interlocutor_fisico=interlocutor_fisico,
+        mary_esta_sozinha=mary_esta_sozinha,
+    )
+
+    tipo_caller = perfil_inferido.get("tipo", "contato contextual")
+    risco_caller = perfil_inferido.get("risco", "contextual")
+    pressao_caller = perfil_inferido.get(
+        "pressao",
+        "Mary deve reagir ao horário, insistência, relação presumida e contexto atual.",
+    )
+    tom_fala_caller = perfil_inferido.get(
+        "tom_fala",
+        "natural, cauteloso ou intrigado conforme a cena.",
+    )
+    contexto_memorial_caller = perfil_inferido.get(
+        "contexto_memorial",
+        contexto_memorial_caller,
+    )
+
+    telefone_caller = str(contato.get("telefone", "") or "").strip()
+    aliases_caller = contato.get("aliases", []) or []
+
+    # ======================================================
+    # 4. DETECTA INSISTÊNCIA DA CHAMADA
+    # ======================================================
     historico_txt = "\n".join(
         str(m.get("content", "") or "")
         for m in state.get("history", [])[-6:]
@@ -7776,29 +7889,33 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
         ]
     )
 
+    # ======================================================
+    # 5. RETORNA BLOCO DRAMÁTICO
+    # ======================================================
     return f"""
 [TELEFONE / MENSAGEM - CENA DRAMÁTICA VIVA]
 
 Direção de surpresa: {direcao if direcao else "não informada"}
 Caller extraído: {caller_extraido if caller_extraido else "não identificado"}
 Contato encontrado na agenda: {"sim" if contato_encontrado else "não"}
+Telefone registrado: {telefone_caller if telefone_caller else "não informado"}
+Aliases registrados: {", ".join(aliases_caller) if aliases_caller else "nenhum"}
 
 Caller: {caller}
-Tipo do caller: {tipo_caller}
-Risco dominante: {risco_caller}
-Relação registrada: {relacao_caller if relacao_caller else "não informada"}
+Tipo inferido do caller: {tipo_caller}
+Risco dominante inferido: {risco_caller}
 Pessoa presente fisicamente: {interlocutor_fisico}
 Mary está sozinha: {"sim" if mary_esta_sozinha else "não"}
 Chamada insistente: {"sim" if chamada_insistente else "não"}
+
+[MEMÓRIAS ENCONTRADAS SOBRE O CALLER]
+{contexto_memorial_caller if contexto_memorial_caller else "Nenhuma memória específica encontrada."}
 
 PRESSÃO ESPECÍFICA:
 {pressao_caller}
 
 TOM DA FALA COM O CALLER:
 {tom_fala_caller}
-
-OBSERVAÇÕES DO CONTATO:
-{observacoes_caller if observacoes_caller else "Nenhuma."}
 
 PRIORIDADE:
 Este bloco vence o tom Natural / Amizade.
