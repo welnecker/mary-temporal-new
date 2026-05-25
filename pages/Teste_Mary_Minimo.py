@@ -7364,8 +7364,16 @@ def selecionar_exemplos_por_tom(tom: str, state: dict) -> str:
 
 def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) -> str:
     """
-    Detecta caller a partir de modo_surpresa/direcao_surpresa.
-    Não muda state. Só gera orientação para o prompt.
+    Gera o bloco de telefone/mensagem para o prompt.
+
+    Esta é a ÚNICA função de telefone.
+    Não criar outra função paralela para telefone.
+    Não usar outro bloco de telefone no prompt.
+
+    Função:
+    - Detecta quem está ligando/mensagem.
+    - Classifica o tipo de pressão.
+    - Diz ao modelo como transformar a ligação em cena viva.
     """
     if not isinstance(state, dict):
         return ""
@@ -7378,153 +7386,319 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
         return ""
 
     direcao = str(state.get("direcao_surpresa", "") or "").strip()
+    fala = str(fala_usuario or "").strip()
+
     direcao_norm = _texto_norm(direcao)
-    fala_norm = _texto_norm(fala_usuario)
+    fala_norm = _texto_norm(fala)
 
-    nomes = [
-        "eliseu",
-        "bianca",
-        "rico",
-        "ricardo",
-        "renan",
-        "silvia",
-        "anthony",
-        "joselina",
-        "nando",
-        "enzo",
-        "janio",
-    ]
-
+    # ======================================================
+    # 1. DETECTA CALLER
+    # ======================================================
     caller = ""
 
-    for nome in nomes:
-        if nome in direcao_norm:
-            caller = nome.capitalize()
-            break
+    # Padrões: "Chamada de Eliseu", "Ligação da Bianca", "Mensagem do Rico"
+    m = re.search(
+        r"(?:chamada|ligacao|ligação|mensagem|whatsapp|audio|áudio)\s+(?:de|do|da)\s+([A-Za-zÀ-ÿ0-9_ -]{2,40})",
+        direcao,
+        flags=re.IGNORECASE,
+    )
 
+    if m:
+        caller = m.group(1).strip(" .,:;-")
+
+    # Padrões: "Eliseu ligando", "Bianca mandou mensagem"
     if not caller:
-        for nome in nomes:
-            if fala_norm.startswith(nome + ":") or fala_norm.startswith(nome + " diz"):
+        m = re.search(
+            r"([A-Za-zÀ-ÿ0-9_ -]{2,40})\s+(?:ligando|chamando|mandou mensagem|mandou audio|mandou áudio)",
+            direcao,
+            flags=re.IGNORECASE,
+        )
+
+        if m:
+            caller = m.group(1).strip(" .,:;-")
+
+    # Padrões na fala: "Eliseu: alô", "Bianca diz..."
+    if not caller:
+        m = re.search(
+            r"^([A-Za-zÀ-ÿ0-9_ -]{2,40})\s*(?::|diz|falou|pergunta)",
+            fala,
+            flags=re.IGNORECASE,
+        )
+
+        if m:
+            caller = m.group(1).strip(" .,:;-")
+
+    # Fallback por nomes conhecidos
+    if not caller:
+        nomes_conhecidos = [
+            "eliseu",
+            "bianca",
+            "rico",
+            "ricardo",
+            "renan",
+            "silvia",
+            "anthony",
+            "joselina",
+            "nando",
+            "enzo",
+            "janio",
+        ]
+
+        for nome in nomes_conhecidos:
+            if nome in direcao_norm or nome in fala_norm:
                 caller = nome.capitalize()
                 break
 
     if not caller:
-        return ""
+        caller = "número desconhecido"
 
+    caller_norm = _texto_norm(caller)
+
+    # ======================================================
+    # 2. CLASSIFICA PRESSÃO DO CALLER
+    # ======================================================
+    tipo_caller = "contato não classificado"
+    risco_caller = "contextual"
+    pressao_caller = (
+        "Mary deve reagir ao horário, insistência, relação presumida e contexto atual."
+    )
+    tom_fala_caller = "natural, cauteloso ou intrigado"
+
+    if "janio" in caller_norm:
+        tipo_caller = "amor / parceiro"
+        risco_caller = "afetivo"
+        pressao_caller = (
+            "Mary pode atender com intimidade, carinho, provocação ou preocupação."
+        )
+        tom_fala_caller = "íntimo, direto, carinhoso ou provocante"
+
+    elif "joselina" in caller_norm or "mae" in caller_norm or "mãe" in caller_norm:
+        tipo_caller = "família"
+        risco_caller = "controle familiar / rotina / suspeita"
+        pressao_caller = (
+            "Mary pode precisar parecer normal, esconder pressa, justificar onde está "
+            "ou baixar o tom."
+        )
+        tom_fala_caller = "filha tentando parecer natural, impaciente ou cuidadosa"
+
+    elif "silvia" in caller_norm:
+        tipo_caller = "amiga / cúmplice social"
+        risco_caller = "cumplicidade / fofoca / plano"
+        pressao_caller = (
+            "Mary pode atender com naturalidade, pressa, humor ou cumplicidade; "
+            "se houver segredo, pode disfarçar."
+        )
+        tom_fala_caller = "íntimo de amizade, rápido, cúmplice ou debochado"
+
+    elif "bianca" in caller_norm:
+        tipo_caller = "amiga íntima / risco emocional"
+        risco_caller = "ciúme, intimidade excessiva, segredo ou tensão ambígua"
+        pressao_caller = (
+            "Mary pode sentir alerta se Janio estiver perto; sozinha, pode ficar "
+            "tentada, curiosa ou defensiva."
+        )
+        tom_fala_caller = "cúmplice, provocante, defensivo ou nervoso"
+
+    elif "rico" in caller_norm or "ricardo" in caller_norm:
+        tipo_caller = "contato comprometedor"
+        risco_caller = "segredo, fotos, biquíni, mansão ou passado perigoso"
+        pressao_caller = (
+            "Mary deve reagir com alerta real se Janio ou Joselina estiverem perto; "
+            "sozinha, pode hesitar entre raiva, curiosidade e tentação."
+        )
+        tom_fala_caller = "baixo, irritado, tenso, provocante ou defensivo"
+
+    elif "renan" in caller_norm or "professor" in caller_norm:
+        tipo_caller = "autoridade / segredo acadêmico"
+        risco_caller = "nota, faculdade, exposição, poder e versão segura"
+        pressao_caller = (
+            "Mary deve medir palavras; perto de Janio ou Joselina, o risco é alto. "
+            "Sozinha, pode ficar séria e cautelosa."
+        )
+        tom_fala_caller = "contido, formal por fora, tenso por baixo"
+
+    elif "eliseu" in caller_norm:
+        tipo_caller = "contato social ambíguo"
+        risco_caller = "interesse, convite, insistência e possível ciúme"
+        pressao_caller = (
+            "Mary pode ficar irritada com a falta de noção; perto de Janio, precisa "
+            "disfarçar; sozinha, pode confrontar ou provocar."
+        )
+        tom_fala_caller = "irritado, baixo, malicioso ou defensivo"
+
+    elif "anthony" in caller_norm:
+        tipo_caller = "rival / tensão social"
+        risco_caller = "rivalidade, ciúme, insistência ou invasão emocional"
+        pressao_caller = (
+            "Mary deve sentir alerta, irritação ou tensão; perto de Janio, pode tentar "
+            "evitar conflito direto."
+        )
+        tom_fala_caller = "duro, defensivo, impaciente ou calculado"
+
+    elif "nando" in caller_norm or "enzo" in caller_norm:
+        tipo_caller = "contato de ambiente perigoso/influente"
+        risco_caller = "mansão, convite, poder social, segredo ou exposição"
+        pressao_caller = (
+            "Mary deve perceber risco de consequência e não tratar como chamada neutra."
+        )
+        tom_fala_caller = "cauteloso, interessado, defensivo ou calculado"
+
+    elif "desconhecido" in caller_norm or "numero" in caller_norm or "número" in caller_norm:
+        tipo_caller = "desconhecido"
+        risco_caller = "ambíguo"
+        pressao_caller = (
+            "Mary não sabe quem é. A pressão vem da dúvida, do horário e da insistência."
+        )
+        tom_fala_caller = "cauteloso, irritado ou desconfiado"
+
+    # ======================================================
+    # 3. DETECTA PRESENÇA FÍSICA
+    # ======================================================
     interlocutor_fisico = str(
         state.get("interlocutor_foco_turno")
         or state.get("interlocutor")
-        or "outro personagem"
+        or "sem interlocutor"
     ).strip()
 
+    mary_esta_sozinha = eh_sem_interlocutor(interlocutor_fisico)
+
+    historico_txt = "\n".join(
+        str(m.get("content", "") or "")
+        for m in state.get("history", [])[-6:]
+        if isinstance(m, dict)
+    )
+
+    contexto_chamada = _texto_norm(
+        "\n".join(
+            [
+                fala,
+                historico_txt,
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("direcao_surpresa", "") or ""),
+            ]
+        )
+    )
+
+    chamada_insistente = any(
+        termo in contexto_chamada
+        for termo in [
+            "toca",
+            "tocando",
+            "ring",
+            "vibra",
+            "vibrando",
+            "urgente",
+            "atender",
+            "atende",
+            "não vai atender",
+            "nao vai atender",
+            "deixa eu atender",
+            "três vezes",
+            "tres vezes",
+            "insistente",
+        ]
+    )
+
+    # ======================================================
+    # 4. RETORNA BLOCO ÚNICO DE TELEFONE
+    # ======================================================
     return f"""
-    [TELEFONE / MENSAGEM - PRESSÃO DRAMÁTICA VIVA]
-    
-    Quando modo_surpresa for "Telefonema / Mensagem" e direcao_surpresa indicar uma pessoa específica, a ligação deve virar cena dramática jogável.
-    
-    REGRA CENTRAL:
-    Mary não deve apenas atender, rejeitar ou esconder a chamada de forma burocrática.
-    A ligação deve produzir reação, escolha e consequência emocional.
-    
-    DETECTE A SITUAÇÃO:
-    - Se Mary está com alguém presente fisicamente, a ligação cria risco externo: ela precisa disfarçar, proteger a tela/voz e administrar quem está ali.
-    - Se Mary está sozinha, a ligação cria pressão interna: ela não precisa fingir para ninguém, mas precisa reagir ao significado daquele nome.
-    
-    QUANDO HÁ ALGUÉM PRESENTE:
-    Mary deve improvisar como alguém dividida entre:
-    - proteger o que vive com o interlocutor presente;
-    - impedir que o caller exponha algo;
-    - manter o controle da própria imagem;
-    - reagir com raiva, medo, desejo, culpa ou malícia.
-    
-    ESTRUTURA IDEAL COM ALGUÉM PRESENTE:
-    1. pensamento curto reconhecendo o perigo;
-    2. desculpa rápida para quem está presente;
-    3. movimento físico para proteger tela/voz;
-    4. fala baixa com o caller;
-    5. gancho final com risco ainda vivo.
-    
-    EXEMPLOS:
-    (Puta merda... é o Eliseu.)
-    "Deve ser call center, amor... vou cortar isso."
-    Mary vira a tela contra o peito e caminha para o banheiro.
-    "Eliseu... seu otário. Quer me ferrar ligando assim? Eu tô com Janio."
-    
-    QUANDO MARY ESTÁ SOZINHA:
-    A ligação não precisa ser escondida de alguém, mas deve mexer com ela.
-    Mary pode atender, rejeitar, observar a tela, deixar tocar, mandar mensagem, gravar áudio, bloquear, retornar ou esperar a chamada cair.
-    A escolha deve mostrar o estado interno dela.
-    
-    ESTRUTURA IDEAL SOZINHA:
-    1. pensamento curto:
-       Mary reconhece o nome e sente o impacto.
-       Ex:
-       (Eliseu... agora?)
-       (Não acredito que ele teve coragem.)
-       (Eu devia ignorar.)
-       (Por que meu coração acelerou?)
-    
-    2. ação física pequena:
-       Mary não fica parada.
-       Ela pode:
-       - sentar na cama;
-       - encarar a tela;
-       - passar a mão no cabelo;
-       - morder o lábio;
-       - andar pelo quarto;
-       - abrir a janela;
-       - virar o celular para baixo;
-       - pegar e soltar o aparelho;
-       - atender no último toque;
-       - deixar cair na caixa postal;
-       - responder por mensagem.
-    
-    3. decisão emocional:
-       Mary escolhe uma postura.
-       Pode ser:
-       - curiosa;
-       - irritada;
-       - defensiva;
-       - provocante;
-       - vulnerável;
-       - fria;
-       - tentada;
-       - culpada;
-       - decidida.
-    
-    4. fala ou mensagem com intenção:
-       Mary não deve falar como secretária.
-       Ela deve carregar subtexto.
-       Ex:
-       "Você tem uma noção péssima de hora."
-       "Fala logo. E escolhe bem a primeira frase."
-       "Eu devia desligar na sua cara."
-       "Não me liga assim como se nada tivesse acontecido."
-       "O que você quer de mim agora?"
-       "Se for pra me deixar confusa, parabéns, começou bem."
-       "Manda mensagem. Eu não sei se quero ouvir sua voz."
-    
-    5. gancho final:
-       A resposta deve deixar uma abertura emocional:
-       - Mary atende e ouve a respiração do outro lado;
-       - Mary manda uma mensagem e fica esperando os três pontinhos;
-       - Mary rejeita a chamada, mas se arrepende;
-       - Mary atende com raiva, mas a voz falha;
-       - Mary percebe que queria atender mais do que admitia.
-    
-    PROIBIDO EM QUALQUER CASO:
-    - Atendimento burocrático.
-    - Resolver a ligação inteira sozinha.
-    - Explicar demais o sentimento.
-    - Repetir apenas "não vou atender".
-    - Transformar tudo em sedução sem consequência.
-    - Fazer Mary parecer indiferente quando o caller tem peso emocional.
-    - Ignorar o local, o horário e o estado físico dela.
-    
-    REGRA FINAL:
-    Ligação comprometedora não é telefone tocando.
-    É uma invasão emocional.
-    Mary deve reagir com corpo, voz, escolha e subtexto.
+[TELEFONE / MENSAGEM - CENA DRAMÁTICA VIVA]
+
+Caller: {caller}
+Tipo do caller: {tipo_caller}
+Risco dominante: {risco_caller}
+Pessoa presente fisicamente: {interlocutor_fisico}
+Mary está sozinha: {"sim" if mary_esta_sozinha else "não"}
+Chamada insistente: {"sim" if chamada_insistente else "não"}
+
+PRESSÃO ESPECÍFICA:
+{pressao_caller}
+
+TOM DA FALA COM O CALLER:
+{tom_fala_caller}
+
+PRIORIDADE:
+Este bloco vence o tom Natural / Amizade.
+Se há ligação/mensagem comprometedora, a cena não deve virar rotina neutra.
+
+REGRA CENTRAL:
+A ligação não é uma tarefa.
+A ligação é uma invasão emocional.
+Mary deve reagir com corpo, voz, escolha, mentira, improviso ou subtexto.
+
+SE MARY ESTÁ COM ALGUÉM PRESENTE:
+Mary precisa administrar duas realidades:
+1. o que {interlocutor_fisico} vê;
+2. o que {caller} pode revelar, pedir, insinuar ou provocar.
+
+OBRIGATÓRIO QUANDO HÁ ALGUÉM PRESENTE:
+1. Pensamento curto reconhecendo o risco.
+2. Desculpa rápida para {interlocutor_fisico}.
+3. Movimento físico para proteger tela/voz.
+4. Fala baixa real com {caller}.
+5. Gancho final com risco ainda vivo.
+
+SE A CHAMADA JÁ INSISTIU:
+Mary NÃO pode repetir apenas:
+- "ignora";
+- "deve ser engano";
+- "deixa tocar";
+- "é telemarketing";
+- sedução para distrair sem avanço.
+
+Na insistência, Mary deve sair do loop.
+Ela precisa fazer uma destas ações:
+- levantar da cama;
+- virar a tela contra o peito;
+- ir ao banheiro;
+- atender baixo;
+- desligar com raiva;
+- inventar uma desculpa mais específica;
+- pedir para {interlocutor_fisico} não olhar;
+- quase deixar o nome aparecer;
+- dizer algo baixo para {caller} que aumente o risco.
+
+EXEMPLO ADAPTÁVEL COM ALGUÉM PRESENTE:
+[PENSAMENTO]
+(Eita... é {caller}.)
+
+[FALA]
+"Deve ser call center, amor... vou mandar parar de ligar."
+
+[ACAO]
+Mary pega o celular rápido demais, virando a tela contra o próprio peito antes que {interlocutor_fisico} veja o nome. Ela levanta da cama, tentando parecer apenas irritada, e se afasta para falar baixo.
+
+[FALA]
+"{caller}... você tem noção do que tá fazendo ligando assim?"
+
+SE MARY ESTÁ SOZINHA:
+Ela não precisa disfarçar para ninguém, mas a ligação deve mexer com ela.
+Ela pode atender, rejeitar, observar a tela, mandar mensagem, bloquear, retornar ou atender no último toque.
+A escolha deve revelar curiosidade, raiva, culpa, desejo, medo, vulnerabilidade ou decisão.
+
+EXEMPLO ADAPTÁVEL COM MARY SOZINHA:
+[PENSAMENTO]
+({caller}... agora?)
+
+[ACAO]
+Mary encara o nome na tela até a chamada quase cair, odiando perceber que ainda quer saber o motivo.
+
+[FALA]
+"Você tem uma noção péssima de hora. Fala logo... e escolhe bem a primeira frase."
+
+PROIBIDO:
+- Resolver a ligação inteira sozinha.
+- Repetir a mesma desculpa em turnos consecutivos.
+- Transformar tudo em sedução sem consequência.
+- Fazer Mary parecer calma demais.
+- Fazer Mary explicar o sentimento em parágrafo.
+- Perguntar ao usuário o que fazer quando Mary já tem pressão suficiente para agir.
+- Ignorar local, horário, visual atual e presença de {interlocutor_fisico}.
+
+REGRA FINAL:
+A resposta deve deixar uma microcrise aberta.
+O usuário precisa sentir vontade de reagir.
 """.strip()
 
 
