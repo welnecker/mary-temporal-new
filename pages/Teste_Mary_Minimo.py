@@ -348,7 +348,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-def testar_kokoro_openrouter_tts(texto: str) -> str | None:
+def testar_kokoro_openrouter_tts(
+    texto: str,
+    model: str = "hexgrad/kokoro-82m",
+    voice: str = "pf_dora",
+) -> str | None:
     """
     Testa Kokoro 82M via OpenRouter TTS.
     Retorna caminho de arquivo .mp3 ou None.
@@ -9747,8 +9751,9 @@ with st.sidebar:
         audio_path = testar_kokoro_openrouter_tts(
             texto_teste_kokoro,
             model="hexgrad/kokoro-82m",
+            voice="pf_dora",
         )
-
+    
         if audio_path:
             st.success("Áudio gerado com Kokoro.")
             st.audio(audio_path, format="audio/mp3")
