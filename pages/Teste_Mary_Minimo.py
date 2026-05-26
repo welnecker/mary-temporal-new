@@ -9740,6 +9740,23 @@ with st.sidebar:
     # ======================================================
     st.markdown("### 🔊 Teste de voz da Mary")
 
+    voz_kokoro = st.selectbox(
+        "Voz Kokoro",
+        options=[
+            "pf_dora",   # português feminino
+            "pm_alex",   # português masculino
+            "pm_santa",  # português masculino
+            "af_heart",  # inglês feminino
+            "af_bella",  # inglês feminino
+            "af_nicole", # inglês feminino
+            "af_sarah",  # inglês feminino
+            "bf_emma",   # inglês britânico feminino
+            "bf_isabella",
+        ],
+        index=0,
+        key="voz_kokoro_teste",
+    )
+
     texto_teste_kokoro = st.text_area(
         "Texto para testar áudio",
         value="Oi, Janio. Sou a Mary. Estou testando minha voz em português.",
@@ -9751,11 +9768,11 @@ with st.sidebar:
         audio_path = testar_kokoro_openrouter_tts(
             texto_teste_kokoro,
             model="hexgrad/kokoro-82m",
-            voice="pf_dora",
+            voice=voz_kokoro,
         )
-    
+
         if audio_path:
-            st.success("Áudio gerado com Kokoro.")
+            st.success(f"Áudio gerado com Kokoro: {voz_kokoro}")
             st.audio(audio_path, format="audio/mp3")
     
     if OPENROUTER_MODELS[modelo_nome] == "__manual__":
