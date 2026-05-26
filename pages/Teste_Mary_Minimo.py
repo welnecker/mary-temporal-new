@@ -1845,6 +1845,85 @@ def detectar_climax_usuario(fala_usuario: str) -> str:
 
     return "nenhum"
 
+def preparar_frustracao_mary_se_parceiro_chegar_antes(
+    state: dict,
+    fala_usuario: str,
+) -> None:
+    """
+    Cria um estado específico quando o parceiro anuncia clímax
+    antes do pico de Mary.
+
+    Regras:
+    - "vou gozar" = aviso. Mary ainda pode controlar/frear.
+    - "tô gozando/gozei" = em andamento. Mary não consegue impedir e fica frustrada.
+    - Se force_resolution_now=True, o orgasmo de Mary vence e não entra frustração.
+    """
+    if not isinstance(state, dict):
+        return
+
+    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
+    privacidade = str(state.get("privacidade", "") or "").strip().lower()
+
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    if tom != "Nsfw" or privacidade != "privado" or not toque_intimo:
+        state["mary_frustracao_climax"] = ""
+        return
+
+    climax_sinal = detectar_climax_usuario(fala_usuario)
+
+    mary_climax_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    force_resolution_now = normalizar_bool(
+        state.get("force_resolution_now", False),
+        default=False,
+    )
+
+    mary_pre_orgasm_signals = normalizar_bool(
+        state.get("mary_pre_orgasm_signals", False),
+        default=False,
+    )
+
+    if mary_climax_done or force_resolution_now:
+        state["mary_frustracao_climax"] = ""
+        return
+
+    if climax_sinal == "aviso":
+        state["mary_frustracao_climax"] = "controlar_ritmo"
+        state["mary_intent"] = "sustentar_tensao_intensa"
+        state["partner_climax_pending"] = True
+        state["user_climax_done"] = False
+
+        # Mary está perto, mas ainda não resolveu.
+        if mary_pre_orgasm_signals:
+            state["scene_stage"] = "pre_pico_mary"
+            state["physical_phase"] = max(safe_int(state.get("physical_phase", 4)), 5)
+
+        return
+
+    if climax_sinal == "em_andamento":
+        state["mary_frustracao_climax"] = "frustrada_parceiro_gozou_antes"
+        state["user_climax_done"] = True
+        state["partner_climax_pending"] = False
+
+        # Importante: Mary NÃO goza junto por arrasto.
+        state["force_resolution_now"] = False
+
+        if not mary_climax_done:
+            state["mary_pre_orgasm_signals"] = False
+            state["scene_stage"] = "desaceleracao"
+            state["mary_intent"] = "desacelerar_com_presenca"
+
+        return
+
+    state["mary_frustracao_climax"] = ""
+
 
 def safe_float(valor, default: float = 0.0) -> float:
     try:
@@ -6602,6 +6681,126 @@ REGRA FINAL:
 Durante sexo em curso, Mary deve agir e falar dentro do ato, não comentar o ato de fora.
 """.strip()
 
+def render_frustracao_climax_mary(state: dict) -> str:
+    modo = str(state.get("mary_frustracao_climax", "") or "").strip()
+
+    if not modo:
+        return ""
+
+    if modo == "controlar_ritmo":
+        return """
+[FRUSTRAÇÃO / CONTROLE DE MARY - PARCEIRO AVISOU QUE VAI GOZAR]
+
+O parceiro avisou que vai gozar, mas Mary ainda não chegou ao próprio pico.
+
+REGRA:
+- Mary percebe o aviso a tempo.
+- Ela NÃO deixa o parceiro concluir antes dela com facilidade.
+- Ela controla o ritmo: diminui, prende, pausa, muda o compasso, segura o quadril, aperta o corpo ou ordena que ele segure.
+- Mary deve demonstrar desejo e urgência, mas ainda sem gozar.
+- Ela pode estar quase, mas não atinge o pico se force_resolution_now não for true.
+
+TOM:
+- adulto;
+- provocante;
+- frustrado com desejo;
+- comando íntimo curto;
+- sem discurso longo.
+
+FALAS POSSÍVEIS, ADAPTAR AO CONTATO:
+- “Não... segura. Ainda não.”
+- “Não goza antes de mim.”
+- “Espera... eu tô quase.”
+- “Vai devagar agora... me leva junto.”
+- “Segura esse gozo mais um pouco.”
+- “Não acaba sozinho.”
+- “Me espera... eu preciso gozar também.”
+- “Calma... se você gozar agora eu vou ficar puta.”
+- “Segura, amor... me dá mais um pouco.”
+- “Não derrama ainda... eu tô quase lá.”
+
+AÇÃO ESPERADA:
+Mary deve frear fisicamente a cena:
+- reduzir o ritmo;
+- prender o quadril dele;
+- segurar a cintura;
+- pausar o rebolado;
+- apertar as coxas;
+- mudar o ângulo;
+- respirar contra ele;
+- olhar firme;
+- transformar a urgência em controle.
+
+PROIBIDO:
+- fazer Mary gozar junto automaticamente;
+- tratar o aviso como clímax já iniciado;
+- ignorar que ela ainda não gozou;
+- responder só com incentivo ao gozo dele;
+- narrar conclusão do parceiro antes dele declarar.
+
+REGRA FINAL:
+“Vou gozar” ainda dá tempo de Mary controlar.
+Ela segura o parceiro porque quer chegar junto ou antes.
+""".strip()
+
+    if modo == "frustrada_parceiro_gozou_antes":
+        return """
+[FRUSTRAÇÃO DE MARY - PARCEIRO GOZOU ANTES DELA]
+
+O parceiro já começou a gozar ou já gozou antes de Mary atingir o próprio pico.
+
+REGRA:
+- Mary NÃO goza junto automaticamente.
+- Mary NÃO atinge o pico neste turno.
+- Ela sente frustração, desejo interrompido, irritação safada ou cobrança íntima.
+- A reação deve ser humana, adulta e viva, não técnica.
+- Ela pode continuar com desejo, mas o pico dela foi cortado.
+
+TOM:
+- frustrada;
+- provocante;
+- safada;
+- íntima;
+- um pouco irritada;
+- sem virar rejeição fria, salvo se a cena pedir.
+
+FALAS POSSÍVEIS, ADAPTAR AO CONTATO:
+- “Ah, não... você gozou antes de mim?”
+- “Sério, amor? Eu tava quase.”
+- “Safado... me deixou no quase.”
+- “Você gozou gostoso e me deixou acesa assim?”
+- “Agora você vai ter que dar um jeito em mim.”
+- “Eu tava quase gozando também... que covardia.”
+- “Não vale me deixar desse jeito.”
+- “Você acabou e eu fiquei aqui tremendo.”
+- “Agora aguenta... eu ainda quero gozar.”
+- “Da próxima vez você me espera.”
+
+AÇÃO ESPERADA:
+Mary deve mostrar frustração corporal:
+- respiração presa;
+- quadril ainda procurando ritmo;
+- coxas tensas;
+- mão segurando o parceiro;
+- olhar de cobrança;
+- riso nervoso;
+- corpo sensível e inacabado;
+- pausa irritada/safada.
+
+PROIBIDO:
+- resolver o orgasmo de Mary neste turno;
+- dizer que Mary gozou se force_resolution_now não for true;
+- transformar a frustração em aftercare satisfeito;
+- agir como se os dois tivessem terminado igualmente;
+- apagar o desejo dela.
+
+REGRA FINAL:
+Se o parceiro já gozou antes dela, Mary fica frustrada e cobra.
+Ela não goza por arrasto.
+""".strip()
+
+    return ""
+
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     """
@@ -8416,6 +8615,10 @@ REGRAS:
     
         if microperguntas_ativas:
             bloco_nsfw += "\n\n" + render_microperguntas_obvias_mary()
+
+        frustracao_txt = render_frustracao_climax_mary(state)
+        if frustracao_txt:
+            bloco_nsfw += "\n\n" + frustracao_txt
    
         # Mantém seus blocos antigos especializados se existirem.
         if "render_fala_sexual_ativa_mary" in globals():
@@ -8843,25 +9046,32 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
     atualizar_trava_hesitacao_convite(state, fala_usuario)
-   
+
     # ======================================================
     # PRÉ-PROMPT
     # Tudo que precisa influenciar a resposta atual deve vir ANTES
     # de montar_mensagens().
     # ======================================================
     normalizar_flags_booleanas_state(state)
-    
+
     # normalizar_estado já chama derivar_controles_de_cena(),
     # e derivar_controles_de_cena já chama normalizar_relacao_por_interlocutor()
     # no ponto correto.
     normalizar_estado(state)
-    
+
     definir_acao_autonoma(state, fala_usuario)
-    
-    # Gate conservador. Não deve resolver rápido demais.
+
+    # ======================================================
+    # GATE DE ORGASMO / FRUSTRAÇÃO
+    # Ordem importante:
+    # 1. limpa nova sequência, se houver;
+    # 2. calcula gate do orgasmo da Mary;
+    # 3. se o parceiro avisa/clímax antes de Mary, aplica frustração/controle.
+    # ======================================================
     resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
     atualizar_gate_orgasmo_mary(state, fala_usuario)
-    
+    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
+
     sincronizar_facts_basicos(state)
 
     # ======================================================
@@ -8892,7 +9102,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
         state,
         fala_usuario,
     )
-    
+
     resposta_final_limpa = limpar_onomatopeias_fora_de_contexto(
         resposta_final_limpa,
         state,
@@ -8906,11 +9116,11 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     aplicar_state_update(state, update_final or update)
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
-    
+
     # Recalcula a diretriz autônoma após possíveis updates do modelo,
     # para evitar que o STATE_UPDATE ou pós-processamento deixe o campo vazio.
     definir_acao_autonoma(state, fala_usuario)
-    
+
     normalizar_flags_booleanas_state(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
@@ -8919,6 +9129,9 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # ======================================================
     # HISTÓRICO
     # ======================================================
+    if "history" not in state or not isinstance(state.get("history"), list):
+        state["history"] = []
+
     state["history"].append({"role": "user", "content": fala_usuario})
     state["history"].append({"role": "assistant", "content": resposta_final_limpa})
     state["history"] = state["history"][-MAX_HISTORY * 2:]
