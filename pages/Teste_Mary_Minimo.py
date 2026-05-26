@@ -363,14 +363,22 @@ def testar_kokoro_openrouter_tts(
         st.error("OPENROUTER_API_KEY não encontrado nos secrets.")
         return None
 
+    texto = str(texto or "").strip()
+
+    if not texto:
+        st.warning("Digite algum texto para testar o áudio.")
+        return None
+
     url = "https://openrouter.ai/api/v1/audio/speech"
 
     payload = {
-        "model": "hexgrad/kokoro-82m",
+        "model": model,
         "input": texto,
-        "voice": "pf_dora",
+        "voice": voice,
         "response_format": "mp3",
     }
+
+    st.caption(f"Enviando para TTS: modelo `{model}` | voz `{voice}`")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -9740,23 +9748,48 @@ with st.sidebar:
     # ======================================================
     st.markdown("### 🔊 Teste de voz da Mary")
 
-    voz_kokoro = st.selectbox(
+    # ------------------------------------------------------
+    # 1) DICIONÁRIO DE VOZES
+    # A chave é o nome bonito que aparece no menu.
+    # O valor é o código real enviado ao Kokoro.
+    # ------------------------------------------------------
+    VOZES_KOKORO = {
+        "Português feminino - Dora": "pf_dora",
+        "Português masculino - Alex": "pm_alex",
+        "Português masculino - Santa": "pm_santa",
+
+        "Inglês feminino - Heart": "af_heart",
+        "Inglês feminino - Bella": "af_bella",
+        "Inglês feminino - Nicole": "af_nicole",
+        "Inglês feminino - Sarah": "af_sarah",
+
+        "Britânico feminino - Emma": "bf_emma",
+        "Britânico feminino - Isabella": "bf_isabella",
+    }
+
+    # ------------------------------------------------------
+    # 2) MENU VISUAL
+    # Aqui o usuário escolhe pelo nome amigável.
+    # ------------------------------------------------------
+    voz_nome_kokoro = st.selectbox(
         "Voz Kokoro",
-        options=[
-            "pf_dora",   # português feminino
-            "pm_alex",   # português masculino
-            "pm_santa",  # português masculino
-            "af_heart",  # inglês feminino
-            "af_bella",  # inglês feminino
-            "af_nicole", # inglês feminino
-            "af_sarah",  # inglês feminino
-            "bf_emma",   # inglês britânico feminino
-            "bf_isabella",
-        ],
+        options=list(VOZES_KOKORO.keys()),
         index=0,
-        key="voz_kokoro_teste",
+        key="voz_nome_kokoro_teste",
     )
 
+    # ------------------------------------------------------
+    # 3) CONVERSÃO PARA O CÓDIGO REAL
+    # Exemplo:
+    # "Português feminino - Dora" vira "pf_dora"
+    # ------------------------------------------------------
+    voz_kokoro = VOZES_KOKORO[voz_nome_kokoro]
+
+    st.caption(f"Voz enviada ao Kokoro: `{voz_kokoro}`")
+
+    # ------------------------------------------------------
+    # 4) TEXTO DE TESTE
+    # ------------------------------------------------------
     texto_teste_kokoro = st.text_area(
         "Texto para testar áudio",
         value="Oi, Janio. Sou a Mary. Estou testando minha voz em português.",
@@ -9764,6 +9797,10 @@ with st.sidebar:
         key="texto_teste_kokoro",
     )
 
+    # ------------------------------------------------------
+    # 5) BOTÃO DE TESTE
+    # Aqui o código real da voz é enviado para a função.
+    # ------------------------------------------------------
     if st.button("🔊 Testar Kokoro TTS", use_container_width=True):
         audio_path = testar_kokoro_openrouter_tts(
             texto_teste_kokoro,
@@ -9772,7 +9809,9 @@ with st.sidebar:
         )
 
         if audio_path:
-            st.success(f"Áudio gerado com Kokoro: {voz_kokoro}")
+            st.success(
+                f"Áudio gerado com Kokoro: {voz_nome_kokoro} / {voz_kokoro}"
+            )
             st.audio(audio_path, format="audio/mp3")
     
     if OPENROUTER_MODELS[modelo_nome] == "__manual__":
