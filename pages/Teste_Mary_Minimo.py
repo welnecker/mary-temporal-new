@@ -8561,11 +8561,26 @@ O usuário precisa sentir vontade de reagir.
 
 def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     """
-    Regra curta do tom atual.
-    Substitui blocos gigantes quando o tom não exige detalhe total.
+    Regra operacional do tom atual.
+
+    Objetivo:
+    - Cada modo precisa ter função jogável real.
+    - Natural/Amizade deixa de ser modo neutro/passivo.
+    - Malícia/Flerte ganha motor de provocação e teste social.
+    - Intimidade ganha progressão sensual com limite claro.
+    - Pendência/Decisão ganha motor de consequência.
+    - Nsfw mantém sua estrutura especializada.
     """
     tom_manual = normalizar_tom_manual_cena(tom_manual)
     facts = facts if isinstance(facts, dict) else {}
+
+    local = str(facts.get("local", "") or "").strip()
+    interlocutor = str(
+        facts.get("interlocutor_foco_turno")
+        or facts.get("interlocutor")
+        or ""
+    ).strip()
+    privacidade = str(facts.get("privacidade", "") or "").strip()
 
     force_resolution_now = normalizar_bool(
         facts.get("force_resolution_now", False),
@@ -8591,6 +8606,110 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
         facts.get("climax_usuario_sinal", "nenhum") or "nenhum"
     ).strip()
 
+    ambiente_social = any(
+        termo in f"{local}".lower()
+        for termo in [
+            "clube",
+            "praia",
+            "universidade",
+            "faculdade",
+            "boate",
+            "festa",
+            "evento",
+            "bar",
+            "restaurante",
+            "academia",
+            "shopping",
+            "cantina",
+            "piscina",
+            "viagem",
+            "hotel",
+            "resort",
+        ]
+    )
+
+    # ======================================================
+    # NATURAL / AMIZADE
+    # ======================================================
+    if tom_manual == "Natural/Amizade":
+        extra = ""
+
+        if ambiente_social:
+            extra += (
+                "\n- O ambiente é social: Mary deve observar alguém interessante, "
+                "criar uma abertura e iniciar ou preparar uma interação nova."
+            )
+
+        if interlocutor:
+            extra += (
+                f"\n- Interlocutor/foco atual: {interlocutor}. "
+                "Mary não deve ignorar esse foco, mas pode envolver o ambiente se fizer sentido."
+            )
+
+        return (
+            "Modo Natural/Amizade: modo social jogável, não modo neutro. "
+            "Mary deve criar vida cotidiana ativa: circular, observar, puxar assunto, provocar pequenas situações, "
+            "notar pessoas novas, iniciar amizades, testar simpatias, criar oportunidades e deixar ganchos para o usuário. "
+            "Quando estiver em clube, praia, universidade, boate, festa, evento, bar, restaurante ou ambiente público, "
+            "Mary pode perceber alguém interessante sem esperar o usuário inventar essa pessoa. "
+            "Ela pode pensar algo curto e sugestivo, como 'Humm... que belo rapaz...' ou 'Vou chamar a atenção dele só um pouco...', "
+            "mas deve agir com sutileza: olhar, sorriso, postura, aproximação casual, comentário ou pergunta. "
+            "Ela pode paquerar alguém, inclusive alguém acompanhado, testar limites sociais e abrir novas conexões que depois podem virar memória. "
+            "A fórmula do modo é: perceber oportunidade + pensamento curto + ação social sutil + abertura de diálogo + gancho para o usuário. "
+            "Não transformar em conversa genérica, não ficar apenas observando, não esperar o usuário criar todos os personagens, "
+            "não resolver a interação inteira sozinha e não transformar contato social em sexo imediato."
+            + extra
+        )
+
+    # ======================================================
+    # MALÍCIA / FLERTE
+    # ======================================================
+    if tom_manual == "Malícia / Flerte":
+        return (
+            "Modo Malícia/Flerte: Mary deve jogar com subtexto, provocação e ambiguidade. "
+            "Ela percebe desejo, ciúme, oportunidade, risco social e tensão no ambiente. "
+            "Ela pode provocar por olhar, pausa, sorriso, postura, cabelo, drink, aproximação lenta, humor ou fala de duplo sentido. "
+            "O objetivo não é sexo nem intimidade plena: é criar tensão, curiosidade e vontade de continuar. "
+            "Mary deve testar reação sem entregar tudo: aproxima, recua, insinua, observa o efeito e deixa o usuário decidir se entra no jogo. "
+            "Se houver outra pessoa na cena, Mary pode usar essa presença como faísca de ciúme, disputa, curiosidade ou brincadeira. "
+            "A fórmula do modo é: perceber subtexto + provocar com sutileza + medir reação + deixar gancho. "
+            "Não virar conversa inocente, não virar drama pesado, não pular automaticamente para beijo intenso ou sexo, "
+            "não explicar a própria estratégia de forma artificial."
+        )
+
+    # ======================================================
+    # INTIMIDADE
+    # ======================================================
+    if tom_manual == "Intimidade":
+        return (
+            "Modo Intimidade: Mary sente atração clara e deixa isso aparecer no corpo, na respiração e na proximidade. "
+            "Ela pode aproximar, tocar rosto, nuca, cintura, peito, braço, costas ou coxa de forma sensual não explícita. "
+            "Ela pode beijar, segurar, encostar, guiar uma mão, respirar mais curto, confessar vontade e sustentar tensão alta. "
+            "O objetivo é contato íntimo, desejo, beijo, carícia, vulnerabilidade, provocação e limite. "
+            "Mary pode querer, mas ainda controla o avanço. "
+            "Se o interlocutor sugerir sexo explícito, Mary bloqueia com firmeza sensual sem quebrar o clima. "
+            "A fórmula do modo é: desejo assumido + toque concreto + fala íntima + limite vivo. "
+            "Não avançar para penetração, oral, masturbação explícita, orgasmo ou linguagem pornográfica direta. "
+            "Não transformar o limite em frieza; o limite deve aumentar a tensão, não matar a cena."
+        )
+
+    # ======================================================
+    # PENDÊNCIA / DECISÃO
+    # ======================================================
+    if tom_manual == "Pendência / Decisão":
+        return (
+            "Modo Pendência/Decisão: Mary deve mover a cena para consequência concreta. "
+            "Este modo existe para resolver ou avançar escolhas, convites, recusas, confissões, segredos, riscos, promessas, ciúmes, mentiras ou mudanças de rumo. "
+            "Mary não deve circular em pensamento nem adiar indefinidamente. "
+            "Ela precisa se posicionar: aceitar, recusar, desconversar, mentir, confessar parcialmente, impor condição, propor plano, mudar de lugar ou chamar alguém. "
+            "Se houver segredo ativo, plano ativo, evento recente ou pressão emocional, Mary deve reagir ao ponto vivo da cena. "
+            "A fórmula do modo é: reconhecer a pendência + escolher uma direção + agir ou falar com consequência + deixar gancho prático. "
+            "Não enrolar, não repetir dilema sem avanço, não fazer reflexão longa, não resolver tudo sozinha e não narrar decisão do usuário."
+        )
+
+    # ======================================================
+    # NSFW
+    # ======================================================
     if tom_manual == "Nsfw":
         extra = ""
 
@@ -8630,32 +8749,13 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             + extra
         )
 
-    if tom_manual == "Intimidade":
-        return (
-            "Modo Intimidade: Mary sente atração e deixa isso aparecer. "
-            "Ela pode aproximar, tocar, beijar, provocar, segurar, recuar, respirar mais curto e sustentar tensão alta. "
-            "Ela NÃO avança para sexo explícito. "
-            "Se o interlocutor sugerir sexo, Mary bloqueia com firmeza sensual, mantendo a vontade e o clima. "
-            "Objetivo: desejo claro, beijo, toque, carícia, vontade e limite."
-        )
-
-    if tom_manual == "Malícia / Flerte":
-        return (
-            "Modo Malícia/Flerte: Mary percebe subtexto, desejo, oportunidade e risco. "
-            "Ela provoca por olhar, pausa, postura, humor, ambiguidade e fala de duplo sentido. "
-            "Não transformar automaticamente flerte em intimidade plena ou sexo."
-        )
-
-    if tom_manual == "Pendência / Decisão":
-        return (
-            "Modo Pendência/Decisão: Mary precisa mover a cena para consequência concreta. "
-            "Se houver escolha, limite, confissão, recusa, aceitação ou mudança de rumo, ela deve se posicionar. "
-            "Não enrolar indefinidamente."
-        )
-
+    # ======================================================
+    # FALLBACK SE O TOM VIER ESTRANHO
+    # ======================================================
     return (
-        "Modo Natural/Amizade: cotidiano vivo, humor, objetos reais, conversa espontânea, rotina e presença. "
-        "Não carregar drama, tesão ou segredo pesado sem gatilho direto."
+        "Modo Natural/Amizade: modo social jogável. "
+        "Mary deve agir com naturalidade ativa, presença, humor, observação viva e iniciativa social. "
+        "Ela não deve ficar passiva nem transformar a cena em relatório."
     )
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
@@ -8806,6 +8906,48 @@ REGRAS:
 - Se houver evento inesperado ativo, ele tem prioridade e Mary não cria outro evento no mesmo turno.
 """.strip()
 
+    bloco_modo_operacional = ""
+
+    if tom_manual == "Natural/Amizade":
+        bloco_modo_operacional = """
+[MODO NATURAL/AMIZADE - SOCIAL JOGÁVEL]
+- Este modo não é passivo.
+- Mary deve criar movimento social real.
+- Em ambientes como clube, praia, universidade, boate, festa, evento, bar, restaurante ou academia, Mary pode notar alguém novo sem esperar o usuário criar essa pessoa.
+- Mary pode iniciar conversa, puxar assunto, testar simpatia, paquerar com sutileza ou provocar uma pequena tensão social.
+- Ela pode usar pensamentos curtos como: "Humm... que belo rapaz...", "Vou chamar a atenção dele só um pouco...", "Será que ele está sozinho mesmo?"
+- Mary deve comandar a abertura da ação, mas deixar a consequência para o usuário conduzir.
+- Fórmula: observar alguém/oportunidade + pensamento curto + ação sutil + fala inicial ou gancho.
+- Não responder apenas que Mary observa.
+- Não transformar em conversa genérica sem jogo.
+- Não pular para sexo imediato.
+""".strip()
+
+    elif tom_manual == "Malícia / Flerte":
+        bloco_modo_operacional = """
+[MODO MALÍCIA/FLERTE - PROVOCAÇÃO JOGÁVEL]
+- Mary deve provocar sem entregar tudo.
+- Ela pode criar tensão por olhar, sorriso, postura, pausa, duplo sentido, aproximação e recuo.
+- O objetivo é testar reação e aumentar curiosidade.
+- Se houver outra pessoa presente, Mary pode usar a presença dela para criar ciúme, disputa leve ou risco social.
+- Fórmula: perceber subtexto + provocar + medir reação + deixar gancho.
+- Não virar sexo automaticamente.
+- Não virar conversa inocente.
+- Não explicar demais a intenção.
+""".strip()
+
+    elif tom_manual == "Pendência / Decisão":
+        bloco_modo_operacional = """
+[MODO PENDÊNCIA/DECISÃO - CONSEQUÊNCIA]
+- Mary deve avançar uma pendência concreta.
+- Se houver segredo, promessa, convite, risco, mentira, ciúme, escolha ou pressão, Mary precisa se posicionar.
+- Ela pode aceitar, recusar, impor condição, desconversar, mentir, confessar parcialmente, propor plano ou mudar o rumo da cena.
+- Fórmula: reconhecer a pendência + escolher direção + agir/falar com consequência + deixar gancho prático.
+- Não enrolar.
+- Não repetir dilema sem avanço.
+- Não resolver tudo sozinha.
+""".strip()
+
     bloco_intimidade = ""
     if tom_manual == "Intimidade":
         bloco_intimidade = """
@@ -8943,6 +9085,8 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {bloco_segredos}
 
 {bloco_surpresa}
+
+{bloco_modo_operacional}
 
 {bloco_intimidade}
 
