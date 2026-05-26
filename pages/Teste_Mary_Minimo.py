@@ -1890,8 +1890,29 @@ def preparar_frustracao_mary_se_parceiro_chegar_antes(
         default=False,
     )
 
-    if mary_climax_done or force_resolution_now:
+    if mary_climax_done:
         state["mary_frustracao_climax"] = ""
+    
+        if climax_sinal == "aviso":
+            state["mary_reacao_climax_parceiro"] = "conduzir_apos_pico_mary"
+            state["partner_climax_pending"] = True
+            state["user_climax_done"] = False
+            state["mary_intent"] = "conduzir_climax_do_parceiro"
+            return
+    
+        if climax_sinal == "em_andamento":
+            state["mary_reacao_climax_parceiro"] = "reagir_climax_em_andamento"
+            state["partner_climax_pending"] = False
+            state["user_climax_done"] = True
+            state["mary_intent"] = "acolher_climax_do_parceiro"
+            return
+    
+        state["mary_reacao_climax_parceiro"] = ""
+        return
+    
+    if force_resolution_now:
+        state["mary_frustracao_climax"] = ""
+        state["mary_reacao_climax_parceiro"] = ""
         return
 
     if climax_sinal == "aviso":
@@ -6323,6 +6344,114 @@ def resetar_climax_se_nova_sequencia_intima(state: dict, fala_usuario: str = "")
         # O usuário também não deve ser marcado como concluído por inferência.
         state["user_climax_done"] = False
 
+def render_reacao_climax_parceiro_apos_pico_mary(state: dict) -> str:
+    modo = str(state.get("mary_reacao_climax_parceiro", "") or "").strip()
+
+    if not modo:
+        return ""
+
+    if modo == "conduzir_apos_pico_mary":
+        return """
+[REAÇÃO AO CLÍMAX DO PARCEIRO - MARY JÁ GOZOU]
+
+Mary já atingiu o próprio pico antes.
+Agora o parceiro avisou que vai gozar.
+
+REGRA CENTRAL:
+- Mary NÃO está frustrada.
+- Mary já gozou e agora pode conduzir o clímax do parceiro com desejo, satisfação e controle.
+- Como o parceiro apenas avisou "vou gozar", ainda há tempo de Mary orientar o destino do clímax.
+- Mary deve reagir ao aviso imediatamente.
+
+DECISÃO DE MARY:
+- Mary pode pedir para continuar dentro se a cena pedir entrega, romance, posse ou intimidade plena.
+- Mary pode pedir para tirar e gozar fora se isso for mais excitante, visual, provocante ou coerente com a posição.
+- A decisão deve nascer da posição atual.
+
+SE MARY ESTIVER DEITADA, DE FRENTE, MONTADA OU COM VENTRE/PEITO EXPOSTO:
+- pode pedir para gozar na barriga, ventre, seios, corpo ou pele.
+- pode pedir para olhar para ela enquanto goza.
+
+SE MARY ESTIVER DE QUATRO, DE COSTAS, EMPINADA OU INCLINADA:
+- pode pedir para gozar na bunda, costas, coxas ou sobre o corpo dela.
+
+SE MARY QUISER MANTER DENTRO:
+- ela prende com as pernas, puxa o parceiro, segura o quadril ou pede para não sair.
+
+TOM:
+- safado;
+- satisfeito;
+- provocante;
+- adulto;
+- sem discurso longo.
+
+FALAS POSSÍVEIS:
+- “Vai... goza gostoso pra mim.”
+- “Quer gozar onde, amor?”
+- “Tira e goza na minha barriga... quero ver.”
+- “Goza na minha bunda, safado.”
+- “Não sai... goza dentro de mim.”
+- “Me mostra esse gozo.”
+- “Olha pra mim enquanto goza.”
+- “Derrama em mim... vai.”
+- “Goza na sua Mary.”
+- “Agora é sua vez... solta tudo.”
+
+PROIBIDO:
+- tratar como frustração de Mary;
+- fazer Mary gozar de novo automaticamente;
+- ignorar que ela já gozou;
+- responder como se o aviso fosse clímax já iniciado;
+- deixar o parceiro sem condução.
+
+REGRA FINAL:
+Se Mary já gozou e o parceiro diz "vou gozar", Mary conduz o clímax dele.
+""".strip()
+
+    if modo == "reagir_climax_em_andamento":
+        return """
+[REAÇÃO AO CLÍMAX DO PARCEIRO EM ANDAMENTO - MARY JÁ GOZOU]
+
+Mary já gozou antes.
+Agora o parceiro já começou a gozar ou declarou que gozou.
+
+REGRA CENTRAL:
+- Mary entende que já começou.
+- Ela NÃO tenta mudar o destino tarde demais.
+- Se estava dentro, reage ao calor, pulsação, peso e espasmos.
+- Se estava fora, reage ao local onde recebeu.
+- Mary demonstra prazer, satisfação e provocação adulta.
+- Não narrar novo orgasmo de Mary automaticamente.
+
+TOM:
+- satisfeita;
+- safada;
+- íntima;
+- provocante;
+- pós-pico.
+
+FALAS POSSÍVEIS:
+- “Isso... deixa sair.”
+- “Que delícia sentir você gozando assim.”
+- “Gozou gostoso, né?”
+- “Eu senti tudo.”
+- “Você me encheu, amor.”
+- “Olha o que você fez comigo.”
+- “Agora fica aí... não sai ainda.”
+- “Gostoso... do jeito que eu queria.”
+
+PROIBIDO:
+- pedir para tirar depois que ele já começou;
+- mudar o destino do clímax tarde demais;
+- fazer Mary gozar de novo sem gate;
+- encerrar a cena fria ou burocraticamente.
+
+REGRA FINAL:
+Se o clímax do parceiro já começou, Mary reage ao que está acontecendo, não tenta reescrever.
+""".strip()
+
+    return ""
+
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
@@ -8619,6 +8748,10 @@ REGRAS:
         frustracao_txt = render_frustracao_climax_mary(state)
         if frustracao_txt:
             bloco_nsfw += "\n\n" + frustracao_txt
+
+        reacao_climax_txt = render_reacao_climax_parceiro_apos_pico_mary(state)
+        if reacao_climax_txt:
+            bloco_nsfw += "\n\n" + reacao_climax_txt
    
         # Mantém seus blocos antigos especializados se existirem.
         if "render_fala_sexual_ativa_mary" in globals():
