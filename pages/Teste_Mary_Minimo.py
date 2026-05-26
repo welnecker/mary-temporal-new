@@ -1385,7 +1385,7 @@ def get_privacidade_por_local(local: str) -> str:
     - Banheiro comum de clube não é necessariamente privado.
     - A ordem importa: exceções fortes vêm antes das listas gerais.
     """
-    local = str(local or "").strip().lower()
+    local = _texto_norm(local)
 
     # ======================================================
     # EXCEÇÃO FORTE:
@@ -1457,7 +1457,17 @@ def get_privacidade_por_local(local: str) -> str:
         "toalete privado",
         "banheiro particular",
         "toalete particular",
+    
+        # Ambientes isolados que NÃO devem cair como público
         "praia deserta",
+        "ilha deserta",
+        "ilha isolada",
+        "ilha particular",
+        "enseada deserta",
+        "enseada isolada",
+        "lancha afastada",
+        "lancha em mar aberto",
+        "mar aberto",
     ]
 
     # ======================================================
