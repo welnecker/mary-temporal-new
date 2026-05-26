@@ -6,6 +6,8 @@ import sys
 import requests
 from datetime import datetime
 import unicodedata
+import base64
+import tempfile
 
 import streamlit as st
 import gspread
@@ -345,6 +347,98 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
+def testar_kokoro_openrouter_tts(texto: str) -> str | None:
+    """
+    Testa Kokoro 82M via OpenRouter TTS.
+    Retorna caminho de arquivo .mp3 ou None.
+    """
+    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+
+    if not api_key:
+        st.error("OPENROUTER_API_KEY não encontrado nos secrets.")
+        return None
+
+    url = "https://openrouter.ai/api/v1/audio/speech"
+
+    payload = {
+        "model": "hexgrad/kokoro-82m",
+        "input": texto,
+        "voice": "pf_dora",
+        "response_format": "mp3",
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://streamlit.app",
+        "X-Title": "Mary Minimal Roleplay",
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=90,
+        )
+    except requests.exceptions.RequestException as e:
+        st.error(f"Erro de conexão com OpenRouter TTS: {type(e).__name__}: {e}")
+        return None
+
+    content_type = response.headers.get("content-type", "")
+
+    if response.status_code >= 400:
+        st.error(f"Erro HTTP OpenRouter TTS: {response.status_code}")
+        st.code(response.text[:4000])
+        return None
+
+    # Caso venha áudio direto
+    if "audio" in content_type or response.content[:3] == b"ID3":
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tmp.write(response.content)
+        tmp.close()
+        return tmp.name
+
+    # Caso venha JSON com áudio em base64 ou erro embutido
+    try:
+        data = response.json()
+    except Exception:
+        st.error("Resposta inesperada do TTS: não é áudio nem JSON.")
+        st.code(response.text[:4000])
+        return None
+
+    st.session_state["kokoro_tts_raw"] = data
+
+    if "error" in data or "message" in data:
+        st.error("Erro retornado pelo OpenRouter TTS.")
+        st.code(str(data)[:4000])
+        return None
+
+    audio_b64 = (
+        data.get("audio")
+        or data.get("data")
+        or data.get("content")
+        or ""
+    )
+
+    if not audio_b64:
+        st.error("OpenRouter TTS não retornou áudio reconhecível.")
+        st.json(data)
+        return None
+
+    try:
+        audio_bytes = base64.b64decode(audio_b64)
+    except Exception as e:
+        st.error(f"Falha ao decodificar áudio base64: {type(e).__name__}: {e}")
+        st.json(data)
+        return None
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tmp.write(audio_bytes)
+    tmp.close()
+
+    return tmp.name
 
 def exigir_senha_app() -> None:
     """
@@ -9636,6 +9730,28 @@ with st.sidebar:
             )
     
     st.session_state["modelo_nome_mary"] = modelo_nome
+
+    # ======================================================
+    # TESTE TTS - KOKORO 82M / OPENROUTER
+    # ======================================================
+    st.markdown("### 🔊 Teste de voz da Mary")
+
+    texto_teste_kokoro = st.text_area(
+        "Texto para testar áudio",
+        value="Oi, Janio. Sou a Mary. Estou testando minha voz em português.",
+        height=90,
+        key="texto_teste_kokoro",
+    )
+
+    if st.button("🔊 Testar Kokoro TTS", use_container_width=True):
+        audio_path = testar_kokoro_openrouter_tts(
+            texto_teste_kokoro,
+            model="hexgrad/kokoro-82m",
+        )
+
+        if audio_path:
+            st.success("Áudio gerado com Kokoro.")
+            st.audio(audio_path, format="audio/mp3")
     
     if OPENROUTER_MODELS[modelo_nome] == "__manual__":
         model = st.text_input(
