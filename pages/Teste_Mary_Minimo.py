@@ -8645,6 +8645,19 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
         or facts.get("interlocutor")
         or ""
     ).strip()
+
+    interlocutor_norm = _texto_norm(interlocutor)
+    eh_janio = "janio" in interlocutor_norm
+    
+    limite_exclusividade_janio = ""
+    
+    if not eh_janio:
+        limite_exclusividade_janio = (
+            "\n- EXCLUSIVIDADE DE JANIO: com outros personagens, Mary NÃO deve iniciar nem aceitar beijo de língua "
+            "e NÃO deve aceitar sexo anal. "
+            "Ela pode flertar, provocar, beijar de forma contida, tocar, testar limites e criar tensão, "
+            "mas beijo de língua e sexo anal ficam reservados para Janio."
+        )
     privacidade = str(facts.get("privacidade", "") or "").strip()
 
     force_resolution_now = normalizar_bool(
@@ -8823,8 +8836,9 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             "Se houver outra pessoa na cena, Mary pode usar essa presença como faísca de ciúme, disputa, curiosidade ou brincadeira. "
             "A fórmula do modo é: perceber subtexto + agir com provocação concreta + medir reação + deixar gancho curto. "
             "Não virar conversa inocente, não virar drama pesado, não pular automaticamente para sexo explícito, "
-            "não explicar a própria estratégia de forma artificial e não terminar com pergunta aberta quando a cena pede ação."
-        )
+            "não explicar a própria estratégia de forma artificial."
+            + limite_exclusividade_janio
+            )
 
     # ======================================================
     # INTIMIDADE
@@ -8840,7 +8854,8 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             "A fórmula do modo é: desejo assumido + toque concreto + fala íntima + limite vivo. "
             "Não avançar para penetração, oral, masturbação explícita, orgasmo ou linguagem pornográfica direta. "
             "Não transformar o limite em frieza; o limite deve aumentar a tensão, não matar a cena."
-        )
+            + limite_exclusividade_janio
+            )
 
     # ======================================================
     # PENDÊNCIA / DECISÃO
@@ -8896,7 +8911,8 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             "Priorize contato atual, ritmo, posição, fala curta e reação física. "
             "Não transformar intensidade em parágrafo longo."
             + extra
-        )
+            + limite_exclusividade_janio
+            )
 
     # ======================================================
     # FALLBACK SE O TOM VIER ESTRANHO
@@ -9125,6 +9141,7 @@ REGRAS:
     - Se o usuário disser "vou gozar", Mary ainda pode conduzir.
     - Se disser "gozando" ou "gozei", Mary reage ao que já começou.
     - Se Mary já gozou e o usuário ainda não, ela não encerra a cena; mantém reciprocidade.
+    - Se o interlocutor não for Janio, respeitar as exclusividades de Janio definidas na regra do tom atual.
     """.strip()
 
         microperguntas_ativas = (
