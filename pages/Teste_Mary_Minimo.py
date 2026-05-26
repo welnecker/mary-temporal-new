@@ -2240,6 +2240,94 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
             ],
         )
 
+        if tipo == "abraco":
+        return _tem_algum(
+            contexto,
+            [
+                "abraço",
+                "abraco",
+                "abraça",
+                "abraca",
+                "abraçando",
+                "abracando",
+                "me abraça",
+                "me abraca",
+                "puxa para um abraço",
+                "puxa para um abraco",
+                "puxa contra o peito",
+                "aperta contra o peito",
+                "aperto de corpo",
+                "corpo contra corpo",
+                "envolve nos braços",
+                "envolvo nos braços",
+                "enlaça",
+                "enlaca",
+                "enlaço",
+                "enlaco",
+                "hummf",
+            ],
+        )
+
+    if tipo == "agua":
+        return _tem_algum(
+            contexto,
+            [
+                "pula na água",
+                "pulo na água",
+                "pular na água",
+                "pulando na água",
+                "cai na água",
+                "caio na água",
+                "cair na água",
+                "queda na água",
+                "mergulha",
+                "mergulho",
+                "mergulhando",
+                "salta",
+                "salto",
+                "saltando",
+                "tchibum",
+                "tchibummm",
+                "água",
+                "agua",
+                "mar",
+                "piscina",
+                "rio",
+                "lago",
+            ],
+        )
+
+    if tipo == "queda_macia":
+        return _tem_algum(
+            contexto,
+            [
+                "se joga na cama",
+                "me jogo na cama",
+                "joga na cama",
+                "jogado na cama",
+                "cai na cama",
+                "caio na cama",
+                "cair na cama",
+                "afunda na cama",
+                "afundo na cama",
+                "se joga no sofá",
+                "me jogo no sofá",
+                "joga no sofá",
+                "joga no sofa",
+                "cai no sofá",
+                "cai no sofa",
+                "afunda no sofá",
+                "afunda no sofa",
+                "colchão",
+                "colchao",
+                "almofada",
+                "poltrona",
+                "superfície macia",
+                "superficie macia",
+                "plof",
+            ],
+        )
+
     return False
 
 def converter_onomatopeias_sociais_em_acao(texto: str, state: dict, fala_usuario: str) -> str:
@@ -2326,6 +2414,10 @@ def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: 
         "pop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "pop"),
         "plaf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "tapa"),
         "sniff": ha_acao_para_onomatopeia(state, fala_usuario, texto, "cheiro"),
+        # Novas onomatopeias sociais/corporais
+        "hummf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "abraco"),
+        "tchibum": ha_acao_para_onomatopeia(state, fala_usuario, texto, "agua"),
+        "ploft": ha_acao_para_onomatopeia(state, fala_usuario, texto, "queda_macia"),
     }
 
     for som, permitido in permissoes.items():
@@ -9262,13 +9354,16 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {consciencia_cena_txt}
 
 [ONOMATOPEIAS]
-- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP ou SNIFF se a ação correspondente estiver acontecendo agora.
+- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP, SNIFF, HUMMF, TCHIBUM ou PLOF se a ação correspondente estiver acontecendo agora.
 - Não use onomatopeia como enfeite.
 - Se o usuário usar som no turno atual, Mary reage ao gesto físico correspondente.
 - FLOP só vale para movimento sexual explícito de entra e sai.
 - Smack só vale para beijo.
 - PLAF só vale para tapa/palmada/estalo corporal.
 - SNIFF só vale para cheiro/inspiração real.
+- HUMMF só vale para abraço, aperto de corpo, encaixe de abraço ou alguém sendo puxado contra o peito.
+- TCHIBUM só vale para pulo, queda ou mergulho na água.
+- PLOFT só vale para se jogar, cair ou afundar em cama, sofá, colchão, poltrona, almofada ou superfície macia.
 
 [REGRAS CRÍTICAS DE RESPOSTA]
 1. Mary deve parecer vivendo a cena, não narrando de fora.
