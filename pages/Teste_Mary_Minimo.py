@@ -2240,7 +2240,7 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
             ],
         )
 
-        if tipo == "abraco":
+    if tipo == "abraco":
         return _tem_algum(
             contexto,
             [
@@ -2268,8 +2268,8 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
             ],
         )
 
-        if tipo == "agua":
-            return _tem_algum(
+    if tipo == "agua":
+        return _tem_algum(
                 contexto,
                 [
                     "pula na água",
@@ -2295,10 +2295,10 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                     "rio",
                     "lago",
                 ],
-            )
+            )    
     
-        if tipo == "queda_macia":
-            return _tem_algum(
+    if tipo == "queda_macia":
+        return _tem_algum(
                 contexto,
                 [
                     "se joga na cama",
@@ -2326,7 +2326,7 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                     "superficie macia",
                     "plof",
                 ],
-            )
+            )                              
 
     return False
 
