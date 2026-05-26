@@ -8940,9 +8940,12 @@ def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
 
 def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY não encontrado nos secrets.")
+
     url = "https://openrouter.ai/api/v1/chat/completions"
+
     payload = {
         "model": model,
         "messages": mensagens,
@@ -8952,27 +8955,110 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         "frequency_penalty": 0.25,
         "max_tokens": 1300,
     }
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://streamlit.app", "X-Title": "Mary Minimal Roleplay"}
-    response = requests.post(url, headers=headers, json=payload, timeout=60)
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://streamlit.app",
+        "X-Title": "Mary Minimal Roleplay",
+    }
+
     try:
-        response.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        status_code = response.status_code
-    
-        try:
-            erro_api = response.json()
-        except Exception:
-            erro_api = response.text
-    
-        st.error(f"Erro HTTP OpenRouter: {status_code}")
-        st.code(str(erro_api)[:3000])
-    
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=90,
+        )
+    except requests.exceptions.RequestException as e:
         raise RuntimeError(
-            f"OpenRouter retornou HTTP {status_code}: {str(erro_api)[:1000]}"
+            f"Erro de conexão com OpenRouter: {type(e).__name__}: {e}"
         ) from e
-    
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+
+    status_code = response.status_code
+
+    try:
+        data = response.json()
+    except Exception:
+        st.session_state["mary_last_openrouter_status"] = status_code
+        st.session_state["mary_last_openrouter_raw"] = response.text[:4000]
+
+        raise RuntimeError(
+            "OpenRouter retornou resposta não-JSON.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n\n"
+            f"Resposta bruta:\n{response.text[:4000]}"
+        )
+
+    st.session_state["mary_last_openrouter_status"] = status_code
+    st.session_state["mary_last_openrouter_raw"] = data
+
+    # ======================================================
+    # ERRO HTTP OU ERRO EMBUTIDO NO JSON
+    # ======================================================
+    if status_code >= 400 or "error" in data:
+        erro_api = data.get("error", data)
+
+        st.error(f"Erro OpenRouter: HTTP {status_code}")
+        st.code(json.dumps(erro_api, ensure_ascii=False, indent=2)[:4000])
+
+        raise RuntimeError(
+            "OpenRouter retornou erro.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n\n"
+            f"{json.dumps(erro_api, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    # ======================================================
+    # PROTEÇÃO CONTRA AUSÊNCIA DE choices
+    # ======================================================
+    choices = data.get("choices")
+
+    if not choices or not isinstance(choices, list):
+        st.error("OpenRouter não retornou choices.")
+        st.code(json.dumps(data, ensure_ascii=False, indent=2)[:4000])
+
+        raise RuntimeError(
+            "OpenRouter não retornou campo 'choices' ou retornou lista vazia.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n\n"
+            f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    choice = choices[0]
+
+    if not isinstance(choice, dict):
+        raise RuntimeError(
+            "Formato inesperado em choices[0].\n\n"
+            f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    finish_reason = choice.get("finish_reason")
+    st.session_state["mary_last_finish_reason"] = finish_reason
+
+    message = choice.get("message", {})
+
+    if not isinstance(message, dict):
+        raise RuntimeError(
+            "Formato inesperado em choices[0]['message'].\n\n"
+            f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    content = str(message.get("content", "") or "").strip()
+
+    if not content:
+        st.error("OpenRouter retornou content vazio.")
+        st.code(json.dumps(data, ensure_ascii=False, indent=2)[:4000])
+
+        raise RuntimeError(
+            "OpenRouter retornou message.content vazio.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n"
+            f"Finish reason: {finish_reason}\n\n"
+            f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    return content
 
 
 # ==========================================================
