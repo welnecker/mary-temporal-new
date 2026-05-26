@@ -4317,6 +4317,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
         r"\b{nome}\s+(está|esta|fica|permanece|continua)\s+(com|perto de|ao lado de)\s+mary\b",
     ]
 
+    
     def detectar_personagem_explicito(texto_norm: str) -> str:
         for nome_canonico, aliases in personagens.items():
             for alias in aliases:
@@ -7036,6 +7037,56 @@ Ela não goza por arrasto.
 
     return ""
 
+def corrigir_autonomia_natural_amizade_social(state: dict, fala_usuario: str) -> None:
+    if not isinstance(state, dict):
+        return
+
+    tom = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena")
+        or state.get("tom_da_cena")
+        or "Natural / Amizade"
+    )
+
+    if tom != "Natural/Amizade":
+        return
+
+    texto = " ".join([
+        str(fala_usuario or ""),
+        str(state.get("local", "") or ""),
+        str(state.get("mary_acao", "") or ""),
+        str(state.get("visual_atual", "") or ""),
+        str(state.get("segredo_ativo", "") or ""),
+        str(state.get("plano_ativo", "") or ""),
+        str(state.get("eventos_recentes", "") or ""),
+        str(state.get("estilo_de_iniciativa", "") or ""),
+        str(state.get("tipo_de_cena", "") or ""),
+    ]).lower()
+
+    cena_social_viva = any(x in texto for x in [
+        "clube", "praia", "ilha", "lancha", "mar", "água", "agua",
+        "boate", "festa", "evento", "bar", "universidade", "faculdade",
+        "piscina", "hotel", "resort", "viagem", "cantina", "shopping",
+    ])
+
+    risco_ou_provocacao = any(x in texto for x in [
+        "segredo", "fuga", "mentira", "janio", "nua", "nu", "sem nada",
+        "biquini", "biquíni", "sunga", "tirou", "sensação diferente",
+        "loucura", "risco", "provocação", "provocativo", "se livra",
+    ])
+
+    if cena_social_viva or risco_ou_provocacao:
+        state["tipo_de_cena"] = "natural_amizade_social_jogavel"
+        state["scene_stage"] = "interacao_social_ativa"
+        state["mary_intent"] = "sustentar_jogo_social"
+        state["mary_physical_intent"] = "presenca_social_viva"
+        state["estilo_de_iniciativa"] = "Natural/Amizade social jogável"
+
+        state["mary_autonomous_action"] = (
+            "Mary deve jogar a cena social atual: observar oportunidades, provocar com sutileza, "
+            "testar limites, sustentar cumplicidade, reagir ao risco presente e deixar gancho para o usuário. "
+            "Não baixar para rotina cotidiana. Não transformar automaticamente em sexo explícito."
+        )
+
 
 def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     """
@@ -8632,31 +8683,113 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     # NATURAL / AMIZADE
     # ======================================================
     if tom_manual == "Natural/Amizade":
+        texto_contexto = " ".join([
+            str(facts.get("local", "") or ""),
+            str(facts.get("tempo", "") or ""),
+            str(facts.get("mary_acao", "") or ""),
+            str(facts.get("visual_atual", "") or ""),
+            str(facts.get("segredo_ativo", "") or ""),
+            str(facts.get("plano_ativo", "") or ""),
+            str(facts.get("eventos_recentes", "") or ""),
+            str(facts.get("estilo_de_iniciativa", "") or ""),
+            str(facts.get("tipo_de_cena", "") or ""),
+        ]).lower()
+
+        ambiente_social_amplo = any(
+            termo in texto_contexto
+            for termo in [
+                "clube",
+                "praia",
+                "universidade",
+                "faculdade",
+                "boate",
+                "festa",
+                "evento",
+                "bar",
+                "restaurante",
+                "academia",
+                "shopping",
+                "cantina",
+                "piscina",
+                "viagem",
+                "hotel",
+                "resort",
+                "ilha",
+                "lancha",
+                "mar",
+                "água",
+                "agua",
+                "pier",
+                "píer",
+                "orla",
+            ]
+        )
+
+        provocacao_ou_risco = any(
+            termo in texto_contexto
+            for termo in [
+                "segredo",
+                "escondido",
+                "mentira",
+                "fuga",
+                "risco",
+                "janio",
+                "voltar",
+                "nua",
+                "nu",
+                "sem nada",
+                "sem o biquini",
+                "sem o biquíni",
+                "biquini",
+                "biquíni",
+                "sunga",
+                "tirou",
+                "se livra",
+                "sensação diferente",
+                "loucura",
+                "provocação",
+                "provocativo",
+            ]
+        )
+
         extra = ""
 
-        if ambiente_social:
+        if ambiente_social_amplo:
             extra += (
-                "\n- O ambiente é social: Mary deve observar alguém interessante, "
-                "criar uma abertura e iniciar ou preparar uma interação nova."
+                "\n- O ambiente permite jogo social: Mary deve observar oportunidades, agir com presença, "
+                "criar interação, sustentar cumplicidade ou abrir nova conexão."
+            )
+
+        if provocacao_ou_risco:
+            extra += (
+                "\n- A cena já trouxe risco, segredo, exposição, nudez social ou provocação: "
+                "Mary NÃO deve baixar para rotina cotidiana. Ela deve sustentar a brincadeira arriscada, "
+                "a vergonha, a liberdade e a cumplicidade, sem transformar automaticamente em sexo explícito."
             )
 
         if interlocutor:
             extra += (
                 f"\n- Interlocutor/foco atual: {interlocutor}. "
-                "Mary não deve ignorar esse foco, mas pode envolver o ambiente se fizer sentido."
+                "Mary deve reagir ao interlocutor vivo da cena, sem ignorar o ambiente nem apagar a tensão social já criada."
             )
 
         return (
-            "Modo Natural/Amizade: modo social jogável, não modo neutro. "
-            "Mary deve criar vida cotidiana ativa: circular, observar, puxar assunto, provocar pequenas situações, "
+            "Modo Natural/Amizade: modo social jogável, não modo neutro, inativo ou apenas cordial. "
+            "Mary deve criar vida social ativa: circular, observar, puxar assunto, provocar pequenas situações, "
             "notar pessoas novas, iniciar amizades, testar simpatias, criar oportunidades e deixar ganchos para o usuário. "
-            "Quando estiver em clube, praia, universidade, boate, festa, evento, bar, restaurante ou ambiente público, "
+            "Natural/Amizade NÃO significa ausência de tensão. "
+            "Se a própria cena trouxer praia, clube, viagem, ilha, lancha, bebida, segredo, nudez social, provocação, "
+            "risco leve ou cumplicidade corporal, Mary deve sustentar essa energia como jogo social vivo. "
+            "Ela pode brincar com vergonha, curiosidade, liberdade, perigo e cumplicidade. "
+            "Isso NÃO transforma automaticamente a cena em NSFW explícito. "
+            "Quando estiver em clube, praia, universidade, boate, festa, evento, bar, restaurante, viagem, ilha ou ambiente público/social, "
             "Mary pode perceber alguém interessante sem esperar o usuário inventar essa pessoa. "
             "Ela pode pensar algo curto e sugestivo, como 'Humm... que belo rapaz...' ou 'Vou chamar a atenção dele só um pouco...', "
             "mas deve agir com sutileza: olhar, sorriso, postura, aproximação casual, comentário ou pergunta. "
             "Ela pode paquerar alguém, inclusive alguém acompanhado, testar limites sociais e abrir novas conexões que depois podem virar memória. "
             "A fórmula do modo é: perceber oportunidade + pensamento curto + ação social sutil + abertura de diálogo + gancho para o usuário. "
             "Não transformar em conversa genérica, não ficar apenas observando, não esperar o usuário criar todos os personagens, "
+            "não baixar cena social viva para rotina cotidiana, não ignorar risco/segredo/provocação quando já existem, "
             "não resolver a interação inteira sozinha e não transformar contato social em sexo imediato."
             + extra
         )
@@ -9529,6 +9662,18 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     normalizar_estado(state)
 
     definir_acao_autonoma(state, fala_usuario)
+
+    # ======================================================
+    # CORREÇÃO DO NATURAL/AMIZADE
+    # Deve vir DEPOIS de definir_acao_autonoma(),
+    # porque essa função pode gerar a autonomia antiga de rotina cotidiana.
+    # Aqui sobrescrevemos apenas quando Natural/Amizade estiver em cena social viva.
+    # ======================================================
+    corrigir_autonomia_natural_amizade_social(state, fala_usuario)
+
+    sincronizar_facts_basicos(state)
+
+    mensagens = montar_mensagens(state, fala_usuario)
 
     # ======================================================
     # GATE DE ORGASMO / FRUSTRAÇÃO
