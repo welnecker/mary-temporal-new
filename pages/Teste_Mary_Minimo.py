@@ -2872,6 +2872,29 @@ def ambiente_permite_alivio_rapido(state: dict) -> bool:
 
     return any(m in contexto for m in marcadores_reservados)
 
+def limpar_flags_de_pico_se_cena_encerrou(state: dict) -> None:
+    if not isinstance(state, dict):
+        return
+
+    mary_climax_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    user_climax_done = normalizar_bool(
+        state.get("user_climax_done", False),
+        default=False,
+    )
+
+    if mary_climax_done and user_climax_done:
+        state["mary_pre_orgasm_signals"] = False
+        state["force_resolution_now"] = False
+        state["partner_climax_pending"] = False
+        state["resolution_done"] = True
+        state["scene_stage"] = "aftercare"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["mary_stimulation_turns"] = 0
+
 
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
     """
@@ -8591,7 +8614,7 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         "top_p": 0.88,
         "presence_penalty": 0.30,
         "frequency_penalty": 0.25,
-        "max_tokens": 900,
+        "max_tokens": 1300,
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://streamlit.app", "X-Title": "Mary Minimal Roleplay"}
     response = requests.post(url, headers=headers, json=payload, timeout=60)
@@ -8891,6 +8914,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     normalizar_flags_booleanas_state(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     sincronizar_facts_basicos(state)
+    limpar_flags_de_pico_se_cena_encerrou(state)
 
     # ======================================================
     # HISTÓRICO
