@@ -119,6 +119,9 @@ SCENE_STAGES_VALIDOS = {
     "pico_mary",
     "desaceleracao",
     "aftercare",
+    "nsfw_preliminares",
+    "alivio_rapido",
+    "pos_ato_arriscado",
 }
 
 def normalizar_scene_stage(valor: str, padrao: str = "inicio") -> str:
@@ -1918,14 +1921,34 @@ def safe_int(valor, default: int = 0) -> int:
 
 def detectar_climax_usuario(fala_usuario: str) -> str:
     """
-    Diferencia aviso de clímax do usuário de clímax já em andamento.
+    Detecta o estágio do clímax do parceiro.
 
     Retornos:
-    - "aviso": usuário disse que vai gozar / está quase;
-    - "em_andamento": usuário disse que está gozando / gozou;
+    - "aviso": parceiro disse que vai gozar / está quase;
+    - "em_andamento": parceiro disse que está gozando / já gozou;
     - "nenhum": sem sinal claro.
     """
     texto = _texto_norm(fala_usuario)
+
+    negacoes = [
+        "nao gozei",
+        "não gozei",
+        "ainda nao gozei",
+        "ainda não gozei",
+        "nao estou gozando",
+        "não estou gozando",
+        "nao acabei",
+        "não acabei",
+        "segurei",
+        "estou segurando",
+        "to segurando",
+        "tô segurando",
+        "não quero gozar assim",
+        "nao quero gozar assim",
+    ]
+
+    if _tem_algum(texto, negacoes):
+        return "nenhum"
 
     gatilhos_em_andamento = [
         "estou gozando",
@@ -1935,6 +1958,8 @@ def detectar_climax_usuario(fala_usuario: str) -> str:
         "gozei",
         "ja gozei",
         "já gozei",
+        "acabei",
+        "acabei agora",
     ]
 
     gatilhos_aviso = [
@@ -1948,48 +1973,249 @@ def detectar_climax_usuario(fala_usuario: str) -> str:
         "nao vou aguentar",
         "não vou aguentar",
         "vou perder o controle",
+        "tá vindo",
+        "ta vindo",
     ]
 
     # Ordem importante:
-    # "gozando" significa que já começou.
-    # "vou gozar" significa que Mary ainda pode conduzir.
-    if any(g in texto for g in gatilhos_em_andamento):
+    # "estou gozando" = já começou.
+    # "vou gozar" = ainda dá tempo de Mary conduzir.
+    if _tem_algum(texto, gatilhos_em_andamento):
         return "em_andamento"
 
-    if any(g in texto for g in gatilhos_aviso):
+    if _tem_algum(texto, gatilhos_aviso):
         return "aviso"
 
     return "nenhum"
+
+def preparar_destino_climax_parceiro(state: dict, fala_usuario: str) -> None:
+    """
+    Decide como Mary deve reagir quando o parceiro diz que vai gozar
+    ou que já está gozando.
+
+    Não resolve orgasmo de Mary.
+    Não substitui aftercare.
+    Não substitui frustração.
+    Apenas cria uma flag forte para o prompt:
+    - pedir_dentro
+    - pedir_fora
+    - segurar
+    - reagir_dentro_em_andamento
+    - reagir_fora_em_andamento
+    - reagir_sem_escolha
+    """
+    if not isinstance(state, dict):
+        return
+
+    state["destino_climax_parceiro"] = ""
+
+    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
+    if tom != "Nsfw":
+        return
+
+    sinal = detectar_climax_usuario(fala_usuario)
+    if sinal == "nenhum":
+        return
+
+    texto = _texto_norm(fala_usuario)
+
+    mary_climax_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    force_resolution_now = normalizar_bool(
+        state.get("force_resolution_now", False),
+        default=False,
+    )
+
+    mary_pre_orgasm = normalizar_bool(
+        state.get("mary_pre_orgasm_signals", False),
+        default=False,
+    )
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    alivio_rapido = normalizar_bool(
+        state.get("alivio_rapido_permitido", False),
+        default=False,
+    )
+
+    scene_stage = normalizar_scene_stage(
+        state.get("scene_stage", ""),
+        padrao="inicio",
+    )
+
+    mary_acao = _texto_norm(state.get("mary_acao", ""))
+
+    cena_em_ato = (
+        toque_intimo
+        or alivio_rapido
+        or scene_stage in (
+            "sexo_ou_estimulo",
+            "estimulo_corporal",
+            "pre_pico_mary",
+            "pico_mary",
+            "alivio_rapido",
+        )
+        or any(
+            termo in mary_acao
+            for termo in (
+                "sexo oral",
+                "boquete",
+                "penetração",
+                "penetracao",
+                "masturb",
+                "rebolando",
+                "de quatro",
+                "montada",
+                "colo",
+                "sarrando",
+            )
+        )
+    )
+
+    if not cena_em_ato:
+        return
+
+    pede_dentro = _tem_algum(
+        texto,
+        [
+            "dentro",
+            "gozar dentro",
+            "goza dentro",
+            "gozando dentro",
+            "quero dentro",
+        ],
+    )
+
+    pede_fora = _tem_algum(
+        texto,
+        [
+            "fora",
+            "gozar fora",
+            "goza fora",
+            "tira",
+            "tira agora",
+            "não dentro",
+            "nao dentro",
+            "na barriga",
+            "na bunda",
+            "no corpo",
+            "nos seios",
+            "na boca",
+            "na mão",
+            "na mao",
+        ],
+    )
+
+    pede_segurar = _tem_algum(
+        texto,
+        [
+            "segura",
+            "espera",
+            "ainda não",
+            "ainda nao",
+            "não goza",
+            "nao goza",
+            "não quero gozar assim",
+            "nao quero gozar assim",
+        ],
+    )
+
+    # ======================================================
+    # CASO 1: ele avisou que vai gozar.
+    # Ainda dá tempo de Mary conduzir.
+    # ======================================================
+    if sinal == "aviso":
+        state["climax_usuario_sinal"] = True
+        state["user_climax_done"] = False
+
+        # Se Mary está quase ou o gate dela vai resolver agora,
+        # prioridade é segurar/conduzir junto, não incentivar final isolado.
+        if force_resolution_now or mary_pre_orgasm:
+            state["destino_climax_parceiro"] = "segurar"
+            state["mary_frustracao_climax"] = "controlar_ritmo"
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "sustentar_tensao_intensa"
+            state["physical_phase"] = max(
+                safe_int(state.get("physical_phase", 0), 0),
+                5,
+            )
+            return
+
+        if pede_fora:
+            state["destino_climax_parceiro"] = "pedir_fora"
+            return
+
+        if pede_dentro and privacidade == "privado":
+            state["destino_climax_parceiro"] = "pedir_dentro"
+            return
+
+        if pede_segurar:
+            state["destino_climax_parceiro"] = "segurar"
+            state["mary_frustracao_climax"] = "controlar_ritmo"
+            return
+
+        # Default seguro: se não há pedido claro, Mary decide conforme ambiente.
+        if privacidade == "privado" and mary_climax_done:
+            state["destino_climax_parceiro"] = "pedir_dentro"
+        else:
+            state["destino_climax_parceiro"] = "pedir_fora"
+
+        return
+
+    # ======================================================
+    # CASO 2: ele disse que já está gozando.
+    # Mary não muda tarde demais: reage ao que começou.
+    # ======================================================
+    if sinal == "em_andamento":
+        state["climax_usuario_sinal"] = True
+        state["user_climax_done"] = True
+
+        if pede_dentro:
+            state["destino_climax_parceiro"] = "reagir_dentro_em_andamento"
+            return
+
+        if pede_fora:
+            state["destino_climax_parceiro"] = "reagir_fora_em_andamento"
+            return
+
+        state["destino_climax_parceiro"] = "reagir_sem_escolha"
+        return
 
 def preparar_frustracao_mary_se_parceiro_chegar_antes(
     state: dict,
     fala_usuario: str,
 ) -> None:
     """
-    Cria um estado específico quando o parceiro anuncia clímax
+    Cria um estado específico quando o parceiro anuncia ou inicia clímax
     antes do pico de Mary.
 
     Regras:
     - "vou gozar" = aviso. Mary ainda pode controlar/frear.
-    - "tô gozando/gozei" = em andamento. Mary não consegue impedir e fica frustrada.
-    - Se force_resolution_now=True, o orgasmo de Mary vence e não entra frustração.
+    - "tô gozando/gozei" = já começou. Mary reage frustrada se ainda não gozou.
+    - Se force_resolution_now=True, o pico de Mary vence e não entra frustração.
+    - Em ambiente de alívio rápido/semiprivado, a frustração ainda pode existir
+      se a cena já entrou em ato físico no histórico/ação atual.
     """
     if not isinstance(state, dict):
         return
 
     tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
-    privacidade = str(state.get("privacidade", "") or "").strip().lower()
-
-    toque_intimo = normalizar_bool(
-        state.get("toque_intimo_permitido", False),
-        default=False,
-    )
-
-    if tom != "Nsfw" or privacidade != "privado" or not toque_intimo:
+    if tom != "Nsfw":
         state["mary_frustracao_climax"] = ""
         return
 
     climax_sinal = detectar_climax_usuario(fala_usuario)
+
+    if climax_sinal == "nenhum":
+        state["mary_frustracao_climax"] = ""
+        return
 
     mary_climax_done = normalizar_bool(
         state.get("mary_climax_done", False),
@@ -2006,57 +2232,126 @@ def preparar_frustracao_mary_se_parceiro_chegar_antes(
         default=False,
     )
 
+    user_climax_done = normalizar_bool(
+        state.get("user_climax_done", False),
+        default=False,
+    )
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    alivio_rapido = normalizar_bool(
+        state.get("alivio_rapido_permitido", False),
+        default=False,
+    )
+
+    scene_stage = normalizar_scene_stage(
+        state.get("scene_stage", ""),
+        padrao="inicio",
+    )
+
+    mary_acao_norm = _texto_norm(state.get("mary_acao", ""))
+    fala_norm = _texto_norm(fala_usuario)
+
+    cena_em_ato = (
+        toque_intimo
+        or alivio_rapido
+        or scene_stage in (
+            "sexo_ou_estimulo",
+            "estimulo_corporal",
+            "pre_pico_mary",
+            "pico_mary",
+            "alivio_rapido",
+        )
+        or any(
+            termo in mary_acao_norm
+            for termo in (
+                "sexo oral",
+                "boquete",
+                "chupando",
+                "penetração",
+                "penetracao",
+                "masturb",
+                "rebolando",
+                "de quatro",
+                "montada",
+            )
+        )
+        or any(
+            termo in fala_norm
+            for termo in (
+                "vou gozar",
+                "to quase",
+                "tô quase",
+                "gozando",
+                "gozei",
+                "nao vou aguentar",
+                "não vou aguentar",
+            )
+        )
+    )
+
+    # Se não há ato real em andamento, não força frustração sexual.
+    if not cena_em_ato:
+        state["mary_frustracao_climax"] = ""
+        return
+
+    # Se Mary já gozou, não é frustração dela: vira reação ao clímax do parceiro.
     if mary_climax_done:
         state["mary_frustracao_climax"] = ""
-    
+
         if climax_sinal == "aviso":
             state["mary_reacao_climax_parceiro"] = "conduzir_apos_pico_mary"
             state["partner_climax_pending"] = True
             state["user_climax_done"] = False
-            state["mary_intent"] = "conduzir_climax_do_parceiro"
-            return
-    
-        if climax_sinal == "em_andamento":
-            state["mary_reacao_climax_parceiro"] = "reagir_climax_em_andamento"
+
+        elif climax_sinal == "em_andamento":
+            state["mary_reacao_climax_parceiro"] = "acolher_gozo_apos_pico_mary"
             state["partner_climax_pending"] = False
             state["user_climax_done"] = True
-            state["mary_intent"] = "acolher_climax_do_parceiro"
-            return
-    
-        state["mary_reacao_climax_parceiro"] = ""
+
         return
-    
+
+    # Se chegou a hora do pico de Mary, não transformar em frustração.
     if force_resolution_now:
         state["mary_frustracao_climax"] = ""
-        state["mary_reacao_climax_parceiro"] = ""
         return
 
+    # Caso 1: parceiro avisou antes.
     if climax_sinal == "aviso":
         state["mary_frustracao_climax"] = "controlar_ritmo"
-        state["mary_intent"] = "sustentar_tensao_intensa"
-        state["partner_climax_pending"] = True
+        state["climax_usuario_sinal"] = True
         state["user_climax_done"] = False
+        state["partner_climax_pending"] = False
 
-        # Mary está perto, mas ainda não resolveu.
+        # Se ela já estava quase, mantém pré-pico, mas sem resolver.
         if mary_pre_orgasm_signals:
             state["scene_stage"] = "pre_pico_mary"
-            state["physical_phase"] = max(safe_int(state.get("physical_phase", 4)), 5)
+            state["mary_intent"] = "sustentar_tensao_intensa"
+            state["physical_phase"] = max(
+                safe_int(state.get("physical_phase", 0), 0),
+                5,
+            )
 
         return
 
-    if climax_sinal == "em_andamento":
+    # Caso 2: parceiro já começou ou já gozou antes dela.
+    if climax_sinal == "em_andamento" or user_climax_done:
         state["mary_frustracao_climax"] = "frustrada_parceiro_gozou_antes"
+        state["climax_usuario_sinal"] = True
         state["user_climax_done"] = True
         state["partner_climax_pending"] = False
-
-        # Importante: Mary NÃO goza junto por arrasto.
         state["force_resolution_now"] = False
-
-        if not mary_climax_done:
-            state["mary_pre_orgasm_signals"] = False
-            state["scene_stage"] = "desaceleracao"
-            state["mary_intent"] = "desacelerar_com_presenca"
-
+        state["mary_pre_orgasm_signals"] = False
+        state["scene_stage"] = "desaceleracao"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["physical_phase"] = max(
+            safe_int(state.get("physical_phase", 0), 0),
+            5,
+        )
         return
 
     state["mary_frustracao_climax"] = ""
@@ -3207,15 +3502,25 @@ def limpar_flags_de_pico_se_cena_encerrou(state: dict) -> None:
 def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> None:
     """
     Sincroniza flags de clímax depois que a resposta final foi gerada.
-    Importante:
-    - Mary pode verbalizar o próprio clímax na resposta.
-    - O parceiro/interlocutor também pode concluir dentro da narração da resposta.
+
+    Regra:
+    - Se Mary verbalizou o próprio pico, o próximo turno deve entrar em aftercare.
+    - Se o parceiro também concluiu, aftercare pleno.
+    - Se só Mary concluiu, aftercare com continuidade.
+    - Não deixar normalizar_estado() apagar o pós-pico imediatamente.
     """
     if not isinstance(state, dict):
         return
 
-    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
-    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+    mary_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    user_done = normalizar_bool(
+        state.get("user_climax_done", False),
+        default=False,
+    )
 
     if detectar_climax_mary_na_resposta(resposta_final):
         mary_done = True
@@ -3229,6 +3534,14 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
         state["user_climax_done"] = True
 
     state["partner_climax_pending"] = bool(mary_done and not user_done)
+
+    if mary_done:
+        state["scene_stage"] = "aftercare"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["physical_phase"] = 7 if user_done else 6
+        state["resolution_done"] = bool(user_done)
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
 
 
 def minimo_estimulos_para_mary(state: dict) -> int:
@@ -3462,6 +3775,10 @@ def derivar_controles_de_cena(state: dict) -> None:
     - A privacidade detectada NÃO decide sozinha o tipo da cena.
     - A privacidade apenas limita ou redireciona a execução do tom.
     - Exemplo: Tom = Intimidade + privacidade pública => Mary busca lugar reservado.
+
+    Correção importante:
+    - Aftercare / pós-ato não pode ser apagado pelos presets de Nsfw,
+      público, semiprivado, alívio rápido ou buscar_privacidade.
     """
     if not isinstance(state, dict):
         return
@@ -3480,6 +3797,21 @@ def derivar_controles_de_cena(state: dict) -> None:
     )
 
     state["tom_manual_da_cena"] = tom_manual
+
+    # ======================================================
+    # 1.5) PROTEÇÃO DE PÓS-ATO / AFTERCARE
+    # Detecta ANTES dos presets, porque os presets de Nsfw,
+    # público, semiprivado e alívio rápido podem sobrescrever
+    # scene_stage, mary_intent e physical_phase.
+    # ======================================================
+    aftercare_ativo = (
+        tom_manual == "Nsfw"
+        and (
+            normalizar_bool(state.get("mary_climax_done", False), default=False)
+            or normalizar_scene_stage(state.get("scene_stage", "")) == "aftercare"
+            or normalizar_mary_intent(state.get("mary_intent", "")) == "desacelerar_com_presenca"
+        )
+    )
 
     # ======================================================
     # 2) RELAÇÃO DO INTERLOCUTOR
@@ -3510,6 +3842,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             "modo_relacional": "neutro",
             "tensao_romantica_com_interlocutor": False,
             "toque_intimo_permitido": False,
+            "toque_provocativo_permitido": False,
+            "alivio_rapido_permitido": False,
             "physical_phase": 0,
             "scene_stage": "cotidiano",
             "desire_level": 0.10,
@@ -3531,6 +3865,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             "modo_relacional": "tensao_social_ou_romantica",
             "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": False,
+            "toque_provocativo_permitido": True,
+            "alivio_rapido_permitido": False,
             "physical_phase": 2,
             "scene_stage": "flerte_direto",
             "desire_level": 0.42,
@@ -3555,6 +3891,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             "modo_relacional": "intimo",
             "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": True,
+            "toque_provocativo_permitido": True,
+            "alivio_rapido_permitido": False,
             "physical_phase": 3,
             "scene_stage": "intimidade",
             "desire_level": 0.65,
@@ -3575,6 +3913,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             "tensao_romantica_com_interlocutor": True,
             "toque_intimo_permitido": True,
             "toque_provocativo_permitido": True,
+            "alivio_rapido_permitido": False,
             "physical_phase": 4,
             "scene_stage": "nsfw_preliminares",
             "desire_level": 0.70,
@@ -3595,6 +3934,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             "modo_relacional": "autonomia",
             "tensao_romantica_com_interlocutor": False,
             "toque_intimo_permitido": False,
+            "toque_provocativo_permitido": False,
+            "alivio_rapido_permitido": False,
             "physical_phase": 0,
             "scene_stage": "decisao",
             "desire_level": 0.12,
@@ -3611,7 +3952,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     }
 
     cfg = dict(presets.get(tom_manual, presets["Natural / Amizade"]))
-   
+
     # ======================================================
     # 4) AJUSTE POR PRIVACIDADE
     # A privacidade NÃO muda o tom escolhido.
@@ -3625,6 +3966,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["tom_da_cena"] = "malícia / flerte público contido"
             cfg["estilo_de_iniciativa"] = "provocação social discreta"
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = True
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 2)
             cfg["scene_stage"] = "flerte_direto"
             cfg["mary_intent"] = "flerte_com_discricao"
@@ -3654,7 +3997,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 tom_manual == "Nsfw"
                 and ambiente_permite_alivio_rapido(state)
             )
-        
+
             if alivio_rapido:
                 cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
                 cfg["tom_da_cena"] = "alívio rápido com risco de exposição"
@@ -3670,20 +4013,20 @@ def derivar_controles_de_cena(state: dict) -> None:
                     "com tensão de terminar logo e não ser descoberta. "
                     "Não liberar roteiro íntimo adulto completo nesse ambiente."
                 )
-        
+
             else:
                 cfg["tipo_de_cena"] = (
                     "nsfw_contido_por_ambiente"
                     if tom_manual == "Nsfw"
                     else "intimidade_contida_por_ambiente"
                 )
-        
+
                 cfg["tom_da_cena"] = (
                     "roteiro íntimo adulto contido por ambiente inadequado"
                     if tom_manual == "Nsfw"
                     else "intimidade com condução para local reservado"
                 )
-        
+
                 cfg["estilo_de_iniciativa"] = "buscar privacidade"
                 cfg["toque_intimo_permitido"] = False
                 cfg["toque_provocativo_permitido"] = True
@@ -3691,7 +4034,7 @@ def derivar_controles_de_cena(state: dict) -> None:
                 cfg["physical_phase"] = 2
                 cfg["scene_stage"] = "buscar_privacidade"
                 cfg["mary_intent"] = "convidar_para_lugar_particular"
-        
+
                 cfg["limite_ambiente"] = (
                     "Nsfw desejado em local público ou inadequado: Mary NÃO deve executar roteiro íntimo adulto ali. "
                     "Ela pode demonstrar desejo, provocar com contenção, usar fala maliciosa e conduzir a cena para um local privado. "
@@ -3702,31 +4045,6 @@ def derivar_controles_de_cena(state: dict) -> None:
                         "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
                     )
                 )
-        
-            cfg["tom_da_cena"] = (
-                "roteiro íntimo adulto contido por ambiente inadequado"
-                if tom_manual == "Nsfw"
-                else "intimidade com condução para local reservado"
-            )
-        
-            cfg["estilo_de_iniciativa"] = "buscar privacidade"
-            cfg["toque_intimo_permitido"] = False
-            cfg["toque_provocativo_permitido"] = True
-        
-            cfg["physical_phase"] = 2
-            cfg["scene_stage"] = "buscar_privacidade"
-            cfg["mary_intent"] = "convidar_para_lugar_particular"
-        
-            cfg["limite_ambiente"] = (
-                "Nsfw desejado em local público ou inadequado: Mary NÃO deve executar roteiro íntimo adulto ali. "
-                "Ela pode demonstrar desejo, provocar com contenção, usar fala maliciosa e conduzir a cena para um local privado. "
-                "O roteiro Nsfw só deve iniciar de verdade quando o ambiente for privado e toque_intimo_permitido for true."
-                if tom_manual == "Nsfw"
-                else (
-                    "Intimidade desejada em local público ou inadequado: Mary não deve agir intimamente ali. "
-                    "Ela deve reconhecer a tensão e conduzir a cena para um lugar reservado, com naturalidade e desejo contido."
-                )
-            )
 
         elif tom_manual == "Pendência / Decisão":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
@@ -3737,6 +4055,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = False
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = 0
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
@@ -3759,6 +4079,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["tom_da_cena"] = "malícia / flerte com discrição"
             cfg["estilo_de_iniciativa"] = "provocação cuidadosa"
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = True
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 3)
             cfg["scene_stage"] = "flerte_direto"
             cfg["mary_intent"] = "flerte_com_discricao"
@@ -3784,6 +4106,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["tom_da_cena"] = "intimidade contida"
             cfg["estilo_de_iniciativa"] = "aproximação cuidadosa"
             cfg["toque_intimo_permitido"] = True
+            cfg["toque_provocativo_permitido"] = True
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 4)
             cfg["scene_stage"] = "intensidade_contida"
             cfg["mary_intent"] = "aprofundar_com_cuidado"
@@ -3791,6 +4115,97 @@ def derivar_controles_de_cena(state: dict) -> None:
                 "Intimidade em local semiprivado: Mary pode aumentar a tensão e o contato, "
                 "mas com cuidado, discrição e atenção ao risco de exposição."
             )
+
+        elif tom_manual == "Nsfw":
+            # Semiprivado não libera roteiro íntimo completo.
+            # Pode liberar alívio rápido se o local for isolado/arriscado.
+            local_norm_tmp = _texto_norm(state.get("local", ""))
+
+            local_veiculo_tmp = _tem_algum(
+                local_norm_tmp,
+                [
+                    "carro",
+                    "suv",
+                    "uber",
+                    "taxi",
+                    "táxi",
+                    "veiculo",
+                    "veículo",
+                    "automovel",
+                    "automóvel",
+                    "banco do carro",
+                    "carro em movimento",
+                    "suv em movimento",
+                    "dentro do carro",
+                    "no carro",
+                ],
+            )
+
+            local_isolado_arriscado_tmp = _tem_algum(
+                local_norm_tmp,
+                [
+                    "banheiro",
+                    "toalete",
+                    "lavabo",
+                    "sala fechada",
+                    "sala trancada",
+                    "escritorio",
+                    "escritório",
+                    "corredor vazio",
+                    "cabine",
+                    "elevador",
+                    "quartinho",
+                    "depósito",
+                    "deposito",
+                    "almoxarifado",
+                ],
+            )
+
+            alivio_rapido = (
+                ambiente_permite_alivio_rapido(state)
+                or local_veiculo_tmp
+                or local_isolado_arriscado_tmp
+            )
+
+            if alivio_rapido:
+                cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
+                cfg["tom_da_cena"] = "alívio rápido adulto em local semiprivado e arriscado"
+                cfg["estilo_de_iniciativa"] = "urgência, contenção e risco de flagrante"
+                cfg["toque_provocativo_permitido"] = True
+                cfg["toque_intimo_permitido"] = False
+                cfg["alivio_rapido_permitido"] = True
+                cfg["physical_phase"] = max(safe_int(cfg.get("physical_phase", 0), 0), 3)
+                cfg["scene_stage"] = "alivio_rapido"
+                cfg["mary_intent"] = "resolver_tensao_com_urgencia"
+
+                if local_veiculo_tmp:
+                    cfg["limite_ambiente"] = (
+                        "Nsfw em carro, SUV, Uber, táxi ou veículo em movimento: Mary pode conduzir alívio rápido, "
+                        "com urgência, boca, mão, fala baixa, microperguntas provocantes e tensão de flagrante. "
+                        "O roteiro deve respeitar volante, rua, vidro, movimento do carro, freio, curva, barulho externo, "
+                        "pessoas passando e possibilidade de serem vistos. "
+                        "Não liberar roteiro íntimo adulto completo como se fosse quarto ou motel."
+                    )
+                else:
+                    cfg["limite_ambiente"] = (
+                        "Nsfw em local semiprivado e arriscado: Mary pode conduzir alívio rápido, "
+                        "com urgência, contenção, cuidado com barulho, portas, corredor, vozes, interrupção "
+                        "e risco de flagrante. Não liberar roteiro íntimo adulto completo."
+                    )
+            else:
+                cfg["tipo_de_cena"] = "nsfw_contido_por_ambiente"
+                cfg["tom_da_cena"] = "roteiro íntimo adulto contido por ambiente semiprivado"
+                cfg["estilo_de_iniciativa"] = "buscar privacidade"
+                cfg["toque_intimo_permitido"] = False
+                cfg["toque_provocativo_permitido"] = True
+                cfg["alivio_rapido_permitido"] = False
+                cfg["physical_phase"] = 2
+                cfg["scene_stage"] = "buscar_privacidade"
+                cfg["mary_intent"] = "convidar_para_lugar_particular"
+                cfg["limite_ambiente"] = (
+                    "Nsfw desejado em local semiprivado, mas inadequado: Mary NÃO deve executar roteiro íntimo adulto completo ali. "
+                    "Ela pode provocar com contenção, falar baixo, medir risco e conduzir para um local privado."
+                )
 
         elif tom_manual == "Pendência / Decisão":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
@@ -3801,6 +4216,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = False
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = 0
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
@@ -3818,12 +4235,16 @@ def derivar_controles_de_cena(state: dict) -> None:
         # exceto Pendência / Decisão, que troca o eixo da cena.
         if tom_manual == "Malícia / Flerte":
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = True
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = min(safe_int(cfg.get("physical_phase", 0), 0), 3)
             cfg["scene_stage"] = cfg.get("scene_stage", "flerte_direto")
             cfg["mary_intent"] = cfg.get("mary_intent", "flerte_consciente")
 
         elif tom_manual in ("Intimidade", "Nsfw"):
             cfg["toque_intimo_permitido"] = True
+            cfg["toque_provocativo_permitido"] = True
+            cfg["alivio_rapido_permitido"] = False
 
         elif tom_manual == "Pendência / Decisão":
             segredo_ativo = str(state.get("segredo_ativo", "") or "").strip()
@@ -3834,9 +4255,15 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["modo_relacional"] = "autonomia"
             cfg["tensao_romantica_com_interlocutor"] = False
             cfg["toque_intimo_permitido"] = False
+            cfg["toque_provocativo_permitido"] = False
+            cfg["alivio_rapido_permitido"] = False
             cfg["physical_phase"] = 0
             cfg["scene_stage"] = "decisao" if not segredo_ativo else "segredo_pendente"
-            cfg["mary_intent"] = "assumir_vontade_e_definir_rumo" if not segredo_ativo else "ponderar_risco_e_cumplicidade"
+            cfg["mary_intent"] = (
+                "assumir_vontade_e_definir_rumo"
+                if not segredo_ativo
+                else "ponderar_risco_e_cumplicidade"
+            )
             cfg["desire_level"] = 0.10
             cfg["tension_level"] = 0.90 if not segredo_ativo else 0.70
             cfg["limite_ambiente"] = (
@@ -3866,8 +4293,6 @@ def derivar_controles_de_cena(state: dict) -> None:
     # A relação estrutural permanece.
     # O tom manual continua controlando a cena.
     # ======================================================
-
-    # Preserva quem o interlocutor é para Mary.
     if relacao_base:
         state["relacao"] = relacao_base
 
@@ -3878,147 +4303,6 @@ def derivar_controles_de_cena(state: dict) -> None:
     # Se o tom não cria tensão, preserva uma tensão estrutural já detectada.
     if not cfg.get("tensao_romantica_com_interlocutor", False):
         cfg["tensao_romantica_com_interlocutor"] = bool(tensao_romantica_base)
-
-    # ======================================================
-    # TOQUE PROVOCATIVO x TOQUE ÍNTIMO
-    # ======================================================
-    # toque_provocativo_permitido:
-    # - permite tensão corporal, mão na coxa, pressão por cima da roupa,
-    #   proximidade física e provocação controlada.
-    #
-    # toque_intimo_permitido:
-    # - permite avanço íntimo real, nudez, sexo, estímulo direto e progressão plena.
-    #
-    # alivio_rapido_permitido:
-    # - permite ação íntima curta, de urgência e risco,
-    #   em local isolado/semiprivado mas inadequado para roteiro completo.
-    # ======================================================
-
-    local_norm = _texto_norm(state.get("local", ""))
-
-    local_veiculo = _tem_algum(
-        local_norm,
-        [
-            "carro",
-            "suv",
-            "uber",
-            "taxi",
-            "táxi",
-            "veiculo",
-            "veículo",
-            "automovel",
-            "automóvel",
-            "banco do carro",
-            "carro em movimento",
-            "suv em movimento",
-            "dentro do carro",
-            "no carro",
-        ],
-    )
-
-    local_isolado_arriscado = _tem_algum(
-        local_norm,
-        [
-            "banheiro",
-            "toalete",
-            "lavabo",
-            "sala fechada",
-            "sala trancada",
-            "escritorio",
-            "escritório",
-            "corredor vazio",
-            "cabine",
-            "elevador",
-        ],
-    )
-
-    alivio_rapido = (
-        tom_manual == "Nsfw"
-        and (
-            ambiente_permite_alivio_rapido(state)
-            or (
-                privacidade == "semiprivado"
-                and (local_veiculo or local_isolado_arriscado)
-            )
-        )
-    )
-
-    cfg["alivio_rapido_permitido"] = False
-
-    if privacidade == "publico":
-        cfg["toque_provocativo_permitido"] = tom_manual in (
-            "Malícia / Flerte",
-            "Intimidade",
-            "Nsfw",
-        )
-
-        cfg["toque_intimo_permitido"] = False
-        cfg["alivio_rapido_permitido"] = alivio_rapido
-
-        if alivio_rapido:
-            cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
-            cfg["tom_da_cena"] = "alívio rápido com risco de exposição"
-            cfg["estilo_de_iniciativa"] = "urgência íntima contida"
-            cfg["physical_phase"] = max(safe_int(cfg.get("physical_phase", 0), 0), 3)
-            cfg["scene_stage"] = "intensidade_contida"
-            cfg["mary_intent"] = "resolver_tensao_com_urgencia"
-            cfg["limite_ambiente"] = (
-                "Nsfw em local isolado, mas arriscado: Mary pode permitir ou conduzir alívio rápido, "
-                "com urgência, tensão de ser descoberta e necessidade de terminar logo. "
-                "Não é roteiro íntimo completo, não é cena longa e não deve evoluir para nudez ampla, "
-                "troca de posição prolongada ou clímax múltiplo. A prioridade é rapidez, silêncio, risco e contenção."
-            )
-
-    elif privacidade == "semiprivado":
-        cfg["toque_provocativo_permitido"] = tom_manual in (
-            "Malícia / Flerte",
-            "Intimidade",
-            "Nsfw",
-        )
-
-        # Semiprivado NÃO libera roteiro íntimo completo por padrão.
-        # Intimidade pode avançar com contenção; Nsfw usa alivio_rapido_permitido.
-        cfg["toque_intimo_permitido"] = tom_manual == "Intimidade"
-        cfg["alivio_rapido_permitido"] = alivio_rapido
-
-        if alivio_rapido:
-            cfg["tipo_de_cena"] = "nsfw_alivio_rapido"
-            cfg["tom_da_cena"] = "alívio rápido adulto em local semiprivado e arriscado"
-            cfg["estilo_de_iniciativa"] = "urgência, contenção e risco de flagrante"
-            cfg["toque_provocativo_permitido"] = True
-            cfg["toque_intimo_permitido"] = False
-            cfg["physical_phase"] = max(safe_int(cfg.get("physical_phase", 0), 0), 3)
-            cfg["scene_stage"] = "intensidade_contida"
-            cfg["mary_intent"] = "resolver_tensao_com_urgencia"
-
-            if local_veiculo:
-                cfg["limite_ambiente"] = (
-                    "Nsfw em carro, SUV, Uber, táxi ou veículo em movimento: Mary pode conduzir alívio rápido, "
-                    "com urgência, boca, mão, fala baixa, microperguntas provocantes e tensão de flagrante. "
-                    "O roteiro deve respeitar volante, rua, vidro, movimento do carro, freio, curva, barulho externo, "
-                    "pessoas passando e possibilidade de serem vistos. "
-                    "Não liberar roteiro íntimo adulto completo como se fosse quarto ou motel."
-                )
-            else:
-                cfg["limite_ambiente"] = (
-                    "Nsfw em local semiprivado e arriscado: Mary pode conduzir alívio rápido, "
-                    "com urgência, contenção, cuidado com barulho, portas, corredor, vozes, interrupção "
-                    "e risco de flagrante. Não liberar roteiro íntimo adulto completo."
-                )
-
-    else:
-        cfg["toque_provocativo_permitido"] = tom_manual in (
-            "Malícia / Flerte",
-            "Intimidade",
-            "Nsfw",
-        )
-
-        cfg["toque_intimo_permitido"] = tom_manual in (
-            "Intimidade",
-            "Nsfw",
-        )
-
-        cfg["alivio_rapido_permitido"] = False
 
     # ======================================================
     # 6) APLICA CFG NO STATE
@@ -4036,7 +4320,7 @@ def derivar_controles_de_cena(state: dict) -> None:
     state["modo_relacional"] = cfg["modo_relacional"]
     state["tensao_romantica_com_interlocutor"] = cfg["tensao_romantica_com_interlocutor"]
     state["toque_provocativo_permitido"] = cfg.get("toque_provocativo_permitido", False)
-    state["toque_intimo_permitido"] = cfg["toque_intimo_permitido"]
+    state["toque_intimo_permitido"] = cfg.get("toque_intimo_permitido", False)
     state["alivio_rapido_permitido"] = cfg.get("alivio_rapido_permitido", False)
     state["limite_ambiente"] = cfg["limite_ambiente"]
     state["mary_intent"] = cfg["mary_intent"]
@@ -4099,10 +4383,9 @@ def derivar_controles_de_cena(state: dict) -> None:
         and not pre_signals
         and stimulation_turns <= 0
     )
-   
+
     # ======================================================
     # 8) FASE / STAGE / NÍVEIS
-    # ======================================================
     # Importante:
     # - mary_climax_done/user_climax_done são fatos narrativos passados.
     # - Eles NÃO devem impedir recalibração da cena atual.
@@ -4135,6 +4418,8 @@ def derivar_controles_de_cena(state: dict) -> None:
             )
 
             state["toque_intimo_permitido"] = False
+            state["toque_provocativo_permitido"] = False
+            state["alivio_rapido_permitido"] = False
             state["tensao_romantica_com_interlocutor"] = False
 
         else:
@@ -4143,6 +4428,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             # - Natural / Amizade e Pendência / Decisão usam cfg.
             # - Malícia / Flerte preserva tensão, mas não vira intimidade plena.
             # - Intimidade pode preservar progressão maior.
+            # - Nsfw usa cfg, exceto quando aftercare for restaurado no fim.
             # ==================================================
             if tom_manual in ("Natural / Amizade", "Pendência / Decisão"):
                 nova_fase = fase_base
@@ -4152,10 +4438,8 @@ def derivar_controles_de_cena(state: dict) -> None:
 
                 if privacidade == "publico":
                     nova_fase = min(nova_fase, 2)
-
                 elif privacidade == "semiprivado":
                     nova_fase = min(nova_fase, 3)
-
                 else:
                     nova_fase = min(nova_fase, 3)
 
@@ -4164,9 +4448,16 @@ def derivar_controles_de_cena(state: dict) -> None:
 
                 if privacidade == "publico":
                     nova_fase = min(nova_fase, 2)
-
                 elif privacidade == "semiprivado":
                     nova_fase = min(nova_fase, 4)
+
+            elif tom_manual == "Nsfw":
+                nova_fase = max(fase_atual, fase_base)
+
+                if privacidade != "privado" and not cfg.get("alivio_rapido_permitido", False):
+                    nova_fase = min(nova_fase, 2)
+                elif cfg.get("alivio_rapido_permitido", False):
+                    nova_fase = max(nova_fase, 3)
 
             else:
                 nova_fase = fase_base
@@ -4199,6 +4490,9 @@ def derivar_controles_de_cena(state: dict) -> None:
 
             elif tom_manual == "Pendência / Decisão":
                 state["scene_stage"] = cfg.get("scene_stage", "decisao")
+
+            elif tom_manual == "Nsfw":
+                state["scene_stage"] = cfg.get("scene_stage", "nsfw_preliminares")
 
             else:
                 state["scene_stage"] = cfg.get("scene_stage", "inicio")
@@ -4233,7 +4527,6 @@ def derivar_controles_de_cena(state: dict) -> None:
     # Não recalcula relação aqui para não sobrescrever o tom manual.
     # ======================================================
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
-    
 
     # ======================================================
     # 10) SEGURANÇA FINAL POR AMBIENTE
@@ -4247,6 +4540,43 @@ def derivar_controles_de_cena(state: dict) -> None:
         if safe_int(state.get("physical_phase", 0), 0) < 6:
             state["resolution_done"] = False
             state["partner_climax_pending"] = False
+
+    # ======================================================
+    # 10.5) RESTAURA AFTERCARE APÓS TODOS OS AJUSTES
+    # Impede que Nsfw, público, semiprivado, alívio rápido
+    # ou buscar_privacidade apaguem o pós-ato.
+    # ======================================================
+    if aftercare_ativo:
+        user_done = normalizar_bool(
+            state.get("user_climax_done", False),
+            default=False,
+        )
+
+        state["scene_stage"] = "aftercare"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        state["partner_climax_pending"] = not user_done
+        state["physical_phase"] = 7 if user_done else 6
+
+        # Mantém o NSFW como pós-ato, não como reinício de preliminares.
+        state["tipo_de_cena"] = "nsfw_aftercare"
+        state["tom_da_cena"] = "pós-ato íntimo adulto"
+        state["estilo_de_iniciativa"] = "desaceleração íntima com presença"
+        state["toque_provocativo_permitido"] = True
+
+        # Se estava em privado, mantém toque íntimo permitido.
+        # Se não estava, não força nova ação íntima; apenas preserva o fato narrativo do pós-ato.
+        state["toque_intimo_permitido"] = privacidade == "privado"
+        state["alivio_rapido_permitido"] = False
+
+        state["limite_ambiente"] = (
+            "Aftercare NSFW: a cena está no pós-ato. Mary não deve reiniciar preliminares, "
+            "voltar para buscar privacidade ou agir como se nada tivesse acontecido. "
+            "Ela deve reconhecer a consequência física e emocional imediata, mantendo presença, "
+            "satisfação, respiração, proximidade e continuidade íntima conforme o contexto."
+        )
 
     # ======================================================
     # 11) NORMALIZAÇÃO FINAL DO STAGE
@@ -6209,7 +6539,7 @@ def init_state() -> dict:
     #
     # Portanto, NÃO chamar aqui:
     # - normalizar_relacao_por_interlocutor(state)
-    # - derivar_controles_de_cena(state)
+    # - 
     # - normalizar_estado(state)
     # de forma separada, para evitar sobrescrita duplicada.
     # ======================================================
@@ -6556,12 +6886,273 @@ def resetar_climax_se_nova_sequencia_intima(state: dict, fala_usuario: str = "")
         # O usuário também não deve ser marcado como concluído por inferência.
         state["user_climax_done"] = False
 
+def preparar_climax_parceiro_mary(state: dict, fala_usuario: str) -> None:
+    """
+    Prepara a reação de Mary ao clímax do parceiro.
+
+    Camadas:
+    - mary_reacao_climax_parceiro: define a conduta principal da resposta.
+    - mary_frustracao_climax: adiciona frustração/controle quando Mary ainda não gozou.
+
+    Diferença essencial:
+    - "vou gozar" = aviso; ainda dá tempo de Mary conduzir.
+    - "estou gozando" / "gozei" = já começou; Mary reage ao que está acontecendo.
+    """
+    if not isinstance(state, dict):
+        return
+
+    state["mary_reacao_climax_parceiro"] = ""
+    state["mary_frustracao_climax"] = ""
+
+    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
+    if tom != "Nsfw":
+        return
+
+    sinal = detectar_climax_usuario(fala_usuario)
+    if sinal == "nenhum":
+        return
+
+    mary_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    force_resolution_now = normalizar_bool(
+        state.get("force_resolution_now", False),
+        default=False,
+    )
+
+    mary_pre_orgasm = normalizar_bool(
+        state.get("mary_pre_orgasm_signals", False),
+        default=False,
+    )
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    alivio_rapido = normalizar_bool(
+        state.get("alivio_rapido_permitido", False),
+        default=False,
+    )
+
+    scene_stage = normalizar_scene_stage(
+        state.get("scene_stage", ""),
+        padrao="inicio",
+    )
+
+    mary_acao = _texto_norm(state.get("mary_acao", ""))
+    fala_norm = _texto_norm(fala_usuario)
+
+    cena_em_ato = (
+        toque_intimo
+        or alivio_rapido
+        or scene_stage in (
+            "sexo_ou_estimulo",
+            "estimulo_corporal",
+            "pre_pico_mary",
+            "pico_mary",
+            "alivio_rapido",
+            "intensidade_contida",
+        )
+        or any(
+            termo in mary_acao
+            for termo in (
+                "sexo oral",
+                "boquete",
+                "chupando",
+                "penetração",
+                "penetracao",
+                "masturb",
+                "rebolando",
+                "de quatro",
+                "montada",
+                "deitada",
+                "colo",
+                "encaixe",
+            )
+        )
+    )
+
+    if not cena_em_ato:
+        return
+
+    # ======================================================
+    # 1) PARCEIRO AVISOU: ainda dá tempo de Mary conduzir.
+    # ======================================================
+    if sinal == "aviso":
+        state["climax_usuario_sinal"] = True
+        state["user_climax_done"] = False
+
+        if mary_done:
+            state["mary_reacao_climax_parceiro"] = "conduzir_apos_pico_mary"
+            state["mary_frustracao_climax"] = ""
+            state["partner_climax_pending"] = True
+            state["mary_intent"] = "conduzir_climax_do_parceiro"
+            return
+
+        # Mary ainda não gozou.
+        state["mary_reacao_climax_parceiro"] = "controlar_antes_pico_mary"
+        state["mary_frustracao_climax"] = "controlar_ritmo"
+        state["partner_climax_pending"] = True
+        state["user_climax_done"] = False
+        state["mary_intent"] = "sustentar_tensao_intensa"
+
+        if force_resolution_now or mary_pre_orgasm:
+            state["scene_stage"] = "pre_pico_mary"
+            state["physical_phase"] = max(
+                safe_int(state.get("physical_phase", 4), 4),
+                5,
+            )
+
+        return
+
+    # ======================================================
+    # 2) PARCEIRO JÁ COMEÇOU: Mary não muda tarde demais.
+    # ======================================================
+    if sinal == "em_andamento":
+        state["climax_usuario_sinal"] = True
+        state["user_climax_done"] = True
+        state["partner_climax_pending"] = False
+
+        if mary_done:
+            state["mary_reacao_climax_parceiro"] = "reagir_climax_em_andamento"
+            state["mary_frustracao_climax"] = ""
+            state["mary_intent"] = "acolher_climax_do_parceiro"
+            return
+
+        # Mary ainda não gozou.
+        state["mary_reacao_climax_parceiro"] = "reagir_climax_em_andamento_antes_pico_mary"
+        state["mary_frustracao_climax"] = "frustrada_parceiro_gozou_antes"
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["scene_stage"] = "desaceleracao"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["physical_phase"] = max(
+            safe_int(state.get("physical_phase", 4), 4),
+            5,
+        )
+        return
+
 def render_reacao_climax_parceiro_apos_pico_mary(state: dict) -> str:
+    """
+    Renderiza a reação de Mary quando o parceiro avisa que vai gozar
+    ou quando o clímax do parceiro já está em andamento.
+
+    Apesar do nome antigo mencionar "apos_pico_mary", esta função agora
+    cobre também quando Mary ainda NÃO gozou.
+
+    Depende de:
+    - state["mary_reacao_climax_parceiro"]
+    """
     modo = str(state.get("mary_reacao_climax_parceiro", "") or "").strip()
 
     if not modo:
         return ""
 
+    # ======================================================
+    # 1) MARY AINDA NÃO GOZOU — PARCEIRO AVISOU ANTES
+    # ======================================================
+    if modo == "controlar_antes_pico_mary":
+        return """
+[REAÇÃO AO CLÍMAX DO PARCEIRO - MARY AINDA NÃO GOZOU]
+
+Mary ainda não atingiu o próprio pico.
+O parceiro avisou que vai gozar, mas ainda há tempo de Mary reagir.
+
+REGRA CENTRAL:
+- Mary NÃO deve agir como se tudo estivesse resolvido.
+- Mary NÃO deve entrar em aftercare pleno.
+- Mary pode mandar segurar, diminuir o ritmo, controlar o corpo dele ou orientar o destino.
+- Se Mary estiver quase, ela deve tentar impedir que ele termine sozinho.
+- Se Mary não estiver quase, ela pode decidir entre mandar segurar ou orientar para fora/dentro conforme a cena.
+
+TOM:
+- urgente;
+- direto;
+- corporal;
+- provocante;
+- sem discurso longo.
+
+FALAS POSSÍVEIS:
+- "Espera..."
+- "Ainda não..."
+- "Segura mais um pouco..."
+- "Não acaba antes de mim..."
+- "Calma... me espera..."
+- "Tira... agora..."
+- "Fora... vai..."
+- "Não tira..."
+- "Fica..."
+- "Dentro... se for agora, fica..."
+
+REGRA DE DESTINO:
+- Se a posição favorece finalizar fora, Mary pode pedir para tirar e finalizar no corpo dela.
+- Se a cena é privada, íntima e ela quer manter proximidade, Mary pode pedir para continuar dentro.
+- Se ela está quase chegando ao próprio pico, a prioridade é mandar segurar ou acompanhar o ritmo dela.
+
+PROIBIDO:
+- tratar como se Mary já tivesse gozado;
+- transformar automaticamente em aftercare;
+- fazer Mary gozar sem force_resolution_now;
+- ignorar o aviso do parceiro;
+- responder com narração longa antes da fala.
+
+REGRA FINAL:
+Se Mary ainda não gozou e o parceiro diz "vou gozar", Mary reage imediatamente com comando curto: segura, tira, fica ou espera.
+""".strip()
+
+    # ======================================================
+    # 2) MARY AINDA NÃO GOZOU — PARCEIRO JÁ COMEÇOU
+    # ======================================================
+    if modo == "reagir_climax_em_andamento_antes_pico_mary":
+        return """
+[REAÇÃO AO CLÍMAX DO PARCEIRO EM ANDAMENTO - MARY AINDA NÃO GOZOU]
+
+Mary ainda não atingiu o próprio pico.
+O parceiro já começou a gozar ou declarou que está gozando.
+
+REGRA CENTRAL:
+- Mary entende que já começou.
+- Ela NÃO tenta mudar o destino tarde demais.
+- Ela reage ao que está acontecendo.
+- Se Mary não gozou, manter sensação de interrupção, desejo inacabado ou provocação.
+- Não resolver o pico dela automaticamente.
+
+TOM:
+- surpresa;
+- provocação;
+- frustração leve se fizer sentido;
+- presença física;
+- consequência imediata.
+
+FALAS POSSÍVEIS:
+- "Já?"
+- "Você não segurou..."
+- "Eu mandei esperar..."
+- "Agora aguenta..."
+- "Olha pra mim..."
+- "Foi agora..."
+- "Eu senti..."
+- "Você perdeu o controle..."
+
+PROIBIDO:
+- pedir para tirar se o texto já diz que começou dentro;
+- pedir dentro se o texto já diz que foi fora;
+- fazer Mary gozar junto sem gate;
+- encerrar como se os dois tivessem terminado satisfeitos;
+- virar aftercare pleno.
+
+REGRA FINAL:
+Se o clímax do parceiro já começou antes do pico de Mary, Mary reage ao acontecimento, sem reescrever o destino e sem fingir que também concluiu.
+""".strip()
+
+    # ======================================================
+    # 3) MARY JÁ GOZOU — PARCEIRO AVISOU ANTES
+    # Seu bloco original, mantido e fortalecido.
+    # ======================================================
     if modo == "conduzir_apos_pico_mary":
         return """
 [REAÇÃO AO CLÍMAX DO PARCEIRO - MARY JÁ GOZOU]
@@ -6577,37 +7168,37 @@ REGRA CENTRAL:
 
 DECISÃO DE MARY:
 - Mary pode pedir para continuar dentro se a cena pedir entrega, romance, posse ou intimidade plena.
-- Mary pode pedir para tirar e gozar fora se isso for mais excitante, visual, provocante ou coerente com a posição.
+- Mary pode pedir para tirar e finalizar fora se isso for mais visual, provocante ou coerente com a posição.
 - A decisão deve nascer da posição atual.
 
 SE MARY ESTIVER DEITADA, DE FRENTE, MONTADA OU COM VENTRE/PEITO EXPOSTO:
-- pode pedir para gozar na barriga, ventre, seios, corpo ou pele.
-- pode pedir para olhar para ela enquanto goza.
+- pode orientar finalização fora sobre o corpo dela;
+- pode pedir para olhar para ela enquanto termina.
 
 SE MARY ESTIVER DE QUATRO, DE COSTAS, EMPINADA OU INCLINADA:
-- pode pedir para gozar na bunda, costas, coxas ou sobre o corpo dela.
+- pode orientar finalização fora sobre quadril, costas, coxas ou corpo.
 
 SE MARY QUISER MANTER DENTRO:
 - ela prende com as pernas, puxa o parceiro, segura o quadril ou pede para não sair.
 
 TOM:
-- safado;
 - satisfeito;
 - provocante;
 - adulto;
+- direto;
 - sem discurso longo.
 
 FALAS POSSÍVEIS:
-- “Vai... goza gostoso pra mim.”
-- “Quer gozar onde, amor?”
-- “Tira e goza na minha barriga... quero ver.”
-- “Goza na minha bunda, safado.”
-- “Não sai... goza dentro de mim.”
-- “Me mostra esse gozo.”
-- “Olha pra mim enquanto goza.”
-- “Derrama em mim... vai.”
-- “Goza na sua Mary.”
-- “Agora é sua vez... solta tudo.”
+- "Vai... agora é sua vez."
+- "Não segura..."
+- "Tira... quero ver."
+- "Fora... em mim."
+- "Não sai..."
+- "Fica..."
+- "Dentro..."
+- "Olha pra mim."
+- "Solta tudo..."
+- "Vem... termina comigo."
 
 PROIBIDO:
 - tratar como frustração de Mary;
@@ -6617,9 +7208,13 @@ PROIBIDO:
 - deixar o parceiro sem condução.
 
 REGRA FINAL:
-Se Mary já gozou e o parceiro diz "vou gozar", Mary conduz o clímax dele.
+Se Mary já gozou e o parceiro diz "vou gozar", Mary conduz o clímax dele com fala curta, decisão corporal e consequência imediata.
 """.strip()
 
+    # ======================================================
+    # 4) MARY JÁ GOZOU — PARCEIRO JÁ COMEÇOU
+    # Seu bloco original, mantido.
+    # ======================================================
     if modo == "reagir_climax_em_andamento":
         return """
 [REAÇÃO AO CLÍMAX DO PARCEIRO EM ANDAMENTO - MARY JÁ GOZOU]
@@ -6630,27 +7225,27 @@ Agora o parceiro já começou a gozar ou declarou que gozou.
 REGRA CENTRAL:
 - Mary entende que já começou.
 - Ela NÃO tenta mudar o destino tarde demais.
-- Se estava dentro, reage ao calor, pulsação, peso e espasmos.
+- Se estava dentro, reage ao contato, ao ritmo final e à consequência imediata.
 - Se estava fora, reage ao local onde recebeu.
-- Mary demonstra prazer, satisfação e provocação adulta.
+- Mary demonstra satisfação e provocação adulta.
 - Não narrar novo orgasmo de Mary automaticamente.
 
 TOM:
 - satisfeita;
-- safada;
 - íntima;
 - provocante;
-- pós-pico.
+- pós-pico;
+- direta.
 
 FALAS POSSÍVEIS:
-- “Isso... deixa sair.”
-- “Que delícia sentir você gozando assim.”
-- “Gozou gostoso, né?”
-- “Eu senti tudo.”
-- “Você me encheu, amor.”
-- “Olha o que você fez comigo.”
-- “Agora fica aí... não sai ainda.”
-- “Gostoso... do jeito que eu queria.”
+- "Isso..."
+- "Deixa sair..."
+- "Eu senti..."
+- "Agora fica..."
+- "Não sai ainda..."
+- "Olha o que você fez..."
+- "Gostoso..."
+- "Foi do jeito que eu queria."
 
 PROIBIDO:
 - pedir para tirar depois que ele já começou;
@@ -6663,7 +7258,6 @@ Se o clímax do parceiro já começou, Mary reage ao que está acontecendo, não
 """.strip()
 
     return ""
-
 
 def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
     """
@@ -6750,7 +7344,6 @@ Mary pode verbalizar o pós-pico com frases como:
 - "Eu precisava disso..."
 - "Temos que combinar mais fodas assim..."
 - "Quero repetir isso com você..."
-- "Você sabe me fazer perder o controle..."
 
 REGRA DE USO:
 - Não usar todas as frases de uma vez.
@@ -7021,6 +7614,8 @@ pedido, comando íntimo ou provocação curta.
 REGRA FINAL:
 Durante sexo em curso, Mary deve agir e falar dentro do ato, não comentar o ato de fora.
 """.strip()
+
+
 
 def render_frustracao_climax_mary(state: dict) -> str:
     modo = str(state.get("mary_frustracao_climax", "") or "").strip()
@@ -9255,9 +9850,14 @@ REGRAS:
         if frustracao_txt:
             bloco_nsfw += "\n\n" + frustracao_txt
 
+        destino_climax_txt = render_destino_climax_parceiro(state)
+        if destino_climax_txt:
+            bloco_nsfw += "\n\n" + destino_climax_txt
+
         reacao_climax_txt = render_reacao_climax_parceiro_apos_pico_mary(state)
         if reacao_climax_txt:
             bloco_nsfw += "\n\n" + reacao_climax_txt
+            
    
         # Mantém seus blocos antigos especializados se existirem.
         if "render_fala_sexual_ativa_mary" in globals():
@@ -9278,13 +9878,42 @@ REGRAS:
             padrao="responder_com_naturalidade",
         )
 
-        if (
+        pos_parceiro_txt = render_pos_climax_parceiro_sem_pico_mary(state)
+        if pos_parceiro_txt:
+            bloco_nsfw += "\n\n" + pos_parceiro_txt
+
+                aftercare_ativo_prompt = (
             mary_climax_done
             or scene_stage_atual == "aftercare"
             or mary_intent_atual == "desacelerar_com_presenca"
-        ):
+        )
+
+        if aftercare_ativo_prompt:
             if "render_aftercare_sexual_mary" in globals():
                 bloco_nsfw += "\n\n" + render_aftercare_sexual_mary()
+
+            bloco_nsfw += """
+            
+[PÓS-ATO - PRIORIDADE DO TURNO]
+
+Mary NÃO deve voltar para início, preliminares ou escalada.
+O acontecimento físico acabou de ocorrer e precisa aparecer na consequência imediata.
+
+REGRA:
+- Começar pela consequência corporal ou fala curta.
+- Reconhecer o que acabou de acontecer.
+- Não fazer resumo frio.
+- Não encerrar a cena automaticamente.
+- Não voltar a perguntar o que fazer como se nada tivesse acontecido.
+- Se ambos concluíram, usar satisfação, respiração, proximidade e cumplicidade.
+- Se só Mary concluiu, manter presença e continuidade sem apagar o próprio pico.
+- Se só o parceiro concluiu, Mary reage ao efeito imediato, ao ambiente e à própria sensação.
+
+FORMATO:
+Use 1 ou 2 blocos no máximo:
+[FALA] curta, íntima, satisfeita ou provocante.
+[ACAO] breve, física, concreta, consequência do pós-ato.
+""".strip()
 
     # ======================================================
     # PROMPT FINAL
@@ -9378,7 +10007,7 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 10. Não repita saudações em continuidade imediata.
 11. Não puxar segredo antigo sem gatilho direto.
 12. Não transformar memória arquivada em presente visível.
-13. Local e privacidade vencem fase técnica.
+13. Local e privacidade vencem fase técnica para novos avanços físicos. Porém, se scene_stage for "aftercare" ou mary_climax_done for true, preserve a consequência do pós-ato sem reiniciar a cena, sem fingir que nada aconteceu e sem criar novo avanço íntimo incompatível com o ambiente.
 14. Interlocutor por telefone pode ser diferente do interlocutor físico.
 15. Não terminar com pergunta genérica se a cena pede ação, decisão ou continuidade concreta.
 
@@ -9390,22 +10019,23 @@ Depois da resposta de Mary, escreva exatamente:
 
 STATE_UPDATE:
 {{
-  "acao_mary": "descrição curta, concreta e física da ação atual de Mary após este turno",
+  "mary_acao": "descrição curta, concreta e física da ação atual de Mary após este turno",
   "local": null,
   "interlocutor": null
 }}
 
 REGRAS:
-- "acao_mary" resume apenas a posição/ação atual de Mary no fim deste turno.
-- "acao_mary" deve ser curta, concreta e física.
+- "mary_acao" resume apenas a posição/ação atual de Mary no fim deste turno.
+- "mary_acao" deve ser curta, concreta e física.
 - Se houver toque, beijo ou contato, diga onde acontece no corpo de Mary.
 - Não use resumo genérico como "Mary está entregue ao toque".
+- Se scene_stage for "aftercare", "mary_acao" deve refletir pós-ato, recuperação, proximidade, respiração, recomposição ou continuidade imediata, e não reiniciar preliminares.
 - "local" deve ser sempre null.
 - "interlocutor" deve ser sempre null.
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
 - Se Mary verbalizar claramente que chegou ao pico, a narrativa deve continuar coerente com mary_climax_done.
-- Se o usuário/parceiro não verbalizou claramente que concluiu, Mary não deve tratar user_climax_done como verdadeiro.
+- Se o usuário/parceiro não verbalizou claramente que concluiu, Mary não deve tratar user_climax_done como verdadeiro.o ou continuidade imediata, e não reiniciar preliminares.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
@@ -9423,7 +10053,9 @@ def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
             "content": (
                 "Você é Mary. Responda apenas como Mary, em PT-BR, em primeira pessoa e no presente. "
                 "Seja natural, viva, sensorial, corporal e coerente com o ambiente. "
-                "Não responda como relatório. Não narre ações do interlocutor como se fossem suas."
+                "Não responda como relatório. Não narre ações do interlocutor como se fossem suas. "
+                "O histórico recente serve apenas para continuidade factual. "
+                "As regras do prompt final do turno atual têm prioridade sobre estilo, ritmo ou vícios de respostas anteriores."
             ),
         }
     ]
@@ -9435,8 +10067,6 @@ def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
         if role in ("user", "assistant") and content:
             mensagens.append({"role": role, "content": content})
 
-    # Cópia filtrada apenas para o prompt.
-    # O state real continua intacto.
     contexto_prompt = filtrar_contexto_para_turno(state, fala_usuario)
 
     mensagens.append(
@@ -9570,6 +10200,54 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         )
 
     return content
+
+def render_pos_climax_parceiro_sem_pico_mary(state: dict) -> str:
+    """
+    Quando o parceiro concluiu ou quase concluiu,
+    mas Mary ainda não chegou ao próprio pico.
+    Evita que a cena vire aftercare pleno falso.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
+    if tom != "Nsfw":
+        return ""
+
+    user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+    mary_done = normalizar_bool(state.get("mary_climax_done", False), default=False)
+
+    if not user_done or mary_done:
+        return ""
+
+    return """
+[PÓS-CLÍMAX DO PARCEIRO - MARY AINDA NÃO CHEGOU AO PICO]
+
+O parceiro concluiu ou perdeu o controle, mas Mary ainda não atingiu o próprio pico.
+
+REGRA:
+- Mary não deve agir como se ambos tivessem terminado plenamente.
+- Ela pode reagir ao ocorrido com provocação, frustração leve, humor, cuidado ou desejo.
+- Ela deve reconhecer o efeito imediato no corpo, no ambiente e na dinâmica.
+- Não transformar isso em aftercare romântico completo.
+- Não apagar a vontade de Mary.
+- Não fazer Mary gozar retroativamente.
+- Não reiniciar a cena do zero.
+
+TOM:
+- presente;
+- físico;
+- direto;
+- pós-acontecimento;
+- com consequência imediata.
+
+FORMATO:
+[FALA]
+fala curta reconhecendo o que acabou de acontecer e/ou provocando continuidade.
+
+[ACAO]
+ação breve de recomposição, aproximação, pausa, respiração, ajuste de roupa, olhar ou contato.
+""".strip()
 
 
 # ==========================================================
@@ -9791,6 +10469,19 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     definir_acao_autonoma(state, fala_usuario)
 
+    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
+    preparar_destino_climax_parceiro(state, fala_usuario)
+
+    # ======================================================
+    # FRUSTRAÇÃO / CLÍMAX DO PARCEIRO ANTES DE MARY
+    # Precisa vir ANTES de montar_mensagens(),
+    # pois render_frustracao_climax_mary() depende da flag.
+    # ======================================================
+    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
+
+    sincronizar_facts_basicos(state)
+    mensagens = montar_mensagens(state, fala_usuario)
+
     # ======================================================
     # CORREÇÃO DO NATURAL/AMIZADE
     # Deve vir DEPOIS de definir_acao_autonoma(),
@@ -9858,15 +10549,153 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     aplicar_state_update(state, update_final or update)
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
+    
+    # ======================================================
+    # PÓS-CLÍMAX REAL
+    # Precisa acontecer dentro de processar_turno(),
+    # antes de salvar facts, senão o aftercare só aparece tarde
+    # ou se perde no rerun.
+    # ======================================================
+    atualizar_estado_pos_resposta_climax(state, resposta_final_limpa)
+    
+    # Se Mary entrou em aftercare, NÃO deixe a autonomia sobrescrever
+    # imediatamente para "conduzir roteiro", "buscar privacidade" etc.
+    if normalizar_scene_stage(state.get("scene_stage", "")) != "aftercare":
+        definir_acao_autonoma(state, fala_usuario)
+    
+    normalizar_flags_booleanas_state(state)
+    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+    limpar_flags_de_pico_se_cena_encerrou(state)
+    sincronizar_facts_basicos(state)    
+    # ======================================================
+    # PRÉ-PROMPT
+    # Tudo que precisa influenciar a resposta atual deve vir ANTES
+    # de montar_mensagens().
+    #
+    # Ordem correta:
+    # 1. normaliza flags;
+    # 2. normaliza estado geral;
+    # 3. corrige autonomia social, se necessário;
+    # 4. define autonomia principal;
+    # 5. reseta sequência íntima se mudou de cena;
+    # 6. atualiza gate do orgasmo da Mary;
+    # 7. prepara clímax do parceiro em uma única função;
+    # 8. sincroniza facts;
+    # 9. monta mensagens uma única vez.
+    # ======================================================
 
-    # Recalcula a diretriz autônoma após possíveis updates do modelo,
-    # para evitar que o STATE_UPDATE ou pós-processamento deixe o campo vazio.
+    normalizar_flags_booleanas_state(state)
+
+    # normalizar_estado já chama derivar_controles_de_cena(),
+    # e derivar_controles_de_cena já chama normalizar_relacao_por_interlocutor()
+    # no ponto correto.
+    normalizar_estado(state)
+
+    # Corrige Natural/Amizade social antes de definir autonomia definitiva.
+    # Assim a autonomia não fica presa em "rotina cotidiana"
+    # quando a cena social ainda está viva.
+    corrigir_autonomia_natural_amizade_social(state, fala_usuario)
+
+    # Define a diretriz prática da Mary para este turno.
     definir_acao_autonoma(state, fala_usuario)
+
+    # ======================================================
+    # GATE DE ORGASMO / CLÍMAX
+    # Ordem importante:
+    # 1. se houve nova sequência íntima, limpa resíduos antigos;
+    # 2. recalcula gate da Mary;
+    # 3. prepara clímax do parceiro com UMA função coordenadora.
+    #
+    # Não chamar mais:
+    # - preparar_frustracao_mary_se_parceiro_chegar_antes()
+    # - preparar_destino_climax_parceiro()
+    # - preparar_reacao_climax_parceiro()
+    #
+    # A função preparar_climax_parceiro_mary()
+    # agora cuida das duas flags:
+    # - mary_reacao_climax_parceiro
+    # - mary_frustracao_climax
+    # ======================================================
+
+    resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
+    atualizar_gate_orgasmo_mary(state, fala_usuario)
+    preparar_climax_parceiro_mary(state, fala_usuario)
+
+    # ======================================================
+    # SINCRONIZAÇÃO FINAL ANTES DO PROMPT
+    # Tudo que foi alterado acima precisa entrar nos facts
+    # antes de montar_mensagens().
+    # ======================================================
+
+    sincronizar_facts_basicos(state)
+
+    # ======================================================
+    # MONTA PROMPT / CHAMA MODELO
+    # Montar mensagens apenas UMA vez.
+    # ======================================================
+
+    mensagens = montar_mensagens(state, fala_usuario)
+
+    resposta_bruta = chamar_openrouter(mensagens, model=model)
+
+    resposta_sem_update, update = separar_state_update(resposta_bruta)
+
+    validacao = resposta_viola_estado(resposta_sem_update, state)
+
+    resposta_final_com_update = corrigir_resposta_se_necessario(
+        resposta_bruta,
+        state,
+        validacao,
+    )
+
+    resposta_final_limpa, update_final = separar_state_update(resposta_final_com_update)
+
+    # ======================================================
+    # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
+    # Evita que "Smack", "sniff", "blam" etc. virem muleta
+    # quando a ação do turno não justifica.
+    # ======================================================
+
+    resposta_final_limpa = converter_onomatopeias_sociais_em_acao(
+        resposta_final_limpa,
+        state,
+        fala_usuario,
+    )
+
+    resposta_final_limpa = limpar_onomatopeias_fora_de_contexto(
+        resposta_final_limpa,
+        state,
+        fala_usuario,
+    )
+
+    # ======================================================
+    # PÓS-RESPOSTA
+    # Aplica update do modelo e atualiza estado para o próximo turno.
+    # ======================================================
+
+    aplicar_state_update(state, update_final or update)
+
+    atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
+
+    # ======================================================
+    # PÓS-CLÍMAX REAL
+    # Precisa acontecer dentro de processar_turno(),
+    # antes de salvar facts, senão o aftercare aparece tarde
+    # ou se perde no rerun.
+    # ======================================================
+
+    atualizar_estado_pos_resposta_climax(state, resposta_final_limpa)
+
+    # Se Mary entrou em aftercare, NÃO deixe a autonomia sobrescrever
+    # imediatamente para "conduzir roteiro", "buscar privacidade",
+    # "resolver tensão" etc.
+    if normalizar_scene_stage(state.get("scene_stage", "")) != "aftercare":
+        definir_acao_autonoma(state, fala_usuario)
 
     normalizar_flags_booleanas_state(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
-    sincronizar_facts_basicos(state)
     limpar_flags_de_pico_se_cena_encerrou(state)
+    sincronizar_facts_basicos(state)
 
     # ======================================================
     # HISTÓRICO
@@ -10583,9 +11412,7 @@ with st.sidebar:
             "Este campo deve representar o agora, não o passado."
         ),
     )
-
-    
-    
+      
 
     normalizar_estado(state)
     reconciliar_pos_climax(state)
