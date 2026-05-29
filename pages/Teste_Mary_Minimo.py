@@ -10467,130 +10467,6 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # no ponto correto.
     normalizar_estado(state)
 
-    definir_acao_autonoma(state, fala_usuario)
-
-    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
-    preparar_destino_climax_parceiro(state, fala_usuario)
-
-    # ======================================================
-    # FRUSTRAÇÃO / CLÍMAX DO PARCEIRO ANTES DE MARY
-    # Precisa vir ANTES de montar_mensagens(),
-    # pois render_frustracao_climax_mary() depende da flag.
-    # ======================================================
-    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
-
-    sincronizar_facts_basicos(state)
-    mensagens = montar_mensagens(state, fala_usuario)
-
-    # ======================================================
-    # CORREÇÃO DO NATURAL/AMIZADE
-    # Deve vir DEPOIS de definir_acao_autonoma(),
-    # porque essa função pode gerar a autonomia antiga de rotina cotidiana.
-    # Aqui sobrescrevemos apenas quando Natural/Amizade estiver em cena social viva.
-    # ======================================================
-    corrigir_autonomia_natural_amizade_social(state, fala_usuario)
-
-    sincronizar_facts_basicos(state)
-
-    mensagens = montar_mensagens(state, fala_usuario)
-
-    # ======================================================
-    # GATE DE ORGASMO / FRUSTRAÇÃO
-    # Ordem importante:
-    # 1. limpa nova sequência, se houver;
-    # 2. calcula gate do orgasmo da Mary;
-    # 3. se o parceiro avisa/clímax antes de Mary, aplica frustração/controle.
-    # ======================================================
-    resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
-    atualizar_gate_orgasmo_mary(state, fala_usuario)
-    preparar_frustracao_mary_se_parceiro_chegar_antes(state, fala_usuario)
-
-    sincronizar_facts_basicos(state)
-
-    # ======================================================
-    # MONTA PROMPT / CHAMA MODELO
-    # ======================================================
-    mensagens = montar_mensagens(state, fala_usuario)
-
-    resposta_bruta = chamar_openrouter(mensagens, model=model)
-
-    resposta_sem_update, update = separar_state_update(resposta_bruta)
-
-    validacao = resposta_viola_estado(resposta_sem_update, state)
-
-    resposta_final_com_update = corrigir_resposta_se_necessario(
-        resposta_bruta,
-        state,
-        validacao,
-    )
-
-    resposta_final_limpa, update_final = separar_state_update(resposta_final_com_update)
-
-    # ======================================================
-    # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
-    # Evita que "Smack" vire muleta quando não há beijo no turno atual.
-    # ======================================================
-    resposta_final_limpa = converter_onomatopeias_sociais_em_acao(
-        resposta_final_limpa,
-        state,
-        fala_usuario,
-    )
-
-    resposta_final_limpa = limpar_onomatopeias_fora_de_contexto(
-        resposta_final_limpa,
-        state,
-        fala_usuario,
-    )
-
-    # ======================================================
-    # PÓS-RESPOSTA
-    # Aplica update do modelo e atualiza estado para o próximo turno.
-    # ======================================================
-    aplicar_state_update(state, update_final or update)
-
-    atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
-    
-    # ======================================================
-    # PÓS-CLÍMAX REAL
-    # Precisa acontecer dentro de processar_turno(),
-    # antes de salvar facts, senão o aftercare só aparece tarde
-    # ou se perde no rerun.
-    # ======================================================
-    atualizar_estado_pos_resposta_climax(state, resposta_final_limpa)
-    
-    # Se Mary entrou em aftercare, NÃO deixe a autonomia sobrescrever
-    # imediatamente para "conduzir roteiro", "buscar privacidade" etc.
-    if normalizar_scene_stage(state.get("scene_stage", "")) != "aftercare":
-        definir_acao_autonoma(state, fala_usuario)
-    
-    normalizar_flags_booleanas_state(state)
-    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
-    limpar_flags_de_pico_se_cena_encerrou(state)
-    sincronizar_facts_basicos(state)    
-    # ======================================================
-    # PRÉ-PROMPT
-    # Tudo que precisa influenciar a resposta atual deve vir ANTES
-    # de montar_mensagens().
-    #
-    # Ordem correta:
-    # 1. normaliza flags;
-    # 2. normaliza estado geral;
-    # 3. corrige autonomia social, se necessário;
-    # 4. define autonomia principal;
-    # 5. reseta sequência íntima se mudou de cena;
-    # 6. atualiza gate do orgasmo da Mary;
-    # 7. prepara clímax do parceiro em uma única função;
-    # 8. sincroniza facts;
-    # 9. monta mensagens uma única vez.
-    # ======================================================
-
-    normalizar_flags_booleanas_state(state)
-
-    # normalizar_estado já chama derivar_controles_de_cena(),
-    # e derivar_controles_de_cena já chama normalizar_relacao_por_interlocutor()
-    # no ponto correto.
-    normalizar_estado(state)
-
     # Corrige Natural/Amizade social antes de definir autonomia definitiva.
     # Assim a autonomia não fica presa em "rotina cotidiana"
     # quando a cena social ainda está viva.
@@ -10605,35 +10481,20 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # 1. se houve nova sequência íntima, limpa resíduos antigos;
     # 2. recalcula gate da Mary;
     # 3. prepara clímax do parceiro com UMA função coordenadora.
-    #
-    # Não chamar mais:
-    # - preparar_frustracao_mary_se_parceiro_chegar_antes()
-    # - preparar_destino_climax_parceiro()
-    # - preparar_reacao_climax_parceiro()
-    #
-    # A função preparar_climax_parceiro_mary()
-    # agora cuida das duas flags:
-    # - mary_reacao_climax_parceiro
-    # - mary_frustracao_climax
     # ======================================================
-
     resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
     atualizar_gate_orgasmo_mary(state, fala_usuario)
     preparar_climax_parceiro_mary(state, fala_usuario)
 
     # ======================================================
     # SINCRONIZAÇÃO FINAL ANTES DO PROMPT
-    # Tudo que foi alterado acima precisa entrar nos facts
-    # antes de montar_mensagens().
     # ======================================================
-
     sincronizar_facts_basicos(state)
 
     # ======================================================
     # MONTA PROMPT / CHAMA MODELO
     # Montar mensagens apenas UMA vez.
     # ======================================================
-
     mensagens = montar_mensagens(state, fala_usuario)
 
     resposta_bruta = chamar_openrouter(mensagens, model=model)
@@ -10652,10 +10513,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     # ======================================================
     # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
-    # Evita que "Smack", "sniff", "blam" etc. virem muleta
-    # quando a ação do turno não justifica.
     # ======================================================
-
     resposta_final_limpa = converter_onomatopeias_sociais_em_acao(
         resposta_final_limpa,
         state,
@@ -10672,7 +10530,6 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # PÓS-RESPOSTA
     # Aplica update do modelo e atualiza estado para o próximo turno.
     # ======================================================
-
     aplicar_state_update(state, update_final or update)
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
@@ -10683,7 +10540,6 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # antes de salvar facts, senão o aftercare aparece tarde
     # ou se perde no rerun.
     # ======================================================
-
     atualizar_estado_pos_resposta_climax(state, resposta_final_limpa)
 
     # Se Mary entrou em aftercare, NÃO deixe a autonomia sobrescrever
