@@ -9645,6 +9645,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
         or state.get("interlocutor")
         or ""
     ).strip()
+
     privacidade = str(facts.get("privacidade", state.get("privacidade", "")) or "").strip()
     visual_atual = str(facts.get("visual_atual", state.get("visual_atual", "")) or "").strip()
     scene_stage = str(facts.get("scene_stage", state.get("scene_stage", "")) or "").strip()
@@ -9668,15 +9669,13 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     # ======================================================
     # CONTEXTO FILTRADO
-    # Observação:
-    # montar_mensagens() já costuma passar contexto_prompt filtrado.
+    # montar_mensagens() normalmente já passa contexto filtrado.
     # Aqui respeitamos o que veio filtrado e não recarregamos tudo.
     # ======================================================
     orientacao_contexto = str(
         state.get("_orientacao_contexto_turno", "") or ""
     ).strip()
 
-    # Se o filtro marcou shared filtradas, respeitar.
     if state.get("_usar_shared_memories_filtradas_para_prompt"):
         shared_memories = state.get("shared_memories", [])
     else:
@@ -9760,14 +9759,12 @@ REGRAS:
 
     bloco_modo_operacional = ""
 
-    if tom_manual == "Natural/Amizade":
+    if tom_manual == "Natural / Amizade":
         bloco_modo_operacional = """
 [MODO NATURAL/AMIZADE - SOCIAL JOGÁVEL]
 - Este modo não é passivo.
 - Mary deve criar movimento social real.
 - Em ambientes como clube, praia, universidade, boate, festa, evento, bar, restaurante ou academia, Mary pode notar alguém novo sem esperar o usuário criar essa pessoa.
-- Mary pode iniciar conversa, puxar assunto, testar simpatia, paquerar com sutileza ou provocar uma pequena tensão social.
-- Ela pode usar pensamentos curtos como: "Humm... que belo rapaz...", "Vou chamar a atenção dele só um pouco...", "Será que ele está sozinho mesmo?"
 - Mary deve comandar a abertura da ação, mas deixar a consequência para o usuário conduzir.
 - Fórmula: observar alguém/oportunidade + pensamento curto + ação sutil + fala inicial ou gancho.
 - Não responder apenas que Mary observa.
@@ -9817,19 +9814,19 @@ REGRAS:
     bloco_nsfw = ""
     if tom_manual == "Nsfw":
         bloco_nsfw = """
-    [NSFW - RESUMO OPERACIONAL]
-    - Só avançar em NSFW pleno se privacidade e toque íntimo permitirem.
-    - Mary responde primeiro ao contato físico mais recente.
-    - Não pular preliminares quando a cena ainda está em roupa, beijo ou provocação.
-    - Em ato sexual em curso, usar ritmo curto: [ACAO] curta + [FALA] curta, ou [FALA] curta + [ACAO] curta.
-    - Intensidade não é parágrafo longo; é continuidade jogável, fala corporal e reação específica.
-    - Mary não narra clímax do usuário antes dele declarar.
-    - Se force_resolution_now=True, Mary deve chegar ao próprio orgasmo neste turno e verbalizar isso em [FALA].
-    - Se o usuário disser "vou gozar", Mary ainda pode conduzir.
-    - Se disser "gozando" ou "gozei", Mary reage ao que já começou.
-    - Se Mary já gozou e o usuário ainda não, ela não encerra a cena; mantém reciprocidade.
-    - Se o interlocutor não for Janio, respeitar as exclusividades de Janio definidas na regra do tom atual.
-    """.strip()
+[NSFW - RESUMO OPERACIONAL]
+- Só avançar em NSFW pleno se privacidade e toque íntimo permitirem.
+- Mary responde primeiro ao contato físico mais recente.
+- Não pular preliminares quando a cena ainda está em roupa, beijo ou provocação.
+- Em ato sexual em curso, usar ritmo curto: [ACAO] curta + [FALA] curta, ou [FALA] curta + [ACAO] curta.
+- Intensidade não é parágrafo longo; é continuidade jogável, fala corporal e reação específica.
+- Mary não narra clímax do usuário antes dele declarar.
+- Se force_resolution_now=True, Mary deve chegar ao próprio orgasmo neste turno e verbalizar isso em [FALA].
+- Se o usuário disser "vou gozar", Mary ainda pode conduzir.
+- Se disser "gozando" ou "gozei", Mary reage ao que já começou.
+- Se Mary já gozou e o usuário ainda não, ela não encerra a cena; mantém reciprocidade.
+- Se o interlocutor não for Janio, respeitar as exclusividades de Janio definidas na regra do tom atual.
+""".strip()
 
         microperguntas_ativas = (
             tom_manual == "Nsfw"
@@ -9842,24 +9839,24 @@ REGRAS:
                 or ""
             ).strip().lower() == "privado"
         )
-    
-        if microperguntas_ativas:
+
+        if microperguntas_ativas and "render_microperguntas_obvias_mary" in globals():
             bloco_nsfw += "\n\n" + render_microperguntas_obvias_mary()
 
         frustracao_txt = render_frustracao_climax_mary(state)
         if frustracao_txt:
             bloco_nsfw += "\n\n" + frustracao_txt
 
-        destino_climax_txt = render_destino_climax_parceiro(state)
-        if destino_climax_txt:
-            bloco_nsfw += "\n\n" + destino_climax_txt
-
+        # ==================================================
+        # CLÍMAX DO PARCEIRO
+        # A função render_destino_climax_parceiro foi removida.
+        # A reação/condução agora vem toda por:
+        # render_reacao_climax_parceiro_apos_pico_mary().
+        # ==================================================
         reacao_climax_txt = render_reacao_climax_parceiro_apos_pico_mary(state)
         if reacao_climax_txt:
             bloco_nsfw += "\n\n" + reacao_climax_txt
-            
-   
-        # Mantém seus blocos antigos especializados se existirem.
+
         if "render_fala_sexual_ativa_mary" in globals():
             bloco_nsfw += "\n\n" + render_fala_sexual_ativa_mary()
 
@@ -9878,9 +9875,10 @@ REGRAS:
             padrao="responder_com_naturalidade",
         )
 
-        pos_parceiro_txt = render_pos_climax_parceiro_sem_pico_mary(state)
-        if pos_parceiro_txt:
-            bloco_nsfw += "\n\n" + pos_parceiro_txt
+        if "render_pos_climax_parceiro_sem_pico_mary" in globals():
+            pos_parceiro_txt = render_pos_climax_parceiro_sem_pico_mary(state)
+            if pos_parceiro_txt:
+                bloco_nsfw += "\n\n" + pos_parceiro_txt
 
         aftercare_ativo_prompt = (
             mary_climax_done
@@ -9893,7 +9891,7 @@ REGRAS:
                 bloco_nsfw += "\n\n" + render_aftercare_sexual_mary()
 
             bloco_nsfw += """
-            
+
 [PÓS-ATO - PRIORIDADE DO TURNO]
 
 Mary NÃO deve voltar para início, preliminares ou escalada.
@@ -9983,7 +9981,7 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {consciencia_cena_txt}
 
 [ONOMATOPEIAS]
-- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP, SNIFF, HUMMF, TCHIBUM ou PLOF se a ação correspondente estiver acontecendo agora.
+- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP, SNIFF, HUMMF, TCHIBUM ou PLOFT se a ação correspondente estiver acontecendo agora.
 - Não use onomatopeia como enfeite.
 - Se o usuário usar som no turno atual, Mary reage ao gesto físico correspondente.
 - FLOP só vale para movimento sexual explícito de entra e sai.
@@ -10035,7 +10033,7 @@ REGRAS:
 - Mary não pode mudar local pelo STATE_UPDATE.
 - Mary não pode mudar interlocutor pelo STATE_UPDATE.
 - Se Mary verbalizar claramente que chegou ao pico, a narrativa deve continuar coerente com mary_climax_done.
-- Se o usuário/parceiro não verbalizou claramente que concluiu, Mary não deve tratar user_climax_done como verdadeiro.o ou continuidade imediata, e não reiniciar preliminares.
+- Se o usuário/parceiro não verbalizou claramente que concluiu, Mary não deve tratar user_climax_done como verdadeiro.
 
 [FALA/AÇÃO DO USUÁRIO]
 {fala_usuario}
@@ -10045,7 +10043,7 @@ Responda agora como Mary, viva, sensorial, direta, coerente com o estado e sem r
 """.strip()
 
     return prompt_final
-
+    
 def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
     mensagens = [
         {
