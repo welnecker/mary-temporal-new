@@ -9882,7 +9882,7 @@ REGRAS:
         if pos_parceiro_txt:
             bloco_nsfw += "\n\n" + pos_parceiro_txt
 
-                aftercare_ativo_prompt = (
+        aftercare_ativo_prompt = (
             mary_climax_done
             or scene_stage_atual == "aftercare"
             or mary_intent_atual == "desacelerar_com_presenca"
