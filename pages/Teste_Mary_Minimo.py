@@ -10,7 +10,7 @@ import base64
 import tempfile
 
 import streamlit as st
-import gspread
+import gspreadaplicar_estilo_sidebar_controles(
 from google.oauth2.service_account import Credentials
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11915,6 +11915,122 @@ def aplicar_estilo_sidebar_controles():
             color: #e0f2fe !important;
             border-radius: 10px !important;
             border: 1px solid rgba(148, 163, 184, 0.35) !important;
+        }
+
+        /* =====================================================
+           CORREÇÃO FINAL - CONTRASTE EM CAIXAS CLARAS
+           Colar no final do CSS, antes de </style>
+        ===================================================== */
+        
+        /* Inputs comuns, textareas e number input: fundo claro + texto escuro */
+        section[data-testid="stSidebar"] input,
+        section[data-testid="stSidebar"] textarea,
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+        section[data-testid="stSidebar"] [data-testid="stTextInput"] input {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            caret-color: #0f172a !important;
+            border: 2px solid #cbd5e1 !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Placeholders dos campos claros */
+        section[data-testid="stSidebar"] input::placeholder,
+        section[data-testid="stSidebar"] textarea::placeholder {
+            color: #475569 !important;
+            -webkit-text-fill-color: #475569 !important;
+            opacity: 1 !important;
+        }
+        
+        /* Botões normais: fundo claro + texto escuro */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border: 2px solid #cbd5e1 !important;
+            border-radius: 10px !important;
+            font-weight: 900 !important;
+            opacity: 1 !important;
+        }
+        
+        /* Texto interno dos botões normais */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button *,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button p,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button span {
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            opacity: 1 !important;
+            font-weight: 900 !important;
+        }
+        
+        /* Botões desativados: não deixar texto sumir */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] {
+            background-color: #e5e7eb !important;
+            color: #334155 !important;
+            -webkit-text-fill-color: #334155 !important;
+            border: 2px solid #94a3b8 !important;
+            opacity: 1 !important;
+        }
+        
+        /* Texto interno dos botões desativados */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled *,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] *,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled p,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] p,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled span,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] span {
+            color: #334155 !important;
+            -webkit-text-fill-color: #334155 !important;
+            opacity: 1 !important;
+            font-weight: 900 !important;
+        }
+        
+        /* Hover dos botões */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+            background-color: #fef3c7 !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border-color: #facc15 !important;
+        }
+        
+        /* Number input: caixa e controles + / - */
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] {
+            color: #0f172a !important;
+        }
+        
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            opacity: 1 !important;
+        }
+        
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] button *,
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] button svg {
+            color: #0f172a !important;
+            fill: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            opacity: 1 !important;
+        }
+        
+        /* Campos lado a lado em columns */
+        section[data-testid="stSidebar"] [data-testid="column"] input {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            font-weight: 700 !important;
+        }
+        
+        /* Expander continua escuro com texto claro */
+        section[data-testid="stSidebar"] details,
+        section[data-testid="stSidebar"] details summary,
+        section[data-testid="stSidebar"] details summary * {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            opacity: 1 !important;
         }
         </style>
         """,
