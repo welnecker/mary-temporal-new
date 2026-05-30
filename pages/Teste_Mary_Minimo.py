@@ -10909,6 +10909,19 @@ def aplicar_estilo_sidebar_controles():
         unsafe_allow_html=True,
     )
 
+# ==========================================================
+# ESTADO INICIAL
+# Precisa existir ANTES de qualquer uso de state na sidebar.
+# ==========================================================
+state = st.session_state.get("mary_state_minimo")
+
+if not isinstance(state, dict):
+    state = init_state()
+
+st.session_state["mary_state_minimo"] = state
+
+aplicar_estilo_sidebar_controles()
+
 with st.sidebar:
 
     if st.button("🚪 Sair", use_container_width=True):
