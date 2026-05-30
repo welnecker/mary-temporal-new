@@ -3193,48 +3193,6 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     # A resolução deve ser decidida por preparar_resolucao_mary_se_necessario().
     state["force_resolution_now"] = False
 
-
-def detectar_climax_usuario(fala_usuario: str) -> bool:
-    texto = _texto_norm(fala_usuario)
-
-    negacoes = [
-        "nao gozei",
-        "não gozei",
-        "ainda nao gozei",
-        "ainda não gozei",
-        "nao estou gozando",
-        "não estou gozando",
-        "nao acabei",
-        "não acabei",
-        "segurei",
-        "estou segurando",
-        "to segurando",
-        "tô segurando",
-    ]
-
-    if _tem_algum(texto, negacoes):
-        return False
-
-    sinais_climax_usuario = [
-        "gozei",
-        "gozei dentro",
-        "gozei em você",
-        "gozei em voce",
-        "acabei de gozar",
-        "eu gozei",
-        "já gozei",
-        "ja gozei",
-        "estou gozando",
-        "tô gozando",
-        "to gozando",
-        "gozando dentro",
-        "explodi",
-        "descarreguei",
-    ]
-
-    return _tem_algum(texto, sinais_climax_usuario)
-
-
 def detectar_climax_parceiro_na_resposta(resposta: str) -> bool:
     """
     Detecta quando a resposta da IA descreve que o parceiro/interlocutor concluiu o clímax.
@@ -3797,6 +3755,48 @@ def derivar_controles_de_cena(state: dict) -> None:
     # Não é "privado pleno", mas permite NSFW de alívio rápido.
     # ======================================================
     local_norm_inicial = _texto_norm(local_raw)
+
+    local_norm = _texto_norm(state.get("local", ""))
+
+    local_veiculo = _tem_algum(
+        local_norm,
+        [
+            "carro",
+            "suv",
+            "uber",
+            "taxi",
+            "táxi",
+            "veiculo",
+            "veículo",
+            "automovel",
+            "automóvel",
+            "banco do carro",
+            "carro em movimento",
+            "suv em movimento",
+            "dentro do carro",
+            "no carro",
+        ],
+    )
+
+    local_isolado_arriscado = _tem_algum(
+        local_norm,
+        [
+            "banheiro",
+            "toalete",
+            "lavabo",
+            "sala fechada",
+            "sala trancada",
+            "escritorio",
+            "escritório",
+            "corredor vazio",
+            "cabine",
+            "elevador",
+            "quartinho",
+            "depósito",
+            "deposito",
+            "almoxarifado",
+        ],
+    )
 
     local_isolado_trancado = (
         _tem_algum(
@@ -5094,7 +5094,7 @@ def normalizar_estado(state: dict) -> None:
     privacidade = _texto_norm(state.get("privacidade", ""))
     tipo_de_cena = _texto_norm(state.get("tipo_de_cena", ""))
 
-    if privacidade == "publico" and tipo_de_cena != "social":
+    if privacidade == "publico" and tipo_de_cena not in ("social", "nsfw_alivio_rapido", "nsfw_aftercare"):
         state["physical_phase"] = min(
             safe_int(state.get("physical_phase", 0), 0),
             3,
@@ -5111,7 +5111,7 @@ def normalizar_estado(state: dict) -> None:
             "pre_pico_mary",
             "pico_mary",
         ):
-            state["scene_stage"] = "beijo"
+            state["scene_stage"] = "flerte_direto"
 
         mary_intent = _texto_norm(state.get("mary_intent", ""))
         if mary_intent in (
@@ -6074,71 +6074,88 @@ def consumir_evento_inesperado_se_usado(state: dict, resposta_gerada: bool = Tru
         state["evento_inesperado"] = ""
 
 
-def sincronizar_facts_basicos(state: dict) -> dict:
+def sincronizar_facts_basicos(
+    state: dict,
+    recalcular_estado: bool = True,
+) -> dict:
     """
-    Normaliza o state e monta o pacote facts usado pelo prompt.
+    Sincroniza os facts básicos usados no prompt/debug.
 
-    Ordem importante:
-    1. Corrige flags booleanas vindas como texto.
-    2. Normaliza estado geral.
-    3. Limpa progressão física apenas se a cena for neutra/sozinha.
-    4. Resolve visual e estado emocional.
-    5. Monta facts com tipos seguros.
+    Importante:
+    - Quando recalcular_estado=True, a função também normaliza o state.
+    - Quando recalcular_estado=False, ela APENAS monta facts a partir do state atual.
+
+    Use:
+    - recalcular_estado=True quando quiser preparar/reorganizar o state.
+    - recalcular_estado=False dentro de montar_prompt_para_modelo() e antes de salvar,
+      para não sobrescrever scene_stage, mary_intent, privacidade, aftercare,
+      clímax, alivio_rapido etc.
     """
     if not isinstance(state, dict):
-        return {}
+        state = {}
 
-    # Primeiro limpa booleanos crus.
-    normalizar_flags_booleanas_state(state)
+    # ======================================================
+    # NORMALIZAÇÃO OPCIONAL DO STATE
+    # Só deve acontecer quando explicitamente permitido.
+    # ======================================================
+    if recalcular_estado:
+        # Primeiro limpa booleanos crus.
+        normalizar_flags_booleanas_state(state)
 
-    # normalizar_estado já chama derivar_controles_de_cena(),
-    # e derivar_controles_de_cena já normaliza relação no ponto correto.
-    normalizar_estado(state)
-    
-    # Não chamar normalizar_relacao_por_interlocutor aqui,
-    # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
-    resetar_progressao_fisica_se_cena_neutra_sozinha(state)
-    limpar_acao_incompativel_com_janio_ausente(state)
-    limpar_acao_incompativel_com_interlocutor_foco(state)
-    
+        # normalizar_estado já chama derivar_controles_de_cena(),
+        # e derivar_controles_de_cena já normaliza relação no ponto correto.
+        normalizar_estado(state)
+
+        # Não chamar normalizar_relacao_por_interlocutor aqui,
+        # pois isso pode sobrescrever o tom manual aplicado em derivar_controles_de_cena().
+        resetar_progressao_fisica_se_cena_neutra_sozinha(state)
+        limpar_acao_incompativel_com_janio_ausente(state)
+        limpar_acao_incompativel_com_interlocutor_foco(state)
+
+        # ======================================================
+        # DIRETRIZ AUTÔNOMA FINAL
+        # Só recalcula quando recalcular_estado=True.
+        # ======================================================
+        fala_atual = str(state.get("_fala_usuario_atual", "") or "")
+
+        try:
+            definir_acao_autonoma(state, fala_atual)
+        except NameError:
+            state["mary_autonomous_action"] = str(
+                state.get("mary_autonomous_action", "") or ""
+            )
+
     # ======================================================
-    # DIRETRIZ AUTÔNOMA FINAL
-    # Precisa acontecer AQUI porque sincronizar_facts_basicos()
-    # é chamada dentro de montar_prompt_para_modelo().
-    # Assim mary_autonomous_action sempre reflete o state final
-    # usado no prompt e no debug.
+    # CAMPOS DERIVADOS QUE PODEM SER ATUALIZADOS SEM
+    # REPROCESSAR TODA A CENA.
     # ======================================================
-    fala_atual = str(state.get("_fala_usuario_atual", "") or "")
-    
-    try:
-        definir_acao_autonoma(state, fala_atual)
-    except NameError:
-        # Segurança para caso a função ainda não esteja disponível
-        # em algum carregamento parcial.
-        state["mary_autonomous_action"] = str(
-            state.get("mary_autonomous_action", "") or ""
-        )
-    
     state["visual_atual"] = resolver_visual_atual_mary(state)
     estado_emocional_resolvido = resolver_estado_emocional_mary(state)
+
+    climax_usuario_detectado = detectar_climax_usuario(
+        state.get("_fala_usuario_atual", "")
+    )
 
     facts = {
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
-        "interlocutor": state.get("interlocutor", "Janio Doniseti"),
+        "interlocutor": state.get("interlocutor", "Janio Donisete"),
         "interlocutor_foco_turno": state.get(
             "interlocutor_foco_turno",
-            state.get("interlocutor_ativo_persistente", state.get("interlocutor", "")),
+            state.get(
+                "interlocutor_ativo_persistente",
+                state.get("interlocutor", ""),
+            ),
         ),
-        "usuario_real": state.get("usuario_real", "Janio Doniseti"),
+        "usuario_real": state.get("usuario_real", "Janio Donisete"),
         "janio_status_na_cena": state.get("janio_status_na_cena", "presente"),
         "interlocutor_ativo_persistente": state.get(
             "interlocutor_ativo_persistente",
-            state.get("interlocutor", "Janio Doniseti"),
+            state.get("interlocutor", "Janio Donisete"),
         ),
         "ultimo_interlocutor_explicito": state.get(
             "ultimo_interlocutor_explicito",
-            state.get("interlocutor", "Janio Doniseti"),
+            state.get("interlocutor", "Janio Donisete"),
         ),
 
         # Relação já normalizada dentro de derivar_controles_de_cena().
@@ -6186,6 +6203,7 @@ def sincronizar_facts_basicos(state: dict) -> dict:
         "mary_autonomous_action": str(
             state.get("mary_autonomous_action", "") or ""
         ),
+
         "toque_provocativo_permitido": normalizar_bool(
             state.get("toque_provocativo_permitido", False),
             default=False,
@@ -6215,9 +6233,12 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             default=False,
         ),
 
-        "climax_usuario_sinal": detectar_climax_usuario(
-            state.get("_fala_usuario_atual", "")
-        ),
+        # Mantém compatibilidade:
+        # - climax_usuario_sinal vira bool;
+        # - climax_usuario_tipo guarda "aviso", "em_andamento" ou "nenhum".
+        "climax_usuario_sinal": climax_usuario_detectado != "nenhum",
+        "climax_usuario_tipo": climax_usuario_detectado,
+
         "toque_intimo_permitido": normalizar_bool(
             state.get("toque_intimo_permitido", False),
             default=False,
@@ -6227,10 +6248,24 @@ def sincronizar_facts_basicos(state: dict) -> dict:
             default=False,
         ),
         "amor_genuino_com_interlocutor": amor_genuino_com_interlocutor(state),
-        
+
         "alivio_rapido_permitido": normalizar_bool(
             state.get("alivio_rapido_permitido", False),
             default=False,
+        ),
+
+        # Flags úteis para debug do novo fluxo.
+        "mary_reacao_climax_parceiro": state.get(
+            "mary_reacao_climax_parceiro",
+            "",
+        ),
+        "mary_frustracao_climax": state.get(
+            "mary_frustracao_climax",
+            "",
+        ),
+        "destino_climax_parceiro": state.get(
+            "destino_climax_parceiro",
+            "",
         ),
     }
 
@@ -9685,7 +9720,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     # ======================================================
     # FACTS / TOM / CAMPOS CENTRAIS
     # ======================================================
-    facts = sincronizar_facts_basicos(state)
+    facts = sincronizar_facts_basicos(state, recalcular_estado=False)
     if not isinstance(facts, dict):
         facts = state.get("facts", {}) if isinstance(state.get("facts", {}), dict) else {}
 
@@ -9916,11 +9951,12 @@ PROIBIDO:
 - Ignorar o estado de joelhos, boca, mão, roupa, corpo, respiração, risco e urgência.
 """.strip()
 
-    if normalizar_bool(
-        facts.get("alivio_rapido_permitido", state.get("alivio_rapido_permitido", False)),
-        default=False,
-    ):
-        bloco_nsfw += """
+        alivio_rapido_ativo = normalizar_bool(
+            facts.get("alivio_rapido_permitido", state.get("alivio_rapido_permitido", False)),
+            default=False,
+        )    
+        if alivio_rapido_ativo:
+            bloco_nsfw += """                
 
 [ALÍVIO RÁPIDO - LOCAL ISOLADO/TRANCADO]
 
@@ -10563,48 +10599,109 @@ def renderizar_resposta_mary(texto: str) -> None:
 # ==========================================================
 
 def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) -> dict:
+    """
+    Processa um turno completo da Mary.
+
+    Ordem robusta:
+    1. registra fala atual;
+    2. normaliza estado;
+    3. prepara progressão física / pico / clímax;
+    4. prepara clímax do parceiro;
+    5. monta prompt uma única vez;
+    6. chama modelo;
+    7. limpa resposta;
+    8. aplica STATE_UPDATE;
+    9. atualiza pós-clímax / aftercare;
+    10. salva histórico e facts.
+    """
+    if not isinstance(state, dict):
+        state = {}
+
+    fala_usuario = str(fala_usuario or "").strip()
+
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
+
+    if "history" not in state or not isinstance(state.get("history"), list):
+        state["history"] = []
+
+    # ======================================================
+    # 1) EVENTOS DE TURNO / TRAVAS
+    # ======================================================
     atualizar_trava_hesitacao_convite(state, fala_usuario)
 
     # ======================================================
-    # PRÉ-PROMPT
-    # Tudo que precisa influenciar a resposta atual deve vir ANTES
-    # de montar_mensagens().
+    # 2) PRÉ-PROMPT
+    # Tudo que precisa influenciar a resposta atual deve vir
+    # ANTES de montar_mensagens().
     # ======================================================
     normalizar_flags_booleanas_state(state)
 
-    # normalizar_estado já chama derivar_controles_de_cena(),
-    # e derivar_controles_de_cena já chama normalizar_relacao_por_interlocutor()
+    # normalizar_estado chama derivar_controles_de_cena(),
+    # que já chama normalizar_relacao_por_interlocutor()
     # no ponto correto.
     normalizar_estado(state)
 
-    # Corrige Natural/Amizade social antes de definir autonomia definitiva.
-    # Assim a autonomia não fica presa em "rotina cotidiana"
-    # quando a cena social ainda está viva.
+    # ======================================================
+    # 3) RESET / GATE / PICO DA MARY
+    # Importante:
+    # - reset vem antes do cálculo de pico;
+    # - progressão por contexto vem antes da resolução;
+    # - gate de segurança vem depois da resolução.
+    # ======================================================
+    resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
+
+    if "atualizar_pico_mary_por_contexto" in globals():
+        atualizar_pico_mary_por_contexto(
+            state,
+            fala_usuario,
+            resposta_limpa="",
+        )
+
+    if "preparar_resolucao_mary_se_necessario" in globals():
+        preparar_resolucao_mary_se_necessario(
+            state,
+            fala_usuario,
+        )
+
+    atualizar_gate_orgasmo_mary(state, fala_usuario)
+
+    # ======================================================
+    # 4) AUTONOMIA DO TURNO
+    # Natural/Amizade social precisa ser corrigido antes da
+    # autonomia definitiva, para não cair em rotina cotidiana.
+    # ======================================================
     corrigir_autonomia_natural_amizade_social(state, fala_usuario)
 
-    # Define a diretriz prática da Mary para este turno.
     definir_acao_autonoma(state, fala_usuario)
 
     # ======================================================
-    # GATE DE ORGASMO / CLÍMAX
-    # Ordem importante:
-    # 1. se houve nova sequência íntima, limpa resíduos antigos;
-    # 2. recalcula gate da Mary;
-    # 3. prepara clímax do parceiro com UMA função coordenadora.
+    # 5) CLÍMAX DO PARCEIRO
+    # Esta é a função única coordenadora.
+    #
+    # NÃO chamar mais aqui:
+    # - preparar_frustracao_mary_se_parceiro_chegar_antes()
+    # - preparar_destino_climax_parceiro()
+    # - preparar_reacao_climax_parceiro()
     # ======================================================
-    resetar_climax_se_nova_sequencia_intima(state, fala_usuario)
-    atualizar_gate_orgasmo_mary(state, fala_usuario)
     preparar_climax_parceiro_mary(state, fala_usuario)
 
     # ======================================================
-    # SINCRONIZAÇÃO FINAL ANTES DO PROMPT
+    # 6) SINCRONIZAÇÃO FINAL ANTES DO PROMPT
+    # Atenção:
+    # sincronizar_facts_basicos ainda recalcula parte do state
+    # no seu script atual. Por isso, depois dela, preservamos
+    # a preparação específica de clímax do parceiro.
     # ======================================================
-    sincronizar_facts_basicos(state)
+    sincronizar_facts_basicos(state, recalcular_estado=False)
+
+    # Reaplica a preparação específica depois da sincronização,
+    # porque sincronizar_facts_basicos pode chamar normalizar_estado()
+    # e definir_acao_autonoma(), sobrescrevendo intenção/stage.
+    preparar_climax_parceiro_mary(state, fala_usuario)
 
     # ======================================================
-    # MONTA PROMPT / CHAMA MODELO
+    # 7) MONTA PROMPT / CHAMA MODELO
     # Montar mensagens apenas UMA vez.
     # ======================================================
     mensagens = montar_mensagens(state, fala_usuario)
@@ -10621,10 +10718,13 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
         validacao,
     )
 
-    resposta_final_limpa, update_final = separar_state_update(resposta_final_com_update)
+    resposta_final_limpa, update_final = separar_state_update(
+        resposta_final_com_update
+    )
 
     # ======================================================
-    # LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
+    # 8) LIMPEZA DE ONOMATOPEIAS FORA DE CONTEXTO
+    # Evita que sons virem muleta fora da ação correspondente.
     # ======================================================
     resposta_final_limpa = converter_onomatopeias_sociais_em_acao(
         resposta_final_limpa,
@@ -10639,15 +10739,15 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     )
 
     # ======================================================
-    # PÓS-RESPOSTA
-    # Aplica update do modelo e atualiza estado para o próximo turno.
+    # 9) PÓS-RESPOSTA
+    # Aplica STATE_UPDATE do modelo e atualiza psique/fase.
     # ======================================================
     aplicar_state_update(state, update_final or update)
 
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
 
     # ======================================================
-    # PÓS-CLÍMAX REAL
+    # 10) PÓS-CLÍMAX REAL / AFTERCARE
     # Precisa acontecer dentro de processar_turno(),
     # antes de salvar facts, senão o aftercare aparece tarde
     # ou se perde no rerun.
@@ -10660,26 +10760,73 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     if normalizar_scene_stage(state.get("scene_stage", "")) != "aftercare":
         definir_acao_autonoma(state, fala_usuario)
 
+    # ======================================================
+    # 11) NORMALIZAÇÃO FINAL DO STATE
+    # ======================================================
     normalizar_flags_booleanas_state(state)
     resetar_progressao_fisica_se_cena_neutra_sozinha(state)
     limpar_flags_de_pico_se_cena_encerrou(state)
-    sincronizar_facts_basicos(state)
+
+    # Última sincronização antes de salvar.
+    sincronizar_facts_basicos(state, recalcular_estado=False)
+
+    # Se a última sincronização mexeu em aftercare, restaura proteção.
+    if normalizar_bool(state.get("mary_climax_done", False), default=False):
+        user_done = normalizar_bool(
+            state.get("user_climax_done", False),
+            default=False,
+        )
+
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        state["partner_climax_pending"] = not user_done
+
+        if normalizar_scene_stage(state.get("scene_stage", "")) in (
+            "pre_pico_mary",
+            "pico_mary",
+            "desaceleracao",
+        ):
+            state["scene_stage"] = "aftercare"
+            state["mary_intent"] = "desacelerar_com_presenca"
+
+        if safe_int(state.get("physical_phase", 0), 0) < 6:
+            state["physical_phase"] = 6
+
+    sincronizar_facts_basicos(state, recalcular_estado=False)
 
     # ======================================================
-    # HISTÓRICO
+    # 12) HISTÓRICO
     # ======================================================
-    if "history" not in state or not isinstance(state.get("history"), list):
-        state["history"] = []
+    if fala_usuario:
+        state["history"].append(
+            {
+                "role": "user",
+                "content": fala_usuario,
+            }
+        )
 
-    state["history"].append({"role": "user", "content": fala_usuario})
-    state["history"].append({"role": "assistant", "content": resposta_final_limpa})
+    if resposta_final_limpa:
+        state["history"].append(
+            {
+                "role": "assistant",
+                "content": resposta_final_limpa,
+            }
+        )
+
     state["history"] = state["history"][-MAX_HISTORY * 2:]
 
     # ======================================================
-    # SALVAMENTO
+    # 13) SALVAMENTO
     # ======================================================
     salvar_turno_na_planilha(state, fala_usuario, resposta_final_limpa)
-    salvar_facts_na_planilha(state["facts"])
+
+    if isinstance(state.get("facts"), dict):
+        salvar_facts_na_planilha(state["facts"])
+    else:
+        facts = sincronizar_facts_basicos(state)
+        salvar_facts_na_planilha(facts)
+
     st.session_state.mary_state_minimo = state
 
     return {
@@ -10690,18 +10837,6 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
         "update": update_final or update,
         "state": state,
     }
-# ==========================================================
-# UI
-# ==========================================================
-
-st.set_page_config(page_title="Mary - Roleplay", page_icon="🌙", layout="wide")
-
-exigir_senha_app()
-
-st.title("🌙 Mary")
-st.caption("Roleplay contínuo com facts humanos, memórias shared e controle de ambiente.")
-
-state = init_state()
 
 def aplicar_estilo_sidebar_controles():
     st.markdown(
@@ -11676,7 +11811,7 @@ if fala_usuario:
                 # 1.5) Detecta conclusão explícita do usuário/parceiro
                 # Só marca se o usuário verbalizou claramente.
                 # ==================================================
-                if detectar_climax_usuario(fala_usuario):
+                if detectar_climax_usuario(fala_usuario) != "nenhum":
                     state["user_climax_done"] = True
                 
                     if state.get("mary_climax_done"):
