@@ -11649,73 +11649,217 @@ def aplicar_estilo_sidebar_controles():
     st.markdown(
         """
         <style>
-        /* Sidebar geral */
+        /* =====================================================
+           SIDEBAR - FUNDO GERAL
+        ===================================================== */
         section[data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #101018 0%, #171724 100%);
+            background: linear-gradient(180deg, #0f1020 0%, #171827 100%) !important;
         }
 
-        /* Labels */
+        section[data-testid="stSidebar"] > div {
+            background: transparent !important;
+        }
+
+        /* =====================================================
+           TEXTO GERAL DA SIDEBAR
+        ===================================================== */
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"] * {
+            color: #f8fafc !important;
+        }
+
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] small,
+        section[data-testid="stSidebar"] div {
+            color: #f8fafc !important;
+        }
+
+        /* Labels dos campos */
         section[data-testid="stSidebar"] label {
             font-size: 0.96rem !important;
             font-weight: 800 !important;
-            color: #f5f5f5 !important;
+            color: #ffffff !important;
         }
 
-        /* Textos auxiliares */
-        section[data-testid="stSidebar"] small,
-        section[data-testid="stSidebar"] .stCaptionContainer {
-            color: #d2d2d2 !important;
+        /* Captions e textos auxiliares */
+        section[data-testid="stSidebar"] .stCaptionContainer,
+        section[data-testid="stSidebar"] small {
+            color: #dbeafe !important;
+            opacity: 1 !important;
         }
 
-        /* Inputs */
-        section[data-testid="stSidebar"] input,
-        section[data-testid="stSidebar"] textarea {
-            background-color: #f7f7fb !important;
-            color: #111111 !important;
-            border-radius: 10px !important;
-            font-size: 0.92rem !important;
+        /* =====================================================
+           HEADERS / SUBHEADERS
+        ===================================================== */
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3,
+        section[data-testid="stSidebar"] h4 {
+            color: #ffffff !important;
+            font-weight: 900 !important;
         }
 
-        /* Textarea */
-        section[data-testid="stSidebar"] textarea {
-            line-height: 1.35rem !important;
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3 {
+            margin-top: 1rem !important;
+            padding: 10px 12px !important;
+            border-radius: 12px !important;
+            background: linear-gradient(90deg, #3b2f63 0%, #243b73 100%) !important;
+            border-left: 5px solid #fbbf24 !important;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.25) !important;
         }
 
-        /* Selectbox */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
-            background-color: #f7f7fb !important;
-            color: #111111 !important;
-            border-radius: 10px !important;
-        }
-
-        /* Títulos visuais dos blocos */
+        /* =====================================================
+           TÍTULOS VISUAIS PERSONALIZADOS
+        ===================================================== */
         .sidebar-box-title {
-            margin-top: 16px;
-            margin-bottom: 10px;
-            padding: 9px 11px;
-            border-radius: 11px;
-            background: #292943;
-            color: #ffffff;
-            font-weight: 900;
-            font-size: 0.98rem;
-            border-left: 5px solid #ffcc66;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+            margin-top: 18px !important;
+            margin-bottom: 12px !important;
+            padding: 11px 13px !important;
+            border-radius: 12px !important;
+            background: linear-gradient(90deg, #4c1d95 0%, #1d4ed8 100%) !important;
+            color: #ffffff !important;
+            font-weight: 900 !important;
+            font-size: 1rem !important;
+            border-left: 6px solid #facc15 !important;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35) !important;
+            letter-spacing: 0.01em !important;
         }
 
         .sidebar-soft-note {
-            padding: 9px 11px;
-            border-radius: 10px;
-            background: rgba(255, 204, 102, 0.10);
-            border: 1px solid rgba(255, 204, 102, 0.32);
-            color: #f4f4f4;
-            font-size: 0.86rem;
-            margin-bottom: 10px;
+            padding: 10px 12px !important;
+            border-radius: 10px !important;
+            background: rgba(250, 204, 21, 0.16) !important;
+            border: 1px solid rgba(250, 204, 21, 0.55) !important;
+            color: #ffffff !important;
+            font-size: 0.88rem !important;
+            margin-bottom: 10px !important;
+        }
+
+        /* =====================================================
+           EXPANDERS
+        ===================================================== */
+        section[data-testid="stSidebar"] details {
+            background: rgba(255, 255, 255, 0.07) !important;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
+            border-radius: 12px !important;
+            margin-bottom: 10px !important;
+        }
+
+        section[data-testid="stSidebar"] details summary {
+            color: #ffffff !important;
+            font-weight: 800 !important;
+            opacity: 1 !important;
+        }
+
+        section[data-testid="stSidebar"] details summary * {
+            color: #ffffff !important;
+            opacity: 1 !important;
+        }
+
+        /* =====================================================
+           INPUTS / TEXTAREAS / NUMBER INPUT
+        ===================================================== */
+        section[data-testid="stSidebar"] input,
+        section[data-testid="stSidebar"] textarea {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            border: 2px solid #cbd5e1 !important;
+            border-radius: 10px !important;
+            font-size: 0.94rem !important;
+            font-weight: 600 !important;
+        }
+
+        section[data-testid="stSidebar"] input:focus,
+        section[data-testid="stSidebar"] textarea:focus {
+            border: 2px solid #facc15 !important;
+            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.25) !important;
+        }
+
+        section[data-testid="stSidebar"] textarea {
+            line-height: 1.38rem !important;
+        }
+
+        /* Botões + e - do number_input */
+        section[data-testid="stSidebar"] button {
+            color: #111827 !important;
+            background-color: #f8fafc !important;
+            border-radius: 10px !important;
+            font-weight: 800 !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+
+        section[data-testid="stSidebar"] button:hover {
+            background-color: #fef3c7 !important;
+            color: #111827 !important;
+            border-color: #facc15 !important;
+        }
+
+        /* =====================================================
+           SELECTBOX
+        ===================================================== */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            border-radius: 10px !important;
+            border: 2px solid #cbd5e1 !important;
+            font-weight: 600 !important;
+        }
+
+        section[data-testid="stSidebar"] div[data-baseweb="select"] span {
+            color: #0f172a !important;
+        }
+
+        /* =====================================================
+           CHECKBOX
+        ===================================================== */
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] label,
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] span,
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] p {
+            color: #ffffff !important;
+            opacity: 1 !important;
+            font-weight: 700 !important;
+        }
+
+        /* =====================================================
+           DIVISORES
+        ===================================================== */
+        section[data-testid="stSidebar"] hr {
+            border-color: rgba(255, 255, 255, 0.25) !important;
+            margin-top: 1.2rem !important;
+            margin-bottom: 1.2rem !important;
+        }
+
+        /* =====================================================
+           INFO / ALERTAS
+        ===================================================== */
+        section[data-testid="stSidebar"] [data-testid="stAlert"] {
+            background: rgba(59, 130, 246, 0.18) !important;
+            border: 1px solid rgba(147, 197, 253, 0.55) !important;
+            border-radius: 12px !important;
+            color: #ffffff !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stAlert"] * {
+            color: #ffffff !important;
+        }
+
+        /* =====================================================
+           JSON / CODE
+        ===================================================== */
+        section[data-testid="stSidebar"] pre,
+        section[data-testid="stSidebar"] code {
+            background: #020617 !important;
+            color: #e0f2fe !important;
+            border-radius: 10px !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-
 # ==========================================================
 # ESTADO INICIAL
 # Precisa existir ANTES de qualquer uso de state na sidebar.
