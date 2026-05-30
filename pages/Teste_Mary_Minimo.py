@@ -11673,6 +11673,12 @@ def aplicar_estilo_sidebar_controles():
             color: #ffffff !important;
             fill: #ffffff !important;
         }
+        /* Força texto digitável/renderizado dentro do select */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] input::placeholder {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            opacity: 1 !important;
+        }
         <style>
         /* =====================================================
            SIDEBAR - FUNDO GERAL
