@@ -4753,8 +4753,8 @@ def eh_janio(valor: str) -> bool:
     valor = _texto_norm(valor)
     return valor in {
         "janio",
-        "janio donisete",
-        "janio donisete welnecker",
+        "janio Doniseti",
+        "janio Doniseti welnecker",
     }
 
 
@@ -4778,7 +4778,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     interlocutor_campo = str(state.get("interlocutor", "") or "").strip()
 
     personagens = {
-        "Janio": ["janio", "jânio", "janio donisete", "jânio donisete"],
+        "Janio": ["janio", "jânio", "janio Doniseti", "jânio Doniseti"],
         "Joselina": ["joselina", "mãe", "mae"],
         "Silvia": ["silvia", "sílvia"],
         "Bianca": ["bianca"],
@@ -4830,7 +4830,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
 
     def janio_esta_no_campo(valor: str) -> bool:
         valor_norm = _texto_norm(valor)
-        return "janio" in valor_norm or "janio donisete" in valor_norm
+        return "janio" in valor_norm or "janio Doniseti" in valor_norm
 
     # ======================================================
     # 1) Falante/personagem explícito no texto vence tudo.
@@ -4893,7 +4893,7 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     interlocutor_atual = str(
         state.get("interlocutor_ativo_persistente")
         or state.get("interlocutor")
-        or "Janio Donisete"
+        or "Janio Doniseti"
     ).strip()
 
     if interlocutor_atual:
@@ -4922,7 +4922,7 @@ def sincronizar_interlocutor_manual(state: dict) -> None:
     interlocutor = str(state.get("interlocutor", "") or "").strip()
 
     if not interlocutor:
-        interlocutor = "Janio Donisete"
+        interlocutor = "Janio Doniseti"
         state["interlocutor"] = interlocutor
 
     anterior = str(state.get("_interlocutor_manual_anterior", "") or "").strip()
@@ -5014,7 +5014,7 @@ def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
     ]
 
     if not nomes:
-        return interlocutor_atual or "Janio Donisete"
+        return interlocutor_atual or "Janio Doniseti"
 
     padroes_acao = [
         r"\b{nome}\s+(cochicha|sussurra|fala|diz|responde|pergunta|grita|chama|se aproxima|aproxima|chega|entra|olha|sorri|toca|segura|puxa|manda mensagem|envia mensagem)\b",
@@ -5039,7 +5039,7 @@ def amor_genuino_com_interlocutor(state: dict) -> bool:
     Define quando Mary reconhece amor genuíno com o interlocutor atual.
 
     Regra:
-    - Janio Donisete é amor genuíno canônico quando está presente como interlocutor.
+    - Janio Doniseti é amor genuíno canônico quando está presente como interlocutor.
     - Outros personagens só liberam se o state/facts marcar explicitamente.
     """
     if not isinstance(state, dict):
@@ -5284,7 +5284,7 @@ def limpar_acao_incompativel_com_janio_ausente(state: dict) -> None:
 
     menciona_janio = (
         "janio" in acao_norm
-        or "janio donisete" in acao_norm
+        or "janio Doniseti" in acao_norm
     )
 
     if not janio_ausente or not menciona_janio:
@@ -6125,20 +6125,20 @@ def sincronizar_facts_basicos(state: dict) -> dict:
     facts = {
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
-        "interlocutor": state.get("interlocutor", "Janio Donisete"),
+        "interlocutor": state.get("interlocutor", "Janio Doniseti"),
         "interlocutor_foco_turno": state.get(
             "interlocutor_foco_turno",
             state.get("interlocutor_ativo_persistente", state.get("interlocutor", "")),
         ),
-        "usuario_real": state.get("usuario_real", "Janio Donisete"),
+        "usuario_real": state.get("usuario_real", "Janio Doniseti"),
         "janio_status_na_cena": state.get("janio_status_na_cena", "presente"),
         "interlocutor_ativo_persistente": state.get(
             "interlocutor_ativo_persistente",
-            state.get("interlocutor", "Janio Donisete"),
+            state.get("interlocutor", "Janio Doniseti"),
         ),
         "ultimo_interlocutor_explicito": state.get(
             "ultimo_interlocutor_explicito",
-            state.get("interlocutor", "Janio Donisete"),
+            state.get("interlocutor", "Janio Doniseti"),
         ),
 
         # Relação já normalizada dentro de derivar_controles_de_cena().
@@ -6417,11 +6417,11 @@ def init_state() -> dict:
         # ======================================================
         "local": "quarto",
         "tempo": "noite",
-        "interlocutor": "Janio Donisete",
-        "interlocutor_foco_turno": "Janio Donisete",
-        "interlocutor_ativo_persistente": "Janio Donisete",
-        "ultimo_interlocutor_explicito": "Janio Donisete",
-        "usuario_real": "Janio Donisete",
+        "interlocutor": "Janio Doniseti",
+        "interlocutor_foco_turno": "Janio Doniseti",
+        "interlocutor_ativo_persistente": "Janio Doniseti",
+        "ultimo_interlocutor_explicito": "Janio Doniseti",
+        "usuario_real": "Janio Doniseti",
         "janio_status_na_cena": "presente",
 
         # Não usar "romance" como default rígido.
@@ -11083,7 +11083,7 @@ with st.sidebar:
 
     state["interlocutor"] = st.text_input(
         "🗣️ Interlocutor ativo",
-        value=state.get("interlocutor", "Janio Donisete"),
+        value=state.get("interlocutor", "Janio Doniseti"),
         help=(
             "Personagem ou grupo com quem Mary está interagindo agora. "
             "Ex: Silvia | Joselina | Joselina, Anthony"
@@ -11097,7 +11097,7 @@ with st.sidebar:
             "Interlocutor persistente",
             value=state.get(
                 "interlocutor_ativo_persistente",
-                state.get("interlocutor", "Janio Donisete"),
+                state.get("interlocutor", "Janio Doniseti"),
             ),
             help=(
                 "Personagem que continua interagindo com Mary até outro personagem "
@@ -11137,7 +11137,7 @@ with st.sidebar:
             "Último interlocutor explícito",
             value=state.get(
                 "ultimo_interlocutor_explicito",
-                state.get("interlocutor", "Janio Donisete"),
+                state.get("interlocutor", "Janio Doniseti"),
             ),
             help="Último personagem que apareceu claramente falando/agindo com Mary.",
         )
