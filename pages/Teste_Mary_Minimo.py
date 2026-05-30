@@ -7221,6 +7221,8 @@ def formatar_physical_signature_para_prompt(state: dict) -> str:
     return "\n".join(linhas) if linhas else "- Mary tem presença física marcante, olhar expressivo e magnetismo próprio."
 
 
+
+
 # ==========================================================
 # ESTADO INICIAL
 # ==========================================================
@@ -11954,6 +11956,13 @@ def aplicar_estilo_sidebar_controles():
         """,
         unsafe_allow_html=True,
     )
+
+# ==========================================================
+# UI
+# ==========================================================
+st.set_page_config(page_title="Mary - Roleplay", page_icon="🌙", layout="wide")
+
+exigir_senha_app()
 # ==========================================================
 # ESTADO INICIAL
 # Precisa existir ANTES de qualquer uso de state na sidebar.
