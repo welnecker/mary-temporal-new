@@ -6375,7 +6375,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     # sincronizar_facts_basicos já chama normalizar_estado()
     # e normalizar_estado já chama derivar_controles_de_cena().
     # Não chamar normalizar_relacao_por_interlocutor aqui.
-    sincronizar_facts_basicos(state)
+    sincronizar_facts_basicos(state, recalcular_estado=False)
 
 
 def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20) -> str:
@@ -6636,7 +6636,7 @@ def init_state() -> dict:
     # de forma separada, para evitar sobrescrita duplicada.
     # ======================================================
     normalizar_flags_booleanas_state(state)
-    sincronizar_facts_basicos(state)
+    sincronizar_facts_basicos(state, recalcular_estado=False)
 
     # ======================================================
     # CARREGA MEMÓRIAS E CÂNONE
@@ -10824,7 +10824,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     if isinstance(state.get("facts"), dict):
         salvar_facts_na_planilha(state["facts"])
     else:
-        facts = sincronizar_facts_basicos(state)
+        facts = sincronizar_facts_basicos(state, recalcular_estado=False)
         salvar_facts_na_planilha(facts)
 
     st.session_state.mary_state_minimo = state
@@ -11519,7 +11519,7 @@ with st.sidebar:
 
     normalizar_estado(state)
     reconciliar_pos_climax(state)
-    sincronizar_facts_basicos(state)
+    sincronizar_facts_basicos(state, recalcular_estado=False)
 
     st.info(
         f"""
@@ -11536,7 +11536,7 @@ with st.sidebar:
     
     if st.button("💾 Salvar cena", use_container_width=True):
         normalizar_estado(state)
-        sincronizar_facts_basicos(state)
+        sincronizar_facts_basicos(state, recalcular_estado=False)
         salvar_facts_na_planilha(state["facts"])
         limpar_cache_planilhas()
         st.session_state.mary_state_minimo = state
@@ -11801,63 +11801,17 @@ if fala_usuario:
             with st.spinner("Mary está respondendo..."):
         
                 # ==================================================
-                # 1) Atualiza interlocutor e progressão social
-                # ==================================================
-                atualizar_interlocutor_ativo(state, fala_usuario)
-                limpar_acao_intima_incompativel_com_foco(state)
-                atualizar_progressao_social(state, fala_usuario)
-
-                # ==================================================
-                # 1.5) Detecta conclusão explícita do usuário/parceiro
-                # Só marca se o usuário verbalizou claramente.
-                # ==================================================
-                if detectar_climax_usuario(fala_usuario) != "nenhum":
-                    state["user_climax_done"] = True
-                
-                    if state.get("mary_climax_done"):
-                        state["partner_climax_pending"] = False
-        
-                # ==================================================
-                # 2) Aplica o tom manual, privacidade e controles base
-                # IMPORTANTE:
-                # Depois da correção anterior, isso não pode mais
-                # rebaixar physical_phase já avançado.
-                # ==================================================
-                normalizar_estado(state)
-        
-                # ==================================================
-                # 3) Detecta estimulação real / pré-pico de Mary
-                # Deve acontecer ANTES de montar o prompt.
-                # ==================================================
-                atualizar_pico_mary_por_contexto(
-                    state,
-                    fala_usuario,
-                    resposta_limpa="",
-                )
-        
-                # ==================================================
-                # 4) Decide se este turno deve resolver o pico de Mary
-                # Isso precisa vir ANTES de processar_turno(),
-                # pois processar_turno() monta o prompt.
-                # ==================================================
-                preparar_resolucao_mary_se_necessario(
-                    state,
-                    fala_usuario,
-                )
-
-                definir_acao_autonoma(state, fala_usuario)
-
-                sincronizar_facts_basicos(state)
-        
-                # ==================================================
-                # 5) Sincroniza facts finais para o prompt
-                # Agora os facts já carregam force_resolution_now,
-                # physical_phase, scene_stage e mary_intent corretos.
-                # ==================================================
-                sincronizar_facts_basicos(state)
-        
-                # ==================================================
-                # 6) Gera resposta
+                # GERA RESPOSTA
+                # O motor completo do turno agora está dentro de
+                # processar_turno().
+                #
+                # Não repetir aqui:
+                # - normalizar_estado()
+                # - atualizar_pico_mary_por_contexto()
+                # - preparar_resolucao_mary_se_necessario()
+                # - definir_acao_autonoma()
+                # - detectar_climax_usuario()
+                # - sincronizar_facts_basicos()
                 # ==================================================
                 resultado = processar_turno(
                     state,
@@ -11866,13 +11820,12 @@ if fala_usuario:
                 )
 
                 consumir_evento_inesperado_se_usado(state)
-        
+
                 st.session_state["mary_last_debug"] = resultado
-        
+
                 resposta_final = str(
                     resultado.get("resposta_final_limpa", "") or ""
                 ).strip()
-
                 # ==================================================
                 # 6.5) Sincroniza state se Mary verbalizou o próprio pico
                 # ==================================================
@@ -11883,7 +11836,7 @@ if fala_usuario:
                 )
                 
                 atualizar_estado_pos_resposta_climax(state, resposta_final)
-                sincronizar_facts_basicos(state)
+                sincronizar_facts_basicos(state, recalcular_estado=False)
                 resultado["state"] = dict(state)
                 resultado["facts"] = dict(state.get("facts", {}))
         
