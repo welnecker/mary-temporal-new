@@ -11783,11 +11783,25 @@ def aplicar_estilo_sidebar_controles():
         }
 
         /* Botões + e - do number_input */
-        section[data-testid="stSidebar"] button {
+                /* Botões normais */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button {
             color: #111827 !important;
             background-color: #f8fafc !important;
             border-radius: 10px !important;
             font-weight: 800 !important;
+            border: 1px solid #cbd5e1 !important;
+        }
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+            background-color: #fef3c7 !important;
+            color: #111827 !important;
+            border-color: #facc15 !important;
+        }
+
+        /* Botões pequenos do number_input */
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] button {
+            color: #111827 !important;
+            background-color: #f8fafc !important;
             border: 1px solid #cbd5e1 !important;
         }
 
@@ -11798,17 +11812,66 @@ def aplicar_estilo_sidebar_controles():
         }
 
         /* =====================================================
-           SELECTBOX
+           SELECTBOX - CORREÇÃO DE FUNDO CLARO + TEXTO ESCURO
         ===================================================== */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] {
+            color: #0f172a !important;
+        }
+
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
             background-color: #f8fafc !important;
             color: #0f172a !important;
             border-radius: 10px !important;
             border: 2px solid #cbd5e1 !important;
-            font-weight: 600 !important;
+            font-weight: 700 !important;
+        }
+
+        section[data-testid="stSidebar"] div[data-baseweb="select"] div {
+            color: #0f172a !important;
+            background-color: transparent !important;
         }
 
         section[data-testid="stSidebar"] div[data-baseweb="select"] span {
+            color: #0f172a !important;
+            opacity: 1 !important;
+            font-weight: 700 !important;
+        }
+
+        section[data-testid="stSidebar"] div[data-baseweb="select"] input {
+            color: #0f172a !important;
+            background-color: transparent !important;
+        }
+
+        /* Texto do valor selecionado no selectbox */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"],
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"] {
+            color: #0f172a !important;
+            opacity: 1 !important;
+        }
+
+        /* Ícone/seta do selectbox */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
+            color: #0f172a !important;
+            fill: #0f172a !important;
+        }
+
+        /* Menu aberto do selectbox */
+        div[data-baseweb="popover"] div[role="listbox"],
+        div[data-baseweb="popover"] ul {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+        }
+
+        div[data-baseweb="popover"] li,
+        div[data-baseweb="popover"] div[role="option"] {
+            background-color: #f8fafc !important;
+            color: #0f172a !important;
+            font-weight: 700 !important;
+        }
+
+        div[data-baseweb="popover"] li:hover,
+        div[data-baseweb="popover"] div[role="option"]:hover {
+            background-color: #dbeafe !important;
             color: #0f172a !important;
         }
 
