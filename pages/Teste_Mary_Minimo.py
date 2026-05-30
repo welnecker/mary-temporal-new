@@ -1822,8 +1822,8 @@ def inferir_perfil_temporal_e_risco_interacao(
     eh_janio_pessoa = personagem_norm in (
         "janio",
         "jânio",
-        "janio donisete",
-        "jânio donisete",
+        "janio Doniseti",
+        "jânio Doniseti",
     )
 
     eh_mae = (
@@ -6922,7 +6922,7 @@ def sincronizar_facts_basicos(
         "perfil_temporal_interlocutor": perfil_temporal,
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
-        "interlocutor": state.get("interlocutor", "Janio Donisete"),
+        "interlocutor": state.get("interlocutor", "Janio Doniseti"),
         "interlocutor_foco_turno": state.get(
             "interlocutor_foco_turno",
             state.get(
@@ -6930,15 +6930,15 @@ def sincronizar_facts_basicos(
                 state.get("interlocutor", ""),
             ),
         ),
-        "usuario_real": state.get("usuario_real", "Janio Donisete"),
+        "usuario_real": state.get("usuario_real", "Janio Doniseti"),
         "janio_status_na_cena": state.get("janio_status_na_cena", "presente"),
         "interlocutor_ativo_persistente": state.get(
             "interlocutor_ativo_persistente",
-            state.get("interlocutor", "Janio Donisete"),
+            state.get("interlocutor", "Janio Doniseti"),
         ),
         "ultimo_interlocutor_explicito": state.get(
             "ultimo_interlocutor_explicito",
-            state.get("interlocutor", "Janio Donisete"),
+            state.get("interlocutor", "Janio Doniseti"),
         ),
 
         # Relação já normalizada dentro de derivar_controles_de_cena().
