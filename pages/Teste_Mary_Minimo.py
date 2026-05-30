@@ -1722,6 +1722,783 @@ def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
         "toque_intimo_permitido": False,
     }
 
+def inferir_perfil_temporal_e_risco_interacao(
+    state: dict,
+    fala_usuario: str = "",
+) -> dict:
+    """
+    Infere como Mary deve perceber o interlocutor atual em termos de:
+
+    - idade aproximada / faixa temporal;
+    - geração em relação à Mary;
+    - contexto social;
+    - desejo consensual;
+    - aproximação respeitosa;
+    - aproximação desajeitada;
+    - olhar invasivo;
+    - assédio;
+    - assédio por poder/coerção.
+
+    Ideia central:
+    - Idade NÃO é assédio.
+    - "Coroa" NÃO é assédio.
+    - Diferença de idade NÃO é assédio.
+    - Homem/mulher maduro(a) pode ser atraente se houver contexto social e abertura.
+    - Assédio depende de invasão, coerção, insistência, constrangimento,
+      toque sem permissão, abuso de autoridade ou ausência de consentimento.
+    """
+    if not isinstance(state, dict):
+        state = {}
+
+    personagem = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor")
+        or ""
+    ).strip()
+
+    personagem_norm = _texto_norm(personagem)
+    fala_norm = _texto_norm(fala_usuario)
+
+    partes = [
+        personagem,
+        fala_usuario,
+        str(state.get("local", "") or ""),
+        str(state.get("tempo", "") or ""),
+        str(state.get("tipo_de_cena", "") or ""),
+        str(state.get("tom_manual_da_cena", "") or ""),
+        str(state.get("relacao", "") or ""),
+        str(state.get("segredo_ativo", "") or ""),
+        str(state.get("plano_ativo", "") or ""),
+        str(state.get("eventos_recentes", "") or ""),
+        str(state.get("mentiras_desculpas", "") or ""),
+        str(state.get("memorias_ocultas_itens_guardados", "") or ""),
+    ]
+
+    for item in state.get("canon_mary", []) or []:
+        if isinstance(item, dict):
+            partes.append(str(item.get("fato", "") or ""))
+
+    for item in state.get("shared_memories", []) or []:
+        if isinstance(item, dict):
+            partes.append(str(item.get("memoria", "") or ""))
+
+    texto_total = "\n".join(partes)
+    texto_norm = _texto_norm(texto_total)
+    texto_busca = texto_norm + "\n" + fala_norm
+
+    # ======================================================
+    # 1) IDADE NUMÉRICA ASSOCIADA AO PERSONAGEM
+    # Ex:
+    # - "Nando tem 48 anos"
+    # - "Professor Renan tem 45 anos"
+    # - "Anthony Meira tem 25 anos"
+    # ======================================================
+    idade_detectada = None
+
+    if personagem_norm:
+        padroes_idade = [
+            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,120}}?tem\s*(\d{{1,3}})\s*anos",
+            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,120}}?(\d{{1,3}})\s*anos",
+        ]
+
+        for padrao in padroes_idade:
+            m = re.search(padrao, texto_norm, flags=re.IGNORECASE)
+            if m:
+                try:
+                    idade_detectada = int(m.group(1))
+                    break
+                except Exception:
+                    pass
+
+    # Fallback fixo para Mary.
+    if personagem_norm in ("mary", "mary massariol"):
+        idade_detectada = idade_detectada or 19
+
+    # ======================================================
+    # 2) MARCADORES DE PAPEL SOCIAL / FAMILIAR
+    # ======================================================
+    eh_mary = personagem_norm in ("mary", "mary massariol")
+
+    eh_janio_pessoa = personagem_norm in (
+        "janio",
+        "jânio",
+        "janio donisete",
+        "jânio donisete",
+    )
+
+    eh_mae = (
+        personagem_norm in ("joselina", "joselina massariol", "mae", "mãe")
+        or _tem_algum(
+            texto_norm,
+            [
+                "joselina massariol e mae de mary",
+                "joselina massariol é mãe de mary",
+                "mae de mary",
+                "mãe de mary",
+                "mae da mary",
+                "mãe da mary",
+                "mãe dela",
+                "mae dela",
+            ],
+        )
+    )
+
+    eh_ancestral_familiar = _tem_algum(
+        texto_norm,
+        [
+            "avo de mary",
+            "avó de mary",
+            "avô de mary",
+            "avo da mary",
+            "avó da mary",
+            "avô da mary",
+            "bisavo de mary",
+            "bisavó de mary",
+            "bisavô de mary",
+            "bisavo da mary",
+            "bisavó da mary",
+            "bisavô da mary",
+            "meu avo",
+            "meu avô",
+            "minha avo",
+            "minha avó",
+            "meu bisavo",
+            "meu bisavô",
+            "minha bisavo",
+            "minha bisavó",
+            "bisavô",
+            "bisavó",
+            "bisa",
+        ],
+    )
+
+    eh_professor_ou_autoridade = _tem_algum(
+        texto_busca,
+        [
+            "professor",
+            "professora",
+            "renan",
+            "doutor",
+            "doutora",
+            "chefe",
+            "orientador",
+            "orientadora",
+            "autoridade",
+            "nota",
+            "prova",
+            "aprovação",
+            "aprovacao",
+            "cargo",
+            "emprego",
+            "bolsa",
+            "favorecimento",
+        ],
+    )
+
+    # ======================================================
+    # 3) MARCADORES DE IDADE / GERAÇÃO
+    # ======================================================
+    marcador_coroa = _tem_algum(
+        texto_busca,
+        [
+            "coroa",
+            "coroa gato",
+            "coroa gostoso",
+            "coroa atraente",
+            "homem maduro",
+            "mulher madura",
+            "maduro",
+            "madura",
+            "quarentao",
+            "quarentão",
+            "cinquentao",
+            "cinquentão",
+            "experiente",
+            "bem resolvido",
+            "bem resolvida",
+            "bem cuidado",
+            "bem cuidada",
+            "cabelos grisalhos",
+            "cabelos levemente grisalhos",
+            "grisalho",
+            "grisalha",
+            "loba",
+        ],
+    )
+
+    marcador_idoso = _tem_algum(
+        texto_busca,
+        [
+            "idoso",
+            "idosa",
+            "senhor de idade",
+            "senhora de idade",
+            "idade avancada",
+            "idade avançada",
+            "velhinho",
+            "velhinha",
+            "muito velho",
+            "muito velha",
+            "bengala",
+            "andador",
+            "frágil",
+            "fragil",
+        ],
+    )
+
+    marcador_jovem = _tem_algum(
+        texto_busca,
+        [
+            "garoto",
+            "menino",
+            "jovem",
+            "universitario",
+            "universitária",
+            "universitario",
+            "estudante",
+            "colega de classe",
+            "amigo de classe",
+            "amiga de classe",
+            "calouro",
+            "caloura",
+            "veterano jovem",
+            "veterana jovem",
+        ],
+    )
+
+    # ======================================================
+    # 4) CLASSIFICAÇÃO TEMPORAL
+    # ======================================================
+    faixa_temporal = "desconhecida"
+
+    if eh_mary:
+        faixa_temporal = "mary_jovem_universitaria"
+
+    elif eh_mae:
+        faixa_temporal = "mulher_madura_mae"
+
+    elif eh_ancestral_familiar:
+        faixa_temporal = "idoso_familiar"
+
+    elif idade_detectada is not None:
+        if idade_detectada < 18:
+            faixa_temporal = "menor"
+        elif 18 <= idade_detectada <= 23:
+            faixa_temporal = "jovem"
+        elif 24 <= idade_detectada <= 34:
+            faixa_temporal = "adulto_jovem"
+        elif 35 <= idade_detectada <= 44:
+            faixa_temporal = "adulto"
+        elif 45 <= idade_detectada <= 59:
+            faixa_temporal = "maduro_coroa"
+        else:
+            faixa_temporal = "idoso"
+
+    elif marcador_idoso:
+        faixa_temporal = "idoso"
+
+    elif marcador_coroa:
+        faixa_temporal = "maduro_coroa"
+
+    elif marcador_jovem:
+        faixa_temporal = "jovem"
+
+    elif eh_professor_ou_autoridade:
+        faixa_temporal = "adulto_ou_maduro_autoridade"
+
+    # ======================================================
+    # 5) GERAÇÃO EM RELAÇÃO À MARY
+    # Mary tem 19 anos no cânone.
+    # ======================================================
+    idade_mary = 19
+    geracao = "desconhecida"
+
+    if eh_mary:
+        geracao = "propria_mary"
+
+    elif eh_mae:
+        geracao = "geracao_da_mae"
+
+    elif eh_ancestral_familiar:
+        geracao = "ancestral_familiar"
+
+    elif idade_detectada is not None:
+        diferenca = idade_detectada - idade_mary
+
+        if diferenca <= -3:
+            geracao = "mais_novo_que_mary"
+        elif -2 <= diferenca <= 3:
+            geracao = "mesma_geracao_de_mary"
+        elif 4 <= diferenca <= 12:
+            geracao = "pouco_mais_velho_que_mary"
+        elif 13 <= diferenca <= 25:
+            geracao = "geracao_acima"
+        else:
+            geracao = "muito_mais_velho_que_mary"
+
+    else:
+        if faixa_temporal in ("maduro_coroa", "adulto_ou_maduro_autoridade"):
+            geracao = "geracao_acima"
+        elif faixa_temporal == "idoso":
+            geracao = "muito_mais_velho_que_mary"
+        elif faixa_temporal in ("jovem", "adulto_jovem"):
+            geracao = "mesma_ou_proxima_geracao"
+
+    # ======================================================
+    # 6) CONTEXTO SOCIAL
+    # ======================================================
+    local_norm = _texto_norm(state.get("local", ""))
+    tom_norm = _texto_norm(state.get("tom_manual_da_cena", ""))
+    tipo_norm = _texto_norm(state.get("tipo_de_cena", ""))
+
+    contexto_publico = _tem_algum(
+        local_norm,
+        [
+            "onibus",
+            "ônibus",
+            "metro",
+            "metrô",
+            "rua",
+            "praça",
+            "praca",
+            "shopping",
+            "sala de aula",
+            "corredor",
+            "bar cheio",
+            "festa",
+            "clube",
+            "universidade",
+            "faculdade",
+        ],
+    )
+
+    contexto_social_flerte = (
+        _tem_algum(
+            local_norm,
+            [
+                "festa",
+                "bar",
+                "clube",
+                "evento",
+                "boate",
+                "salão",
+                "salao",
+                "pista",
+                "pista de dança",
+                "pista de danca",
+            ],
+        )
+        or tom_norm in (
+            "malicia / flerte",
+            "malicia",
+            "flerte",
+            "nsfw",
+        )
+        or tipo_norm in (
+            "malicia_flerte",
+            "malicia_flerte_publico",
+            "malicia_flerte_semiprivado",
+        )
+    )
+
+    # ======================================================
+    # 7) ABERTURA / INTERESSE DA MARY
+    # Isso impede a função de "cozinhar" ou podar uma interação
+    # em que Mary demonstrou curiosidade primeiro.
+    # ======================================================
+    mary_deu_abertura = _tem_algum(
+        texto_busca,
+        [
+            "mary percebe alguém atraente",
+            "mary achou atraente",
+            "mary sente atração",
+            "mary sentiu atração",
+            "mary sente curiosidade",
+            "mary ficou curiosa",
+            "mary olhou primeiro",
+            "mary sustenta o olhar",
+            "mary sorri",
+            "mary sorriu",
+            "mary corresponde",
+            "mary não se afasta",
+            "mary nao se afasta",
+            "mary dá abertura",
+            "mary da abertura",
+            "mary deixa aproximar",
+            "mary dança perto",
+            "mary danca perto",
+            "mary acompanha o ritmo",
+            "mary observa com interesse",
+            "o olhar de mary para nele",
+            "o olhar dela para nele",
+            "seu olhar varre o salão e percebe alguém atraente",
+            "percebe alguém atraente no bar",
+        ],
+    )
+
+    aproximacao_social_respeitosa = _tem_algum(
+        texto_busca,
+        [
+            "tentando dançar próximo",
+            "tentando dancar proximo",
+            "dança próximo",
+            "danca proximo",
+            "dançando próximo",
+            "dancando proximo",
+            "se aproxima com cuidado",
+            "mantém distância",
+            "mantem distancia",
+            "sem tocar",
+            "sorri para mary",
+            "olha de longe",
+            "chega com educação",
+            "chega com educacao",
+            "fala baixo",
+            "pede licença",
+            "pede licenca",
+            "pergunta se pode",
+            "sem invadir",
+            "respeitando espaço",
+            "respeitando espaco",
+        ],
+    )
+
+    aproximacao_desajeitada = _tem_algum(
+        texto_busca,
+        [
+            "passos desconexos",
+            "meio desajeitado",
+            "meio desajeitada",
+            "sem ritmo",
+            "tentando acompanhar",
+            "dançando estranho",
+            "dancando estranho",
+            "dança mal",
+            "danca mal",
+            "fora do compasso",
+            "passos fora do ritmo",
+        ],
+    )
+
+    # ======================================================
+    # 8) INVASÃO / ASSÉDIO / COERÇÃO
+    # ======================================================
+    olhar_invasivo = _tem_algum(
+        texto_busca,
+        [
+            "olhando para o decote",
+            "olha para o decote",
+            "olhar para o decote",
+            "encarando o decote",
+            "olhando os seios",
+            "encarando os seios",
+            "olhando a bunda",
+            "encarando a bunda",
+            "olhar invasivo",
+            "olhar tarado",
+            "disfarçando para o decote",
+            "disfarcando para o decote",
+            "disfarçando, para seu decote",
+            "secando mary",
+            "secando ela",
+        ],
+    )
+
+    toque_sem_permissao = _tem_algum(
+        texto_busca,
+        [
+            "encosta sem permissão",
+            "encosta sem permissao",
+            "toca sem permissão",
+            "toca sem permissao",
+            "segura o braço dela",
+            "segura o braco dela",
+            "puxa pelo braço",
+            "puxa pelo braco",
+            "agarra mary",
+            "agarra ela",
+            "passa a mão sem permissão",
+            "passa a mao sem permissao",
+            "encoxa",
+            "encoxando",
+        ],
+    )
+
+    bloqueio_ou_insistencia = _tem_algum(
+        texto_busca,
+        [
+            "bloqueia a passagem",
+            "fecha o caminho",
+            "encurrala",
+            "encurralando",
+            "insiste depois dela recusar",
+            "não aceita o não",
+            "nao aceita o nao",
+            "continua insistindo",
+            "segue mary",
+            "persegue mary",
+            "vai atrás dela",
+            "vai atras dela",
+        ],
+    )
+
+    coerção_por_poder = (
+        eh_professor_ou_autoridade
+        and _tem_algum(
+            texto_busca,
+            [
+                "nota em troca",
+                "nota 10 em troca",
+                "dar nota em troca",
+                "aprovação em troca",
+                "aprovacao em troca",
+                "aprovar em troca",
+                "subornar mary",
+                "suborno",
+                "troca de algo mais",
+                "em troca de algo mais",
+                "se quiser passar",
+                "se quiser a nota",
+                "te dou nota",
+                "te dou aprovação",
+                "te dou aprovacao",
+                "te aprovo",
+                "garanto sua nota",
+                "garanto sua aprovação",
+                "garanto sua aprovacao",
+                "favorecimento em troca",
+            ],
+        )
+    )
+
+    assedio_explicito = _tem_algum(
+        texto_busca,
+        [
+            "assedio",
+            "assédio",
+            "assediando",
+            "assediou",
+            "importunacao",
+            "importunação",
+            "invasivo",
+            "invasiva",
+            "sem consentimento",
+            "forçando",
+            "forcando",
+            "insistindo",
+            "encurralando",
+            "constrangendo",
+            "constrangimento",
+        ],
+    )
+
+    desejo_social = (
+        _tem_algum(
+            texto_busca,
+            [
+                "coroa gato",
+                "coroa gostoso",
+                "que gato",
+                "que gostoso",
+                "homem bonito",
+                "mulher bonita",
+                "atraente",
+                "charme",
+                "presenca",
+                "presença",
+                "porte físico impressiona",
+                "porte fisico impressiona",
+                "cabelos levemente grisalhos",
+                "ar de desejo",
+                "troca de olhares",
+                "olhar de desejo",
+            ],
+        )
+        and not olhar_invasivo
+        and not toque_sem_permissao
+        and not coerção_por_poder
+    )
+
+    # ======================================================
+    # 9) CLASSIFICAÇÃO DA INTERAÇÃO
+    # Ordem importa:
+    # coerção/invasão real vencem atração social.
+    # atração social com abertura de Mary não deve ser podada.
+    # ======================================================
+    tipo_interacao = "neutra"
+    risco_assedio = "nenhum"
+    consentimento_percebido = "ambíguo"
+
+    if eh_mary:
+        tipo_interacao = "autopercepcao_mary"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "nao_aplicavel"
+
+    elif eh_mae:
+        tipo_interacao = "familiar_mae"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "nao_aplicavel"
+
+    elif eh_ancestral_familiar:
+        tipo_interacao = "ancestral_familiar"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "nao_aplicavel"
+
+    elif coerção_por_poder:
+        tipo_interacao = "assedio_por_poder"
+        risco_assedio = "alto"
+        consentimento_percebido = "coercitivo"
+
+    elif assedio_explicito or toque_sem_permissao or bloqueio_ou_insistencia:
+        tipo_interacao = "assedio_ou_invasao"
+        risco_assedio = "alto"
+        consentimento_percebido = "ausente"
+
+    elif olhar_invasivo and contexto_publico and not mary_deu_abertura:
+        tipo_interacao = "assedio_visual"
+        risco_assedio = "moderado"
+        consentimento_percebido = "ausente"
+
+    elif olhar_invasivo and not mary_deu_abertura:
+        tipo_interacao = "olhar_invasivo"
+        risco_assedio = "moderado"
+        consentimento_percebido = "ausente"
+
+    elif marcador_coroa and contexto_social_flerte and (mary_deu_abertura or aproximacao_social_respeitosa):
+        tipo_interacao = "flerte_maduro_consensual"
+        risco_assedio = "baixo"
+        consentimento_percebido = "possivel"
+
+    elif marcador_coroa and contexto_social_flerte and aproximacao_desajeitada:
+        tipo_interacao = "aproximacao_social_desajeitada"
+        risco_assedio = "baixo"
+        consentimento_percebido = "ambíguo"
+
+    elif desejo_social and contexto_social_flerte:
+        tipo_interacao = "desejo_social"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "possivel"
+
+    elif desejo_social:
+        tipo_interacao = "atracao_percebida"
+        risco_assedio = "baixo"
+        consentimento_percebido = "ambíguo"
+
+    # ======================================================
+    # 10) LEITURA PARA MARY
+    # ======================================================
+    if tipo_interacao == "autopercepcao_mary":
+        leitura = (
+            "Mary percebe a si mesma como jovem universitária de 19 anos, com energia, "
+            "curiosidade, impulsos, contradições e desejo de viver experiências sem perder a própria agência."
+        )
+
+    elif tipo_interacao == "familiar_mae":
+        leitura = (
+            "Mary percebe como mãe/família: geração acima, autoridade afetiva, cuidado, "
+            "julgamento, proteção da imagem e vínculo familiar. Não tratar como flerte."
+        )
+
+    elif tipo_interacao == "ancestral_familiar":
+        leitura = (
+            "Mary percebe como ancestral familiar idoso: avô/avó/bisavô/bisavó, ligado a respeito, "
+            "memória familiar, carinho e cuidado. Se houver menção a lucidez ou vigor, entender como saúde, "
+            "vitalidade e clareza mental para a idade, não como conotação sexual."
+        )
+
+    elif tipo_interacao == "assedio_por_poder":
+        leitura = (
+            "Mary percebe assédio por assimetria de poder. Professor, chefe ou autoridade usando nota, "
+            "aprovação, cargo, dinheiro ou vantagem para obter algo íntimo deve ser lido como coerção, "
+            "risco e manipulação, não como flerte consensual."
+        )
+
+    elif tipo_interacao == "assedio_ou_invasao":
+        leitura = (
+            "Mary percebe invasão ou assédio: toque sem permissão, insistência, bloqueio, constrangimento "
+            "ou falta de espaço para recusar. Ela deve reagir com alerta, proteção do próprio corpo, firmeza "
+            "e busca de distância/apoio conforme o risco."
+        )
+
+    elif tipo_interacao == "assedio_visual":
+        leitura = (
+            "Mary percebe olhar invasivo em espaço público. Ela deve sentir desconforto, alerta e proteger "
+            "o próprio espaço: ajustar postura, cobrir-se, afastar-se, encarar ou responder com firmeza proporcional."
+        )
+
+    elif tipo_interacao == "olhar_invasivo":
+        leitura = (
+            "Mary percebe olhar invasivo ou pesado. Ela deve avaliar o risco, controlar distância, "
+            "não erotizar automaticamente e reagir conforme o grau de desconforto."
+        )
+
+    elif tipo_interacao == "flerte_maduro_consensual":
+        leitura = (
+            "Mary percebe um flerte social possível com pessoa madura/coroa. A diferença de idade não é problema "
+            "por si só. Se há abertura, respeito, distância adequada e clima de festa/bar/dança, Mary pode sentir "
+            "curiosidade, atração, humor, provocação ou desejo. Não bloquear nem cozinhar automaticamente."
+        )
+
+    elif tipo_interacao == "aproximacao_social_desajeitada":
+        leitura = (
+            "Mary percebe uma aproximação social meio desajeitada, mas não necessariamente invasiva. "
+            "Se o homem maduro tenta dançar perto sem tocar, bloquear ou insistir, Mary pode achar graça, "
+            "testar o jogo, provocar ou dar abertura. Não tratar como assédio automático."
+        )
+
+    elif tipo_interacao == "desejo_social":
+        leitura = (
+            "Mary percebe desejo social ou atração em contexto jogável. Se alguém diz 'coroa gato', "
+            "ela entende como pessoa madura, atraente, segura e interessante, não como idoso frágil."
+        )
+
+    elif tipo_interacao == "atracao_percebida":
+        leitura = (
+            "Mary percebe atração ou interesse inicial. Ela pode avaliar, corresponder, testar ou recuar, "
+            "sem transformar isso em assédio automaticamente."
+        )
+
+    elif faixa_temporal == "maduro_coroa":
+        leitura = (
+            "Mary percebe como coroa/maduro no sentido brasileiro: mais velho, experiente, saudável, seguro, "
+            "bem resolvido e com presença. Isso pode ser atraente se o contexto for social e consensual."
+        )
+
+    elif faixa_temporal == "idoso":
+        leitura = (
+            "Mary percebe como idoso/senhor de idade. Isso pede respeito, cautela e leitura de limites. "
+            "Se houver flerte invasivo ou insistência, Mary deve perceber como desconfortável ou inadequado."
+        )
+
+    elif faixa_temporal == "menor":
+        leitura = (
+            "Mary percebe como menor de idade. Não tratar com flerte ou erotização."
+        )
+
+    else:
+        leitura = (
+            "Mary deve inferir idade, maturidade, desejo, risco e limites pelo contexto da cena, "
+            "sem confundir atração social com assédio, nem assédio com flerte."
+        )
+
+    return {
+        "personagem": personagem,
+        "idade_detectada": idade_detectada,
+        "faixa_temporal": faixa_temporal,
+        "geracao_em_relacao_a_mary": geracao,
+        "tipo_interacao": tipo_interacao,
+        "risco_assedio": risco_assedio,
+        "consentimento_percebido": consentimento_percebido,
+        "mary_deu_abertura": mary_deu_abertura,
+        "aproximacao_social_respeitosa": aproximacao_social_respeitosa,
+        "aproximacao_desajeitada": aproximacao_desajeitada,
+        "olhar_invasivo": olhar_invasivo,
+        "toque_sem_permissao": toque_sem_permissao,
+        "bloqueio_ou_insistencia": bloqueio_ou_insistencia,
+        "coercao_por_poder": coerção_por_poder,
+        "leitura_para_mary": leitura,
+    }
+
 
 def normalizar_relacao_por_interlocutor(state: dict) -> None:
     """
@@ -6136,7 +6913,13 @@ def sincronizar_facts_basicos(
         state.get("_fala_usuario_atual", "")
     )
 
+    perfil_temporal = inferir_perfil_temporal_e_risco_interacao(
+            state,
+            state.get("_fala_usuario_atual", ""),
+        )
+
     facts = {
+        "perfil_temporal_interlocutor": perfil_temporal,
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
         "interlocutor": state.get("interlocutor", "Janio Donisete"),
@@ -9761,6 +10544,13 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     facts_txt = json.dumps(facts, ensure_ascii=False, indent=2)
 
+    perfil_temporal = facts.get("perfil_temporal_interlocutor", {})
+    perfil_temporal_txt = json.dumps(
+        perfil_temporal,
+        ensure_ascii=False,
+        indent=2,
+    )
+
     # ======================================================
     # CONTEXTO FILTRADO
     # montar_mensagens() normalmente já passa contexto filtrado.
@@ -10074,6 +10864,23 @@ Mary é jovem, intensa, viva, brasileira, de cabelos negros longos e olhos verde
 Tem corpo curvilíneo, cintura marcada, seios naturais bem projetados, quadril largo, bumbum carnudo e coxas firmes.
 A presença física dela deve existir na cena, mas sem virar catálogo.
 Use no máximo 1 ou 2 traços físicos por resposta, sempre ligados à ação atual.
+
+[PERCEPÇÃO TEMPORAL, DESEJO E ASSÉDIO]
+{perfil_temporal_txt}
+
+REGRAS:
+- Mary deve perceber idade, geração, maturidade, desejo, risco e consentimento pelo contexto.
+- Diferença de idade, cabelos grisalhos, maturidade, termo "coroa" ou postura experiente NÃO significam assédio por si só.
+- "Coroa", "coroa gato", "loba", "homem maduro" ou "mulher madura" em contexto social/atraente significam pessoa madura, experiente, saudável, segura e possivelmente desejável.
+- Se Mary olhou primeiro, sorriu, demonstrou curiosidade, sentiu atração ou deu abertura, a interação pode seguir como flerte social consensual.
+- Em festa, bar, clube, dança ou ambiente social, aproximação respeitosa de pessoa madura pode ser lida como charme, humor, curiosidade ou desejo.
+- Mary não deve bloquear, cozinhar ou podar automaticamente personagem maduro/coroa quando o contexto indica atração mútua ou curiosidade dela.
+- "Idoso", "senhor de idade" ou "idade avançada" indicam outra leitura: respeito, cautela e distância geracional.
+- "Senhor olhando decote" em ônibus/público = olhar invasivo/assédio visual, não flerte automático.
+- Professor, chefe ou autoridade oferecendo nota, cargo, dinheiro, aprovação ou vantagem em troca de intimidade = assédio por poder/coerção.
+- "Assédio" significa conduta invasiva, insistente, coercitiva, constrangedora ou sem consentimento.
+- Só classificar como assédio se houver invasão, insistência após recusa, toque sem permissão, bloqueio de passagem, coerção, humilhação, ameaça, abuso de autoridade ou constrangimento claro.
+- Mary deve reagir proporcionalmente: curiosidade/flerte se houver desejo social; cautela/firmeza se houver invasão; alerta/defesa se houver coerção.
 
 [CONTEXTO ATUAL]
 Local: {local}
