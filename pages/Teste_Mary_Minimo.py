@@ -11647,38 +11647,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
 def aplicar_estilo_sidebar_controles():
     st.markdown(
-        """
-        /* =====================================================
-           SELECTBOX - APENAS TEXTO BRANCO NAS CAIXAS
-        ===================================================== */
-        
-        /* Texto do valor selecionado */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] span,
-        section[data-testid="stSidebar"] div[data-baseweb="select"] div,
-        section[data-testid="stSidebar"] div[data-baseweb="select"] input {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-        }
-        
-        /* Placeholder / valor selecionado */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"],
-        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"] {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            opacity: 1 !important;
-        }
-        
-        /* Ícone/seta do selectbox */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
-            color: #ffffff !important;
-            fill: #ffffff !important;
-        }
-        /* Força texto digitável/renderizado dentro do select */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] input::placeholder {
-            color: #ffffff !important;
-            -webkit-text-fill-color: #ffffff !important;
-            opacity: 1 !important;
-        }
+        """       
         <style>
         /* =====================================================
            SIDEBAR - FUNDO GERAL
@@ -11843,67 +11812,64 @@ def aplicar_estilo_sidebar_controles():
         }
 
         /* =====================================================
-           SELECTBOX - CORREÇÃO DE FUNDO CLARO + TEXTO ESCURO
+           SELECTBOX - FUNDO ESCURO + TEXTO BRANCO
         ===================================================== */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] {
-            color: #0f172a !important;
-        }
-
+        
+        /* Caixa principal do selectbox */
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
+            background-color: #111827 !important;
+            color: #ffffff !important;
             border-radius: 10px !important;
             border: 2px solid #cbd5e1 !important;
             font-weight: 700 !important;
         }
-
-        section[data-testid="stSidebar"] div[data-baseweb="select"] div {
-            color: #0f172a !important;
-            background-color: transparent !important;
-        }
-
-        section[data-testid="stSidebar"] div[data-baseweb="select"] span {
-            color: #0f172a !important;
-            opacity: 1 !important;
-            font-weight: 700 !important;
-        }
-
+        
+        /* Todas as camadas internas do selectbox */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] div,
+        section[data-testid="stSidebar"] div[data-baseweb="select"] span,
         section[data-testid="stSidebar"] div[data-baseweb="select"] input {
-            color: #0f172a !important;
-            background-color: transparent !important;
-        }
-
-        /* Texto do valor selecionado no selectbox */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"],
-        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"] {
-            color: #0f172a !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
             opacity: 1 !important;
         }
-
-        /* Ícone/seta do selectbox */
-        section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
-            color: #0f172a !important;
-            fill: #0f172a !important;
+        
+        /* Placeholder e valor selecionado */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"],
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"],
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="valueContainer"] {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            opacity: 1 !important;
         }
-
+        
+        /* Seta/ícone */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+        
         /* Menu aberto do selectbox */
         div[data-baseweb="popover"] div[role="listbox"],
         div[data-baseweb="popover"] ul {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
+            background-color: #111827 !important;
+            color: #ffffff !important;
         }
-
+        
+        /* Opções do menu aberto */
         div[data-baseweb="popover"] li,
         div[data-baseweb="popover"] div[role="option"] {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
+            background-color: #111827 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
             font-weight: 700 !important;
         }
-
+        
+        /* Hover nas opções */
         div[data-baseweb="popover"] li:hover,
         div[data-baseweb="popover"] div[role="option"]:hover {
-            background-color: #dbeafe !important;
-            color: #0f172a !important;
+            background-color: #1d4ed8 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
         }
 
         /* =====================================================
