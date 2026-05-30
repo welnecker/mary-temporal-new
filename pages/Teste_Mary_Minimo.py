@@ -12753,21 +12753,23 @@ with st.sidebar:
         disabled=not confirmar_turnos,
     ):
         qtd = apagar_ultimos_turnos_da_planilha(int(n_turnos))
-
+    
         if qtd > 0:
+            # Limpa caches para forçar nova leitura real da planilha.
             limpar_cache_planilhas()
-
-            # Atualiza localmente para evitar nova leitura imediata do Sheets.
-            linhas_para_remover = min(qtd, len(state.get("history", [])))
-
-            if linhas_para_remover > 0:
-                state["history"] = state.get("history", [])[:-linhas_para_remover]
-
-            state["turno"] = max(0, len(state.get("history", [])) // 2)
-
-            # Garante que a cópia local do Streamlit acompanhe o corte.
+    
+            # Recarrega o histórico real restante da planilha.
+            historico_recarregado = carregar_history_da_planilha(MAX_HISTORY * 2)
+    
+            state["history"] = historico_recarregado
+            state["turno"] = max(0, len(historico_recarregado) // 2)
+    
+            # Atualiza facts sem recalcular a cena.
+            sincronizar_facts_basicos(state, recalcular_estado=False)
+    
+            # Garante que a sessão use o histórico recarregado.
             st.session_state["mary_state_minimo"] = state
-
+    
             # Limpa debug antigo para não reaparecer resposta de turno apagado.
             for chave in [
                 "mary_last_debug",
@@ -12776,10 +12778,10 @@ with st.sidebar:
             ]:
                 if chave in st.session_state:
                     del st.session_state[chave]
-
-            st.success(f"{qtd} linha(s) apagada(s).")
+    
+            st.success(f"{qtd} linha(s) apagada(s). Histórico recarregado da planilha.")
             st.rerun()
-
+    
         else:
             st.warning("Nenhum turno foi apagado.")
 
