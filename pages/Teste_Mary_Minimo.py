@@ -1460,6 +1460,7 @@ def get_privacidade_por_local(local: str) -> str:
         "toalete privado",
         "banheiro particular",
         "toalete particular",
+        "depósitos em clubes",
     
         # Ambientes isolados que NÃO devem cair como público
         "praia deserta",
