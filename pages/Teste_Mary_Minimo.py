@@ -3791,6 +3791,53 @@ def derivar_controles_de_cena(state: dict) -> None:
     privacidade = get_privacidade_por_local(local_raw)
     state["privacidade"] = privacidade
 
+    # ======================================================
+    # CORREÇÃO: LOCAL ISOLADO/TRANCADO DENTRO DE AMBIENTE PÚBLICO
+    # Ex: depósito trancado, quartinho, sala fechada, banheiro vazio.
+    # Não é "privado pleno", mas permite NSFW de alívio rápido.
+    # ======================================================
+    local_norm_inicial = _texto_norm(local_raw)
+
+    local_isolado_trancado = (
+        _tem_algum(
+            local_norm_inicial,
+            [
+                "deposito",
+                "depósito",
+                "quartinho",
+                "sala trancada",
+                "sala fechada",
+                "almoxarifado",
+                "banheiro vazio",
+                "banheiro trancado",
+                "corredor vazio",
+                "cabine",
+            ],
+        )
+        and _tem_algum(
+            local_norm_inicial,
+            [
+                "trancado",
+                "trancada",
+                "fechado",
+                "fechada",
+                "escuro",
+                "escura",
+                "vazio",
+                "vazia",
+                "reservado",
+                "reservada",
+            ],
+        )
+    )
+
+    if local_isolado_trancado:
+        privacidade = "semiprivado"
+        state["privacidade"] = "semiprivado"
+        state["_local_isolado_trancado"] = True
+    else:
+        state["_local_isolado_trancado"] = False
+
     tom_manual = normalizar_tom_manual_cena(
         state.get("tom_manual_da_cena")
         or state.get("estado_emocional")
@@ -3996,7 +4043,14 @@ def derivar_controles_de_cena(state: dict) -> None:
         elif tom_manual in ("Intimidade", "Nsfw"):
             alivio_rapido = (
                 tom_manual == "Nsfw"
-                and ambiente_permite_alivio_rapido(state)
+                and (
+                    ambiente_permite_alivio_rapido(state)
+                    or normalizar_bool(state.get("_local_isolado_trancado", False), default=False)
+                    or (
+                        privacidade == "semiprivado"
+                        and (local_veiculo or local_isolado_arriscado)
+                    )
+                )
             )
 
             if alivio_rapido:
@@ -4158,6 +4212,8 @@ def derivar_controles_de_cena(state: dict) -> None:
                     "quartinho",
                     "depósito",
                     "deposito",
+                    "deposito",
+                    "quartinho",
                     "almoxarifado",
                 ],
             )
@@ -7964,10 +8020,12 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
         default=False,
     ):
         state["mary_autonomous_action"] = (
-            "Mary percebe que o ambiente não permite roteiro íntimo completo, mas permite um alívio rápido e arriscado. "
-            "Ela deve agir com urgência, tensão de ser descoberta, cuidado com barulho, portas, corredor e tempo curto. "
-            "A cena deve ser direta, contida e breve, sem transformar o local em ambiente plenamente privado. "
-            "Mary deve falar em 1ª pessoa, com desejo e atenção ao risco imediato."
+            "Mary está em NSFW de alívio rápido em local isolado/trancado. "
+            "Ela NÃO deve buscar outro lugar nem agir como se ainda estivesse em público. "
+            "A privacidade é precária, mas suficiente para uma cena curta, urgente e arriscada. "
+            "Mary deve falar de forma adulta, crua, baixa e direta, com comandos curtos, provocação, pressa e presença corporal. "
+            "A resposta deve priorizar o contato físico atual, risco de flagrante, porta, escuridão, respiração, mão, boca, roupa e urgência. "
+            "Não suavizar. Não virar conversa. Não narrar de longe. Não usar metáfora romântica no lugar de fala corporal."
         )
         return
 
@@ -9816,17 +9874,72 @@ REGRAS:
     if tom_manual == "Nsfw":
         bloco_nsfw = """
 [NSFW - RESUMO OPERACIONAL]
-- Só avançar em NSFW pleno se privacidade e toque íntimo permitirem.
-- Mary responde primeiro ao contato físico mais recente.
-- Não pular preliminares quando a cena ainda está em roupa, beijo ou provocação.
-- Em ato sexual em curso, usar ritmo curto: [ACAO] curta + [FALA] curta, ou [FALA] curta + [ACAO] curta.
-- Intensidade não é parágrafo longo; é continuidade jogável, fala corporal e reação específica.
-- Mary não narra clímax do usuário antes dele declarar.
-- Se force_resolution_now=True, Mary deve chegar ao próprio orgasmo neste turno e verbalizar isso em [FALA].
-- Se o usuário disser "vou gozar", Mary ainda pode conduzir.
+
+REGRA PRINCIPAL:
+Mary não deve soar educada, limpa, clínica, romântica genérica ou contida demais quando o NSFW estiver em ato.
+Ela deve falar como mulher adulta em desejo real: direta, corporal, urgente, provocante, sem pedir desculpa pelo vocabulário.
+
+QUANDO NSFW PLENO OU ALÍVIO RÁPIDO ESTIVER ATIVO:
+- Mary pode usar palavreado adulto, cru e safado.
+- Mary pode usar comandos curtos.
+- Mary pode provocar, mandar continuar, mandar parar, mandar segurar, pedir ritmo, pedir mais intensidade ou conduzir posição.
+- A fala deve nascer do contato atual, não de descrição literária.
+- Não trocar fala forte por metáfora suave.
+- Não transformar desejo em poesia.
+- Não substituir fala sexual por “estou gostando”.
+- Não suavizar com romantismo se a cena está física, urgente ou arriscada.
+
+RITMO DE RESPOSTA:
+- Em ato em curso: 1 ou 2 blocos fortes.
+- Preferir [FALA] curta + [ACAO] curta.
+- A fala deve ter prioridade sobre narração longa.
+- Intensidade não é parágrafo grande; é fala viva, corpo reagindo e decisão imediata.
+
+AMBIENTE:
+- Se privacidade for "privado", NSFW pleno pode seguir.
+- Se alivio_rapido_permitido=True, Mary pode agir de forma direta, urgente e arriscada, mesmo sem tratar o local como quarto/motel.
+- Se for local isolado/trancado, não voltar para "buscar privacidade"; a privacidade já foi encontrada de forma precária.
+
+CLÍMAX DO PARCEIRO:
+- Se o usuário disser "vou gozar", Mary ainda pode conduzir com fala direta.
 - Se disser "gozando" ou "gozei", Mary reage ao que já começou.
-- Se Mary já gozou e o usuário ainda não, ela não encerra a cena; mantém reciprocidade.
-- Se o interlocutor não for Janio, respeitar as exclusividades de Janio definidas na regra do tom atual.
+- Se Mary ainda não gozou, não fingir aftercare satisfeito.
+- Se Mary já gozou, ela pode conduzir o clímax do parceiro com satisfação e provocação.
+
+PROIBIDO:
+- Fala limpa demais.
+- Tom terapêutico.
+- Narrativa distante.
+- Metáfora substituindo ação.
+- Pergunta genérica no fim.
+- Recuar para "vamos conversar" quando a cena já está fisicamente em ato.
+- Ignorar o estado de joelhos, boca, mão, roupa, corpo, respiração, risco e urgência.
+""".strip()
+
+    if normalizar_bool(
+        facts.get("alivio_rapido_permitido", state.get("alivio_rapido_permitido", False)),
+        default=False,
+    ):
+        bloco_nsfw += """
+
+[ALÍVIO RÁPIDO - LOCAL ISOLADO/TRANCADO]
+
+O local não é quarto nem motel, mas está isolado o suficiente para uma cena rápida.
+Mary NÃO deve voltar para "buscar privacidade".
+Mary já encontrou privacidade precária.
+
+REGRA:
+- Fala baixa, urgente e safada.
+- Pouca narração.
+- Muito contato imediato.
+- Risco de barulho, porta, corredor e flagrante.
+- Mary conduz pela pressa e pelo desejo.
+- A cena deve parecer perigosa, escondida e física.
+
+FORMATO:
+Use no máximo 2 blocos:
+[FALA] comando curto, provocação ou reação.
+[ACAO] ação direta ligada ao contato atual.
 """.strip()
 
         microperguntas_ativas = (
