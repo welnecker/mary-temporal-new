@@ -1817,32 +1817,58 @@ def inferir_perfil_temporal_e_risco_interacao(
     # ======================================================
     # 2) MARCADORES DE PAPEL SOCIAL / FAMILIAR
     # ======================================================
-    eh_mary = personagem_norm in ("mary", "mary massariol")
+    eh_mary = personagem_norm in (
+        "mary",
+        "mary massariol",
+    )
+
+    eh_silvia = personagem_norm in (
+        "silvia",
+        "silvia brum",
+    )
 
     eh_janio_pessoa = personagem_norm in (
         "janio",
-        "jânio",
-        "janio Doniseti",
-        "jânio Doniseti",
+        "janio donisete",
+        "janio doniseti",
     )
 
-    eh_mae = (
-        personagem_norm in ("joselina", "joselina massariol", "mae", "mãe")
-        or _tem_algum(
-            texto_norm,
-            [
-                "joselina massariol e mae de mary",
-                "joselina massariol é mãe de mary",
-                "mae de mary",
-                "mãe de mary",
-                "mae da mary",
-                "mãe da mary",
-                "mãe dela",
-                "mae dela",
-            ],
+    eh_mae = False
+
+    if personagem_norm in (
+        "joselina",
+        "joselina massariol",
+        "mae",
+        "mãe",
+    ):
+        eh_mae = True
+    else:
+        contexto_personagem = buscar_contexto_do_personagem(state, personagem)
+        contexto_personagem_norm = _texto_norm(contexto_personagem)
+
+        # IMPORTANTE:
+        # Não procurar "mãe de Mary" no texto total inteiro,
+        # porque isso contamina Silvia, Donisete, Renan etc.
+        # Só considerar mãe se o próprio personagem for Joselina
+        # ou se o contexto específico desse personagem indicar isso.
+        eh_mae = (
+            personagem_norm in ("joselina", "joselina massariol")
+            or (
+                personagem_norm
+                and "joselina" in personagem_norm
+                and _tem_algum(
+                    contexto_personagem_norm,
+                    [
+                        "mae de mary",
+                        "mãe de mary",
+                        "mae da mary",
+                        "mãe da mary",
+                        "mae dela",
+                        "mãe dela",
+                    ],
+                )
+            )
         )
-    )
-
     eh_ancestral_familiar = _tem_algum(
         texto_norm,
         [
@@ -1974,6 +2000,9 @@ def inferir_perfil_temporal_e_risco_interacao(
     if eh_mary:
         faixa_temporal = "mary_jovem_universitaria"
 
+    elif eh_silvia:
+        faixa_temporal = "jovem"
+
     elif eh_mae:
         faixa_temporal = "mulher_madura_mae"
 
@@ -2015,6 +2044,9 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     if eh_mary:
         geracao = "propria_mary"
+
+    elif eh_silvia:
+        geracao = "mesma_geracao_de_mary"
 
     elif eh_mae:
         geracao = "geracao_da_mae"
@@ -2391,6 +2423,13 @@ def inferir_perfil_temporal_e_risco_interacao(
         leitura = (
             "Mary percebe a si mesma como jovem universitária de 19 anos, com energia, "
             "curiosidade, impulsos, contradições e desejo de viver experiências sem perder a própria agência."
+        )
+
+    elif eh_silvia:
+        leitura = (
+            "Mary percebe Silvia como amiga/colega jovem da UFRJ: cúmplice, provocadora, "
+            "alguém diante de quem Mary pode disfarçar, brincar, mentir, dividir tensão social "
+            "ou esconder segredos. Não tratar Silvia como mãe, autoridade familiar ou figura materna."
         )
 
     elif tipo_interacao == "familiar_mae":
