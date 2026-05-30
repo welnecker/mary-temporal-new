@@ -13,7 +13,7 @@ import streamlit as st
 import gspreadaplicar_estilo_sidebar_controles(
 from google.oauth2.service_account import Credentials
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))aplicar_estilo_sidebar_controles(
 
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
@@ -11647,7 +11647,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
 def aplicar_estilo_sidebar_controles():
     st.markdown(
-        """       
+        """
         <style>
         /* =====================================================
            SIDEBAR - FUNDO GERAL
@@ -11663,27 +11663,23 @@ def aplicar_estilo_sidebar_controles():
         /* =====================================================
            TEXTO GERAL DA SIDEBAR
         ===================================================== */
-        section[data-testid="stSidebar"],
-        section[data-testid="stSidebar"] * {
-            color: #f8fafc !important;
-        }
-
+        section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] p,
         section[data-testid="stSidebar"] span,
-        section[data-testid="stSidebar"] label,
         section[data-testid="stSidebar"] small,
-        section[data-testid="stSidebar"] div {
-            color: #f8fafc !important;
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3,
+        section[data-testid="stSidebar"] h4 {
+            color: #ffffff !important;
+            opacity: 1 !important;
         }
 
-        /* Labels dos campos */
         section[data-testid="stSidebar"] label {
             font-size: 0.96rem !important;
             font-weight: 800 !important;
-            color: #ffffff !important;
         }
 
-        /* Captions e textos auxiliares */
         section[data-testid="stSidebar"] .stCaptionContainer,
         section[data-testid="stSidebar"] small {
             color: #dbeafe !important;
@@ -11693,14 +11689,6 @@ def aplicar_estilo_sidebar_controles():
         /* =====================================================
            HEADERS / SUBHEADERS
         ===================================================== */
-        section[data-testid="stSidebar"] h1,
-        section[data-testid="stSidebar"] h2,
-        section[data-testid="stSidebar"] h3,
-        section[data-testid="stSidebar"] h4 {
-            color: #ffffff !important;
-            font-weight: 900 !important;
-        }
-
         section[data-testid="stSidebar"] h2,
         section[data-testid="stSidebar"] h3 {
             margin-top: 1rem !important;
@@ -11709,10 +11697,12 @@ def aplicar_estilo_sidebar_controles():
             background: linear-gradient(90deg, #3b2f63 0%, #243b73 100%) !important;
             border-left: 5px solid #fbbf24 !important;
             box-shadow: 0 3px 10px rgba(0,0,0,0.25) !important;
+            color: #ffffff !important;
+            font-weight: 900 !important;
         }
 
         /* =====================================================
-           TÍTULOS VISUAIS PERSONALIZADOS
+           TÍTULOS PERSONALIZADOS
         ===================================================== */
         .sidebar-box-title {
             margin-top: 18px !important;
@@ -11739,37 +11729,28 @@ def aplicar_estilo_sidebar_controles():
         }
 
         /* =====================================================
-           EXPANDERS
-        ===================================================== */
-        section[data-testid="stSidebar"] details {
-            background: rgba(255, 255, 255, 0.07) !important;
-            border: 1px solid rgba(255, 255, 255, 0.18) !important;
-            border-radius: 12px !important;
-            margin-bottom: 10px !important;
-        }
-
-        section[data-testid="stSidebar"] details summary {
-            color: #ffffff !important;
-            font-weight: 800 !important;
-            opacity: 1 !important;
-        }
-
-        section[data-testid="stSidebar"] details summary * {
-            color: #ffffff !important;
-            opacity: 1 !important;
-        }
-
-        /* =====================================================
            INPUTS / TEXTAREAS / NUMBER INPUT
+           Fundo claro + texto escuro.
         ===================================================== */
         section[data-testid="stSidebar"] input,
-        section[data-testid="stSidebar"] textarea {
+        section[data-testid="stSidebar"] textarea,
+        section[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+        section[data-testid="stSidebar"] [data-testid="stTextInput"] input {
             background-color: #f8fafc !important;
             color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            caret-color: #0f172a !important;
             border: 2px solid #cbd5e1 !important;
             border-radius: 10px !important;
             font-size: 0.94rem !important;
-            font-weight: 600 !important;
+            font-weight: 700 !important;
+        }
+
+        section[data-testid="stSidebar"] input::placeholder,
+        section[data-testid="stSidebar"] textarea::placeholder {
+            color: #475569 !important;
+            -webkit-text-fill-color: #475569 !important;
+            opacity: 1 !important;
         }
 
         section[data-testid="stSidebar"] input:focus,
@@ -11782,40 +11763,10 @@ def aplicar_estilo_sidebar_controles():
             line-height: 1.38rem !important;
         }
 
-        /* Botões + e - do number_input */
-                /* Botões normais */
-        section[data-testid="stSidebar"] div[data-testid="stButton"] button {
-            color: #111827 !important;
-            background-color: #f8fafc !important;
-            border-radius: 10px !important;
-            font-weight: 800 !important;
-            border: 1px solid #cbd5e1 !important;
-        }
-
-        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-            background-color: #fef3c7 !important;
-            color: #111827 !important;
-            border-color: #facc15 !important;
-        }
-
-        /* Botões pequenos do number_input */
-        section[data-testid="stSidebar"] [data-testid="stNumberInput"] button {
-            color: #111827 !important;
-            background-color: #f8fafc !important;
-            border: 1px solid #cbd5e1 !important;
-        }
-
-        section[data-testid="stSidebar"] button:hover {
-            background-color: #fef3c7 !important;
-            color: #111827 !important;
-            border-color: #facc15 !important;
-        }
-
         /* =====================================================
-           SELECTBOX - FUNDO ESCURO + TEXTO BRANCO
+           SELECTBOX
+           Fundo escuro + texto branco.
         ===================================================== */
-        
-        /* Caixa principal do selectbox */
         section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
             background-color: #111827 !important;
             color: #ffffff !important;
@@ -11823,17 +11774,16 @@ def aplicar_estilo_sidebar_controles():
             border: 2px solid #cbd5e1 !important;
             font-weight: 700 !important;
         }
-        
-        /* Todas as camadas internas do selectbox */
+
         section[data-testid="stSidebar"] div[data-baseweb="select"] div,
         section[data-testid="stSidebar"] div[data-baseweb="select"] span,
         section[data-testid="stSidebar"] div[data-baseweb="select"] input {
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
             opacity: 1 !important;
+            font-weight: 700 !important;
         }
-        
-        /* Placeholder e valor selecionado */
+
         section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"],
         section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"],
         section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="valueContainer"] {
@@ -11841,21 +11791,18 @@ def aplicar_estilo_sidebar_controles():
             -webkit-text-fill-color: #ffffff !important;
             opacity: 1 !important;
         }
-        
-        /* Seta/ícone */
+
         section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
             color: #ffffff !important;
             fill: #ffffff !important;
         }
-        
-        /* Menu aberto do selectbox */
+
         div[data-baseweb="popover"] div[role="listbox"],
         div[data-baseweb="popover"] ul {
             background-color: #111827 !important;
             color: #ffffff !important;
         }
-        
-        /* Opções do menu aberto */
+
         div[data-baseweb="popover"] li,
         div[data-baseweb="popover"] div[role="option"] {
             background-color: #111827 !important;
@@ -11863,8 +11810,7 @@ def aplicar_estilo_sidebar_controles():
             -webkit-text-fill-color: #ffffff !important;
             font-weight: 700 !important;
         }
-        
-        /* Hover nas opções */
+
         div[data-baseweb="popover"] li:hover,
         div[data-baseweb="popover"] div[role="option"]:hover {
             background-color: #1d4ed8 !important;
@@ -11873,77 +11819,9 @@ def aplicar_estilo_sidebar_controles():
         }
 
         /* =====================================================
-           CHECKBOX
+           BOTÕES
+           Fundo claro + texto escuro.
         ===================================================== */
-        section[data-testid="stSidebar"] [data-testid="stCheckbox"] label,
-        section[data-testid="stSidebar"] [data-testid="stCheckbox"] span,
-        section[data-testid="stSidebar"] [data-testid="stCheckbox"] p {
-            color: #ffffff !important;
-            opacity: 1 !important;
-            font-weight: 700 !important;
-        }
-
-        /* =====================================================
-           DIVISORES
-        ===================================================== */
-        section[data-testid="stSidebar"] hr {
-            border-color: rgba(255, 255, 255, 0.25) !important;
-            margin-top: 1.2rem !important;
-            margin-bottom: 1.2rem !important;
-        }
-
-        /* =====================================================
-           INFO / ALERTAS
-        ===================================================== */
-        section[data-testid="stSidebar"] [data-testid="stAlert"] {
-            background: rgba(59, 130, 246, 0.18) !important;
-            border: 1px solid rgba(147, 197, 253, 0.55) !important;
-            border-radius: 12px !important;
-            color: #ffffff !important;
-        }
-
-        section[data-testid="stSidebar"] [data-testid="stAlert"] * {
-            color: #ffffff !important;
-        }
-
-        /* =====================================================
-           JSON / CODE
-        ===================================================== */
-        section[data-testid="stSidebar"] pre,
-        section[data-testid="stSidebar"] code {
-            background: #020617 !important;
-            color: #e0f2fe !important;
-            border-radius: 10px !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
-        }
-
-        /* =====================================================
-           CORREÇÃO FINAL - CONTRASTE EM CAIXAS CLARAS
-           Colar no final do CSS, antes de </style>
-        ===================================================== */
-        
-        /* Inputs comuns, textareas e number input: fundo claro + texto escuro */
-        section[data-testid="stSidebar"] input,
-        section[data-testid="stSidebar"] textarea,
-        section[data-testid="stSidebar"] [data-testid="stNumberInput"] input,
-        section[data-testid="stSidebar"] [data-testid="stTextInput"] input {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
-            caret-color: #0f172a !important;
-            border: 2px solid #cbd5e1 !important;
-            font-weight: 700 !important;
-        }
-        
-        /* Placeholders dos campos claros */
-        section[data-testid="stSidebar"] input::placeholder,
-        section[data-testid="stSidebar"] textarea::placeholder {
-            color: #475569 !important;
-            -webkit-text-fill-color: #475569 !important;
-            opacity: 1 !important;
-        }
-        
-        /* Botões normais: fundo claro + texto escuro */
         section[data-testid="stSidebar"] div[data-testid="stButton"] button {
             background-color: #f8fafc !important;
             color: #0f172a !important;
@@ -11953,8 +11831,7 @@ def aplicar_estilo_sidebar_controles():
             font-weight: 900 !important;
             opacity: 1 !important;
         }
-        
-        /* Texto interno dos botões normais */
+
         section[data-testid="stSidebar"] div[data-testid="stButton"] button *,
         section[data-testid="stSidebar"] div[data-testid="stButton"] button p,
         section[data-testid="stSidebar"] div[data-testid="stButton"] button span {
@@ -11963,8 +11840,14 @@ def aplicar_estilo_sidebar_controles():
             opacity: 1 !important;
             font-weight: 900 !important;
         }
-        
-        /* Botões desativados: não deixar texto sumir */
+
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+            background-color: #fef3c7 !important;
+            color: #111827 !important;
+            -webkit-text-fill-color: #111827 !important;
+            border-color: #facc15 !important;
+        }
+
         section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled,
         section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] {
             background-color: #e5e7eb !important;
@@ -11973,8 +11856,7 @@ def aplicar_estilo_sidebar_controles():
             border: 2px solid #94a3b8 !important;
             opacity: 1 !important;
         }
-        
-        /* Texto interno dos botões desativados */
+
         section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled *,
         section[data-testid="stSidebar"] div[data-testid="stButton"] button[disabled] *,
         section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled p,
@@ -11986,20 +11868,10 @@ def aplicar_estilo_sidebar_controles():
             opacity: 1 !important;
             font-weight: 900 !important;
         }
-        
-        /* Hover dos botões */
-        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
-            background-color: #fef3c7 !important;
-            color: #111827 !important;
-            -webkit-text-fill-color: #111827 !important;
-            border-color: #facc15 !important;
-        }
-        
-        /* Number input: caixa e controles + / - */
-        section[data-testid="stSidebar"] [data-testid="stNumberInput"] {
-            color: #0f172a !important;
-        }
-        
+
+        /* =====================================================
+           NUMBER INPUT
+        ===================================================== */
         section[data-testid="stSidebar"] [data-testid="stNumberInput"] button {
             background-color: #f8fafc !important;
             color: #0f172a !important;
@@ -12007,7 +11879,7 @@ def aplicar_estilo_sidebar_controles():
             border: 1px solid #cbd5e1 !important;
             opacity: 1 !important;
         }
-        
+
         section[data-testid="stSidebar"] [data-testid="stNumberInput"] button *,
         section[data-testid="stSidebar"] [data-testid="stNumberInput"] button svg {
             color: #0f172a !important;
@@ -12015,22 +11887,68 @@ def aplicar_estilo_sidebar_controles():
             -webkit-text-fill-color: #0f172a !important;
             opacity: 1 !important;
         }
-        
-        /* Campos lado a lado em columns */
-        section[data-testid="stSidebar"] [data-testid="column"] input {
-            background-color: #f8fafc !important;
-            color: #0f172a !important;
-            -webkit-text-fill-color: #0f172a !important;
+
+        /* =====================================================
+           CHECKBOX
+        ===================================================== */
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] label,
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] span,
+        section[data-testid="stSidebar"] [data-testid="stCheckbox"] p {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            opacity: 1 !important;
             font-weight: 700 !important;
         }
-        
-        /* Expander continua escuro com texto claro */
-        section[data-testid="stSidebar"] details,
+
+        /* =====================================================
+           EXPANDERS
+        ===================================================== */
+        section[data-testid="stSidebar"] details {
+            background: rgba(255, 255, 255, 0.07) !important;
+            border: 1px solid rgba(255, 255, 255, 0.18) !important;
+            border-radius: 12px !important;
+            margin-bottom: 10px !important;
+        }
+
         section[data-testid="stSidebar"] details summary,
         section[data-testid="stSidebar"] details summary * {
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
+            font-weight: 800 !important;
             opacity: 1 !important;
+        }
+
+        /* =====================================================
+           ALERTAS / INFO
+        ===================================================== */
+        section[data-testid="stSidebar"] [data-testid="stAlert"] {
+            background: rgba(59, 130, 246, 0.18) !important;
+            border: 1px solid rgba(147, 197, 253, 0.55) !important;
+            border-radius: 12px !important;
+            color: #ffffff !important;
+        }
+
+        section[data-testid="stSidebar"] [data-testid="stAlert"] * {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        /* =====================================================
+           CODE / JSON
+        ===================================================== */
+        section[data-testid="stSidebar"] pre,
+        section[data-testid="stSidebar"] code {
+            background: #020617 !important;
+            color: #e0f2fe !important;
+            -webkit-text-fill-color: #e0f2fe !important;
+            border-radius: 10px !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+        }
+
+        section[data-testid="stSidebar"] hr {
+            border-color: rgba(255, 255, 255, 0.25) !important;
+            margin-top: 1.2rem !important;
+            margin-bottom: 1.2rem !important;
         }
         </style>
         """,
