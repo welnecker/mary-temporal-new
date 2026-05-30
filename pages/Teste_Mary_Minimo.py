@@ -11648,6 +11648,31 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 def aplicar_estilo_sidebar_controles():
     st.markdown(
         """
+        /* =====================================================
+           SELECTBOX - APENAS TEXTO BRANCO NAS CAIXAS
+        ===================================================== */
+        
+        /* Texto do valor selecionado */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] span,
+        section[data-testid="stSidebar"] div[data-baseweb="select"] div,
+        section[data-testid="stSidebar"] div[data-baseweb="select"] input {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+        
+        /* Placeholder / valor selecionado */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="placeholder"],
+        section[data-testid="stSidebar"] div[data-baseweb="select"] [class*="singleValue"] {
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+            opacity: 1 !important;
+        }
+        
+        /* Ícone/seta do selectbox */
+        section[data-testid="stSidebar"] div[data-baseweb="select"] svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
         <style>
         /* =====================================================
            SIDEBAR - FUNDO GERAL
