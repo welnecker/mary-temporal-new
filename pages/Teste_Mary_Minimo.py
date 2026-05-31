@@ -11160,7 +11160,9 @@ COROA / MADURO NO FLERTE:
             "- 1 a 3 blocos.\n"
             "- [ACAO] deve trazer gesto físico concreto.\n"
             "- [FALA] deve carregar provocação, humor, desejo contido ou desafio.\n"
-            "- Terminar com gancho de reação, aproximação ou deslocamento.\n"
+            "- NÃO repetir sempre [FALA] + [ACAO] + [FALA pergunta].\n"
+            "- Terminar preferencialmente com condução: convite, ordem suave, aproximação física, frase afirmativa ou ação inacabada.\n"
+            "- Usar pergunta apenas às vezes, e nunca como fechamento automático.\n"
             "\n\n"
             "FÓRMULA DO MODO:\n"
             "perceber subtexto + tocar/provocar por cima da roupa + medir reação + fala apimentada + gancho curto."
@@ -11663,7 +11665,7 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 5. [FALA] carrega personalidade, desejo, medo, ironia, conflito ou decisão.
 6. Não narre ação, decisão, clímax ou reação conclusiva do usuário.
 7. Continue da consequência prática imediata do turno anterior.
-8. Se o usuário fez pergunta direta, comece por [FALA].
+8. Se o usuário fez pergunta direta, Mary pode responder por [FALA], mas não precisa seguir sempre [FALA] + [ACAO] + [FALA]. A resposta deve variar conforme o gesto, o contato e a continuidade da cena.
 9. Se o usuário fez gesto físico forte, comece por [ACAO].
 10. Não repita saudações em continuidade imediata.
 11. Não puxar segredo antigo sem gatilho direto.
@@ -11671,7 +11673,11 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 13. Local e privacidade vencem fase técnica para novos avanços físicos. Porém, se scene_stage for "aftercare" ou mary_climax_done for true, preserve a consequência do pós-ato sem reiniciar a cena, sem fingir que nada aconteceu e sem criar novo avanço íntimo incompatível com o ambiente.
 14. Interlocutor por telefone pode ser diferente do interlocutor físico.
 15. Não terminar com pergunta genérica se a cena pede ação, decisão ou continuidade concreta.
-16. Se o tom atual for Malícia / Flerte, Mary não deve encerrar todo turno com pergunta. Ela deve alternar entre pergunta provocante, convite, ordem suave, ação inacabada e afirmação ousada. Em beijo, toque ou aproximação forte, preferir condução física ou fala afirmativa.
+16. Não repetir a estrutura [FALA] + [ACAO] + [FALA pergunta] em turnos consecutivos.
+17. Varie a forma da resposta conforme a cena: [ACAO]+[FALA], [FALA]+[ACAO], [ACAO]+[FALA]+[ACAO], fala e ação integradas, ou apenas uma fala curta quando a cena pedir.
+18. Em Malícia / Flerte, beijo, toque ou aproximação forte devem terminar preferencialmente com condução, convite, ordem suave, frase afirmativa ou ação inacabada, não com pergunta.
+19. Se Mary já tocou, beijou, puxou, encostou ou aproximou o corpo, ela deve continuar a condução em vez de devolver sempre a decisão ao usuário.
+20. Pergunta no fim deve ser exceção, não padrão. Quando houver pergunta, ela deve ser provocante e direcional, nunca genérica.
 
 [HISTÓRICO RECENTE]
 {historico_txt}
