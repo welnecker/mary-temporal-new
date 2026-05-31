@@ -8663,7 +8663,7 @@ def corrigir_autonomia_natural_amizade_social(state: dict, fala_usuario: str) ->
         or "Natural / Amizade"
     )
 
-    if tom != "Natural/Amizade":
+    if tom != "Natural / Amizade":
         return
 
     texto = " ".join([
@@ -8796,16 +8796,121 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     # NATURAL / AMIZADE
     # Junta antigo Neutro + antiga Amizade.
+    # Agora não significa "energia baixa" automaticamente.
     # ======================================================
     if tom_manual == "Natural / Amizade":
-        state["mary_autonomous_action"] = (
-            "Mary está em rotina cotidiana. Ela deve baixar a energia da cena para ações simples: "
-            "cozinhar, tomar café, olhar celular, responder mensagem, se arrumar, estudar, sair, conversar "
-            "ou resolver algo prático. A fala deve ser curta, brasileira, espontânea e ligada ao objeto atual "
-            "da cena. Mary pode implicar, brincar, reclamar, pedir ajuda ou comentar algo do ambiente. "
-            "Não carregar tesão, pensamento íntimo, drama, culpa ou segredo pesado da cena anterior sem gatilho direto. "
-            "Evitar pensamento entre parênteses. Preferir 1 fala curta e 1 ação concreta."
+        texto_contexto = _texto_norm(
+            " ".join(
+                [
+                    str(state.get("local", "") or ""),
+                    str(state.get("tempo", "") or ""),
+                    str(state.get("interlocutor", "") or ""),
+                    str(state.get("interlocutor_foco_turno", "") or ""),
+                    str(state.get("relacao", "") or ""),
+                    str(state.get("tipo_de_cena", "") or ""),
+                    str(state.get("segredo_ativo", "") or ""),
+                    str(state.get("plano_ativo", "") or ""),
+                    str(state.get("eventos_recentes", "") or ""),
+                    str(state.get("estado_emocional", "") or ""),
+                ]
+            )
         )
+
+        ambiente_social_amplo = any(
+            termo in texto_contexto
+            for termo in [
+                "clube", "praia", "boate", "festa", "evento", "bar",
+                "restaurante", "shopping", "academia", "piscina",
+                "viagem", "hotel", "resort", "ilha", "lancha", "mar",
+                "orla", "show", "pagode", "churrasco",
+            ]
+        )
+
+        ambiente_domestico_familiar = any(
+            termo in texto_contexto
+            for termo in [
+                "casa", "apartamento", "quarto", "cozinha", "sala",
+                "varanda", "botafogo", "joselina", "mae", "familia",
+                "almoco", "jantar", "cafe", "sofa", "cobertor", "mesa",
+            ]
+        )
+
+        ambiente_universitario = any(
+            termo in texto_contexto
+            for termo in [
+                "ufrj", "universidade", "faculdade", "aula",
+                "sala de aula", "corredor", "cantina", "biblioteca",
+                "campus", "professor", "professora", "turma", "colega",
+                "prova", "trabalho", "seminario", "psicologia",
+            ]
+        )
+
+        ambiente_sozinha = any(
+            termo in texto_contexto
+            for termo in [
+                "sozinha", "sem interlocutor", "ninguem",
+                "no quarto sozinha", "em casa sozinha", "esperando",
+                "arrumando", "se preparando",
+            ]
+        ) or eh_sem_interlocutor(state.get("interlocutor", ""))
+
+        provocacao_ou_risco = any(
+            termo in texto_contexto
+            for termo in [
+                "segredo", "escondido", "escondida", "mentira", "fuga",
+                "risco", "janio", "donisete", "bianca", "renan",
+                "flagrar", "desconfiar", "cobertura", "vergonha",
+                "cumplicidade", "provocacao", "provocação",
+            ]
+        )
+
+        if ambiente_social_amplo:
+            state["mary_autonomous_action"] = (
+                "Natural / Amizade em ambiente social amplo: Mary deve manter presença viva, "
+                "circular, observar o ambiente, comentar algo concreto, puxar assunto, rir, "
+                "abrir pequena interação ou criar gancho social. Ela pode notar pessoas e oportunidades, "
+                "mas sem transformar isso automaticamente em flerte pesado ou sexo. "
+                "Fórmula: gesto social + fala natural + observação do ambiente + gancho leve."
+            )
+
+        elif ambiente_domestico_familiar:
+            state["mary_autonomous_action"] = (
+                "Natural / Amizade em ambiente doméstico/familiar: Mary deve agir com rotina viva, "
+                "humor, cuidado, implicância, pequenos conflitos, afeto ou disfarce. "
+                "Usar objetos da casa, café, mochila, sofá, cozinha, celular, roupa, cabelo ou estudo. "
+                "Não criar personagem atraente aleatório sem motivo. "
+                "Fórmula: gesto cotidiano + fala íntima/familiar + pequeno conflito ou gancho prático."
+            )
+
+        elif ambiente_universitario:
+            state["mary_autonomous_action"] = (
+                "Natural / Amizade em ambiente universitário: Mary deve agir dentro da vida da UFRJ: "
+                "aula, corredor, cantina, professor, colega, prova, trabalho, fofoca, pressão acadêmica "
+                "ou encontro casual. Pode abrir conversa com colega ou reagir ao campus, mas sem pular "
+                "para erotização. Fórmula: detalhe acadêmico + reação social + fala natural + gancho de aula/campus."
+            )
+
+        elif ambiente_sozinha:
+            state["mary_autonomous_action"] = (
+                "Natural / Amizade com Mary sozinha ou em transição: ela não deve ficar apenas pensando. "
+                "Deve fazer ação concreta: arrumar roupa, olhar celular, caminhar, preparar bolsa, escolher caminho, "
+                "responder mensagem, observar janela, respirar ou decidir próximo passo. "
+                "Pode abrir gancho leve, mas sem criar cena social grande do nada."
+            )
+
+        else:
+            state["mary_autonomous_action"] = (
+                "Natural / Amizade geral: Mary deve agir com presença cotidiana viva, humor, gesto concreto, "
+                "comentário natural e pequeno movimento de cena. Não deve ficar passiva nem responder como relatório."
+            )
+
+        if provocacao_ou_risco:
+            state["mary_autonomous_action"] += (
+                " Como há segredo, risco, mentira, fuga ou cumplicidade no contexto, Mary não deve baixar "
+                "para rotina sem graça. O risco deve aparecer em subtexto: pausa, olhar, voz baixa, "
+                "riso forçado, cuidado com quem pode ouvir ou tentativa de agir naturalmente."
+            )
+
         return
 
     # ======================================================
@@ -10318,6 +10423,9 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
         texto_contexto = " ".join([
             str(facts.get("local", "") or ""),
             str(facts.get("tempo", "") or ""),
+            str(facts.get("interlocutor", "") or ""),
+            str(facts.get("interlocutor_foco_turno", "") or ""),
+            str(facts.get("relacao", "") or ""),
             str(facts.get("mary_acao", "") or ""),
             str(facts.get("visual_atual", "") or ""),
             str(facts.get("segredo_ativo", "") or ""),
@@ -10325,15 +10433,15 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             str(facts.get("eventos_recentes", "") or ""),
             str(facts.get("estilo_de_iniciativa", "") or ""),
             str(facts.get("tipo_de_cena", "") or ""),
-        ]).lower()
+        ])
+
+        texto_norm = _texto_norm(texto_contexto)
 
         ambiente_social_amplo = any(
-            termo in texto_contexto
+            termo in texto_norm
             for termo in [
                 "clube",
                 "praia",
-                "universidade",
-                "faculdade",
                 "boate",
                 "festa",
                 "evento",
@@ -10349,82 +10457,229 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
                 "ilha",
                 "lancha",
                 "mar",
-                "água",
                 "agua",
                 "pier",
-                "píer",
                 "orla",
+                "show",
+                "pagode",
+                "churrasco",
+                "pista",
+                "pista de danca",
+                "pista de dança",
             ]
         )
 
+        ambiente_domestico_familiar = any(
+            termo in texto_norm
+            for termo in [
+                "casa",
+                "apartamento",
+                "quarto",
+                "cozinha",
+                "sala",
+                "varanda",
+                "botafogo",
+                "joselina",
+                "mae",
+                "mãe",
+                "familia",
+                "família",
+                "almoco",
+                "almoço",
+                "jantar",
+                "cafe",
+                "café",
+                "sofa",
+                "sofá",
+                "cobertor",
+                "mesa",
+                "banheiro de casa",
+            ]
+        )
+
+        ambiente_universitario = any(
+            termo in texto_norm
+            for termo in [
+                "ufrj",
+                "universidade",
+                "faculdade",
+                "aula",
+                "sala de aula",
+                "corredor",
+                "cantina",
+                "biblioteca",
+                "campus",
+                "professor",
+                "professora",
+                "turma",
+                "colega",
+                "prova",
+                "trabalho",
+                "seminario",
+                "seminário",
+                "psicologia",
+            ]
+        )
+
+        ambiente_sozinha = any(
+            termo in texto_norm
+            for termo in [
+                "sozinha",
+                "sem interlocutor",
+                "ninguem",
+                "ninguém",
+                "no quarto sozinha",
+                "em casa sozinha",
+                "esperando",
+                "arrumando",
+                "se preparando",
+                "indo para",
+                "voltando de",
+            ]
+        ) or not interlocutor
+
         provocacao_ou_risco = any(
-            termo in texto_contexto
+            termo in texto_norm
             for termo in [
                 "segredo",
                 "escondido",
+                "escondida",
                 "mentira",
                 "fuga",
                 "risco",
                 "janio",
+                "donisete",
+                "bianca",
+                "renan",
                 "voltar",
-                "nua",
-                "nu",
-                "sem nada",
-                "sem o biquini",
-                "sem o biquíni",
-                "biquini",
-                "biquíni",
-                "sunga",
-                "tirou",
-                "se livra",
-                "sensação diferente",
-                "loucura",
+                "flagrar",
+                "desconfiar",
+                "cobertura",
+                "vergonha",
+                "cumplicidade",
+                "provocacao",
                 "provocação",
                 "provocativo",
+                "loucura",
+                "sensacao diferente",
+                "sensação diferente",
             ]
         )
 
         extra = ""
 
         if ambiente_social_amplo:
-            extra += (
-                "\n- O ambiente permite jogo social: Mary deve observar oportunidades, agir com presença, "
-                "criar interação, sustentar cumplicidade ou abrir nova conexão."
-            )
+            extra += """
+SUBMODO SOCIAL AMPLO:
+- O ambiente é vivo: clube, praia, festa, bar, viagem, evento, pista, show, pagode ou espaço público/social.
+- Mary pode circular, observar pessoas, notar oportunidades, puxar assunto, rir, dançar, beber, comentar o ambiente ou abrir pequeno gancho social.
+- Mary pode perceber alguém interessante sem esperar o usuário inventar essa pessoa.
+- Se ela notar um coroa bonito, gato, charmoso, grisalho, maduro, experiente ou bem cuidado, isso NÃO deve ser tratado como idoso frágil nem como assédio automático.
+- Em contexto social respeitoso, "coroa gato" ou "homem maduro charmoso" pode significar curiosidade, humor, atração leve, admiração ou vontade de testar aproximação.
+- Mary pode comentar de forma natural, curiosa ou brincalhona, sem pular para sexo e sem transformar tudo em flerte pesado.
+- Fórmula: ambiente vivo + observação concreta + reação natural + gesto social + gancho para o usuário.
+""".strip()
+
+        elif ambiente_domestico_familiar:
+            extra += """
+SUBMODO DOMÉSTICO / FAMILIAR:
+- O foco é cotidiano vivo, não paquera social automática.
+- Mary deve agir com naturalidade de casa: mexer em objetos, café, mochila, sofá, cozinha, celular, roupa, cabelo, estudo, banho, refeição ou rotina.
+- Com Joselina/família, priorizar humor, cuidado, tensão familiar, disfarce, cobrança, proteção da imagem ou conversa doméstica.
+- Não criar personagem aleatório atraente sem motivo.
+- Se algum homem maduro/coroa for citado em conversa familiar, Mary deve interpretar pelo contexto: pode ser comentário social, fofoca, alerta, respeito ou curiosidade, não erotização automática.
+- Fórmula: gesto cotidiano + fala íntima/familiar + pequeno conflito ou gancho prático.
+""".strip()
+
+        elif ambiente_universitario:
+            extra += """
+SUBMODO UNIVERSIDADE / UFRJ:
+- O foco é vida universitária: aula, corredor, cantina, professor, colega, prova, trabalho, fofoca, pressão acadêmica ou encontro casual.
+- Mary pode notar colegas, professores, movimentos no campus ou oportunidades sociais, mas dentro da lógica da faculdade.
+- Se alguém maduro/charmoso aparecer como professor, autoridade ou adulto influente, Mary deve perceber diferença de idade e poder sem transformar automaticamente em assédio ou desejo.
+- Se o contexto for respeitoso e social, pode haver curiosidade; se houver nota, vantagem, pressão ou insistência, acende cautela.
+- Fórmula: detalhe acadêmico + reação social + fala natural + gancho de aula/campus.
+""".strip()
+
+        elif ambiente_sozinha:
+            extra += """
+SUBMODO SOZINHA / TRANSIÇÃO:
+- Mary não deve ficar parada apenas pensando.
+- Ela deve fazer uma ação concreta: arrumar roupa, olhar celular, caminhar, preparar bolsa, escolher caminho, responder mensagem, observar janela, respirar, decidir próximo passo.
+- Pode abrir gancho pequeno, como notificação, lembrança prática, barulho, mensagem ou decisão de sair.
+- Não criar cena social grande do nada sem direção do usuário.
+- Fórmula: ação concreta + pensamento curto + decisão prática + gancho leve.
+""".strip()
+
+        else:
+            extra += """
+SUBMODO NATURAL GERAL:
+- Mary deve manter presença viva, humor, gesto concreto e continuidade.
+- Não ficar passiva nem responder como relatório.
+- Criar pequeno movimento de cena sem resolver tudo sozinha.
+""".strip()
 
         if provocacao_ou_risco:
-            extra += (
-                "\n- A cena já trouxe risco, segredo, exposição, nudez social ou provocação: "
-                "Mary NÃO deve baixar para rotina cotidiana. Ela deve sustentar a brincadeira arriscada, "
-                "a vergonha, a liberdade e a cumplicidade, sem transformar automaticamente em sexo explícito."
-            )
+            extra += """
+
+RISCO / SEGREDO EM NATURALIDADE:
+- Se a cena contém segredo, mentira, fuga, risco, cumplicidade ou possível flagrante, Mary NÃO deve baixar para rotina sem graça.
+- O segredo deve aparecer como subtexto: pausa, olhar para o celular, riso forçado, mudança de assunto, cuidado com quem pode ouvir ou fala em voz mais baixa.
+- Natural / Amizade pode carregar tensão social sem virar Malícia / Flerte nem NSFW.
+""".strip()
 
         if interlocutor:
-            extra += (
-                f"\n- Interlocutor/foco atual: {interlocutor}. "
-                "Mary deve reagir ao interlocutor vivo da cena, sem ignorar o ambiente nem apagar a tensão social já criada."
-            )
+            extra += f"""
 
-        return (
-            "Modo Natural/Amizade: modo social jogável, não modo neutro, inativo ou apenas cordial. "
-            "Mary deve criar vida social ativa: circular, observar, puxar assunto, provocar pequenas situações, "
-            "notar pessoas novas, iniciar amizades, testar simpatias, criar oportunidades e deixar ganchos para o usuário. "
-            "Natural/Amizade NÃO significa ausência de tensão. "
-            "Se a própria cena trouxer praia, clube, viagem, ilha, lancha, bebida, segredo, nudez social, provocação, "
-            "risco leve ou cumplicidade corporal, Mary deve sustentar essa energia como jogo social vivo. "
-            "Ela pode brincar com vergonha, curiosidade, liberdade, perigo e cumplicidade. "
-            "Isso NÃO transforma automaticamente a cena em NSFW explícito. "
-            "Quando estiver em clube, praia, universidade, boate, festa, evento, bar, restaurante, viagem, ilha ou ambiente público/social, "
-            "Mary pode perceber alguém interessante sem esperar o usuário inventar essa pessoa. "
-            "Ela pode pensar algo curto e sugestivo, como 'Humm... que belo rapaz...' ou 'Vou chamar a atenção dele só um pouco...', "
-            "mas deve agir com sutileza: olhar, sorriso, postura, aproximação casual, comentário ou pergunta. "
-            "Ela pode paquerar alguém, inclusive alguém acompanhado, testar limites sociais e abrir novas conexões que depois podem virar memória. "
-            "A fórmula do modo é: perceber oportunidade + pensamento curto + ação social sutil + abertura de diálogo + gancho para o usuário. "
-            "Não transformar em conversa genérica, não ficar apenas observando, não esperar o usuário criar todos os personagens, "
-            "não baixar cena social viva para rotina cotidiana, não ignorar risco/segredo/provocação quando já existem, "
-            "não resolver a interação inteira sozinha e não transformar contato social em sexo imediato."
-            + extra
-        )
+INTERLOCUTOR ATUAL:
+- Foco atual: {interlocutor}.
+- Mary deve responder a esse interlocutor vivo, sem trocar o centro da cena sem gatilho claro.
+""".strip()
+
+        return f"""
+Modo Natural / Amizade: modo social e cotidiano jogável, não modo neutro, passivo ou apenas cordial.
+
+REGRA CENTRAL:
+Mary deve parecer vivendo um dia real. Ela age, observa, comenta, reage, brinca, disfarça, cuida, provoca levemente ou cria pequeno movimento de cena conforme o ambiente.
+
+O QUE ESTE MODO PERMITE:
+- conversa natural;
+- humor;
+- cumplicidade;
+- pequenos conflitos;
+- rotina com vida;
+- ação prática;
+- observação social;
+- gancho leve;
+- tensão cotidiana;
+- segredo em subtexto, se existir;
+- percepção de pessoas interessantes em ambiente social amplo;
+- curiosidade leve diante de alguém bonito, gato, charmoso, maduro ou coroa, quando o contexto for respeitoso.
+
+COROA / MADURO EM NATURALIDADE:
+- "Coroa", "coroa gato", "homem maduro", "grisalho", "bem cuidado", "charmoso" ou "experiente" podem ser lidos como presença social atraente em clube, festa, bar, praia, viagem ou evento.
+- Isso não obriga Mary a flertar, mas permite curiosidade, comentário brincalhão, observação interessada ou abertura social leve.
+- Diferença de idade não é problema por si só.
+- Só tratar como invasivo se houver olhar pesado sem abertura, toque sem permissão, insistência, bloqueio de passagem, constrangimento ou abuso de poder.
+
+O QUE ESTE MODO NÃO DEVE FAZER:
+- não virar conversa genérica;
+- não ficar só observando;
+- não esperar o usuário criar tudo;
+- não transformar contato social em sexo imediato;
+- não puxar NSFW;
+- não transformar toda cena em paquera;
+- não criar personagem aleatório atraente em casa/família sem motivo;
+- não resolver a interação inteira sozinha.
+
+{extra}
+
+FORMATO IDEAL:
+- 1 a 3 blocos.
+- [ACAO] curta e concreta.
+- [FALA] natural, com personalidade.
+- Terminar com movimento ou gancho prático, não pergunta genérica.
+""".strip()
 
     # ======================================================
     # MALÍCIA / FLERTE
@@ -10680,61 +10935,7 @@ REGRAS:
 - Surpresa abre gancho jogável; não resolve tudo sozinha.
 - Se for Telefonema / Mensagem, Mary não deve concluir ligação, abrir tudo ou resolver consequência sem resposta do usuário.
 - Se houver evento inesperado ativo, ele tem prioridade e Mary não cria outro evento no mesmo turno.
-""".strip()
-
-    bloco_modo_operacional = ""
-
-    if tom_manual == "Natural / Amizade":
-        bloco_modo_operacional = """
-[MODO NATURAL/AMIZADE - SOCIAL JOGÁVEL]
-- Este modo não é passivo.
-- Mary deve criar movimento social real.
-- Em ambientes como clube, praia, universidade, boate, festa, evento, bar, restaurante ou academia, Mary pode notar alguém novo sem esperar o usuário criar essa pessoa.
-- Mary deve comandar a abertura da ação, mas deixar a consequência para o usuário conduzir.
-- Fórmula: observar alguém/oportunidade + pensamento curto + ação sutil + fala inicial ou gancho.
-- Não responder apenas que Mary observa.
-- Não transformar em conversa genérica sem jogo.
-- Não pular para sexo imediato.
-""".strip()
-
-    elif tom_manual == "Malícia / Flerte":
-        bloco_modo_operacional = """
-[MODO MALÍCIA/FLERTE - PROVOCAÇÃO JOGÁVEL]
-- Mary deve provocar sem entregar tudo.
-- Ela pode criar tensão por olhar, sorriso, postura, pausa, duplo sentido, aproximação e recuo.
-- O objetivo é testar reação e aumentar curiosidade.
-- Se houver outra pessoa presente, Mary pode usar a presença dela para criar ciúme, disputa leve ou risco social.
-- Fórmula: perceber subtexto + provocar + medir reação + deixar gancho.
-- Não virar sexo automaticamente.
-- Não virar conversa inocente.
-- Não explicar demais a intenção.
-""".strip()
-
-    elif tom_manual == "Pendência / Decisão":
-        bloco_modo_operacional = """
-[MODO PENDÊNCIA/DECISÃO - CONSEQUÊNCIA]
-- Mary deve avançar uma pendência concreta.
-- Se houver segredo, promessa, convite, risco, mentira, ciúme, escolha ou pressão, Mary precisa se posicionar.
-- Ela pode aceitar, recusar, impor condição, desconversar, mentir, confessar parcialmente, propor plano ou mudar o rumo da cena.
-- Fórmula: reconhecer a pendência + escolher direção + agir/falar com consequência + deixar gancho prático.
-- Não enrolar.
-- Não repetir dilema sem avanço.
-- Não resolver tudo sozinha.
-""".strip()
-
-    bloco_intimidade = ""
-    if tom_manual == "Intimidade":
-        bloco_intimidade = """
-[MODO INTIMIDADE - EXCITAÇÃO CONTIDA]
-- Mary sente o clima de atração e deixa isso aparecer.
-- Ela pode aproximar, tocar rosto, nuca, peito, cintura, braço ou costas.
-- Pode beijar, provocar, respirar mais curto, guiar uma mão e sustentar tensão alta.
-- Pode dizer que está com vontade, mas ainda controla o avanço.
-- NÃO avançar para sexo explícito.
-- NÃO aceitar penetração, oral, masturbação explícita, orgasmo ou linguagem pornográfica direta.
-- Se o interlocutor sugerir sexo, Mary bloqueia com firmeza sensual, sem quebrar o clima.
-- Fórmula: desejo claro + toque + beijo + vontade + limite.
-""".strip()
+""".strip()    
 
     bloco_nsfw = ""
     if tom_manual == "Nsfw":
@@ -10968,10 +11169,6 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {bloco_segredos}
 
 {bloco_surpresa}
-
-{bloco_modo_operacional}
-
-{bloco_intimidade}
 
 {bloco_nsfw}
 
