@@ -10314,7 +10314,7 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     # ======================================================
     # NATURAL / AMIZADE
     # ======================================================
-    if tom_manual == "Natural/Amizade":
+    if tom_manual == "Natural / Amizade":
         texto_contexto = " ".join([
             str(facts.get("local", "") or ""),
             str(facts.get("tempo", "") or ""),
