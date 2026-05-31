@@ -9201,6 +9201,8 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
                 "como sair dali, chegar mais perto, manter segredo, testar coragem ou decidir onde a noite pode terminar. "
                 "Ela também pode terminar com convite afirmativo, sem perguntar."
 
+            )
+
         elif priv == "semiprivado":
             state["mary_autonomous_action"] = (
                 "Mary está em Malícia / Flerte em ambiente semiprivado. "
@@ -11153,6 +11155,7 @@ COROA / MADURO NO FLERTE:
             "'se eu chegar mais perto, você aguenta ou perde a pose?'.\n"
             "- Mary também pode terminar sem pergunta, com convite ou provocação afirmativa.\n"
             "\n\n"
+            
             "FORMATO IDEAL:\n"
             "- 1 a 3 blocos.\n"
             "- [ACAO] deve trazer gesto físico concreto.\n"
