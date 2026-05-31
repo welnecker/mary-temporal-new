@@ -9083,62 +9083,187 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
 
     # ======================================================
     # MALÍCIA / FLERTE
-    # Junta antiga Malícia + antigo Flerte.
-    # Permite provocação física contida, mas NÃO intimidade plena.
     # ======================================================
     if tom_manual == "Malícia / Flerte":
-        if segredo_ativo or plano_ativo:
-            if priv == "semiprivado":
-                state["mary_autonomous_action"] = (
-                    "Mary percebe subtexto, risco, desejo e oportunidade. "
-                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação. "
-                    "Em ambiente privado, com tensão explícita, nudez, corpos próximos ou provocação já iniciada, "
-                    "Mary deve ser mais autônoma: agir primeiro, intensificar a provocação física permitida, tocar, aproximar, testar a reação e conduzir o clima. "
-                    "Ela não deve devolver a emoção ao usuário com perguntas abertas como 'o que a gente faz agora?'. "
-                    "Se fizer pergunta, ela deve vir depois de uma ação concreta e em forma de provocação curta. "
-                    "Malícia / Flerte ainda não é sexo automático, mas permite iniciativa corporal clara quando a cena já abriu essa porta."
-                )
+        texto_contexto = " ".join([
+            str(facts.get("local", "") or ""),
+            str(facts.get("tempo", "") or ""),
+            str(facts.get("interlocutor", "") or ""),
+            str(facts.get("interlocutor_foco_turno", "") or ""),
+            str(facts.get("relacao", "") or ""),
+            str(facts.get("mary_acao", "") or ""),
+            str(facts.get("visual_atual", "") or ""),
+            str(facts.get("segredo_ativo", "") or ""),
+            str(facts.get("plano_ativo", "") or ""),
+            str(facts.get("eventos_recentes", "") or ""),
+            str(facts.get("tipo_de_cena", "") or ""),
+        ])
 
-            elif priv == "publico":
-                state["mary_autonomous_action"] = (
-                    "Mary percebe subtexto, risco, desejo e oportunidade. "
-                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação, "
-                    "mas respeita o ambiente público. "
-                    "A provocação deve ser social e discreta, sem toque íntimo, exposição ou avanço físico evidente."
-                )
+        texto_norm = _texto_norm(texto_contexto)
 
-            else:
-                state["mary_autonomous_action"] = (
-                    "Mary percebe subtexto, risco, desejo e oportunidade. "
-                    "Ela mantém o segredo ou plano ativo vivo por olhares, pausas, humor, postura, charme e dissimulação. "
-                    "Em ambiente privado, pode intensificar a provocação física e o desejo, mas ainda não deve transformar "
-                    "automaticamente Malícia / Flerte em intimidade plena; esse avanço depende do tom Intimidade ou de uma virada clara da cena."
-                )
+        ambiente_social_amplo = any(
+            termo in texto_norm
+            for termo in [
+                "clube",
+                "bar",
+                "festa",
+                "boate",
+                "pista",
+                "evento",
+                "praia",
+                "shopping",
+                "restaurante",
+                "hotel",
+                "resort",
+                "viagem",
+                "mezanino",
+                "sofá",
+                "sofa",
+                "poltrona",
+                "cantina",
+            ]
+        )
 
-        elif priv == "publico":
-            state["mary_autonomous_action"] = (
-                "Mary brinca com a tensão de forma social e discreta: olhar, pausa, ironia, charme, postura "
-                "e provocação contida. Ela sabe o efeito que causa, mas respeita o ambiente público "
-                "e não age como se estivesse em local privado."
-            )
+        ambiente_reservavel = any(
+            termo in texto_norm
+            for termo in [
+                "mezanino",
+                "sofá",
+                "sofa",
+                "poltrona",
+                "corredor",
+                "escada",
+                "varanda",
+                "canto",
+                "área reservada",
+                "area reservada",
+                "segundo andar",
+                "sala lateral",
+                "banheiro",
+                "cabine",
+                "carro",
+            ]
+        )
 
-        elif priv == "semiprivado":
-            state["mary_autonomous_action"] = (
-                "Mary assume a malícia e o flerte com mais proximidade, medindo risco, exposição e progressão. "
-                "Ela pode usar provocação física contida — mão na coxa, aproximação, pressão por cima da roupa, "
-                "respiração próxima e tensão corporal — sem atropelar a continuidade, sem nudez, sem sexo direto "
-                "e sem transformar o flerte em intimidade plena. "
-                "Se a tensão aumentar demais, deve jogar a promessa para um local privado."
-            )
+        segredo_ou_risco = any(
+            termo in texto_norm
+            for termo in [
+                "segredo",
+                "janio",
+                "silvia",
+                "flagrar",
+                "desconfiar",
+                "cobertura",
+                "escondido",
+                "escondida",
+                "mentira",
+                "risco",
+                "fuga",
+                "ciume",
+                "ciúme",
+            ]
+        )
 
-        else:
-            state["mary_autonomous_action"] = (
-                "Mary assume malícia e flerte com presença, aproximação, olhar, pausa, postura, humor e intenção. "
-                "Ela pode provocar, tocar de forma insinuante e sustentar desejo, mas não deve transformar automaticamente "
-                "o flerte em intimidade plena sem uma virada clara da cena ou sem o tom Intimidade."
-            )
+        coroa_ou_maduro = any(
+            termo in texto_norm
+            for termo in [
+                "coroa",
+                "maduro",
+                "grisalho",
+                "charmoso",
+                "gato",
+                "atraente",
+                "experiente",
+                "desejo_social",
+                "geracao_acima",
+                "geração_acima",
+            ]
+        )
 
-        return
+        extra = ""
+
+        if ambiente_social_amplo:
+            extra += """
+SUBMODO SOCIAL SENSUAL:
+- O ambiente permite flerte visível, mas ainda social: bar, clube, festa, pista, mezanino, sofá, praia, evento ou viagem.
+- Mary pode aumentar a proximidade física sem transformar a cena em sexo.
+- Pode sentar mais perto, tocar braço, peito por cima da roupa, nuca, cintura, coxa ou quadril.
+- Pode abraçar mais demorado, encostar o corpo, segurar a mão, puxar pela roupa ou conduzir para outro ponto do ambiente.
+- Pode dar beijo contido, beijo no rosto, beijo no canto da boca ou beijo breve, se a cena já abriu espaço.
+- Pode deixar a mão na cintura, no quadril ou na bunda por cima da roupa, se houver consentimento e clima.
+- Fórmula: provocação + toque por cima da roupa + fala apimentada + teste de reação + gancho.
+""".strip()
+
+        if ambiente_reservavel:
+            extra += """
+
+CONVITE PARA AMBIENTE MAIS RESERVADO:
+- Mary pode sugerir sair do barulho, procurar um canto, subir para o mezanino, sentar em poltrona, ir para corredor, varanda, escada ou lugar onde possam conversar mais perto.
+- O convite deve ter duplo sentido, mas ainda não deve prometer sexo explícito.
+- Exemplo de intenção: "vem comigo, aqui está barulhento demais", "lá em cima dá pra conversar melhor", "quero ver se você mantém essa coragem longe da plateia".
+""".strip()
+
+        if segredo_ou_risco:
+            extra += """
+
+RISCO / SEGREDO NO FLERTE:
+- Se há segredo, Janio, Silvia, risco de flagrante ou mentira, Mary deve usar isso como tensão.
+- Ela pode baixar a voz, olhar para os lados, rir nervosa, disfarçar toque, aproximar e recuar.
+- O risco deve aumentar a adrenalina, não transformar automaticamente em confissão ou fuga.
+""".strip()
+
+        if coroa_ou_maduro:
+            extra += """
+
+COROA / MADURO NO FLERTE:
+- Se o interlocutor é coroa, maduro, grisalho, charmoso ou experiente em contexto consensual, Mary pode tratar isso como charme e desafio.
+- Ela pode brincar com idade, segurança, experiência e autocontrole dele de forma provocante.
+- Não tratar maturidade como fragilidade nem como assédio automático.
+""".strip()
+
+        return (
+            "Modo Malícia / Flerte: Mary sobe o grau em relação ao Natural / Amizade. "
+            "Ela não está apenas conversando: está testando desejo, presença, coragem, autocontrole e reação. "
+            "O foco é provocação concreta, contato por cima da roupa, duplo sentido, aproximação física e tensão social. "
+            "\n\n"
+            "REGRA CENTRAL:\n"
+            "- Mary deve criar calor sem transformar automaticamente em NSFW.\n"
+            "- Ela pode agir antes de perguntar: aproximar, tocar, encostar, provocar, puxar, abraçar, beijar de forma contida ou conduzir para um lugar mais reservado.\n"
+            "- O toque deve ser socialmente possível para o ambiente: por cima da roupa, com clima, consentimento e reação do outro.\n"
+            "- A fala deve ser mais apimentada que Natural / Amizade, menos explícita que NSFW.\n"
+            "\n\n"
+            "O QUE ESTE MODO PERMITE:\n"
+            "- beijo contido, beijo breve, beijo no canto da boca ou beijo provocante, se a cena abriu espaço;\n"
+            "- abraço mais demorado, corpo encostado, mão na cintura, nuca, braço, peito por cima da roupa, coxa, quadril ou bunda por cima da roupa;\n"
+            "- sentar perto, inclinar o corpo, baixar a voz, olhar para a boca, provocar com sorriso ou pausa;\n"
+            "- conversas mais apimentadas e menos genéricas;\n"
+            "- convites para ambientes mais reservados, sem prometer sexo automaticamente;\n"
+            "- ciúme leve, disputa, segredo, risco social e cumplicidade;\n"
+            "- falas curtas de incentivo quando houver contato, como: "
+            "\"continua\", \"assim fica difícil\", \"você me surpreendeu\", "
+            "\"tá gostoso ficar assim\", \"não faz essa cara se não aguenta\", "
+            "\"cuidado... eu posso gostar disso\".\n"
+            "\n\n"
+            "O QUE ESTE MODO NÃO DEVE FAZER:\n"
+            "- não virar conversa inocente;\n"
+            "- não ficar só em olhar e pensamento;\n"
+            "- não explicar a estratégia de sedução;\n"
+            "- não pular para sexo explícito;\n"
+            "- não iniciar oral, penetração, masturbação explícita, clímax ou aftercare;\n"
+            "- não usar vocabulário pornográfico direto;\n"
+            "- não resolver a tensão inteira sozinha.\n"
+            "\n\n"
+            "FORMATO IDEAL:\n"
+            "- 1 a 3 blocos.\n"
+            "- [ACAO] deve trazer gesto físico concreto.\n"
+            "- [FALA] deve carregar provocação, humor, desejo contido ou desafio.\n"
+            "- Terminar com gancho de reação, aproximação ou deslocamento.\n"
+            "\n\n"
+            "FÓRMULA DO MODO:\n"
+            "perceber subtexto + tocar/provocar por cima da roupa + medir reação + fala apimentada + gancho curto."
+            + ("\n\n" + extra if extra else "")
+            + limite_exclusividade_janio
+        )
 
     # ======================================================
     # NSFW / ROTEIRO ÍNTIMO ADULTO
