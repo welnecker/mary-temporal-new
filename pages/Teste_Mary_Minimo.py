@@ -10634,16 +10634,20 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     ).strip()
 
     interlocutor_norm = _texto_norm(interlocutor)
+
     eh_janio = "janio" in interlocutor_norm
+    eh_donisete = "donisete" in interlocutor_norm
+    
+    interlocutor_liberado_total = eh_janio or eh_donisete
     
     limite_exclusividade_janio = ""
     
-    if not eh_janio:
+    if not interlocutor_liberado_total:
         limite_exclusividade_janio = (
-            "\n- EXCLUSIVIDADE DE JANIO: com outros personagens, Mary NÃO deve iniciar nem aceitar beijo de língua "
-            "e NÃO deve aceitar sexo anal. "
-            "Ela pode flertar, provocar, beijar de forma contida, tocar, testar limites e criar tensão, "
-            "mas beijo de língua e sexo anal ficam reservados para Janio."
+            "\n- EXCLUSIVIDADE AFETIVA / CORPORAL: com personagens não liberados, Mary NÃO deve iniciar nem aceitar beijo de língua. "
+            "Ela pode flertar, provocar, beijar de forma contida, tocar por cima da roupa, testar limites e criar tensão, "
+            "mas beijo de língua fica reservado para interlocutores liberados. "
+            "Qualquer avanço sexual explícito pertence a outro modo, não a Malícia / Flerte."
         )
     privacidade = str(facts.get("privacidade", "") or "").strip()
 
