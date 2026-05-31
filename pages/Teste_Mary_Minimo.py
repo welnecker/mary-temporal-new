@@ -6242,7 +6242,7 @@ def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
     ]
 
     if any(termo in mary_acao for termo in termos_intimos_incompativeis):
-       local_txt = str(
+        local_txt = str(
             state.get("local")
             or state.get("facts", {}).get("local", "")
             or "ambiente atual"
