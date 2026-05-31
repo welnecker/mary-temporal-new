@@ -3436,7 +3436,7 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                     "poltrona",
                     "superfície macia",
                     "superficie macia",
-                    "plof",
+                    "ploft",
                 ],
             )                              
 
@@ -6180,6 +6180,166 @@ def limpar_acao_incompativel_com_interlocutor_foco(state: dict) -> None:
             f"Mary está diante de {foco}, mantendo a conversa no ambiente atual"
             f"{f' em {local}' if local else ''}."
         )
+
+def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
+    """
+    Remove resíduos de cenas íntimas quando o modo atual é Natural / Amizade
+    e o ambiente atual é público/social.
+
+    Evita que mary_acao antiga contamine o prompt com postura física incompatível.
+    """
+    if not isinstance(state, dict):
+        return
+
+    tom = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena", "Natural / Amizade")
+    )
+
+    if tom != "Natural / Amizade":
+        return
+
+    privacidade = str(state.get("privacidade", "") or "").strip().lower()
+    local = _texto_norm(state.get("local", ""))
+    mary_acao = _texto_norm(state.get("mary_acao", ""))
+
+    ambiente_publico_social = (
+        privacidade == "publico"
+        or any(
+            termo in local
+            for termo in [
+                "bar",
+                "clube",
+                "festa",
+                "boate",
+                "cantina",
+                "shopping",
+                "universidade",
+                "faculdade",
+                "praia",
+                "restaurante",
+            ]
+        )
+    )
+
+    if not ambiente_publico_social:
+        return
+
+    termos_intimos_incompativeis = [
+        "de joelhos",
+        "entre as pernas",
+        "oral",
+        "boquete",
+        "puxando a calca",
+        "puxando a calça",
+        "cabeca encostada na coxa",
+        "cabeça encostada na coxa",
+        "penetração",
+        "penetracao",
+        "calcinha",
+        "goz",
+        "climax",
+        "clímax",
+    ]
+
+    if any(termo in mary_acao for termo in termos_intimos_incompativeis):
+        local_txt = str(state.get("local", "") or "ambiente atual").strip()
+
+        interlocutor_txt = str(
+            state.get("interlocutor_foco_turno")
+            or state.get("interlocutor")
+            or "o interlocutor"
+        ).strip()
+
+        texto_contexto_social = _texto_norm(
+            " ".join(
+                [
+                    local_txt,
+                    interlocutor_txt,
+                    str(state.get("plano_ativo", "") or ""),
+                    str(state.get("eventos_recentes", "") or ""),
+                    str(state.get("tipo_de_cena", "") or ""),
+                    str(state.get("relacao", "") or ""),
+                    str(state.get("perfil_temporal_interlocutor", "") or ""),
+                ]
+            )
+        )
+
+        ambiente_atracao_social = any(
+            termo in texto_contexto_social
+            for termo in [
+                "bar",
+                "clube",
+                "festa",
+                "boate",
+                "pista",
+                "evento",
+                "praia",
+                "shopping",
+                "restaurante",
+                "cantina",
+                "pagode",
+                "show",
+                "viagem",
+                "hotel",
+                "resort",
+            ]
+        )
+
+        contexto_coroa_ou_atracao = any(
+            termo in texto_contexto_social
+            for termo in [
+                "coroa",
+                "maduro",
+                "grisalho",
+                "charmoso",
+                "gato",
+                "atraente",
+                "desejo_social",
+                "flerte_maduro_consensual",
+            ]
+        )
+
+        if ambiente_atracao_social and contexto_coroa_ou_atracao:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt}, próxima de {interlocutor_txt}, "
+                "sustentando o clima social com humor, curiosidade e atração discreta."
+            )
+
+        elif ambiente_atracao_social:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt}, próxima de {interlocutor_txt}, "
+                "retomando a conversa com naturalidade, presença e atenção ao movimento ao redor."
+            )
+
+        else:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt}, próxima de {interlocutor_txt}, "
+                "recompondo a postura e retomando a conversa com naturalidade."
+            )
+
+    # Em Natural/Amizade público, conclusão física anterior não deve comandar o turno atual.
+    state["force_resolution_now"] = False
+    state["mary_pre_orgasm_signals"] = False
+    state["mary_stimulation_turns"] = 0
+    state["partner_climax_pending"] = False
+    state["mary_reacao_climax_parceiro"] = ""
+    state["mary_frustracao_climax"] = ""
+    state["destino_climax_parceiro"] = ""
+
+    # Se o modo voltou para social/cotidiano, não deixar aftercare/clímax comandar.
+    if normalizar_scene_stage(state.get("scene_stage", "")) in (
+        "pre_pico_mary",
+        "pico_mary",
+        "desaceleracao",
+        "aftercare",
+        "sexo_ou_estimulo",
+        "estimulo_corporal",
+        "alivio_rapido",
+        "pos_ato_arriscado",
+    ):
+        state["scene_stage"] = "cotidiano"
+        state["mary_intent"] = "conversar_com_cumplicidade"
+        state["physical_phase"] = 0
 
 # ==========================================================
 # VISUAL AUTOMÁTICO DE MARY
@@ -11719,6 +11879,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     corrigir_autonomia_natural_amizade_social(state, fala_usuario)
 
     definir_acao_autonoma(state, fala_usuario)
+
+    limpar_residuos_intimos_em_modo_natural(state)
 
     # ======================================================
     # 5) CLÍMAX DO PARCEIRO
