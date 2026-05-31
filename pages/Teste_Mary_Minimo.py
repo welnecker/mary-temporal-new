@@ -6242,7 +6242,11 @@ def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
     ]
 
     if any(termo in mary_acao for termo in termos_intimos_incompativeis):
-        local_txt = str(state.get("local", "") or "ambiente atual").strip()
+       local_txt = str(
+            state.get("local")
+            or state.get("facts", {}).get("local", "")
+            or "ambiente atual"
+        ).strip()
 
         interlocutor_txt = str(
             state.get("interlocutor_foco_turno")
@@ -6259,7 +6263,11 @@ def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
                     str(state.get("eventos_recentes", "") or ""),
                     str(state.get("tipo_de_cena", "") or ""),
                     str(state.get("relacao", "") or ""),
-                    str(state.get("perfil_temporal_interlocutor", "") or ""),
+                    json.dumps(
+                        state.get("perfil_temporal_interlocutor")
+                        or state.get("facts", {}).get("perfil_temporal_interlocutor", {}),
+                        ensure_ascii=False,
+                    )
                 ]
             )
         )
@@ -6302,7 +6310,7 @@ def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
         if ambiente_atracao_social and contexto_coroa_ou_atracao:
             state["mary_acao"] = (
                 f"Mary está em {local_txt}, próxima de {interlocutor_txt}, "
-                "sustentando o clima social com humor, curiosidade e atração discreta."
+                "sustentando a conversa com humor, curiosidade e atração social discreta."
             )
 
         elif ambiente_atracao_social:
@@ -6321,7 +6329,7 @@ def limpar_residuos_intimos_em_modo_natural(state: dict) -> None:
     state["force_resolution_now"] = False
     state["mary_pre_orgasm_signals"] = False
     state["mary_stimulation_turns"] = 0
-    state["partner_climax_pending"] = False
+    state["partner_climax_pending"] = False    
     state["mary_reacao_climax_parceiro"] = ""
     state["mary_frustracao_climax"] = ""
     state["destino_climax_parceiro"] = ""
