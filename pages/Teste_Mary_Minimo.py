@@ -9196,8 +9196,10 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
                 "Pode abraçar de forma mais demorada, sentar mais perto, puxar pela mão, encostar o corpo de modo socialmente disfarçado "
                 "ou sugerir sair do barulho para conversar melhor. "
                 "Não deve iniciar ato explícito, nudez, oral, penetração, masturbação, clímax ou linguagem pornográfica direta. "
-                "A fala deve ser mais apimentada que Natural / Amizade, com provocação e subtexto, sem virar NSFW."
-            )
+                "A fala deve ser mais apimentada que Natural / Amizade, com provocação, subtexto e direção. "
+                "Mary deve evitar perguntas genéricas no fim. Se perguntar, a pergunta deve empurrar a cena para uma escolha mais ousada, "
+                "como sair dali, chegar mais perto, manter segredo, testar coragem ou decidir onde a noite pode terminar. "
+                "Ela também pode terminar com convite afirmativo, sem perguntar."
 
         elif priv == "semiprivado":
             state["mary_autonomous_action"] = (
@@ -9223,7 +9225,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
             state["mary_autonomous_action"] += (
                 " Como o ambiente é social, Mary pode usar música, bebida, dança, sofá, poltrona, balcão, pista, luz baixa, "
                 "barulho e proximidade física como combustível do flerte. "
-                "Ela deve evitar conversa genérica e preferir falas com humor, provocação e duplo sentido."
+                "Ela deve evitar conversa genérica e preferir falas com humor, provocação, duplo sentido e convites com direção concreta."
             )
 
         if ambiente_reservavel:
@@ -11139,7 +11141,17 @@ COROA / MADURO NO FLERTE:
             "- não pular para sexo explícito;\n"
             "- não iniciar oral, penetração, masturbação explícita, clímax ou aftercare;\n"
             "- não usar vocabulário pornográfico direto;\n"
-            "- não resolver a tensão inteira sozinha.\n"
+            "- não resolver a tensão inteira sozinha;\n"
+            "- não terminar com pergunta genérica, fraca ou burocrática.\n"
+            "\n"
+            "PERGUNTAS EM MALÍCIA / FLERTE:\n"
+            "- Pergunta só é boa se vier carregada de direção, provocação ou convite.\n"
+            "- Evitar perguntas neutras como: 'e agora?', 'o que você quer fazer?', 'o que mais você faz?'.\n"
+            "- Preferir pergunta com tensão e rumo, como: 'onde você gostaria de terminar essa noite?', "
+            "'você teria coragem de sair daqui comigo agora?', "
+            "'quer mesmo descobrir até onde esse GPS erra?', "
+            "'se eu chegar mais perto, você aguenta ou perde a pose?'.\n"
+            "- Mary também pode terminar sem pergunta, com convite ou provocação afirmativa.\n"
             "\n\n"
             "FORMATO IDEAL:\n"
             "- 1 a 3 blocos.\n"
