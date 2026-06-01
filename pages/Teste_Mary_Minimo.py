@@ -5605,7 +5605,8 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
     interlocutor_campo = str(state.get("interlocutor", "") or "").strip()
 
     personagens = {
-        "Janio": ["janio", "jânio", "janio Doniseti", "jânio Doniseti"],
+        "Janio": ["janio", "jânio", "janio doniseti", "jânio doniseti"],
+        "Donisete": ["donisete", "doni"],
         "Joselina": ["joselina", "mãe", "mae"],
         "Silvia": ["silvia", "sílvia"],
         "Bianca": ["bianca"],
@@ -6130,6 +6131,7 @@ def limpar_mary_acao_incompativel_com_contexto(state: dict) -> None:
     personagens_conhecidos = [
         "janio",
         "donisete",
+        "doni",
         "silvia",
         "bianca",
         "renan",
@@ -6139,6 +6141,17 @@ def limpar_mary_acao_incompativel_com_contexto(state: dict) -> None:
         "joselina",
     ]
 
+    interlocutor_grupo_norm = _texto_norm(
+        " ".join(
+            [
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+                str(state.get("interlocutor_ativo_persistente", "") or ""),
+                str(state.get("ultimo_interlocutor_explicito", "") or ""),
+            ]
+        )
+    )
+
     menciona_personagem_na_acao = [
         p for p in personagens_conhecidos
         if p in acao_norm
@@ -6146,9 +6159,11 @@ def limpar_mary_acao_incompativel_com_contexto(state: dict) -> None:
 
     interlocutor_incompativel = False
 
-    if menciona_personagem_na_acao and interlocutor_norm:
+    if menciona_personagem_na_acao:
+        # Só é incompatível se a ação menciona alguém que NÃO está
+        # nem no foco nem no grupo de interlocutores da cena.
         interlocutor_incompativel = not any(
-            p in interlocutor_norm
+            p in interlocutor_grupo_norm
             for p in menciona_personagem_na_acao
         )
 
@@ -6190,6 +6205,46 @@ def limpar_mary_acao_incompativel_com_contexto(state: dict) -> None:
             or privacidade == "publico"
         )
     )
+
+    # ======================================================
+    # 3.5) Proteção de continuidade física válida
+    # Se a ação atual ainda combina com alguém do grupo,
+    # não apagar só porque o foco automático ficou em Silvia.
+    # ======================================================
+    acao_fisica_valida = any(
+        termo in acao_norm
+        for termo in [
+            "ombros",
+            "nuca",
+            "coxas",
+            "borda",
+            "piscina",
+            "água",
+            "agua",
+            "biquini",
+            "biquíni",
+            "mãos",
+            "maos",
+            "segurando",
+            "sentada",
+            "sentando",
+            "escorregando",
+            "descendo",
+            "quadril",
+            "cintura",
+            "abraço",
+            "abraco",
+        ]
+    )
+
+    tom_permite_continuidade_fisica = tom in (
+        "Malícia / Flerte",
+        "Intimidade",
+        "Nsfw",
+    )
+
+    if acao_fisica_valida and tom_permite_continuidade_fisica and not local_incompativel:
+        return
 
     # ======================================================
     # 4) Se nada está errado, preserva mary_acao
@@ -12395,6 +12450,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
+    
+    atualizar_interlocutor_ativo(state, fala_usuario)
 
     if "history" not in state or not isinstance(state.get("history"), list):
         state["history"] = []
