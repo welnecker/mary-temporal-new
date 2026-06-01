@@ -6049,6 +6049,195 @@ Mary deve continuar agindo dentro da cena.
 A consciência muda a precisão da ação, não o tamanho da resposta.
 """.strip()
 
+def limpar_mary_acao_incompativel_com_contexto(state: dict) -> None:
+    """
+    Limpa mary_acao quando ela carrega resíduo evidente de outro local,
+    outro interlocutor ou outra fase incompatível com a cena atual.
+
+    Não apaga memórias.
+    Não apaga fatos narrativos.
+    Só corrige a ação física atual que entra no prompt.
+    """
+    if not isinstance(state, dict):
+        return
+
+    acao_original = str(state.get("mary_acao", "") or "").strip()
+
+    if not acao_original:
+        return
+
+    acao_norm = _texto_norm(acao_original)
+
+    local_txt = str(state.get("local", "") or "").strip()
+    local_norm = _texto_norm(local_txt)
+
+    interlocutor_txt = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or "o interlocutor"
+    ).strip()
+
+    interlocutor_norm = _texto_norm(interlocutor_txt)
+
+    tom = normalizar_tom_manual_cena(
+        state.get("tom_manual_da_cena", "Natural / Amizade")
+    )
+
+    privacidade = _texto_norm(state.get("privacidade", ""))
+
+    # ======================================================
+    # 1) Detecta resíduos de locais antigos dentro da mary_acao
+    # ======================================================
+    locais_antigos_marcadores = [
+        "bar do clube",
+        "clube uliving",
+        "uliving",
+        "mezanino",
+        "banheiro do clube",
+        "sofa do mezanino",
+        "sofá do mezanino",
+        "balcao do bar",
+        "balcão do bar",
+        "praia de copacabana",
+        "sala de aula",
+        "ufrj",
+        "quarto",
+        "apartamento",
+        "cozinha",
+        "carro",
+        "uber",
+    ]
+
+    acao_menciona_local_antigo = any(
+        marcador in acao_norm
+        for marcador in locais_antigos_marcadores
+    )
+
+    # Se a ação cita um local específico que não combina com o local atual.
+    local_incompativel = False
+
+    if acao_menciona_local_antigo and local_norm:
+        local_incompativel = not any(
+            termo in acao_norm
+            for termo in local_norm.split()
+            if len(termo) >= 4
+        )
+
+    # ======================================================
+    # 2) Detecta resíduos de interlocutor antigo
+    # ======================================================
+    personagens_conhecidos = [
+        "janio",
+        "donisete",
+        "silvia",
+        "bianca",
+        "renan",
+        "rico",
+        "anthony",
+        "nando",
+        "joselina",
+    ]
+
+    menciona_personagem_na_acao = [
+        p for p in personagens_conhecidos
+        if p in acao_norm
+    ]
+
+    interlocutor_incompativel = False
+
+    if menciona_personagem_na_acao and interlocutor_norm:
+        interlocutor_incompativel = not any(
+            p in interlocutor_norm
+            for p in menciona_personagem_na_acao
+        )
+
+    # ======================================================
+    # 3) Detecta resíduos íntimos incompatíveis com modo/local
+    # ======================================================
+    termos_intimos_fortes = [
+        "de joelhos",
+        "entre as pernas",
+        "oral",
+        "boquete",
+        "penetração",
+        "penetracao",
+        "calcinha",
+        "goz",
+        "climax",
+        "clímax",
+        "de quatro",
+        "montada",
+        "nudez",
+        "nua",
+    ]
+
+    tem_residuo_intimo = any(
+        termo in acao_norm
+        for termo in termos_intimos_fortes
+    )
+
+    modo_nao_intimo = tom in (
+        "Natural / Amizade",
+        "Malícia / Flerte",
+        "Pendência / Decisão",
+    )
+
+    intimidade_incompativel = (
+        tem_residuo_intimo
+        and (
+            modo_nao_intimo
+            or privacidade == "publico"
+        )
+    )
+
+    # ======================================================
+    # 4) Se nada está errado, preserva mary_acao
+    # ======================================================
+    if not (local_incompativel or interlocutor_incompativel or intimidade_incompativel):
+        return
+
+    # ======================================================
+    # 5) Reconstrói ação atual neutra, mas contextual
+    # ======================================================
+    plano = str(state.get("plano_ativo", "") or "").strip()
+    eventos = str(state.get("eventos_recentes", "") or "").strip()
+
+    if tom == "Malícia / Flerte":
+        state["mary_acao"] = (
+            f"Mary está em {local_txt or 'seu ambiente atual'}, próxima de {interlocutor_txt}, "
+            "sustentando a tensão da conversa com presença, humor e provocação contida."
+        )
+
+    elif tom == "Natural / Amizade":
+        state["mary_acao"] = (
+            f"Mary está em {local_txt or 'seu ambiente atual'}, próxima de {interlocutor_txt}, "
+            "retomando a cena com naturalidade, atenção ao ambiente e presença viva."
+        )
+
+    elif tom == "Pendência / Decisão":
+        if plano:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt or 'seu ambiente atual'}, diante de {interlocutor_txt}, "
+                f"tentando manter o controle da situação enquanto o plano ativo pesa na cena: {plano}"
+            )
+        elif eventos:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt or 'seu ambiente atual'}, diante de {interlocutor_txt}, "
+                "reagindo ao peso dos eventos recentes sem deixar a cena escapar."
+            )
+        else:
+            state["mary_acao"] = (
+                f"Mary está em {local_txt or 'seu ambiente atual'}, diante de {interlocutor_txt}, "
+                "precisando tomar posição sobre a situação atual."
+            )
+
+    else:
+        state["mary_acao"] = (
+            f"Mary está em {local_txt or 'seu ambiente atual'}, próxima de {interlocutor_txt}, "
+            "ajustando a postura conforme o momento da cena."
+        )
+
 def limpar_acao_intima_incompativel_com_foco(state: dict) -> None:
     foco = str(state.get("interlocutor_foco_turno", "") or "").strip()
     tipo = remover_acentos(str(state.get("tipo_de_cena", "") or "").lower())
@@ -12030,17 +12219,44 @@ def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict)
 
 
 def aplicar_state_update(state: dict, update: dict) -> None:
+    """
+    Aplica o STATE_UPDATE retornado pelo modelo.
+
+    Aceita tanto a chave nova correta:
+    - mary_acao
+
+    quanto a chave antiga por compatibilidade:
+    - acao_mary
+    """
+    if not isinstance(state, dict):
+        return
+
     if not isinstance(update, dict):
         return
-    acao = str(update.get("acao_mary", "") or "").strip()
+
+    acao = str(
+        update.get("mary_acao")
+        or update.get("acao_mary")
+        or ""
+    ).strip()
+
     if acao:
         state["mary_acao"] = acao
+
     local = update.get("local")
     interlocutor = update.get("interlocutor")
-    if local:
-        state["local"] = str(local).strip()
-    if interlocutor:
-        state["interlocutor"] = str(interlocutor).strip()
+
+    # Segurança:
+    # O prompt manda local/interlocutor como null.
+    # Só aplica se vier texto real.
+    if isinstance(local, str) and local.strip():
+        state["local"] = local.strip()
+
+    if isinstance(interlocutor, str) and interlocutor.strip():
+        state["interlocutor"] = interlocutor.strip()
+        state["interlocutor_foco_turno"] = interlocutor.strip()
+        state["interlocutor_ativo_persistente"] = interlocutor.strip()
+        state["ultimo_interlocutor_explicito"] = interlocutor.strip()
 
 
 # ==========================================================
@@ -12199,6 +12415,15 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # que já chama normalizar_relacao_por_interlocutor()
     # no ponto correto.
     normalizar_estado(state)
+
+    normalizar_flags_booleanas_state(state)
+
+    # normalizar_estado chama derivar_controles_de_cena(),
+    # que já chama normalizar_relacao_por_interlocutor()
+    # no ponto correto.
+    normalizar_estado(state)
+    
+    limpar_mary_acao_incompativel_com_contexto(state)
 
     # ======================================================
     # 3) RESET / GATE / PICO DA MARY
@@ -13336,6 +13561,7 @@ with st.sidebar:
       
 
     normalizar_estado(state)
+    limpar_mary_acao_incompativel_com_contexto(state)
     reconciliar_pos_climax(state)
     sincronizar_facts_basicos(state, recalcular_estado=False)
 
