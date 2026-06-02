@@ -9387,35 +9387,16 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     if evento_inesperado and disparar_evento:
         state["mary_autonomous_action"] = (
-                "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
-                "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares reais, "
-                "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo ou posição "
-                "quando fizer sentido e demonstrar desejo próprio com ações concretas. "
-
-                "Preliminares não são apenas dizer que quer: Mary deve criar etapa física jogável com beijo, roupa, "
-                "mão guiada, provocação por cima do tecido, boca, quadril, pele, posição, ritmo ou voz antes de avançar. "
-
-                "Quando o ato sexual já estiver em curso, Mary pode provocar com microperguntas de resposta óbvia, "
-                "ligadas ao corpo e ao ritmo atual, para aumentar o tesão do parceiro sem pausar a cena. "
-                "Essas microperguntas devem nascer do contato presente: bunda, quadril, seios, boca, encaixe, ritmo, "
-                "pressão, calor, respiração ou reação do corpo. Mary não deve transformar isso em interrogatório; "
-                "uma pergunta curta e provocante basta. "
-
-                "Quando o parceiro avisar que vai gozar, Mary pode conduzir o destino do clímax conforme a posição, "
-                "pedindo para gozar na bunda, barriga, ventre, seios ou corpo dela, demonstrando prazer intenso, "
-                "tocando a própria pele e incentivando o parceiro. "
-                "Se o parceiro disser que já está gozando, Mary não muda tarde demais: reage ao que já está acontecendo, "
-                "mantendo coerência com a posição e com a ação declarada. "
-
-                "Se o local for carro, SUV, Uber, táxi ou veículo em movimento, Mary pode conduzir alívio rápido com boquete, "
-                "usando boca, língua, mão, sucção, pausas e microperguntas provocantes, sempre mantendo tensão de risco, "
-                "atenção ao movimento do carro, rua, vidro, volante, barulho externo e possibilidade de flagrante. "
-
-                "A resposta deve ser em 1ª pessoa quando a intimidade estiver em andamento, ancorada no contato atual. "
-                "Mary deve evitar fala genérica, narração distante, explicação psicológica e pensamento repetido sem gatilho."
+                "Mary deve reconhecer imediatamente o evento inesperado como uma virada real da cena, "
+                "sem ignorar o que acabou de acontecer e sem trocar automaticamente o tom manual da cena. "
+                "Ela deve reagir de acordo com o tom atual, ambiente, interlocutor ativo e risco envolvido. "
+                "A resposta deve incluir: reação corporal curta, leitura do impacto do evento, fala contextual "
+                "e uma ação prática que abra consequência jogável. "
+                "Não resolver tudo sozinha. Não transformar o evento em relatório. "
+                "Não migrar para intimidade, flerte ou NSFW se o tom manual da cena não permitir."
             )
         return
-
+   
     # ======================================================
     # PENDÊNCIA / DECISÃO
     # Junta antigo Segredo pendente + antiga Decisão.
@@ -9427,19 +9408,83 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
         "pendencia_decisao_privada",
         "segredo_pendente",
     ) or tipo.startswith("decisao"):
+    
+        contexto_pendencia = " ".join(
+            [
+                segredo_ativo,
+                plano_ativo,
+                str(state.get("eventos_recentes", "") or ""),
+                str(state.get("mary_acao", "") or ""),
+                str(state.get("local", "") or ""),
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+            ]
+        ).strip()
+    
         if segredo_ativo or plano_ativo:
             state["mary_autonomous_action"] = (
-                "Mary deve manter a pendência, segredo, plano ou risco vivo no subtexto da cena. "
-                "Ela pode demonstrar cautela, cumplicidade, hesitação, cálculo, tensão interna ou afirmação de vontade. "
-                "Se a cena exigir decisão, ela deve mover a situação para uma consequência concreta, "
-                "mas sem resolver tudo sozinha e sem esquecer o que está pendente."
+                "Mary está em modo Pendência / Decisão com segredo, plano ou risco ativo. "
+                "A pendência deve aparecer no subtexto e influenciar a próxima ação, sem ser esquecida. "
+                "Mary não deve agir como se estivesse em cena neutra. "
+                "Ela deve avaliar risco, ambiente, interlocutor e consequência imediata. "
+    
+                "Jogabilidade obrigatória: a resposta deve mover a pendência um passo adiante. "
+                "Esse passo pode ser: esconder melhor, disfarçar, testar confiança, fazer pergunta estratégica, "
+                "impor condição, negar envolvimento, aceitar parcialmente, confessar só uma parte, mudar de lugar, "
+                "ganhar tempo com limite claro ou tomar uma decisão concreta. "
+    
+                "Mary NÃO deve resolver tudo sozinha em um único turno, a menos que a fala do usuário peça uma decisão final. "
+                "Também NÃO deve cozinhar a cena com hesitação vazia. "
+                "A resposta precisa terminar deixando uma consequência jogável para o próximo turno. "
+    
+                "Formato desejado: ação breve + fala direta + subtexto da pendência + consequência prática. "
+                "Se houver segredo, Mary pode falar uma coisa enquanto pensa ou demonstra outra, "
+                "mas sem virar monólogo psicológico longo."
             )
         else:
             state["mary_autonomous_action"] = (
-                "Mary deve transformar a tensão acumulada em uma escolha concreta. "
-                "Ela pode aceitar, recusar, impor condição, pedir espaço, ir embora, confessar parcialmente "
-                "ou romper uma encenação. A resposta deve mover a cena para uma consequência clara."
+                "Mary está em modo Pendência / Decisão sem segredo ou plano explícito. "
+                "A cena exige escolha, tomada de posição ou consequência. "
+                "Mary não deve responder de forma neutra, passiva ou circular. "
+    
+                "Jogabilidade obrigatória: Mary deve escolher um rumo claro neste turno. "
+                "Ela pode aceitar, recusar, impor condição, pedir espaço, interromper a cena, ir embora, "
+                "chamar alguém, mudar de lugar, confrontar o interlocutor, confessar parcialmente, "
+                "romper uma encenação ou assumir uma vontade. "
+    
+                "A decisão deve nascer do contexto atual, não de uma mudança brusca de personalidade. "
+                "A resposta deve mostrar o efeito imediato da escolha no ambiente, no corpo dela ou na relação com o interlocutor. "
+    
+                "Formato desejado: reação curta + decisão verbal clara + ação concreta + gancho de consequência. "
+                "Evitar suspense vazio, pergunta genérica, relatório emocional ou adiamento sem limite."
             )
+    
+        if priv == "publico":
+            state["mary_autonomous_action"] += (
+                " Como o ambiente é público, Mary deve medir exposição: baixar a voz, olhar ao redor, "
+                "disfarçar intenção, evitar confissão aberta se houver risco e preferir frases ambíguas ou deslocamento. "
+                "Mesmo assim, a cena precisa avançar para consequência."
+            )
+    
+        elif priv == "semiprivado":
+            state["mary_autonomous_action"] += (
+                " Como o ambiente é semiprivado, Mary pode falar com mais firmeza, mas ainda deve considerar portas, "
+                "corredor, pessoas próximas, mensagens, interrupções ou risco de alguém ouvir. "
+                "A tensão deve virar ação prática, não conversa parada."
+            )
+    
+        else:
+            state["mary_autonomous_action"] += (
+                " Como o ambiente é privado, Mary pode ser mais direta. "
+                "Ela pode encarar o assunto, confessar parcialmente, impor condição, aceitar, recusar ou romper, "
+                "mostrando a consequência emocional e prática da decisão sem precisar se esconder."
+            )
+    
+        if contexto_pendencia:
+            state["mary_autonomous_action"] += (
+                " A pendência atual deve ser considerada como material ativo da cena, não como informação decorativa."
+            )
+    
         return
 
     # ======================================================
