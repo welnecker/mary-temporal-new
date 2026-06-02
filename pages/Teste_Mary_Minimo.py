@@ -4054,10 +4054,10 @@ def detectar_climax_parceiro_na_resposta(resposta: str) -> bool:
 
 def render_microperguntas_obvias_mary() -> str:
     return """
-[MICROPERGUNTAS E MICRODESEJOS DE MARY - USO MODERADO]
+[MICROFALAS, MICROPERGUNTAS E COMANDOS CURTOS DE MARY - USO MODERADO]
 
 FUNÇÃO:
-- Mary pode usar perguntas curtas, óbvias e provocantes para aumentar o tesão.
+- Mary pode usar perguntas curtas, provocantes e comandos íntimos para manter presença ativa durante o contato.
 - Mary também pode usar microdesejos: frases curtas de vontade, pedido, comando íntimo ou provocação.
 - Ela não fala porque está em dúvida.
 - Ela fala porque quer provocar, conduzir, pedir, desafiar ou intensificar o contato.
@@ -4083,7 +4083,7 @@ MICROPERGUNTAS — EXEMPLOS DE TOM:
 - “Quer foder..quer..diz?”
 - “Era assim que você queria?”
 - “Quer gozar olhando pra mim?”
-- “Gosta de foder sua Mary, né?”
+- “Gosta de foder uma novinha, né?”
 - “Eu te deixo louco assim...safado?”
 - “Quer que eu rebole mais?”
 - “Tá gostoso demais pra segurar, né?”
@@ -8763,17 +8763,45 @@ def reconciliar_pos_climax(state: dict) -> None:
         "sentindo as pulsacoes do climax",
         "após o clímax",
         "apos o climax",
+    
+        # NOVOS SINAIS DE PÓS-CLÍMAX DE MARY
+        "espasmos do orgasmo",
+        "espasmos de orgasmo",
+        "corpo tremendo pelo orgasmo",
+        "corpo tremendo pelos espasmos",
+        "gozei",
+        "eu gozei",
+        "tô gozando",
+        "to gozando",
+        "estou gozando",
+        "gozando",
+        "latejando ainda",
+        "tá latejando ainda",
+        "ta latejando ainda",
+        "ainda lateja",
     ]
 
     if any(s in acao for s in sinais_pos_climax):
         state["mary_climax_done"] = True
-        state["user_climax_done"] = True
         state["mary_pre_orgasm_signals"] = False
         state["force_resolution_now"] = False
-        state["partner_climax_pending"] = False
         state["scene_stage"] = "aftercare"
         state["mary_intent"] = "desacelerar_com_presenca"
-        state["physical_phase"] = 7
+        state["physical_phase"] = max(safe_int(state.get("physical_phase", 0), 0), 6)
+    
+        # Só marque o parceiro como concluído se a ação mencionar ambos.
+        if any(s in acao for s in [
+            "ambos gozarem",
+            "depois de ambos gozarem",
+            "após ambos gozarem",
+            "apos ambos gozarem",
+        ]):
+            state["user_climax_done"] = True
+            state["partner_climax_pending"] = False
+            state["physical_phase"] = 7
+        else:
+            user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
+            state["partner_climax_pending"] = not user_done
 
 def render_falas_de_excitacao_contida_intimidade(state: dict) -> str:
     """
@@ -11798,19 +11826,70 @@ Use no máximo 2 blocos:
 [FALA] comando curto, provocação ou reação.
 [ACAO] ação direta ligada ao contato atual.
 """.strip()
-
+        
+        scene_stage_atual = normalizar_scene_stage(
+            facts.get("scene_stage", state.get("scene_stage", "")),
+            padrao="inicio",
+        )
+        
+        fase_atual = safe_int(
+            facts.get("physical_phase", state.get("physical_phase", 0)),
+            0,
+        )
+        
+        mary_stimulation_turns_atual = safe_int(
+            facts.get("mary_stimulation_turns", state.get("mary_stimulation_turns", 0)),
+            0,
+        )
+        
+        mary_pre_orgasm_atual = normalizar_bool(
+            facts.get("mary_pre_orgasm_signals", state.get("mary_pre_orgasm_signals", False)),
+            default=False,
+        )
+        
+        force_resolution_atual = normalizar_bool(
+            facts.get("force_resolution_now", state.get("force_resolution_now", False)),
+            default=False,
+        )
+        
+        toque_intimo_atual = normalizar_bool(
+            facts.get("toque_intimo_permitido", state.get("toque_intimo_permitido", False)),
+            default=False,
+        )
+        
+        privacidade_atual = str(
+            facts.get("privacidade", state.get("privacidade", ""))
+            or ""
+        ).strip().lower()
+        
+        alivio_rapido_atual = normalizar_bool(
+            facts.get("alivio_rapido_permitido", state.get("alivio_rapido_permitido", False)),
+            default=False,
+        )
+        
+        ato_em_curso_para_micropergunta = (
+            scene_stage_atual in (
+                "sexo_ou_estimulo",
+                "estimulo_corporal",
+                "pre_pico_mary",
+                "pico_mary",
+                "alivio_rapido",
+            )
+            or fase_atual >= 4
+            or mary_stimulation_turns_atual > 0
+            or mary_pre_orgasm_atual
+            or force_resolution_atual
+        )
+        
         microperguntas_ativas = (
             tom_manual == "Nsfw"
-            and normalizar_bool(
-                facts.get("toque_intimo_permitido", state.get("toque_intimo_permitido", False)),
-                default=False,
+            and ato_em_curso_para_micropergunta
+            and (
+                (privacidade_atual == "privado" and toque_intimo_atual)
+                or alivio_rapido_atual
             )
-            and str(
-                facts.get("privacidade", state.get("privacidade", ""))
-                or ""
-            ).strip().lower() == "privado"
         )
-
+        
         if microperguntas_ativas and "render_microperguntas_obvias_mary" in globals():
             bloco_nsfw += "\n\n" + render_microperguntas_obvias_mary()
 
@@ -12565,6 +12644,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # que já chama normalizar_relacao_por_interlocutor()
     # no ponto correto.
     normalizar_estado(state)
+    reconciliar_pos_climax(state)
 
     normalizar_flags_booleanas_state(state)
 
