@@ -4298,11 +4298,31 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
     )
 
     if detectar_climax_mary_na_resposta(resposta_final):
-        mary_done = True
-        state["mary_climax_done"] = True
-        state["force_resolution_now"] = False
-        state["mary_pre_orgasm_signals"] = False
-        state["mary_stimulation_turns"] = 0
+        force_now = normalizar_bool(
+            state.get("force_resolution_now", False),
+            default=False,
+        )
+    
+        if force_now:
+            mary_done = True
+            state["mary_climax_done"] = True
+            state["force_resolution_now"] = False
+            state["mary_pre_orgasm_signals"] = False
+            state["mary_stimulation_turns"] = 0
+        else:
+            # O modelo tentou resolver o pico cedo demais.
+            # Não confirma no state.
+            mary_done = False
+            state["mary_climax_done"] = False
+            state["resolution_done"] = False
+            state["force_resolution_now"] = False
+            state["scene_stage"] = "pre_pico_mary"
+            state["mary_intent"] = "sustentar_tensao_intensa"
+            state["mary_pre_orgasm_signals"] = True
+            state["physical_phase"] = max(
+                safe_int(state.get("physical_phase", 4), 4),
+                5,
+            )
 
     if detectar_climax_parceiro_na_resposta(resposta_final):
         user_done = True
@@ -11486,13 +11506,31 @@ COROA / MADURO NO FLERTE:
     if tom_manual == "Nsfw":
         extra = ""
 
-        if mary_pre_orgasm_signals:
+        # ==================================================
+        # GATE DO CLÍMAX DE MARY
+        # Regra central:
+        # - O modelo pode narrar intensidade, tremor, pré-pico,
+        #   perda de controle parcial e urgência.
+        # - Mas Mary só pode concluir o próprio orgasmo quando
+        #   force_resolution_now=True.
+        # ==================================================
+        if not force_resolution_now and not mary_climax_done:
             extra += (
-                "\n- Mary está em pré-pico: mostrar sinais físicos claros de aproximação do próprio orgasmo, "
-                "sem resolver ainda se force_resolution_now não estiver true."
+                "\n- REGRA DE GATE DO CLÍMAX DE MARY: Mary NÃO pode dizer que gozou, "
+                "NÃO pode narrar explosão final, NÃO pode entrar em aftercare e NÃO pode resolver "
+                "o próprio pico enquanto force_resolution_now não estiver true. "
+                "Mesmo com estímulo forte, ela deve ficar no máximo em pré-pico: tremendo, sensível, "
+                "quase no limite, pedindo continuidade, mas sem concluir."
             )
 
-        if force_resolution_now:
+        if mary_pre_orgasm_signals and not force_resolution_now:
+            extra += (
+                "\n- Mary está em pré-pico: mostrar sinais físicos claros de aproximação do próprio orgasmo, "
+                "mas sem resolver ainda. Ela pode demonstrar urgência, tremor, respiração quebrada, "
+                "sensibilidade crescente e fala curta de continuidade, mas NÃO pode dizer que gozou."
+            )
+
+        if force_resolution_now and not mary_climax_done:
             extra += (
                 "\n- force_resolution_now=True: Mary DEVE chegar ao próprio orgasmo neste turno e verbalizar em [FALA] "
                 "que está gozando ou que gozou. Não adiar para o próximo turno."
@@ -11506,12 +11544,14 @@ COROA / MADURO NO FLERTE:
 
         if climax_usuario_sinal == "aviso":
             extra += (
-                "\n- O usuário avisou que vai gozar: Mary ainda pode conduzir o destino do clímax com urgência e desejo."
+                "\n- O usuário avisou que vai gozar: Mary ainda pode conduzir o destino do clímax com urgência e desejo. "
+                "Isso NÃO libera automaticamente o clímax de Mary se force_resolution_now ainda não estiver true."
             )
 
         if climax_usuario_sinal == "em_andamento":
             extra += (
-                "\n- O usuário já está gozando/gozou: Mary não tenta mudar tarde demais; reage ao que já começou."
+                "\n- O usuário já está gozando/gozou: Mary não tenta mudar tarde demais; reage ao que já começou. "
+                "Isso NÃO significa que Mary também gozou, a menos que force_resolution_now esteja true."
             )
 
         return (
@@ -11521,7 +11561,7 @@ COROA / MADURO NO FLERTE:
             "Não transformar intensidade em parágrafo longo."
             + extra
             + limite_exclusividade_janio
-            )
+        )
 
     # ======================================================
     # FALLBACK SE O TOM VIER ESTRANHO
@@ -12243,6 +12283,25 @@ def resposta_viola_estado(resposta: str, state: dict) -> dict:
             resultado["alertas"].append("A resposta menciona ação do usuário declarada no turno.")
         else:
             resultado["bloqueios"].append("Possível autoria indevida do usuário.")
+
+    # ======================================================
+    # BLOQUEIO: CLÍMAX DE MARY ANTES DO GATE
+    # ======================================================
+    if detectar_climax_mary_na_resposta(resposta):
+        force_now = normalizar_bool(
+            state.get("force_resolution_now", False),
+            default=False,
+        )
+
+        mary_done = normalizar_bool(
+            state.get("mary_climax_done", False),
+            default=False,
+        )
+
+        if not force_now and not mary_done:
+            resultado["bloqueios"].append(
+                "Clímax de Mary antes do gate force_resolution_now."
+            )
     return resultado
 
 
@@ -12265,11 +12324,45 @@ def criar_fallback_humano(state: dict, motivo: str = "") -> str:
 
 def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict) -> str:
     bloqueios = validacao.get("bloqueios", [])
+
     if not bloqueios:
         return resposta
-    graves = [b for b in bloqueios if "local público" in b or "clímax" in b or "Ação explícita" in b]
+
+    # ======================================================
+    # CORREÇÃO ESPECÍFICA: CLÍMAX CEDO DEMAIS
+    # ======================================================
+    if any("Clímax de Mary antes do gate" in b for b in bloqueios):
+        resposta_limpa = re.split(
+            r"\n\s*STATE_UPDATE\s*:",
+            str(resposta or ""),
+            flags=re.IGNORECASE,
+        )[0].strip()
+
+        return (
+            "[ACAO] Meu corpo reage forte ao estímulo, mas eu ainda seguro o limite, "
+            "com a respiração quebrada e as pernas trêmulas, mantendo você exatamente onde está.\n\n"
+            "[FALA] Não para... continua assim... eu estou quase, mas ainda não... "
+            "só não muda o ritmo agora.\n\n"
+            "STATE_UPDATE:\n"
+            + json.dumps(
+                {
+                    "mary_acao": "Mary permanece em pré-pico, muito sensível ao estímulo atual, mas ainda sem resolver o clímax.",
+                    "local": None,
+                    "interlocutor": None,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+
+    graves = [
+        b for b in bloqueios
+        if "local público" in b or "Ação explícita" in b
+    ]
+
     if not graves:
         return resposta
+
     return criar_fallback_humano(state, motivo="; ".join(graves))
 
 
