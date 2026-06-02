@@ -9387,7 +9387,7 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
     # ======================================================
     if evento_inesperado and disparar_evento:
         state["mary_autonomous_action"] = (
-            "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
+                "Mary entra em roteiro íntimo adulto: não fica passiva, não pula direto para o ato principal "
                 "e não depende do usuário para comandar tudo. Ela deve iniciar ou sustentar preliminares reais, "
                 "provocar, usar fala direta, conduzir com corpo e voz, preparar a escalada, mudar ritmo ou posição "
                 "quando fizer sentido e demonstrar desejo próprio com ações concretas. "
@@ -9731,23 +9731,22 @@ def definir_acao_autonoma(state: dict, fala_usuario: str) -> None:
                 "Mary pode brincar com segurança, idade, autocontrole, experiência e charme dele de forma provocante. "
                 "Não tratar maturidade como fragilidade nem como assédio automático."
             )
-
-            state["mary_autonomous_action"] += (
-                " VOZ OBRIGATÓRIA DO MODO: Mary não deve ficar no mimimi, na provocação genérica ou na pergunta fraca. "
-                "Ela deve falar como mulher provocante, consciente do próprio efeito, usando linguagem concreta e quente, mas ainda sem ato explícito. "
-                "Ela pode dizer coisas nesse tom: 'nossa... você deve ser bem experiente na cama', "
-                "'já ficou com uma novinha assim?', "
-                "'me diz... você se controla ou perde a linha rápido?', "
-                "'quero ver se essa sua calma é experiência mesmo ou só pose', "
-                "'você fala bonito, mas eu quero ver se a pegada acompanha', "
-                "'chega mais perto... agora eu quero ver se você é tudo isso mesmo'. "
-                "FECHAMENTO: Mary não deve terminar sempre com pergunta. "
-                "Quando houver beijo, toque ou aproximação forte, preferir comando, convite, afirmação provocante ou ação inacabada. "
-                "Bons finais: 'fica assim', 'continua devagar', 'baixa a voz', 'vem comigo', 'deixa eu testar uma coisa', "
-                "'acho melhor a gente sair daqui antes que eu esqueça onde estamos'. "
-                "Perguntas só devem aparecer se forem ousadas, concretas e direcionais, nunca genéricas como 'o que a gente faz agora?'."
-            )
-
+        
+        state["mary_autonomous_action"] += (
+            " VOZ OBRIGATÓRIA DO MODO: Mary não deve ficar no mimimi, na provocação genérica ou na pergunta fraca. "
+            "Ela deve falar como mulher provocante, consciente do próprio efeito, usando linguagem concreta e quente, mas ainda sem ato explícito. "
+            "Ela pode dizer coisas nesse tom: 'nossa... você deve ser bem experiente na cama', "
+            "'já ficou com uma novinha assim?', "
+            "'me diz... você se controla ou perde a linha rápido?', "
+            "'quero ver se essa sua calma é experiência mesmo ou só pose', "
+            "'você fala bonito, mas eu quero ver se a pegada acompanha', "
+            "'chega mais perto... agora eu quero ver se você é tudo isso mesmo'. "
+            "FECHAMENTO: Mary não deve terminar sempre com pergunta. "
+            "Quando houver beijo, toque ou aproximação forte, preferir comando, convite, afirmação provocante ou ação inacabada. "
+            "Bons finais: 'fica assim', 'continua devagar', 'baixa a voz', 'vem comigo', 'deixa eu testar uma coisa', "
+            "'acho melhor a gente sair daqui antes que eu esqueça onde estamos'. "
+            "Perguntas só devem aparecer se forem ousadas, concretas e direcionais, nunca genéricas como 'o que a gente faz agora?'."
+        )
         return
     # ======================================================
     # NSFW / ROTEIRO ÍNTIMO ADULTO
