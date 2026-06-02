@@ -13114,6 +13114,12 @@ def readequar_indices_cena(state: dict, nivel: str = "brincadeira_fisica") -> di
     - Quando o usuário apagou interações e quer retestar a cena.
     - Quando o state ficou quente demais para o ponto narrativo atual.
     - Não bloqueia subida futura de tensão/desejo/fase.
+
+    Níveis:
+    - "brincadeira_fisica": recua para jogo físico leve.
+    - "intimidade_leve": recua para intimidade autoral sem NSFW.
+    - "sexo_em_andamento": recua o pico, mas preserva ato/estímulo em andamento.
+    - qualquer outro valor: recuo neutro.
     """
 
     if not isinstance(state, dict):
@@ -13122,28 +13128,97 @@ def readequar_indices_cena(state: dict, nivel: str = "brincadeira_fisica") -> di
     nivel = str(nivel or "").strip().lower()
 
     # ======================================================
+    # DETECÇÃO DE CONTEXTO ATUAL
+    # Importante para não destruir uma cena que já está em NSFW.
+    # ======================================================
+    fala_atual = str(state.get("_fala_usuario_atual", "") or "").lower()
+    scene_stage_atual = str(state.get("scene_stage", "") or "").lower()
+    tipo_atual = str(state.get("tipo_de_cena", "") or "").lower()
+    tom_manual = str(state.get("tom_manual_da_cena", "") or "").lower()
+
+    em_nsfw = (
+        "nsfw" in tom_manual
+        or "nsfw" in tipo_atual
+        or "sexo" in scene_stage_atual
+        or "pico" in scene_stage_atual
+    )
+
+    sinais_ato_em_andamento = any(t in fala_atual for t in (
+        "flop",
+        "chup",
+        "slup",
+        "pop",
+        "oral",
+        "lambo",
+        "chupo",
+        "chupar",
+        "lamber",
+        "mete",
+        "metendo",
+        "entrou",
+        "penetrou",
+        "goza",
+        "vou gozar",
+        "gozei",
+    ))
+
+    # Se o usuário pediu brincadeira/intimidade, respeita.
+    # Mas se pediu sexo_em_andamento, preserva a lógica do ato.
+    preservar_ato = nivel == "sexo_em_andamento" or (
+        em_nsfw and sinais_ato_em_andamento and nivel not in ("brincadeira_fisica", "intimidade_leve")
+    )
+
+    # ======================================================
     # RESET DE FLAGS DE CLÍMAX / RESOLUÇÃO
     # ======================================================
+    # Estas flags sempre podem ser desligadas para evitar resolução automática imediata.
     state["force_resolution_now"] = False
-    state["mary_pre_orgasm_signals"] = False
     state["partner_climax_pending"] = False
     state["resolution_done"] = False
-
-    state["mary_climax_done"] = False
-    state["user_climax_done"] = False
-
-    state["mary_stimulation_turns"] = 0
-    state["climax_usuario_sinal"] = False
-    state["climax_usuario_tipo"] = "nenhum"
 
     state["mary_reacao_climax_parceiro"] = ""
     state["mary_frustracao_climax"] = ""
     state["destino_climax_parceiro"] = ""
 
+    # Só apaga clímax/estímulo se o recuo for realmente para antes do ato.
+    if not preservar_ato:
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_climax_done"] = False
+        state["user_climax_done"] = False
+        state["mary_stimulation_turns"] = 0
+        state["climax_usuario_sinal"] = False
+        state["climax_usuario_tipo"] = "nenhum"
+
+    # ======================================================
+    # RECUO ESPECIAL: SEXO / ESTÍMULO EM ANDAMENTO
+    # ======================================================
+    if nivel == "sexo_em_andamento" or preservar_ato:
+        state["physical_phase"] = max(5, int(state.get("physical_phase", 5) or 5))
+        state["scene_stage"] = "sexo_ou_estimulo"
+        state["mary_intent"] = "sustentar_tensao_intensa"
+        state["mary_physical_intent"] = "sexo_ou_estimulo"
+
+        atual = int(state.get("mary_stimulation_turns", 0) or 0)
+        state["mary_stimulation_turns"] = max(3, atual)
+
+        state["mary_pre_orgasm_signals"] = True
+        state["force_resolution_now"] = False
+
+        state["desire_level"] = max(0.70, min(float(state.get("desire_level", 0.75) or 0.75), 0.90))
+        state["tension_level"] = max(0.70, min(float(state.get("tension_level", 0.80) or 0.80), 0.90))
+        state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.75)
+
+        state["mary_autonomous_action"] = (
+            "Mary permanece em sexo/estímulo intenso, com o corpo muito sensível e próximo do limite, "
+            "mas sem resolver o próprio clímax neste turno. "
+            "Ela deve sustentar a continuidade corporal da cena, reagir ao ritmo atual e manter tensão alta, "
+            "sem voltar para brincadeira, preliminares leves ou aftercare."
+        )
+
     # ======================================================
     # RECUO NARRATIVO POR NÍVEL
     # ======================================================
-    if nivel == "brincadeira_fisica":
+    elif nivel == "brincadeira_fisica":
         state["physical_phase"] = 2
         state["scene_stage"] = "brincadeira_fisica"
         state["mary_intent"] = "brincar_com_proximidade"
@@ -14463,12 +14538,64 @@ with st.sidebar:
     # Útil quando você apaga interações e quer retestar
     # sem carregar intensidade antiga do state.
     # ======================================================
-    if st.button("🌊 Readequar como brincadeira física", use_container_width=True):
-        readequar_indices_cena(state, nivel="brincadeira_fisica")
+    st.subheader("🔧 Readequar cena")
+    
+    nivel_readequacao = st.selectbox(
+        "Tipo de readequação",
+        options=[
+            "Automático",
+            "Brincadeira física",
+            "Intimidade leve",
+            "Sexo/estímulo em andamento",
+        ],
+        index=0,
+        help=(
+            "Use quando apagar interações e quiser ajustar os índices da cena. "
+            "Automático escolhe o recuo mais seguro conforme o tom atual."
+        ),
+    )
+    
+    if st.button("🌊 Readequar cena", use_container_width=True):
+        normalizar_estado(state)
+    
+        tom_atual = str(state.get("tom_manual_da_cena", "") or "").strip().lower()
+        tipo_atual = str(state.get("tipo_de_cena", "") or "").strip().lower()
+        scene_stage_atual = str(state.get("scene_stage", "") or "").strip().lower()
+    
+        if nivel_readequacao == "Automático":
+            if (
+                tom_atual == "nsfw"
+                or tipo_atual == "nsfw"
+                or "sexo" in scene_stage_atual
+                or "pico" in scene_stage_atual
+            ):
+                nivel = "sexo_em_andamento"
+            else:
+                nivel = "brincadeira_fisica"
+    
+        elif nivel_readequacao == "Brincadeira física":
+            nivel = "brincadeira_fisica"
+    
+        elif nivel_readequacao == "Intimidade leve":
+            nivel = "intimidade_leve"
+    
+        else:
+            nivel = "sexo_em_andamento"
+    
+        state = readequar_indices_cena(state, nivel=nivel)
+    
         sincronizar_facts_basicos(state, recalcular_estado=False)
         st.session_state.mary_state_minimo = state
-        st.success("Cena readequada para brincadeira física.")
+    
+        nomes_nivel = {
+            "brincadeira_fisica": "brincadeira física",
+            "intimidade_leve": "intimidade leve",
+            "sexo_em_andamento": "sexo/estímulo em andamento",
+        }
+    
+        st.success(f"Cena readequada para: {nomes_nivel.get(nivel, nivel)}.")
         st.rerun()
+    
     st.divider()
     st.subheader("🧠 Memórias shared")
     nova_memoria = st.text_area("Nova memória", value="", height=90)
