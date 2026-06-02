@@ -13199,6 +13199,43 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
         "state": state,
     }
 
+def resetar_estado_para_reteste(state: dict) -> None:
+    """
+    Reseta estados voláteis depois de apagar turnos.
+    Não apaga local, tempo, interlocutor, visual, segredo, plano ou eventos.
+    Serve para impedir que facts futuros contaminem um ponto anterior da cena.
+    """
+    if not isinstance(state, dict):
+        return
+
+    # Progressão física / clímax / resolução
+    state["physical_phase"] = 0
+    state["scene_stage"] = "inicio"
+    state["mary_intent"] = "responder_com_naturalidade"
+
+    state["force_resolution_now"] = False
+    state["resolution_done"] = False
+    state["mary_pre_orgasm_signals"] = False
+    state["mary_stimulation_turns"] = 0
+    state["partner_climax_pending"] = False
+    state["mary_reacao_climax_parceiro"] = ""
+    state["mary_frustracao_climax"] = ""
+    state["destino_climax_parceiro"] = ""
+
+    # Clímax narrativo anterior não deve contaminar reteste
+    state["mary_climax_done"] = False
+    state["user_climax_done"] = False
+
+    # Surpresa momentânea
+    state["modo_surpresa"] = "Desligado"
+    state["direcao_surpresa"] = ""
+    state["evento_inesperado"] = ""
+    state["disparar_evento_inesperado"] = False
+
+    # Travas momentâneas
+    state["trava_hesitacao_convite"] = {}
+    state["_local_isolado_trancado"] = False
+
 def aplicar_estilo_sidebar_controles():
     st.markdown(
         """
@@ -14316,6 +14353,12 @@ with st.sidebar:
     
             state["history"] = historico_recarregado
             state["turno"] = max(0, len(historico_recarregado) // 2)
+
+            # Reancora a cena para reteste.
+            resetar_estado_para_reteste(state)
+        
+            normalizar_estado(state)
+            sincronizar_facts_basicos(state, recalcular_estado=False)
     
             # Atualiza facts sem recalcular a cena.
             sincronizar_facts_basicos(state, recalcular_estado=False)
