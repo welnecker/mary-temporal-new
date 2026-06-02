@@ -13106,6 +13106,99 @@ def renderizar_resposta_mary(texto: str) -> None:
         else:
             bloco_html("mary-plain", item)
 
+def readequar_indices_cena(state: dict, nivel: str = "brincadeira_fisica") -> dict:
+    """
+    Rebaixa manualmente os índices da cena sem travar a progressão futura.
+
+    Uso:
+    - Quando o usuário apagou interações e quer retestar a cena.
+    - Quando o state ficou quente demais para o ponto narrativo atual.
+    - Não bloqueia subida futura de tensão/desejo/fase.
+    """
+
+    if not isinstance(state, dict):
+        state = {}
+
+    nivel = str(nivel or "").strip().lower()
+
+    # ======================================================
+    # RESET DE FLAGS DE CLÍMAX / RESOLUÇÃO
+    # ======================================================
+    state["force_resolution_now"] = False
+    state["mary_pre_orgasm_signals"] = False
+    state["partner_climax_pending"] = False
+    state["resolution_done"] = False
+
+    state["mary_climax_done"] = False
+    state["user_climax_done"] = False
+
+    state["mary_stimulation_turns"] = 0
+    state["climax_usuario_sinal"] = False
+    state["climax_usuario_tipo"] = "nenhum"
+
+    state["mary_reacao_climax_parceiro"] = ""
+    state["mary_frustracao_climax"] = ""
+    state["destino_climax_parceiro"] = ""
+
+    # ======================================================
+    # RECUO NARRATIVO POR NÍVEL
+    # ======================================================
+    if nivel == "brincadeira_fisica":
+        state["physical_phase"] = 2
+        state["scene_stage"] = "brincadeira_fisica"
+        state["mary_intent"] = "brincar_com_proximidade"
+        state["mary_physical_intent"] = "brincadeira_corporal"
+
+        state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.50)
+        state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.60)
+        state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.65)
+
+        state["mary_autonomous_action"] = (
+            "Mary deve tratar o momento como brincadeira física íntima, leve e corporal, "
+            "com proximidade, riso, provocação e tensão controlada. "
+            "Ela não deve agir como se a cena já estivesse em sexo, pré-clímax, clímax ou aftercare. "
+            "O foco é presença, jogo, equilíbrio, toque de brincadeira, água, corpo próximo e subtexto."
+        )
+
+    elif nivel == "intimidade_leve":
+        state["physical_phase"] = 3
+        state["scene_stage"] = "intimidade"
+        state["mary_intent"] = "aproximar_com_intimidade"
+        state["mary_physical_intent"] = "presenca_viva"
+
+        state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.60)
+        state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.70)
+        state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.70)
+
+        state["mary_autonomous_action"] = (
+            "Mary deve manter intimidade sensorial e autoral, com conversa picante, "
+            "proximidade e provocação emocional, mas sem transformar a cena em Nsfw. "
+            "Ela pode sustentar tensão, tocar, provocar e criar ganchos, mas sem ato explícito, "
+            "sem pré-clímax, sem clímax e sem aftercare."
+        )
+
+    else:
+        state["physical_phase"] = 2
+        state["scene_stage"] = "presenca_viva"
+        state["mary_intent"] = "presenca_viva"
+        state["mary_physical_intent"] = "presenca_viva"
+
+        state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.45)
+        state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.55)
+        state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.60)
+
+    # ======================================================
+    # SURPRESA
+    # Evita que detalhe espontâneo antigo continue interferindo.
+    # ======================================================
+    state["modo_surpresa"] = "Desligado"
+    state["direcao_surpresa"] = ""
+    state["evento_inesperado"] = ""
+    state["disparar_evento_inesperado"] = False
+
+    return state
+
+
 # ==========================================================
 # PROCESSAMENTO DO TURNO
 # ==========================================================
@@ -14363,6 +14456,18 @@ with st.sidebar:
         limpar_cache_planilhas()
         st.session_state.mary_state_minimo = state
         st.success("Cena salva.")
+        st.rerun()
+
+    # ======================================================
+    # READEQUAR CENA / RECUAR ÍNDICES
+    # Útil quando você apaga interações e quer retestar
+    # sem carregar intensidade antiga do state.
+    # ======================================================
+    if st.button("🌊 Readequar como brincadeira física", use_container_width=True):
+        readequar_indices_cena(state, nivel="brincadeira_fisica")
+        sincronizar_facts_basicos(state, recalcular_estado=False)
+        st.session_state.mary_state_minimo = state
+        st.success("Cena readequada para brincadeira física.")
         st.rerun()
     st.divider()
     st.subheader("🧠 Memórias shared")
