@@ -4789,8 +4789,15 @@ def derivar_controles_de_cena(state: dict) -> None:
             "connection_level": 0.95,
             "mary_intent": "aproximar_com_intimidade",
             "limite_ambiente": (
-                "Tom Intimidade: Mary assume proximidade, desejo e condução íntima com progressão. "
-                "Ela mantém autoria própria, presença corporal e continuidade da cena, respeitando o ambiente."
+                "Tom Intimidade: Mary entra em conversa íntima, picante, sensorial e autoral. "
+                "A identidade do modo não é sexo explícito, e sim tensão privada, curiosidade adulta, provocação emocional, "
+                "confissões parciais, teste de autocontrole, beijo, toque, respiração próxima e condução corporal sem concluir o ato. "
+                "Mary pode falar de experiência, casamento, cama, desejo, nervosismo, fantasia, passado íntimo, vontade de aprender "
+                "e do efeito que o interlocutor causa nela. "
+                "Ela deve abrir ganchos concretos, mas não terminar sempre com pergunta: pode terminar com afirmação provocante, "
+                "promessa, convite, desafio, frase inacabada ou ação física suspensa. "
+                "Mary freia antes de virar Nsfw, mas sem matar o clima. "
+                "Não permitir ato explícito, oral, penetração, masturbação, clímax, aftercare ou linguagem de resolução sexual."            
             ),
         },
 
@@ -4963,7 +4970,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
             cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.85 if not segredo_ativo else 0.65
+            cfg["tension_level"] = 0.85 if segredo_ativo else 0.75
             cfg["limite_ambiente"] = (
                 "Pendência / Decisão em público: Mary deve manter vivo o segredo, plano, risco, suspeita, promessa "
                 "ou conflito pendente, mas também pode transformar a tensão acumulada em escolha concreta. "
@@ -5014,8 +5021,11 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = "intensidade_contida"
             cfg["mary_intent"] = "aprofundar_com_cuidado"
             cfg["limite_ambiente"] = (
-                "Intimidade em local semiprivado: Mary pode aumentar a tensão e o contato, "
-                "mas com cuidado, discrição e atenção ao risco de exposição."
+                "Intimidade em local semiprivado: Mary pode aumentar a tensão com fala baixa, olhar sustentado, "
+                "aproximação corporal, toque controlado, beijo contido, confissão parcial e provocação íntima. "
+                "Ela deve usar o risco do ambiente como parte da tensão, sem agir como se estivesse em quarto ou motel. "
+                "O gancho deve conduzir a cena com afirmação, convite, desafio ou ação suspensa, não apenas perguntas. "
+                "Não liberar nudez, ato explícito, oral, penetração, masturbação, clímax ou aftercare."
             )
 
         elif tom_manual == "Nsfw":
@@ -5126,7 +5136,7 @@ def derivar_controles_de_cena(state: dict) -> None:
             cfg["scene_stage"] = "decisao"
             cfg["mary_intent"] = "assumir_vontade_e_definir_rumo"
             cfg["desire_level"] = 0.10
-            cfg["tension_level"] = 0.85 if not segredo_ativo else 0.65
+            cfg["tension_level"] = 0.85 if segredo_ativo else 0.75
             cfg["limite_ambiente"] = (
                 "Pendência / Decisão em local semiprivado: Mary pode falar com mais firmeza e menos encenação, "
                 "mas ainda deve medir o risco do ambiente. Ela deve manter pendências relevantes vivas e, se a cena exigir, "
@@ -5188,6 +5198,24 @@ def derivar_controles_de_cena(state: dict) -> None:
     if tom_manual == "Pendência / Decisão":
         state["force_resolution_now"] = False
         state["resolution_done"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        state["partner_climax_pending"] = False
+
+    # ======================================================
+    # 5.1) LIMPEZA DE RESÍDUOS DE CLÍMAX FORA DO NSFW
+    # Importante:
+    # - Intimidade NÃO é Nsfw.
+    # - Malícia / Flerte NÃO é Nsfw.
+    # - Natural / Amizade NÃO é Nsfw.
+    # - Pendência / Decisão NÃO é Nsfw.
+    #
+    # Esses modos podem carregar tensão, desejo e consequência narrativa,
+    # mas não devem herdar pré-pico, turnos de estímulo ou resolução física
+    # de uma cena anterior.
+    # ======================================================
+    if tom_manual != "Nsfw":
+        state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
         state["partner_climax_pending"] = False
@@ -5349,10 +5377,14 @@ def derivar_controles_de_cena(state: dict) -> None:
 
             elif tom_manual == "Intimidade":
                 nova_fase = max(fase_atual, fase_base)
-
+            
                 if privacidade == "publico":
                     nova_fase = min(nova_fase, 2)
                 elif privacidade == "semiprivado":
+                    nova_fase = min(nova_fase, 4)
+                else:
+                    # Intimidade privada pode ser intensa, corporal e provocante,
+                    # mas não deve herdar fase de clímax/NSFW.
                     nova_fase = min(nova_fase, 4)
 
             elif tom_manual == "Nsfw":
