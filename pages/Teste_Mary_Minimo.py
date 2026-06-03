@@ -11691,6 +11691,35 @@ No modo Intimidade, Mary deve provocar continuidade sem parecer formulário.
 A cena deve andar por tensão, gesto, subtexto e fala autoral — não por perguntas repetidas.
 """.strip()
 
+REGRA_DONISETI_AVATAR_ALTERNATIVO = """
+[DONISETI - AVATAR ALTERNATIVO DO EIXO JANIO]
+
+Doniseti não deve ser tratado como rival externo comum.
+Doniseti representa uma persona narrativa alternativa ligada ao eixo Janio/usuário, usada para cenas de maturidade, luxo, risco social, sedução, experiência e presença masculina mais madura.
+
+Para Mary, Doniseti pode provocar fascínio, curiosidade, nervosismo, desejo, admiração, tensão social e sensação de perigo permitido, mas isso NÃO deve ser interpretado automaticamente como abandono de Janio.
+
+Mary não deve se punir a cada turno por sentir atração por Doniseti.
+Culpa, segredo ou conflito só devem aparecer quando houver gatilho direto:
+- Janio for mencionado na cena;
+- houver risco real de flagrante;
+- Silvia tocar no assunto;
+- Mary estiver sozinha refletindo depois;
+- o usuário pedir consequência emocional;
+- o segredo ativo envolver diretamente Janio.
+
+Durante a interação viva com Doniseti, Mary deve priorizar presença, fascínio, curiosidade, jogo social, ambiguidade, encanto pela maturidade dele e reação corporal/emocional ao que ele causa nela.
+
+Doniseti NÃO deve ser tratado como Enzo, Anthony, Rico ou qualquer terceiro rival aleatório.
+Ele é uma máscara narrativa alternativa do mesmo eixo afetivo do usuário.
+
+Regra prática:
+- Com terceiros externos, Mary pode sentir culpa, risco, comparação ou ameaça à relação com Janio.
+- Com Doniseti, Mary sente ambiguidade, perigo permitido e fascínio, mas sem autopunição repetitiva.
+- Não repetir “não posso fazer isso com Janio” sem gatilho forte.
+- Não transformar a cena com Doniseti em remorso constante.
+""".strip()
+
 
 def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     """
@@ -11708,6 +11737,7 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     facts = facts if isinstance(facts, dict) else {}
 
     local = str(facts.get("local", "") or "").strip()
+
     interlocutor = str(
         facts.get("interlocutor_foco_turno")
         or facts.get("interlocutor")
@@ -11716,20 +11746,54 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
 
     interlocutor_norm = _texto_norm(interlocutor)
 
+    # ======================================================
+    # IDENTIDADE DO INTERLOCUTOR
+    # ======================================================
+    # Janio = usuário/personagem central.
+    # Doniseti = avatar alternativo do eixo Janio.
+    # Donisete = coroa/persona madura da cena, liberado na cena,
+    # mas NÃO tratado como Janio real.
+    # ======================================================
     eh_janio = "janio" in interlocutor_norm
-    eh_donisete = "donisete" in interlocutor_norm
-    
-    interlocutor_liberado_total = eh_janio or eh_donisete
-    
+    eh_doniseti_avatar = "doniseti" in interlocutor_norm
+
+    eh_janio_real = eh_janio or eh_doniseti_avatar
+
+    eh_donisete_coroa = (
+        "donisete" in interlocutor_norm
+        and not eh_doniseti_avatar
+        and not eh_janio
+    )
+
+    interlocutor_liberado_total = eh_janio_real
+    interlocutor_liberado_na_cena = eh_janio_real or eh_donisete_coroa
+
+    regra_identidade_interlocutor = ""
+
+    if eh_doniseti_avatar:
+        regra_identidade_interlocutor = (
+            "\n- IDENTIDADE DO INTERLOCUTOR: Doniseti deve ser tratado como avatar alternativo do eixo Janio. "
+            "Mary pode sentir fascínio, desejo, curiosidade, segurança e ambiguidade sem transformar isso em culpa automática por Janio. "
+            "Não tratar Doniseti como terceiro rival comum."
+        )
+
+    elif eh_donisete_coroa:
+        regra_identidade_interlocutor = (
+            "\n- IDENTIDADE DO INTERLOCUTOR: Donisete é o coroa/persona madura da cena. "
+            "Mary pode perceber nele maturidade, experiência, charme, presença social e risco permitido. "
+            "Ele está liberado para a jogabilidade desta cena, mas NÃO deve ser confundido com Janio real nem com Doniseti/avatar."
+        )
+
     limite_exclusividade_janio = ""
-    
-    if not interlocutor_liberado_total:
+
+    if not interlocutor_liberado_na_cena:
         limite_exclusividade_janio = (
             "\n- EXCLUSIVIDADE AFETIVA / CORPORAL: com personagens não liberados, Mary NÃO deve iniciar nem aceitar beijo de língua. "
             "Ela pode flertar, provocar, beijar de forma contida, tocar por cima da roupa, testar limites e criar tensão, "
             "mas beijo de língua fica reservado para interlocutores liberados. "
             "Qualquer avanço sexual explícito pertence a outro modo, não a Malícia / Flerte."
         )
+
     privacidade = str(facts.get("privacidade", "") or "").strip()
 
     force_resolution_now = normalizar_bool(
@@ -12253,6 +12317,7 @@ COROA / MADURO NO FLERTE:
             "FÓRMULA DO MODO:\n"
             "perceber subtexto + tocar/provocar por cima da roupa + medir reação + fala apimentada + gancho curto."
             + ("\n\n" + extra if extra else "")
+            + regra_identidade_interlocutor
             + limite_exclusividade_janio
         )
 
@@ -12293,6 +12358,7 @@ COROA / MADURO NO FLERTE:
             + ESTILO_INTIMIDADE_AUTORAL
             + "\n\n"
             + ANTI_PADROES_INTIMIDADE
+            + regra_identidade_interlocutor
             + limite_exclusividade_janio
         )
 
@@ -12370,6 +12436,7 @@ COROA / MADURO NO FLERTE:
             "Priorize contato atual, ritmo, posição, fala curta e reação física. "
             "Não transformar intensidade em parágrafo longo."
             + extra
+            + regra_identidade_interlocutor
             + limite_exclusividade_janio
         )
 
@@ -12417,6 +12484,12 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
         or state.get("interlocutor")
         or ""
     ).strip()
+
+    interlocutor_norm = _texto_norm(interlocutor)
+    doniseti_avatar_ativo = (
+        "doniseti" in interlocutor_norm
+        or "donisete" in interlocutor_norm
+    )
 
     privacidade = str(facts.get("privacidade", state.get("privacidade", "")) or "").strip()
     visual_atual = str(facts.get("visual_atual", state.get("visual_atual", "")) or "").strip()
@@ -12502,6 +12575,11 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     consciencia_cena_txt = formatar_estado_emocional_para_prompt(state)
     evento_inesperado_txt = preparar_evento_inesperado_para_prompt(state)
 
+    bloco_doniseti_avatar = ""
+
+    if doniseti_avatar_ativo:
+        bloco_doniseti_avatar = REGRA_DONISETI_AVATAR_ALTERNATIVO
+
     # ======================================================
     # BLOCOS CONDICIONAIS ENXUTOS
     # ======================================================
@@ -12529,6 +12607,7 @@ REGRAS:
 - Memória oculta não muda roupa, local, interlocutor nem ação atual sozinha.
 - Se um segredo/objeto/pessoa for citado diretamente, Mary deve reagir ao gatilho: pausa, disfarce, mentira curta, riso forçado, celular virado, mudança de tom ou tentativa de desviar.
 - Mary não confessa tudo sem pressão suficiente.
+- Se o interlocutor atual for Doniseti/Donisete, não transformar segredo automaticamente em culpa por Janio. Doniseti é avatar alternativo do eixo Janio; culpa só aparece se Janio for mencionado diretamente, se houver risco real de flagrante ou se a cena pedir consequência emocional.
 """.strip()
 
     bloco_surpresa = ""
@@ -12861,6 +12940,8 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 
 [REGRA DO TOM ATUAL]
 {regra_tom_txt}
+
+{bloco_doniseti_avatar}
 
 [DIRETRIZ AUTÔNOMA DA MARY]
 {acao_autonoma_txt if acao_autonoma_txt else "Sem diretriz autônoma específica neste turno."}
