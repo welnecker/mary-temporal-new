@@ -12473,6 +12473,16 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     regra_tom_txt = render_regra_do_tom_para_prompt(tom_manual, facts)
 
+    # ======================================================
+    # DIRECIONAMENTO CRIATIVO DE VOZ
+    # Muleta autoral: inspira vocabulário, subtexto e variação,
+    # mas não obriga Mary a copiar frases.
+    # ======================================================
+    bloco_direcionamento_criativo = ""
+
+    if "DIRECIONAMENTO_CRIATIVO_MARY" in globals():
+        bloco_direcionamento_criativo = DIRECIONAMENTO_CRIATIVO_MARY
+
     trava_txt = ""
     trava = state.get("trava_hesitacao_convite", {})
     if isinstance(trava, dict) and trava.get("ativa"):
@@ -12843,6 +12853,8 @@ Intenção: {mary_intent}
 Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 
 {exemplos_few_shot}
+
+{f"[DIRECIONAMENTO CRIATIVO DE VOZ]\\n{bloco_direcionamento_criativo}" if bloco_direcionamento_criativo else ""}
 
 [DIRECIONAMENTO CRIATIVO DE VOZ]
 {bloco_direcionamento_criativo}
