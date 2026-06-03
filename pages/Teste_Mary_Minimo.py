@@ -1853,7 +1853,6 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     eh_janio_pessoa = personagem_norm in (
         "janio",
-        "janio donisete",
         "janio doniseti",
     )
 
@@ -2024,6 +2023,12 @@ def inferir_perfil_temporal_e_risco_interacao(
     if eh_mary:
         faixa_temporal = "mary_jovem_universitaria"
 
+    elif eh_janio_pessoa:
+    faixa_temporal = "parceiro_central"
+
+    elif eh_donisete_coroa:
+        faixa_temporal = "maduro_atraente"
+
     elif eh_silvia:
         faixa_temporal = "jovem"
 
@@ -2068,6 +2073,12 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     if eh_mary:
         geracao = "propria_mary"
+
+    elif eh_janio_pessoa:
+    geracao = "parceiro_central"
+
+    elif eh_donisete_coroa:
+        geracao = "geracao_acima_atraente"
 
     elif eh_silvia:
         geracao = "mesma_geracao_de_mary"
@@ -2447,6 +2458,28 @@ def inferir_perfil_temporal_e_risco_interacao(
         leitura = (
             "Mary percebe a si mesma como jovem universitária de 19 anos, com energia, "
             "curiosidade, impulsos, contradições e desejo de viver experiências sem perder a própria agência."
+        )
+
+    elif eh_janio_pessoa:
+        leitura = (
+            "Mary percebe Janio Doniseti como parceiro central, íntimo e amoroso. "
+            "Ele pertence ao eixo afetivo principal dela, não ao grupo de terceiros, rivais ou coroas sociais. "
+            "Não tratar Janio/Doniseti como coroa, velho, senhor, pele madura ou figura geracional distante. "
+            "Sua maturidade deve aparecer como segurança, força, intimidade, proteção, presença masculina e vínculo emocional. "
+            "Se houver Donisete na cena como outro personagem, Mary deve separar os dois: "
+            "Donisete é o coroa/persona social madura; Janio Doniseti é o parceiro central dela."
+        )
+
+     elif eh_donisete_coroa:
+        leitura = (
+            "Mary percebe Donisete como um homem maduro, charmoso, socialmente seguro e interessante, "
+            "com presença de coroa atraente/persona social experiente. "
+            "Ele pode despertar curiosidade, fascínio, tensão, provocação e desejo social em Mary, "
+            "especialmente em ambientes como hotel, praia, festa, bar, viagem, clube ou espaço de luxo. "
+            "Mary não deve tratá-lo como Janio Doniseti. "
+            "Donisete não é o parceiro central afetivo dela; é uma figura externa, madura e magnética, "
+            "capaz de mexer com a curiosidade, vaidade, adrenalina e contradições dela. "
+            "A diferença de idade deve aparecer como charme, experiência e risco social, não como velhice frágil."
         )
 
     elif eh_silvia:
@@ -11749,39 +11782,53 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     # ======================================================
     # IDENTIDADE DO INTERLOCUTOR
     # ======================================================
-    # Janio = usuário/personagem central.
-    # Doniseti = avatar alternativo do eixo Janio.
-    # Donisete = coroa/persona madura da cena, liberado na cena,
-    # mas NÃO tratado como Janio real.
+    # Existem apenas dois eixos:
+    #
+    # 1) Janio Doniseti = parceiro central / eixo afetivo do usuário.
+    #    O nome deve ser lido como unidade. Não separar "Janio" de "Doniseti".
+    #
+    # 2) Donisete = coroa/persona madura da cena.
+    #    É outro personagem, socialmente interessante, mas não é Janio Doniseti.
     # ======================================================
-    eh_janio = "janio" in interlocutor_norm
-    eh_doniseti_avatar = "doniseti" in interlocutor_norm
-
-    eh_janio_real = eh_janio or eh_doniseti_avatar
-
+    
+    eh_janio_doniseti = (
+        "janio doniseti" in interlocutor_norm
+        or (
+            "janio" in interlocutor_norm
+            and "doniseti" in interlocutor_norm
+        )
+    )
+    
     eh_donisete_coroa = (
         "donisete" in interlocutor_norm
-        and not eh_doniseti_avatar
-        and not eh_janio
+        and not eh_janio_doniseti
     )
-
-    interlocutor_liberado_total = eh_janio_real
-    interlocutor_liberado_na_cena = eh_janio_real or eh_donisete_coroa
-
+    
+    interlocutor_liberado_total = eh_janio_doniseti
+    interlocutor_liberado_na_cena = eh_janio_doniseti or eh_donisete_coroa
+    
     regra_identidade_interlocutor = ""
-
-    if eh_doniseti_avatar:
+    
+    if eh_janio_doniseti:
         regra_identidade_interlocutor = (
-            "\n- IDENTIDADE DO INTERLOCUTOR: Doniseti deve ser tratado como avatar alternativo do eixo Janio. "
-            "Mary pode sentir fascínio, desejo, curiosidade, segurança e ambiguidade sem transformar isso em culpa automática por Janio. "
-            "Não tratar Doniseti como terceiro rival comum."
+            "\n\n[IDENTIDADE DO INTERLOCUTOR]\n"
+            "- Janio Doniseti é o parceiro central/eixo afetivo principal de Mary.\n"
+            "- O nome Janio Doniseti deve ser lido como uma unidade, não como dois personagens.\n"
+            "- Mary não deve tratar Janio Doniseti como coroa externo, terceiro rival ou persona social separada.\n"
+            "- Com Janio Doniseti, Mary sente vínculo, casa, intimidade, confiança, desejo, história e pertencimento.\n"
+            "- A maturidade de Janio Doniseti deve aparecer como segurança, presença, força, proteção e intimidade emocional, não como velhice ou distância geracional.\n"
+            "- Se Donisete aparecer em outra cena, Mary deve separar: Donisete é outro personagem; Janio Doniseti é o eixo central dela.\n"
         )
-
+    
     elif eh_donisete_coroa:
         regra_identidade_interlocutor = (
-            "\n- IDENTIDADE DO INTERLOCUTOR: Donisete é o coroa/persona madura da cena. "
-            "Mary pode perceber nele maturidade, experiência, charme, presença social e risco permitido. "
-            "Ele está liberado para a jogabilidade desta cena, mas NÃO deve ser confundido com Janio real nem com Doniseti/avatar."
+            "\n\n[IDENTIDADE DO INTERLOCUTOR]\n"
+            "- Donisete é o coroa/persona madura da cena.\n"
+            "- Donisete é outro personagem, diferente de Janio Doniseti.\n"
+            "- Mary pode perceber Donisete como homem maduro, charmoso, experiente, seguro, elegante e socialmente interessante.\n"
+            "- Donisete pode despertar curiosidade, fascínio, vaidade, tensão, provocação, risco social e contradição em Mary.\n"
+            "- Donisete está liberado para a jogabilidade desta cena, mas NÃO deve ser confundido com Janio Doniseti.\n"
+            "- A diferença de idade de Donisete deve aparecer como charme, experiência e magnetismo social, não como fragilidade ou velhice automática.\n"
         )
 
     limite_exclusividade_janio = ""
