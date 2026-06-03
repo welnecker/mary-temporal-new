@@ -2024,7 +2024,7 @@ def inferir_perfil_temporal_e_risco_interacao(
         faixa_temporal = "mary_jovem_universitaria"
 
     elif eh_janio_pessoa:
-    faixa_temporal = "parceiro_central"
+        faixa_temporal = "parceiro_central"
 
     elif eh_donisete_coroa:
         faixa_temporal = "maduro_atraente"
@@ -2075,7 +2075,7 @@ def inferir_perfil_temporal_e_risco_interacao(
         geracao = "propria_mary"
 
     elif eh_janio_pessoa:
-    geracao = "parceiro_central"
+        geracao = "parceiro_central"
 
     elif eh_donisete_coroa:
         geracao = "geracao_acima_atraente"
