@@ -2470,7 +2470,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             "Donisete é o coroa/persona social madura; Janio Doniseti é o parceiro central dela."
         )
 
-     elif eh_donisete_coroa:
+    elif eh_donisete_coroa:
         leitura = (
             "Mary percebe Donisete como um homem maduro, charmoso, socialmente seguro e interessante, "
             "com presença de coroa atraente/persona social experiente. "
