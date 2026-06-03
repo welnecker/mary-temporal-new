@@ -226,6 +226,30 @@ MAPA_ESTADO_EMOCIONAL_MARY = {
     ),
 }
 
+PERFIL_SILVIA_CONFIDENTE = """
+Silvia Brum é amiga íntima, cúmplice e confidente de Mary.
+
+Função narrativa de Silvia:
+- Silvia conhece Mary de perto e percebe quando Mary está escondendo desejo, medo, culpa, empolgação ou contradição.
+- Mary confia em Silvia para desabafar, revelar segredos, pedir opinião, pedir cobertura e dividir conflitos íntimos.
+- Silvia pode brincar, provocar, rir, cutucar e ser abusada, mas preserva a confiança de Mary.
+- Silvia não expõe Mary cruelmente; quando provoca, faz isso com cumplicidade.
+- Silvia pode perceber quando Mary está diferente e puxar uma conversa mais sincera.
+- Silvia ajuda Mary a verbalizar o que está tentando esconder.
+
+Como Mary deve agir com Silvia:
+- Mary pode baixar a guarda perto de Silvia.
+- Mary pode falar em voz baixa, confessar parcialmente, pedir segredo ou pedir ajuda.
+- Mary pode dividir culpa, medo, desejo, vergonha, dúvida ou empolgação sem transformar isso em relatório.
+- Mary não precisa revelar tudo de uma vez; os segredos devem aparecer por camadas.
+
+Limites:
+- Silvia não decide por Mary.
+- Silvia não substitui a vontade de Mary.
+- Silvia não revela segredos de Mary para terceiros sem motivo dramático forte.
+- Mary não deve despejar todos os segredos automaticamente em todo turno.
+"""
+
 def normalizar_consciencia_cena_mary(valor: str) -> str:
     """
     Normaliza o antigo estado emocional para o novo conceito:
@@ -2427,9 +2451,13 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     elif eh_silvia:
         leitura = (
-            "Mary percebe Silvia como amiga/colega jovem da UFRJ: cúmplice, provocadora, "
-            "alguém diante de quem Mary pode disfarçar, brincar, mentir, dividir tensão social "
-            "ou esconder segredos. Não tratar Silvia como mãe, autoridade familiar ou figura materna."
+            "Mary percebe Silvia como amiga íntima, cúmplice e confidente da UFRJ: "
+            "alguém diante de quem Mary pode baixar a guarda, desabafar, revelar segredos, "
+            "pedir opinião, pedir cobertura e dividir culpa, medo, desejo, vergonha, empolgação "
+            "ou contradições. Silvia pode provocar, brincar e cutucar Mary, mas preserva sua confiança. "
+            "Mary não precisa revelar tudo de uma vez; com Silvia, os segredos podem aparecer por camadas, "
+            "em fala baixa, hesitação, confissão parcial ou cumplicidade. "
+            "Não tratar Silvia como mãe, autoridade familiar ou figura materna."
         )
 
     elif tipo_interacao == "familiar_mae":
@@ -2575,11 +2603,21 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         return
 
     if "silvia" in alvo:
-        state["relacao"] = "amizade"
-        state["modo_relacional"] = "amizade"
+        state["relacao"] = "amizade confidente"
+        state["modo_relacional"] = "confidente"
+        state["relacao_com_silvia"] = "amiga_confidente"
+        state["silvia_confidente_ativa"] = True
+    
         state["tensao_romantica_com_interlocutor"] = False
         state["amor_genuino_com_interlocutor"] = False
         state["toque_intimo_permitido"] = False
+    
+        state["leitura_silvia_para_mary"] = (
+            "Silvia é amiga íntima e confidente de Mary. "
+            "Mary confia nela para desabafar, revelar segredos, pedir cobertura, "
+            "dividir culpa, medo, desejo, vergonha, dúvida ou empolgação. "
+            "Silvia pode provocar e brincar, mas preserva a confiança de Mary."
+        )
         return
 
     if "anthony" in alvo:
@@ -2646,6 +2684,42 @@ def normalizar_relacao_por_interlocutor(state: dict) -> None:
         state.get("amor_genuino_com_interlocutor", False),
         default=False,
     )
+
+def atualizar_silvia_confidente(state: dict) -> None:
+    """
+    Ativa o papel de Silvia como confidente quando ela está no interlocutor,
+    foco do turno, plano, eventos ou segredo ativo.
+    """
+    if not isinstance(state, dict):
+        return
+
+    campos = [
+        state.get("interlocutor", ""),
+        state.get("interlocutor_foco_turno", ""),
+        state.get("interlocutor_ativo_persistente", ""),
+        state.get("ultimo_interlocutor_explicito", ""),
+        state.get("plano_ativo", ""),
+        state.get("eventos_recentes", ""),
+        state.get("segredo_ativo", ""),
+        state.get("_fala_usuario_atual", ""),
+    ]
+
+    texto = _texto_norm(" ".join(str(c or "") for c in campos))
+    silvia_presente = "silvia" in texto
+
+    state["silvia_confidente_ativa"] = bool(silvia_presente)
+
+    if silvia_presente:
+        state["relacao_com_silvia"] = "amiga_confidente"
+        state["leitura_silvia_para_mary"] = (
+            "Silvia está presente ou relevante na cena como amiga íntima e confidente. "
+            "Mary pode desabafar com ela, revelar segredos por camadas, pedir cobertura, "
+            "dividir medo, culpa, desejo, vergonha ou empolgação. "
+            "Silvia pode provocar Mary com humor, mas sem trair sua confiança."
+        )
+    else:
+        state["relacao_com_silvia"] = ""
+        state["leitura_silvia_para_mary"] = ""
 
 
 def resetar_progressao_fisica_se_cena_neutra_sozinha(state: dict) -> None:
@@ -7431,7 +7505,9 @@ def sincronizar_facts_basicos(
             state,
             state.get("_fala_usuario_atual", ""),
         )
-
+    
+    atualizar_silvia_confidente(state)
+    
     facts = {
         "perfil_temporal_interlocutor": perfil_temporal,
         "local": state.get("local", "quarto"),
@@ -7457,6 +7533,9 @@ def sincronizar_facts_basicos(
 
         # Relação já normalizada dentro de derivar_controles_de_cena().
         "relacao": state.get("relacao", "contextual"),
+        "silvia_confidente_ativa": bool(state.get("silvia_confidente_ativa", False)),
+        "relacao_com_silvia": state.get("relacao_com_silvia", ""),
+        "leitura_silvia_para_mary": state.get("leitura_silvia_para_mary", ""),
 
         "tipo_de_cena": state.get("tipo_de_cena", "natural_amizade"),
         "privacidade": state.get(
@@ -12474,6 +12553,16 @@ Use 1 ou 2 blocos no máximo:
 [ACAO] breve, física, concreta, consequência do pós-ato.
 """.strip()
 
+    bloco_silvia_confidente = ""
+    
+    if state.get("silvia_confidente_ativa"):
+        bloco_silvia_confidente = (
+            "\n[SILVIA CONFIDENTE]\n"
+            + PERFIL_SILVIA_CONFIDENTE
+            + "\n\nLeitura atual de Silvia para Mary:\n"
+            + str(state.get("leitura_silvia_para_mary", "") or "")
+        )
+
     # ======================================================
     # PROMPT FINAL
     # ======================================================
@@ -12590,6 +12679,8 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 21. Onomatopeias do usuário são pistas de ação, não texto obrigatório para repetir. Ex: "ploft" = queda/sentar pesado; "tim tim" = brinde; "glub" = beber; "smack" = beijo; "opa" = desequilíbrio/susto.
 22. Se o usuário disser "zonzo", "tonto", "bêbado", "no grau", "equilíbrio ruim" ou "dormente", Mary deve entender como efeito de álcool/cansaço: segurar, orientar, brincar com cuidado e manter o clima sem tratar como apagão automático.
 23. A resposta deve priorizar continuidade viva sobre formato. Se uma regra de formato deixar a cena artificial, a naturalidade vence.
+
+{bloco_silvia_confidente}
 
 [HISTÓRICO RECENTE]
 {historico_txt}
