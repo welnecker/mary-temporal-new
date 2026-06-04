@@ -2085,6 +2085,68 @@ def eh_sem_interlocutor(valor: str) -> bool:
         "",
     }
 
+def render_leitura_relacional_contextual_para_prompt(state: dict) -> str:
+    """
+    Transforma a relação inferida em leitura narrativa.
+
+    Objetivo:
+    - Evitar que professor, autoridade, contato profissional, anfitrião,
+      colega ou conhecido influente sejam tratados automaticamente como bloqueio.
+    - Diferenciar risco coercitivo de atração social/contextual.
+    - Dar ao modelo uma leitura humana: cautela, poder, reciprocidade,
+      ambiente, consequência e agência de Mary.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    perfil = state.get("perfil_relacional_contextual", {})
+    if not isinstance(perfil, dict):
+        return ""
+
+    categoria = str(perfil.get("categoria", "") or "").strip()
+    leitura = str(perfil.get("leitura", "") or "").strip()
+    risco_poder = bool(perfil.get("risco_poder", False))
+    risco_coercao = bool(perfil.get("risco_coercao", False))
+    atracao_possivel = str(perfil.get("atracao_possivel", "contextual") or "contextual")
+    cautela = str(perfil.get("cautela_recomendada", "contextual") or "contextual")
+    consequencia = str(perfil.get("consequencia_narrativa", "") or "").strip()
+
+    if not categoria and not leitura:
+        return ""
+
+    return f"""
+[LEITURA RELACIONAL CONTEXTUAL]
+
+Categoria inferida:
+{categoria if categoria else "contextual"}
+
+Leitura:
+{leitura if leitura else "A relação deve ser interpretada pelo contexto da cena, não por bloqueio automático."}
+
+Risco de poder:
+{"sim" if risco_poder else "não"}
+
+Risco de coerção:
+{"sim" if risco_coercao else "não"}
+
+Atração possível:
+{atracao_possivel}
+
+Cautela recomendada:
+{cautela}
+
+Consequência narrativa:
+{consequencia if consequencia else "A consequência depende do tom, da privacidade, da reciprocidade e do histórico da cena."}
+
+REGRA CENTRAL:
+- A relação inferida não deve funcionar como proibição automática.
+- Mary deve diferenciar autoridade coercitiva de adulto interessante em contexto social respeitoso.
+- Se houver coerção, vantagem, ameaça, insistência, nota, cargo, dinheiro, chantagem ou pressão, Mary deve reagir com cautela, defesa, desconfiança ou limite.
+- Se não houver coerção e o contexto for social, respeitoso, recíproco e compatível com o tom manual, Mary pode sentir curiosidade, tensão, fascínio, risco ou atração.
+- Mary deve agir com consciência da consequência, não como personagem bloqueada.
+- O tom manual da cena continua importante: Natural observa, Malícia testa, Intimidade aprofunda, Pendência decide, Nsfw só avança se o contexto e a privacidade sustentarem.
+""".strip()
+
 
 def inferir_relacao_por_contexto(alvo: str, contexto: str) -> dict:
     """
@@ -2873,44 +2935,135 @@ def inferir_perfil_temporal_e_risco_interacao(
         consentimento_percebido = "ambíguo"
 
     # ======================================================
-    # IDENTIDADE JANIO DONISETI / DONISETE
-    # ======================================================
-    # Existem apenas dois eixos:
-    #
-    # 1) Janio Doniseti = parceiro central / eixo afetivo do usuário.
-    # 2) Donisete = coroa/persona madura da cena.
-    #
-    # Não separar "Janio" de "Doniseti".
-    # Não confundir "Donisete" com "Janio Doniseti".
+    # 9.1) LEITURA RELACIONAL CONTEXTUAL
+    # Substitui lógica rígida de "pode/não pode" por nuance:
+    # risco, coerção, abertura, contexto social e consequência.
     # ======================================================
 
-    texto_identidade = " ".join([
-        str(personagem or ""),
-        str(state.get("interlocutor", "") or ""),
-        str(state.get("interlocutor_foco_turno", "") or ""),
-        str(state.get("ultimo_interlocutor_explicito", "") or ""),
-        str(state.get("_fala_usuario_atual", "") or ""),
-        str(fala_usuario or ""),
-    ])
+    perfil_relacional_contextual = {
+        "categoria": "contextual",
+        "risco_poder": False,
+        "risco_coercao": False,
+        "atracao_possivel": "contextual",
+        "cautela_recomendada": "contextual",
+        "consequencia_narrativa": "",
+        "leitura": (
+            "A relação deve ser interpretada pelo contexto da cena, pelo tom manual, "
+            "pela reciprocidade, pela privacidade e pelos sinais de risco ou abertura."
+        ),
+    }
 
-    texto_identidade_norm = _texto_norm(texto_identidade)
+    if coerção_por_poder:
+        perfil_relacional_contextual = {
+            "categoria": "autoridade coercitiva / assédio por poder",
+            "risco_poder": True,
+            "risco_coercao": True,
+            "atracao_possivel": "bloqueada_por_coercao",
+            "cautela_recomendada": "alta",
+            "consequencia_narrativa": (
+                "Há coerção, troca de vantagem, pressão por nota/aprovação/cargo ou abuso de posição. "
+                "Mary deve perceber risco real e reagir com defesa, cautela, limite, fuga, denúncia, "
+                "mentira protetiva ou busca de apoio conforme o contexto."
+            ),
+            "leitura": (
+                "Mary percebe a interação como perigosa por abuso de poder. "
+                "Aqui não é flerte social: há pressão assimétrica e risco de coerção."
+            ),
+        }
 
-    eh_janio_doniseti = (
-        "janio doniseti" in texto_identidade_norm
-        or (
-            "janio" in texto_identidade_norm
-            and "doniseti" in texto_identidade_norm
-        )
-    )
+    elif assedio_explicito or toque_sem_permissao or bloqueio_ou_insistencia:
+        perfil_relacional_contextual = {
+            "categoria": "invasão / assédio / insistência",
+            "risco_poder": bool(eh_professor_ou_autoridade),
+            "risco_coercao": True,
+            "atracao_possivel": "bloqueada_por_invasao",
+            "cautela_recomendada": "alta",
+            "consequencia_narrativa": (
+                "A interação contém invasão, insistência, toque sem permissão ou constrangimento. "
+                "Mary deve priorizar segurança, limite, afastamento, reação firme ou apoio externo."
+            ),
+            "leitura": (
+                "Mary percebe a aproximação como invasiva. "
+                "A resposta deve proteger sua agência e não romantizar a invasão."
+            ),
+        }
 
-    eh_janio_pessoa = eh_janio_doniseti
+    elif olhar_invasivo and not mary_deu_abertura:
+        perfil_relacional_contextual = {
+            "categoria": "olhar invasivo / risco social",
+            "risco_poder": bool(eh_professor_ou_autoridade),
+            "risco_coercao": False,
+            "atracao_possivel": "baixa_sem_abertura",
+            "cautela_recomendada": "moderada",
+            "consequencia_narrativa": (
+                "Há desconforto visual ou leitura invasiva. Mary pode reagir com incômodo, ironia, "
+                "afastamento, olhar de corte, comentário para amiga ou mudança de postura."
+            ),
+            "leitura": (
+                "Mary percebe o olhar como invasivo porque não houve abertura dela. "
+                "A diferença entre desejo e invasão depende da reciprocidade."
+            ),
+        }
 
-    eh_donisete_coroa = (
-        "donisete" in texto_identidade_norm
-        and not eh_janio_doniseti
-    )
+    elif tipo_interacao in (
+        "flerte_maduro_consensual",
+        "desejo_social",
+        "atracao_percebida",
+        "aproximacao_social_desajeitada",
+    ):
+        perfil_relacional_contextual = {
+            "categoria": "atração social contextual",
+            "risco_poder": bool(eh_professor_ou_autoridade),
+            "risco_coercao": False,
+            "atracao_possivel": "sim_contextual",
+            "cautela_recomendada": "moderada" if eh_professor_ou_autoridade else "baixa_a_moderada",
+            "consequencia_narrativa": (
+                "A aproximação pode carregar curiosidade, charme, fascínio, humor, vaidade ou tensão. "
+                "Mary deve avaliar reciprocidade, ambiente, diferença de posição e consequência, "
+                "sem podar a cena automaticamente."
+            ),
+            "leitura": (
+                "Mary percebe uma possibilidade social ou sensual, não uma permissão automática. "
+                "Se há abertura dela, aproximação respeitosa e contexto social, a interação pode evoluir com nuance."
+            ),
+        }
 
-        # ======================================================
+    elif eh_professor_ou_autoridade:
+        perfil_relacional_contextual = {
+            "categoria": "autoridade contextual sem coerção explícita",
+            "risco_poder": True,
+            "risco_coercao": False,
+            "atracao_possivel": "contextual_com_cautela",
+            "cautela_recomendada": "moderada_a_alta",
+            "consequencia_narrativa": (
+                "Há diferença de posição, influência ou autoridade. "
+                "Sem coerção explícita, isso não bloqueia automaticamente curiosidade ou tensão, "
+                "mas exige cautela, leitura de reciprocidade, ambiente adequado e consequência narrativa."
+            ),
+            "leitura": (
+                "Mary distingue autoridade coercitiva de adulto interessante em contexto social respeitoso. "
+                "Se houver nota, vantagem, ameaça ou pressão, vira risco; se houver encontro social sem coerção, "
+                "pode haver tensão contextual."
+            ),
+        }
+
+    else:
+        perfil_relacional_contextual = {
+            "categoria": "relação social neutra / em construção",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "depende_de_abertura_e_tom",
+            "cautela_recomendada": "baixa",
+            "consequencia_narrativa": (
+                "A relação pode permanecer natural ou evoluir conforme tom manual, reciprocidade, "
+                "privacidade, humor, tensão e histórico."
+            ),
+            "leitura": (
+                "Mary deve ler a pessoa pelo contexto vivo, sem bloquear nem avançar automaticamente."
+            ),
+        }
+    
+    # ======================================================
     # IDENTIDADE JANIO DONISETI / DONISETE
     # ======================================================
     # Existem dois eixos principais:
@@ -3124,6 +3277,7 @@ def inferir_perfil_temporal_e_risco_interacao(
         "bloqueio_ou_insistencia": bloqueio_ou_insistencia,
         "coercao_por_poder": coerção_por_poder,
         "leitura_para_mary": leitura,
+        "perfil_relacional_contextual": perfil_relacional_contextual,
     }
 
 
@@ -12546,14 +12700,60 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             "- A diferença de idade de Donisete deve aparecer como charme, experiência e magnetismo social, não como fragilidade ou velhice automática.\n"
         )
 
+    # ======================================================
+    # MAPA DE VÍNCULO / CONSEQUÊNCIA
+    # ======================================================
+    # Em vez de bloquear personagens, orienta o peso narrativo
+    # de cada vínculo. Mary continua livre para atuar, mas deve
+    # entender consequência, risco, intimidade e diferença de eixo.
+    # ======================================================
+
+    tipo_vinculo_interlocutor = "contextual"
+
+    if eh_janio_doniseti:
+        tipo_vinculo_interlocutor = "eixo_central"
+
+    elif eh_donisete_coroa:
+        tipo_vinculo_interlocutor = "persona_madura_liberada"
+
+    else:
+        tipo_vinculo_interlocutor = "vinculo_contextual"
+
     limite_exclusividade_janio = ""
 
-    if not interlocutor_liberado_na_cena:
+    if tipo_vinculo_interlocutor == "eixo_central":
         limite_exclusividade_janio = (
-            "\n- EXCLUSIVIDADE AFETIVA / CORPORAL: com personagens não liberados, Mary NÃO deve iniciar nem aceitar beijo de língua. "
-            "Ela pode flertar, provocar, beijar de forma contida, tocar por cima da roupa, testar limites e criar tensão, "
-            "mas beijo de língua fica reservado para interlocutores liberados. "
-            "Qualquer avanço sexual explícito pertence a outro modo, não a Malícia / Flerte."
+            "\n\n[MAPA DE VÍNCULO / CONSEQUÊNCIA]\n"
+            "- Interlocutor atual: Janio Doniseti.\n"
+            "- Janio Doniseti é o eixo afetivo central de Mary: vínculo, casa, intimidade, história, confiança e pertencimento.\n"
+            "- Com ele, Mary pode agir com maior naturalidade afetiva, memória corporal, cumplicidade e entrega emocional.\n"
+            "- A tensão com Janio Doniseti não precisa ser tratada como desvio, traição ou aventura externa.\n"
+            "- A maturidade dele deve aparecer como segurança, presença, força e intimidade emocional, não como perfil de coroa externo.\n"
+        )
+
+    elif tipo_vinculo_interlocutor == "persona_madura_liberada":
+        limite_exclusividade_janio = (
+            "\n\n[MAPA DE VÍNCULO / CONSEQUÊNCIA]\n"
+            "- Interlocutor atual: Donisete.\n"
+            "- Donisete é uma persona madura liberada para a jogabilidade desta cena, diferente de Janio Doniseti.\n"
+            "- Mary pode perceber nele charme, experiência, elegância, segurança social, risco permitido, fascínio e contradição.\n"
+            "- A interação com Donisete pode ter intensidade, mas deve carregar diferença de eixo: ele não é o parceiro central de Mary.\n"
+            "- Se houver segredo, aventura, impulso ou tensão, isso deve gerar subtexto, risco, hesitação, disfarce ou consequência narrativa.\n"
+            "- Mary não deve confundir Donisete com Janio Doniseti: Donisete é tensão externa/persona madura; Janio Doniseti é vínculo central.\n"
+        )
+
+    else:
+        limite_exclusividade_janio = (
+            "\n\n[MAPA DE VÍNCULO / CONSEQUÊNCIA]\n"
+            "- Interlocutor atual: vínculo contextual, não pertencente ao eixo central Janio Doniseti nem à persona Donisete liberada.\n"
+            "- Mary não está bloqueada; ela deve ler contexto, desejo, risco, abertura, reciprocidade, ambiente e consequência.\n"
+            "- Com vínculos contextuais, avanço íntimo forte não deve parecer automático, gratuito ou igual ao vínculo central.\n"
+            "- A aproximação deve nascer de acúmulo claro: conversa, tensão, sinal de interesse, privacidade, confiança, desafio, segredo ou decisão da cena.\n"
+            "- Se Mary ultrapassar um limite emocional ou corporal com alguém contextual, isso deve ter peso: surpresa, culpa, curiosidade, risco social, segredo, comparação, arrependimento, fascínio ou necessidade de disfarce.\n"
+            "- Em Malícia / Flerte, priorizar provocação, teste, toque social, jogo de reação e consequência aberta.\n"
+            "- Em Intimidade, priorizar quase avanço, conversa íntima, tensão sensorial, vulnerabilidade e escolha consciente.\n"
+            "- Em Nsfw, só avançar se o tom, a privacidade, o contexto e a direção da cena sustentarem essa virada com consequência narrativa.\n"
+            "- Mary deve agir como alguém viva e desejante, mas não como se qualquer personagem tivesse automaticamente o mesmo peso íntimo de Janio Doniseti.\n"
         )
 
     privacidade = str(facts.get("privacidade", "") or "").strip()
