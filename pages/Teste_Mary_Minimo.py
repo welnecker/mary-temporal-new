@@ -2489,6 +2489,61 @@ def inferir_perfil_temporal_e_risco_interacao(
         and not eh_janio_doniseti
     )
 
+        # ======================================================
+    # IDENTIDADE JANIO DONISETI / DONISETE
+    # ======================================================
+    # Existem dois eixos principais:
+    #
+    # 1) Janio Doniseti = parceiro central/eixo afetivo de Mary.
+    #    Pode aparecer como "Janio" no campo de cena, mas deve ser
+    #    interpretado como Janio Doniseti, não como personagem separado.
+    #
+    # 2) Donisete = coroa/persona madura externa da cena.
+    #
+    # Caso apareça "Donisete/Janio", tratar como CENA MISTA:
+    # Donisete está presente como coroa/persona madura,
+    # e Janio representa o eixo central afetivo de Mary.
+    # ======================================================
+
+    eh_janio_doniseti = False
+    eh_janio_pessoa = False
+    eh_donisete_coroa = False
+    eh_cena_mista_janio_donisete = False
+
+    texto_identidade = " ".join([
+        str(personagem or "") if "personagem" in locals() else "",
+        str(state.get("interlocutor", "") or ""),
+        str(state.get("interlocutor_foco_turno", "") or ""),
+        str(state.get("ultimo_interlocutor_explicito", "") or ""),
+        str(state.get("_fala_usuario_atual", "") or ""),
+        str(fala_usuario or ""),
+    ])
+
+    texto_identidade_norm = _texto_norm(texto_identidade)
+
+    tem_janio = "janio" in texto_identidade_norm
+    tem_doniseti = "doniseti" in texto_identidade_norm
+    tem_donisete = "donisete" in texto_identidade_norm
+
+    eh_janio_doniseti = (
+        "janio doniseti" in texto_identidade_norm
+        or tem_janio
+    )
+
+    eh_cena_mista_janio_donisete = (
+        tem_janio
+        and tem_donisete
+        and not tem_doniseti
+    )
+
+    eh_donisete_coroa = (
+        tem_donisete
+        and not eh_cena_mista_janio_donisete
+        and not tem_doniseti
+    )
+
+    eh_janio_pessoa = eh_janio_doniseti and not eh_donisete_coroa
+
     # ======================================================
     # 10) LEITURA PARA MARY
     # ======================================================
@@ -2497,6 +2552,19 @@ def inferir_perfil_temporal_e_risco_interacao(
             "Mary percebe a si mesma como jovem universitária de 19 anos, com energia, "
             "curiosidade, impulsos, contradições e desejo de viver experiências sem perder a própria agência."
         )
+
+    elif eh_cena_mista_janio_donisete:
+        leitura = (
+            "Mary percebe uma cena mista envolvendo Janio Doniseti e Donisete. "
+            "Janio Doniseti é o eixo afetivo central dela, associado a vínculo, casa, intimidade, "
+            "confiança, desejo, história e pertencimento. "
+            "Donisete é o coroa/persona madura externa da cena, diferente de Janio Doniseti, "
+            "podendo trazer charme, experiência, maturidade, risco social, fascínio e contradição. "
+            "Mary deve separar claramente os dois: não atribuir a Janio Doniseti características de coroa externo, "
+            "pele madura, velhice ou distância geracional; e não tratar Donisete como se fosse o parceiro central dela. "
+            "Se houver tensão entre os dois eixos, Mary pode sentir conflito, curiosidade ou necessidade de disfarce, "
+            "mas sem misturar as identidades."
+        )    
 
     elif eh_janio_pessoa:
         leitura = (
@@ -2530,7 +2598,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             "em fala baixa, hesitação, confissão parcial ou cumplicidade. "
             "Não tratar Silvia como mãe, autoridade familiar ou figura materna."
         )
-
+    
     elif tipo_interacao == "familiar_mae":
         leitura = (
             "Mary percebe como mãe/família: geração acima, autoridade afetiva, cuidado, "
