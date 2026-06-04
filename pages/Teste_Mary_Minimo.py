@@ -8161,6 +8161,14 @@ def sincronizar_facts_basicos(
             state.get("mary_climax_done", False),
             default=False,
         ),
+
+        "correcao_resposta": state.get("_correcao_resposta", {
+            "houve": False,
+            "tipo": "",
+            "motivos": [],
+            "fallback_usado": False,
+            "erro_replanejamento": "",
+        }),
         "user_climax_done": normalizar_bool(
             state.get("user_climax_done", False),
             default=False,
@@ -13907,46 +13915,234 @@ def criar_fallback_humano(state: dict, motivo: str = "") -> str:
     return f"{texto}\n\nSTATE_UPDATE:\n{json.dumps(update, ensure_ascii=False, indent=2)}"
 
 
-def corrigir_resposta_se_necessario(resposta: str, state: dict, validacao: dict) -> str:
-    bloqueios = validacao.get("bloqueios", [])
+def replanejar_resposta_com_modelo(
+    resposta_original: str,
+    state: dict,
+    validacao: dict,
+    model: str = MODEL_DEFAULT,
+) -> str:
+    """
+    Segunda chamada ao modelo para reescrever uma resposta que violou o estado.
+
+    Objetivo:
+    - Evitar fallback mecânico.
+    - Manter a cena viva.
+    - Corrigir apenas o problema detectado.
+    - Preservar interlocutor, local, tom, intenção e continuidade.
+    """
+    if not isinstance(state, dict):
+        state = {}
+
+    if not isinstance(validacao, dict):
+        validacao = {}
+
+    bloqueios = validacao.get("bloqueios", []) or []
+    alertas = validacao.get("alertas", []) or []
+
+    if not bloqueios:
+        return ""
+
+    facts = state.get("facts", {})
+    if not isinstance(facts, dict):
+        facts = {}
+
+    contexto_minimo = {
+        "local": state.get("local", ""),
+        "tempo": state.get("tempo", ""),
+        "data_cena": state.get("data_cena", ""),
+        "interlocutor": state.get("interlocutor", ""),
+        "interlocutor_foco_turno": state.get("interlocutor_foco_turno", ""),
+        "privacidade": state.get("privacidade", ""),
+        "tom_manual_da_cena": state.get("tom_manual_da_cena", ""),
+        "tipo_de_cena": state.get("tipo_de_cena", ""),
+        "scene_stage": state.get("scene_stage", ""),
+        "mary_intent": state.get("mary_intent", ""),
+        "physical_phase": state.get("physical_phase", 0),
+        "force_resolution_now": state.get("force_resolution_now", False),
+        "mary_pre_orgasm_signals": state.get("mary_pre_orgasm_signals", False),
+        "mary_climax_done": state.get("mary_climax_done", False),
+        "user_climax_done": state.get("user_climax_done", False),
+        "mary_stimulation_turns": state.get("mary_stimulation_turns", 0),
+        "mary_acao": state.get("mary_acao", ""),
+        "segredo_ativo": state.get("segredo_ativo", ""),
+        "plano_ativo": state.get("plano_ativo", ""),
+        "eventos_recentes": state.get("eventos_recentes", ""),
+        "visual_atual": state.get("visual_atual", ""),
+        "limite_ambiente": state.get("limite_ambiente", ""),
+        "mary_autonomous_action": state.get("mary_autonomous_action", ""),
+        "facts_correcao": {
+            "privacidade": facts.get("privacidade", ""),
+            "scene_stage": facts.get("scene_stage", ""),
+            "mary_intent": facts.get("mary_intent", ""),
+            "force_resolution_now": facts.get("force_resolution_now", False),
+            "mary_pre_orgasm_signals": facts.get("mary_pre_orgasm_signals", False),
+            "mary_climax_done": facts.get("mary_climax_done", False),
+        },
+    }
+
+    resposta_original_limpa = str(resposta_original or "").strip()
+
+    prompt_correcao = f"""
+Você é um revisor interno da resposta da Mary.
+
+A resposta abaixo foi gerada para a cena atual, mas violou uma regra de estado.
+
+Sua tarefa:
+- Reescrever a resposta como Mary.
+- Manter a cena viva, natural, sensorial e coerente.
+- Corrigir apenas os problemas detectados.
+- NÃO usar fallback genérico.
+- NÃO reiniciar a cena.
+- NÃO apagar tensão, desejo, segredo, risco ou emoção.
+- NÃO narrar ação conclusiva do interlocutor.
+- Responder em português do Brasil.
+- Usar [FALA] e/ou [ACAO] quando ajudar.
+- Ao final, escrever obrigatoriamente STATE_UPDATE com JSON válido.
+
+BLOQUEIOS DETECTADOS:
+{json.dumps(bloqueios, ensure_ascii=False, indent=2)}
+
+ALERTAS:
+{json.dumps(alertas, ensure_ascii=False, indent=2)}
+
+CONTEXTO ATUAL:
+{json.dumps(contexto_minimo, ensure_ascii=False, indent=2)}
+
+RESPOSTA ORIGINAL A CORRIGIR:
+{resposta_original_limpa}
+
+REGRAS DE REPLANEJAMENTO:
+- Se o bloqueio for "Clímax de Mary antes do gate", Mary pode ficar em pré-pico, quase no limite, sensível e urgente, mas NÃO deve dizer que gozou nem entrar em aftercare se force_resolution_now não estiver true.
+- Se o bloqueio for ambiente/local público, Mary deve transformar o avanço em disfarce, tensão, recuo estratégico, convite para local melhor ou continuidade discreta, sem matar o clima.
+- Se o bloqueio for ação explícita incompatível, Mary deve manter desejo e consequência, mas trocar a ação por algo possível no ambiente.
+- Se houver segredo ativo, ele deve virar subtexto, hesitação, cuidado ou disfarce, não confissão automática.
+- Preservar o interlocutor atual.
+- Preservar local e tempo.
+- Não criar novo local.
+- Não mudar interlocutor.
+
+STATE_UPDATE obrigatório:
+{{
+  "mary_acao": "descrição curta, concreta e física da ação atual de Mary após a resposta reescrita",
+  "local": null,
+  "interlocutor": null
+}}
+
+MARY REESCRITA:
+""".strip()
+
+    mensagens_correcao = [
+        {
+            "role": "system",
+            "content": (
+                "Você reescreve respostas da Mary para corrigir violações de estado. "
+                "Você preserva a cena e corrige só o necessário. "
+                "Nunca explique a correção. Responda somente como Mary com STATE_UPDATE."
+            ),
+        },
+        {
+            "role": "user",
+            "content": prompt_correcao,
+        },
+    ]
+
+    try:
+        resposta_replanejada = chamar_openrouter(
+            mensagens_correcao,
+            model=model,
+        )
+
+        resposta_replanejada = str(resposta_replanejada or "").strip()
+
+        if not resposta_replanejada:
+            return ""
+
+        return resposta_replanejada
+
+    except Exception as e:
+        state["_erro_replanejamento_resposta"] = f"{type(e).__name__}: {e}"
+        return ""
+
+
+def corrigir_resposta_se_necessario(
+    resposta: str,
+    state: dict,
+    validacao: dict,
+    model: str = MODEL_DEFAULT,
+) -> str:
+    """
+    Corrige respostas que violaram o estado.
+
+    Novo fluxo:
+    1. Se não houve bloqueio, mantém a resposta original.
+    2. Se houve bloqueio grave, pede ao próprio modelo para replanejar.
+    3. Só usa fallback mecânico se o replanejamento falhar.
+    4. Registra tudo em state['_correcao_resposta'] para aparecer no log.
+    """
+    if not isinstance(state, dict):
+        state = {}
+
+    if not isinstance(validacao, dict):
+        validacao = {}
+
+    bloqueios = validacao.get("bloqueios", []) or []
+
+    state["_correcao_resposta"] = {
+        "houve": False,
+        "tipo": "",
+        "motivos": [],
+        "fallback_usado": False,
+        "erro_replanejamento": "",
+    }
 
     if not bloqueios:
         return resposta
 
-    # ======================================================
-    # CORREÇÃO ESPECÍFICA: CLÍMAX CEDO DEMAIS
-    # ======================================================
-    if any("Clímax de Mary antes do gate" in b for b in bloqueios):
-        resposta_limpa = re.split(
-            r"\n\s*STATE_UPDATE\s*:",
-            str(resposta or ""),
-            flags=re.IGNORECASE,
-        )[0].strip()
-
-        return (
-            "[ACAO] Meu corpo reage forte ao estímulo, mas eu ainda seguro o limite, "
-            "com a respiração quebrada e as pernas trêmulas, mantendo você exatamente onde está.\n\n"
-            "[FALA] Não para... continua assim... eu estou quase, mas ainda não... "
-            "só não muda o ritmo agora.\n\n"
-            "STATE_UPDATE:\n"
-            + json.dumps(
-                {
-                    "mary_acao": "Mary permanece em pré-pico, muito sensível ao estímulo atual, mas ainda sem resolver o clímax.",
-                    "local": None,
-                    "interlocutor": None,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-
     graves = [
         b for b in bloqueios
-        if "local público" in b or "Ação explícita" in b
+        if (
+            "local público" in b
+            or "Ação explícita" in b
+            or "Clímax de Mary antes do gate" in b
+            or "clímax" in b.lower()
+        )
     ]
 
     if not graves:
         return resposta
+
+    # ======================================================
+    # REPLANEJAMENTO PELO MODELO
+    # ======================================================
+    resposta_replanejada = replanejar_resposta_com_modelo(
+        resposta_original=resposta,
+        state=state,
+        validacao=validacao,
+        model=model,
+    )
+
+    if resposta_replanejada:
+        state["_correcao_resposta"] = {
+            "houve": True,
+            "tipo": "modelo_replanejou",
+            "motivos": graves,
+            "fallback_usado": False,
+            "erro_replanejamento": "",
+        }
+        return resposta_replanejada
+
+    # ======================================================
+    # FALLBACK MECÂNICO — APENAS ÚLTIMO RECURSO
+    # ======================================================
+    erro = str(state.get("_erro_replanejamento_resposta", "") or "")
+
+    state["_correcao_resposta"] = {
+        "houve": True,
+        "tipo": "fallback_script",
+        "motivos": graves,
+        "fallback_usado": True,
+        "erro_replanejamento": erro,
+    }
 
     return criar_fallback_humano(state, motivo="; ".join(graves))
 
@@ -14405,6 +14601,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
         resposta_bruta,
         state,
         validacao,
+        model=model,
     )
 
     resposta_final_limpa, update_final = separar_state_update(
@@ -15952,6 +16149,17 @@ if "mary_last_debug" in st.session_state:
             st.warning({"alertas": validacao.get("alertas")})
         else:
             st.success("Nenhuma violação detectada.")
+
+        st.markdown("### Correção automática")
+        correcao = dbg.get("state", {}).get("_correcao_resposta", {})
+
+        if correcao.get("houve"):
+            if correcao.get("fallback_usado"):
+                st.error(correcao)
+            else:
+                st.warning(correcao)
+        else:
+            st.success("Resposta original mantida. Nenhuma reescrita automática.")
 
         st.markdown("### State update extraído")
         st.json(dbg.get("update", {}))
