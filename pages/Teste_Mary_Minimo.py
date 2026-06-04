@@ -2452,6 +2452,42 @@ def inferir_perfil_temporal_e_risco_interacao(
         consentimento_percebido = "ambíguo"
 
     # ======================================================
+    # IDENTIDADE JANIO DONISETI / DONISETE
+    # ======================================================
+    # Existem apenas dois eixos:
+    #
+    # 1) Janio Doniseti = parceiro central / eixo afetivo do usuário.
+    # 2) Donisete = coroa/persona madura da cena.
+    #
+    # Não separar "Janio" de "Doniseti".
+    # Não confundir "Donisete" com "Janio Doniseti".
+    # ======================================================
+
+    texto_identidade = " ".join([
+        str(interlocutor or ""),
+        str(state.get("interlocutor", "") or ""),
+        str(state.get("interlocutor_foco_turno", "") or ""),
+        str(state.get("ultimo_interlocutor_explicito", "") or ""),
+        str(state.get("_fala_usuario_atual", "") or ""),
+        str(fala_usuario or ""),
+    ])
+
+    texto_identidade_norm = _texto_norm(texto_identidade)
+
+    eh_janio_doniseti = (
+        "janio doniseti" in texto_identidade_norm
+        or (
+            "janio" in texto_identidade_norm
+            and "doniseti" in texto_identidade_norm
+        )
+    )
+
+    eh_donisete_coroa = (
+        "donisete" in texto_identidade_norm
+        and not eh_janio_doniseti
+    )
+
+    # ======================================================
     # 10) LEITURA PARA MARY
     # ======================================================
     if tipo_interacao == "autopercepcao_mary":
@@ -2464,7 +2500,7 @@ def inferir_perfil_temporal_e_risco_interacao(
         leitura = (
             "Mary percebe Janio Doniseti como parceiro central, íntimo e amoroso. "
             "Ele pertence ao eixo afetivo principal dela, não ao grupo de terceiros, rivais ou coroas sociais. "
-            "Não tratar Janio/Doniseti como coroa, velho, senhor, pele madura ou figura geracional distante. "
+            "Não tratar Janio Doniseti como coroa, velho, senhor, pele madura ou figura geracional distante. "
             "Sua maturidade deve aparecer como segurança, força, intimidade, proteção, presença masculina e vínculo emocional. "
             "Se houver Donisete na cena como outro personagem, Mary deve separar os dois: "
             "Donisete é o coroa/persona social madura; Janio Doniseti é o parceiro central dela."
