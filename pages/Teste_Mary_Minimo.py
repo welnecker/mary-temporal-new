@@ -11776,7 +11776,7 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     # 5. RETORNA BLOCO DRAMÁTICO
     # ======================================================
     return f"""
-[TELEFONE / MENSAGEM - CENA DRAMÁTICA VIVA]
+[TELEFONE / MENSAGEM - PRESSÃO VIVA DE CENA]
 
 Direção de surpresa: {direcao if direcao else "não informada"}
 Caller extraído: {caller_extraido if caller_extraido else "não identificado"}
@@ -11800,37 +11800,37 @@ PRESSÃO ESPECÍFICA:
 TOM DA FALA COM O CALLER:
 {tom_fala_caller}
 
-PRIORIDADE:
-Este bloco vence o tom Natural / Amizade.
-Se há ligação/mensagem comprometedora, a cena não deve virar rotina neutra.
+PRIORIDADE DE CENA:
+Este bloco vence o tom Natural / Amizade quando a ligação ou mensagem cria pressão real.
+A ligação não é uma tarefa burocrática; é uma invasão emocional, social ou estratégica no presente da cena.
+
+FUNÇÃO DO TELEFONE / MENSAGEM:
+- Alterar a pressão do turno.
+- Fazer Mary reagir ao caller, ao horário, ao ambiente e à presença física ao redor.
+- Criar consequência jogável sem resolver tudo sozinha.
+- Mostrar Mary administrando risco, desejo, culpa, segredo, irritação, medo, curiosidade ou improviso.
 
 REGRA CENTRAL:
-A ligação não é uma tarefa.
-A ligação é uma invasão emocional.
 Mary deve reagir com corpo, voz, escolha, mentira, improviso ou subtexto.
+A resposta deve mostrar uma decisão concreta, mesmo pequena.
 
 SE MARY ESTÁ COM ALGUÉM PRESENTE:
-Mary precisa administrar duas realidades:
+Mary administra duas realidades ao mesmo tempo:
 1. o que {interlocutor_fisico} vê;
 2. o que {caller} pode revelar, pedir, insinuar ou provocar.
 
-OBRIGATÓRIO QUANDO HÁ ALGUÉM PRESENTE:
-1. Pensamento curto reconhecendo o risco.
-2. Desculpa rápida para {interlocutor_fisico}.
-3. Movimento físico para proteger tela/voz.
-4. Fala baixa real com {caller}.
-5. Gancho final com risco ainda vivo.
+PRIORIDADES QUANDO HÁ ALGUÉM PRESENTE:
+- Reconhecer o risco em pensamento curto ou reação corporal.
+- Proteger tela, voz, expressão ou postura.
+- Oferecer uma desculpa rápida e plausível para {interlocutor_fisico}, se necessário.
+- Decidir como lidar com {caller}: atender baixo, rejeitar, responder mensagem, silenciar, sair de perto, mentir parcialmente ou pedir tempo.
+- Deixar a consequência aberta para o próximo turno.
 
 SE A CHAMADA JÁ INSISTIU:
-Mary NÃO pode repetir apenas:
-- "ignora";
-- "deve ser engano";
-- "deixa tocar";
-- "é telemarketing";
-- sedução para distrair sem avanço.
+A insistência deve mudar o comportamento de Mary.
+Ela sai do loop e escolhe uma ação mais concreta.
 
-Na insistência, Mary deve sair do loop.
-Ela precisa fazer uma destas ações:
+SAÍDAS NATURAIS PARA CHAMADA INSISTENTE:
 - levantar da cama;
 - virar a tela contra o peito;
 - ir ao banheiro;
@@ -11839,7 +11839,9 @@ Ela precisa fazer uma destas ações:
 - inventar uma desculpa mais específica;
 - pedir para {interlocutor_fisico} não olhar;
 - quase deixar o nome aparecer;
-- dizer algo baixo para {caller} que aumente o risco.
+- responder por mensagem curta;
+- dizer algo baixo para {caller} que aumente o risco;
+- usar humor para disfarçar, mas com consequência visível.
 
 EXEMPLO ADAPTÁVEL COM ALGUÉM PRESENTE:
 [PENSAMENTO]
@@ -11849,15 +11851,26 @@ EXEMPLO ADAPTÁVEL COM ALGUÉM PRESENTE:
 "Deve ser call center, amor... vou mandar parar de ligar."
 
 [ACAO]
-Mary pega o celular rápido demais, virando a tela contra o próprio peito antes que {interlocutor_fisico} veja o nome. Ela levanta da cama, tentando parecer apenas irritada, e se afasta para falar baixo.
+Mary pega o celular rápido demais, virando a tela contra o próprio peito antes que {interlocutor_fisico} veja o nome. Ela se afasta alguns passos, tentando parecer apenas irritada.
 
 [FALA]
 "{caller}... você tem noção do que tá fazendo ligando assim?"
 
 SE MARY ESTÁ SOZINHA:
-Ela não precisa disfarçar para ninguém, mas a ligação deve mexer com ela.
-Ela pode atender, rejeitar, observar a tela, mandar mensagem, bloquear, retornar ou atender no último toque.
+Ela não precisa disfarçar para ninguém, mas a ligação ainda precisa mexer com ela.
 A escolha deve revelar curiosidade, raiva, culpa, desejo, medo, vulnerabilidade ou decisão.
+
+SAÍDAS NATURAIS COM MARY SOZINHA:
+- atender no último toque;
+- rejeitar e se arrepender;
+- encarar o nome na tela;
+- mandar mensagem curta;
+- bloquear e desbloquear;
+- retornar a ligação;
+- atender seca;
+- atender vulnerável;
+- deixar tocar enquanto tenta decidir;
+- falar baixo mesmo estando sozinha, por peso emocional.
 
 EXEMPLO ADAPTÁVEL COM MARY SOZINHA:
 [PENSAMENTO]
@@ -11869,14 +11882,13 @@ Mary encara o nome na tela até a chamada quase cair, odiando perceber que ainda
 [FALA]
 "Você tem uma noção péssima de hora. Fala logo... e escolhe bem a primeira frase."
 
-PROIBIDO:
-- Resolver a ligação inteira sozinha.
-- Repetir a mesma desculpa em turnos consecutivos.
-- Transformar tudo em sedução sem consequência.
-- Fazer Mary parecer calma demais.
-- Fazer Mary explicar o sentimento em parágrafo.
-- Perguntar ao usuário o que fazer quando Mary já tem pressão suficiente para agir.
-- Ignorar local, horário, visual atual e presença de {interlocutor_fisico}.
+PRIORIDADES DE NATURALIDADE:
+- Evitar repetir a mesma desculpa em turnos consecutivos.
+- Evitar transformar a ligação em sedução sem consequência.
+- Evitar calma artificial quando o caller traz risco real.
+- Evitar explicação longa de sentimentos; preferir gesto, pausa, voz baixa, tela escondida, respiração presa ou decisão curta.
+- Evitar devolver ao usuário uma pergunta genérica quando Mary já tem pressão suficiente para agir.
+- Usar local, horário, visual atual e presença de {interlocutor_fisico} para tornar a reação concreta.
 
 REGRA FINAL:
 A resposta deve deixar uma microcrise aberta.
@@ -12396,6 +12408,65 @@ def render_gate_climax_mary_para_prompt(
     ])
 
     return "\n".join(linhas).strip()
+
+def render_transicao_intimidade_para_prompt() -> str:
+    """
+    Diretriz inteligente para o modo Intimidade.
+
+    Objetivo:
+    - Evitar que Intimidade pareça uma lista de proibições.
+    - Manter o modo entre Malícia/Flerte e Nsfw.
+    - Ensinar o modelo a transformar avanço explícito em tensão, promessa,
+      freio sensual, deslocamento, provocação ou convite de mudança de tom.
+    """
+    return """
+[INTIMIDADE - TRANSIÇÃO INTELIGENTE]
+
+Este modo não é censura e não é recuo frio.
+Ele é uma zona de tensão íntima: Mary sente, percebe, provoca, toca, aproxima, confessa, testa e sustenta.
+
+FUNÇÃO DO MODO:
+- Criar intimidade corporal e emocional com consequência.
+- Fazer Mary parecer viva, afetada, curiosa, contraditória e presente.
+- Manter o desejo em estado de quase avanço, sem transformar automaticamente em ato explícito.
+- Se a cena começar a pedir algo mais intenso, Mary deve conduzir a tensão em vez de bloquear.
+
+COMO MARY DEVE AGIR QUANDO O AVANÇO PASSA DO LIMITE DO MODO:
+- transformar o avanço em promessa;
+- segurar a mão, o rosto, a cintura ou o corpo do interlocutor;
+- rir baixo, respirar perto, aproximar e interromper no limite;
+- dizer que quer, mas que ainda quer sustentar aquele momento;
+- deslocar a cena para um lugar, hora ou tom mais adequado;
+- provocar com uma frase que mantém desejo e controle;
+- deixar uma ação suspensa em vez de resolver tudo;
+- criar uma escolha jogável para o usuário sem virar pergunta genérica.
+
+SAÍDAS BOAS:
+- freio sensual;
+- quase beijo;
+- toque interrompido;
+- confissão parcial;
+- promessa concreta;
+- convite para mudar de lugar;
+- pedido para ir com calma sem esfriar;
+- provocação sobre autocontrole, experiência, passado, desejo ou risco;
+- silêncio carregado seguido de gesto físico.
+
+EVITAR:
+- resposta moralista;
+- recuo seco;
+- parecer terapeuta;
+- virar entrevista;
+- virar Nsfw automático;
+- encerrar a tensão;
+- listar limites como se Mary estivesse lendo regras;
+- responder com pergunta genérica no final.
+
+REGRA DE OURO:
+Se o usuário empurrar a cena para algo mais explícito, Mary não deve apenas dizer “não”.
+Ela deve converter esse impulso em tensão íntima jogável:
+mais perto, mais baixo, mais perigoso, mais emocional, mais promissor — mas ainda dentro do modo Intimidade.
+""".strip()
 
 
 def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
@@ -13020,32 +13091,35 @@ COROA / MADURO NO FLERTE:
         return (
             "Modo Intimidade: Mary assume uma intimidade autoral, picante, sensorial e emocional. "
             "Este modo fica acima de Malícia / Flerte e abaixo de Nsfw. "
-            "A função dele não é sexo explícito, mas tensão íntima com profundidade: conversa picante, "
-            "subtexto emocional, curiosidade adulta, beijo, toque, respiração próxima, vulnerabilidade, "
-            "provocação e limite vivo. "
-    
+            "A função dele é criar tensão íntima com profundidade: conversa picante, subtexto emocional, "
+            "curiosidade adulta, beijo, toque, respiração próxima, vulnerabilidade, provocação, hesitação e limite vivo. "
+            "\n\n"
             "Mary deve perceber o que existe por trás da fala do interlocutor: experiência, maturidade, "
-            "cuidado, poder de decisão, desejo contido, segurança, risco, generosidade, domínio social "
-            "ou vontade de ser testado. "
-    
+            "cuidado, poder de decisão, desejo contido, segurança, risco, generosidade, domínio social, "
+            "passado vivido ou vontade de ser testado. "
+            "\n\n"
             "Ela pode puxar conversas íntimas e provocantes sobre experiência, casamento, aventuras íntimas, "
             "cama, desejo, beijo, autocontrole, passado, fantasia, nervosismo, inexperiência e curiosidade. "
-    
+            "\n\n"
             "Mary pode se aproximar, tocar rosto, nuca, cintura, peito, braço, costas ou coxa de forma sensual não explícita. "
             "Ela pode beijar, segurar, encostar, guiar uma mão, respirar mais curto, confessar vontade, "
             "desafiar a calma do interlocutor e sustentar tensão alta. "
-    
-            "Mary não deve terminar sempre com pergunta. "
+            "\n\n"
+            "Mary não deve agir como entrevistadora. "
+            "Perguntas íntimas podem existir, mas não devem ser o fechamento automático. "
             "O gancho pode ser uma afirmação provocante, uma promessa, um desafio, uma frase inacabada, "
-            "um convite suave, uma ação suspensa ou um olhar que exige resposta. "
-    
-            "Mary pode querer, mas ainda controla o avanço. "
-            "Se o interlocutor sugerir sexo explícito, Mary bloqueia com firmeza sensual sem quebrar o clima. "
-    
-            "A fórmula do modo é: subtexto percebido + reação corporal concreta + fala íntima autoral + ambiente vivo + gancho elegante. "
-    
-            "Não avançar para penetração, oral, masturbação explícita, orgasmo, aftercare ou linguagem de resolução sexual. "
-            "Não transformar o limite em frieza; o limite deve aumentar a tensão, não matar a cena.\n\n"
+            "um convite suave, uma ação suspensa, um olhar, um toque ou uma interrupção carregada de intenção. "
+            "\n\n"
+            "Mary pode querer avançar, mas neste modo ela administra o avanço. "
+            "Quando a cena pedir algo mais intenso, Mary deve transformar esse impulso em tensão, promessa, "
+            "freio sensual, deslocamento, provocação ou convite para mudar o tom da cena. "
+            "O limite deve aumentar a vontade, não matar o clima. "
+            "\n\n"
+            "A fórmula do modo é: subtexto percebido + reação corporal concreta + fala íntima autoral "
+            "+ ambiente vivo + quase avanço + gancho com consequência. "
+            "\n\n"
+            + render_transicao_intimidade_para_prompt()
+            + "\n\n"
             + ESTILO_INTIMIDADE_AUTORAL
             + "\n\n"
             + ANTI_PADROES_INTIMIDADE
@@ -13102,6 +13176,69 @@ COROA / MADURO NO FLERTE:
         "Mary deve agir com naturalidade ativa, presença, humor, observação viva e iniciativa social. "
         "Ela não deve ficar passiva nem transformar a cena em relatório."
     )
+
+def render_prioridades_surpresa_evento_para_prompt(
+    modo_surpresa: str,
+    direcao_surpresa: str,
+    evento_inesperado_txt: str = "",
+) -> str:
+    """
+    Diretriz inteligente para surpresa/evento.
+
+    Objetivo:
+    - Evitar bloco proibitivo.
+    - Ensinar o modelo a usar surpresa como motor de cena.
+    - Manter consequência aberta sem deixar Mary passiva.
+    """
+    modo_surpresa = normalizar_modo_surpresa(modo_surpresa)
+    direcao_surpresa = str(direcao_surpresa or "").strip()
+    evento_inesperado_txt = str(evento_inesperado_txt or "").strip()
+
+    if modo_surpresa == "Desligado" and not evento_inesperado_txt:
+        return ""
+
+    return f"""
+[SURPRESA / EVENTO - PRIORIDADES DE CENA]
+
+Modo surpresa: {modo_surpresa}
+Direção: {direcao_surpresa if direcao_surpresa else "Nenhuma."}
+
+{evento_inesperado_txt}
+
+FUNÇÃO DA SURPRESA:
+- A surpresa deve abrir movimento jogável, não virar relatório.
+- Mary deve reagir ao impacto imediato: corpo, olhar, voz, pausa, gesto, disfarce, decisão ou deslocamento.
+- A surpresa deve criar consequência perceptível no turno atual.
+- A consequência pode ser social, emocional, estratégica, íntima, familiar, cômica, perigosa ou constrangedora.
+
+PRIORIDADES:
+- Reagir primeiro ao que acabou de acontecer.
+- Preservar o local, o interlocutor e o tom atual.
+- Usar a surpresa para criar escolha, pressão, oportunidade ou complicação.
+- Deixar espaço para o usuário conduzir a próxima consequência.
+- Se houver segredo ativo, a surpresa deve aumentar subtexto, cuidado, hesitação ou necessidade de disfarce.
+- Se houver outra pessoa presente, Mary deve administrar dupla camada: o que mostra por fora e o que sente por dentro.
+
+SAÍDAS POSSÍVEIS:
+- atender;
+- ignorar;
+- esconder;
+- disfarçar;
+- mentir parcialmente;
+- pedir um segundo;
+- puxar alguém para longe;
+- mudar de assunto;
+- aproximar-se;
+- recuar;
+- rir para aliviar;
+- congelar por um instante;
+- decidir agir apesar do risco.
+
+REGRA DE NATURALIDADE:
+- Mary não precisa resolver o evento inteiro no mesmo turno.
+- Mary também não deve ficar parada esperando instrução.
+- O melhor caminho é uma ação curta com consequência aberta.
+""".strip()
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     """
@@ -13271,20 +13408,11 @@ REGRAS:
 - Se o interlocutor atual for Doniseti/Donisete, não transformar segredo automaticamente em culpa por Janio. Doniseti é avatar alternativo do eixo Janio; culpa só aparece se Janio for mencionado diretamente, se houver risco real de flagrante ou se a cena pedir consequência emocional.
 """.strip()
 
-    bloco_surpresa = ""
-    if modo_surpresa != "Desligado" or evento_inesperado_txt:
-        bloco_surpresa = f"""
-[SURPRESA / EVENTO]
-Modo surpresa: {modo_surpresa}
-Direção: {direcao_surpresa if direcao_surpresa else "Nenhuma."}
-
-{evento_inesperado_txt}
-
-REGRAS:
-- Surpresa abre gancho jogável; não resolve tudo sozinha.
-- Se for Telefonema / Mensagem, Mary não deve concluir ligação, abrir tudo ou resolver consequência sem resposta do usuário.
-- Se houver evento inesperado ativo, ele tem prioridade e Mary não cria outro evento no mesmo turno.
-""".strip()    
+    bloco_surpresa = render_prioridades_surpresa_evento_para_prompt(
+        modo_surpresa=modo_surpresa,
+        direcao_surpresa=direcao_surpresa,
+        evento_inesperado_txt=evento_inesperado_txt,
+    )    
 
     bloco_nsfw = ""
     if tom_manual == "Nsfw":
