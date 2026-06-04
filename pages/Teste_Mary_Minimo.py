@@ -2464,7 +2464,7 @@ def inferir_perfil_temporal_e_risco_interacao(
     # ======================================================
 
     texto_identidade = " ".join([
-        str(interlocutor or ""),
+        str(personagem or ""),
         str(state.get("interlocutor", "") or ""),
         str(state.get("interlocutor_foco_turno", "") or ""),
         str(state.get("ultimo_interlocutor_explicito", "") or ""),
@@ -2481,6 +2481,8 @@ def inferir_perfil_temporal_e_risco_interacao(
             and "doniseti" in texto_identidade_norm
         )
     )
+
+    eh_janio_pessoa = eh_janio_doniseti
 
     eh_donisete_coroa = (
         "donisete" in texto_identidade_norm
