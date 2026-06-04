@@ -4,7 +4,7 @@ import html
 import os
 import sys
 import requests
-from datetime import datetime
+from datetime import datetime, date
 import unicodedata
 import base64
 import tempfile
@@ -1348,6 +1348,427 @@ def _texto_norm(valor: str) -> str:
     - remove acentos.
     """
     return remover_acentos(str(valor or "").strip().lower())
+
+# ==========================================================
+# LINHA TEMPORAL NARRATIVA
+# ==========================================================
+
+def extrair_data_br_flexivel(texto: str):
+    """
+    Extrai datas em formatos como:
+    - 07/06/2026
+    - 7/6/26
+    - Domingo-7/6/26-Festa...
+    - [EVENTO: 05/06/2026]
+
+    Retorna datetime.date ou None.
+    """
+    texto = str(texto or "").strip()
+
+    if not texto:
+        return None
+
+    padrao = r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b"
+    m = re.search(padrao, texto)
+
+    if not m:
+        return None
+
+    dia, mes, ano = m.groups()
+
+    try:
+        dia = int(dia)
+        mes = int(mes)
+        ano = int(ano)
+
+        if ano < 100:
+            ano += 2000
+
+        return date(ano, mes, dia)
+
+    except Exception:
+        return None
+
+
+def formatar_data_br(data_obj) -> str:
+    if not data_obj:
+        return ""
+
+    try:
+        return data_obj.strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
+def extrair_data_atual_da_cena(state: dict):
+    """
+    Data viva da cena atual.
+
+    Prioridade:
+    1. data_cena, campo próprio do sidebar.
+    2. tempo, como fallback caso você escreva a data ali.
+    3. eventos_recentes/plano/segredo, apenas como fallback.
+    """
+    if not isinstance(state, dict):
+        return None
+
+    candidatos = [
+        state.get("data_cena", ""),
+        state.get("tempo", ""),
+        state.get("eventos_recentes", ""),
+        state.get("plano_ativo", ""),
+        state.get("segredo_ativo", ""),
+    ]
+
+    for item in candidatos:
+        data = extrair_data_br_flexivel(item)
+        if data:
+            return data
+
+    return None
+
+
+def extrair_eventos_datados_shared(memories: list) -> list[dict]:
+    """
+    Extrai eventos datados da memória shared.
+
+    Aceita formatos livres:
+    - Domingo-7/6/26-Festa no Copacabana Palace...
+    - [EVENTO: 05/06/2026] Festa...
+    - 05/06/2026: Mary foi ao hotel...
+    """
+    eventos = []
+
+    if not isinstance(memories, list):
+        return eventos
+
+    for m in memories:
+        if not isinstance(m, dict):
+            continue
+
+        texto = str(m.get("memoria", "") or "").strip()
+
+        if not texto:
+            continue
+
+        data_evento = extrair_data_br_flexivel(texto)
+
+        if not data_evento:
+            continue
+
+        eventos.append(
+            {
+                "id": str(m.get("id", "") or "").strip(),
+                "tipo": str(m.get("tipo", "shared") or "shared").strip(),
+                "texto": texto,
+                "texto_norm": _texto_norm(texto),
+                "data": data_evento,
+                "peso": m.get("peso", 1.0),
+            }
+        )
+
+    return eventos
+
+
+def detectar_gatilho_temporal_no_turno(fala_usuario: str, state: dict) -> dict:
+    """
+    Detecta se o turno atual pede leitura temporal.
+    Ex:
+    - teste de gravidez
+    - enjoo
+    - atraso menstrual
+    - exame
+    - bebê
+    - paternidade
+    - festa passada
+    - segredo vindo à tona
+    """
+    texto = " ".join(
+        [
+            str(fala_usuario or ""),
+            str(state.get("local", "") or ""),
+            str(state.get("tempo", "") or ""),
+            str(state.get("segredo_ativo", "") or ""),
+            str(state.get("plano_ativo", "") or ""),
+            str(state.get("eventos_recentes", "") or ""),
+            str(state.get("mary_acao", "") or ""),
+        ]
+    )
+
+    texto_norm = _texto_norm(texto)
+
+    gatilhos_gravidez = [
+        "gravidez",
+        "gravida",
+        "grávida",
+        "teste de gravidez",
+        "teste positivo",
+        "exame positivo",
+        "enjoos",
+        "enjoo",
+        "nausea",
+        "náusea",
+        "atraso menstrual",
+        "menstruacao atrasada",
+        "menstruação atrasada",
+        "bebe",
+        "bebê",
+        "barriga",
+        "maternidade",
+        "loja de bebe",
+        "loja de bebê",
+        "ultrassom",
+        "pre natal",
+        "pré natal",
+        "consulta medica",
+        "consulta médica",
+    ]
+
+    gatilhos_paternidade = [
+        "quem e o pai",
+        "quem é o pai",
+        "paternidade",
+        "pai da crianca",
+        "pai da criança",
+        "dna",
+        "exame de dna",
+        "duvida de quem e",
+        "dúvida de quem é",
+        "nao sabe de quem",
+        "não sabe de quem",
+    ]
+
+    gatilhos_tempo = [
+        "dias depois",
+        "mes depois",
+        "mês depois",
+        "semanas depois",
+        "um mes depois",
+        "um mês depois",
+        "desde aquela noite",
+        "desde a festa",
+        "naquela festa",
+        "copacabana palace",
+        "hotel",
+        "suite",
+        "suíte",
+    ]
+
+    return {
+        "gravidez": any(g in texto_norm for g in gatilhos_gravidez),
+        "paternidade": any(g in texto_norm for g in gatilhos_paternidade),
+        "tempo": any(g in texto_norm for g in gatilhos_tempo),
+        "texto_norm": texto_norm,
+    }
+
+
+def evento_tem_relacao_intima(norm: str) -> bool:
+    termos = [
+        "transou",
+        "sexo",
+        "relacao intima",
+        "relação íntima",
+        "dormiu com",
+        "ficou com",
+        "passou a noite",
+        "suite",
+        "suíte",
+        "quarto",
+        "hotel",
+    ]
+
+    return any(t in norm for t in termos)
+
+
+def evento_menciona_janio_doniseti(norm: str) -> bool:
+    return (
+        "janio" in norm
+        or "jânio" in norm
+        or "doniseti" in norm
+        or "janio doniseti" in norm
+    )
+
+
+def evento_menciona_donisete(norm: str) -> bool:
+    return "donisete" in norm
+
+
+def render_linha_temporal_narrativa_para_prompt(
+    state: dict,
+    memories: list,
+    fala_usuario: str = "",
+    limite: int = 10,
+) -> str:
+    """
+    Motor temporal geral.
+
+    A data atual vem do sidebar: state['data_cena'].
+    As memórias shared guardam eventos históricos datados.
+
+    Ex:
+    Sidebar:
+    data_cena = 10/07/2026
+
+    Shared:
+    Domingo-7/6/26-Festa no Copacabana Palace-Mary se relacionou com Donisete e depois com Janio Doniseti.
+
+    Turno:
+    Mary sente enjoos e faz um teste de gravidez.
+
+    Resultado para o prompt:
+    - O evento aconteceu há X dias.
+    - Existe janela temporal compatível com gravidez descoberta agora.
+    - Como há dois possíveis parceiros no período, Mary pode ter dúvida de paternidade.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    data_cena = extrair_data_atual_da_cena(state)
+
+    if not data_cena:
+        return ""
+
+    eventos = extrair_eventos_datados_shared(memories)
+
+    if not eventos:
+        return ""
+
+    gatilhos = detectar_gatilho_temporal_no_turno(fala_usuario, state)
+
+    eventos_processados = []
+
+    houve_evento_intimo_recente = False
+    houve_janio_no_periodo = False
+    houve_donisete_no_periodo = False
+    eventos_concepcao_possivel = []
+
+    for ev in eventos:
+        data_evento = ev["data"]
+        dias = (data_cena - data_evento).days
+        norm = ev["texto_norm"]
+
+        # Mantém eventos próximos ou eventos com alto valor narrativo.
+        evento_intimo = evento_tem_relacao_intima(norm)
+        menciona_janio = evento_menciona_janio_doniseti(norm)
+        menciona_donisete = evento_menciona_donisete(norm)
+
+        # Janela narrativa útil para descoberta de gravidez:
+        # 14 a 70 dias após relação íntima.
+        possivel_concepcao = (
+            evento_intimo
+            and 14 <= dias <= 70
+        )
+
+        if possivel_concepcao:
+            houve_evento_intimo_recente = True
+            eventos_concepcao_possivel.append(ev)
+
+            if menciona_janio:
+                houve_janio_no_periodo = True
+
+            if menciona_donisete:
+                houve_donisete_no_periodo = True
+
+        eventos_processados.append(
+            {
+                **ev,
+                "dias": dias,
+                "evento_intimo": evento_intimo,
+                "menciona_janio": menciona_janio,
+                "menciona_donisete": menciona_donisete,
+                "possivel_concepcao": possivel_concepcao,
+            }
+        )
+
+    # Ordena por proximidade com a data atual.
+    eventos_processados = sorted(
+        eventos_processados,
+        key=lambda e: abs(e["dias"]),
+    )[:limite]
+
+    # Evita poluir prompt se não há gatilho temporal e nenhum evento íntimo recente relevante.
+    if not (
+        gatilhos["gravidez"]
+        or gatilhos["paternidade"]
+        or gatilhos["tempo"]
+        or houve_evento_intimo_recente
+    ):
+        return ""
+
+    linhas = []
+    linhas.append("[LINHA TEMPORAL NARRATIVA]")
+    linhas.append("")
+    linhas.append("A data atual da cena vem do sidebar. Ela representa o agora narrativo, não uma memória.")
+    linhas.append(f"Data atual da cena: {formatar_data_br(data_cena)}.")
+    linhas.append("")
+    linhas.append("Eventos datados das memórias shared:")
+
+    for ev in eventos_processados:
+        data_txt = formatar_data_br(ev["data"])
+        dias = ev["dias"]
+
+        if dias == 0:
+            distancia = "acontece na data atual da cena"
+        elif dias > 0:
+            distancia = f"aconteceu há {dias} dia(s)"
+        else:
+            distancia = f"está marcado para daqui a {abs(dias)} dia(s)"
+
+        marcador = ""
+
+        if ev.get("possivel_concepcao"):
+            marcador = " [janela temporal compatível com consequência de gravidez]"
+
+        linhas.append(
+            f"- {data_txt}: {ev['texto']} ({distancia}).{marcador}"
+        )
+
+    linhas.append("")
+    linhas.append("Leitura temporal para Mary:")
+
+    if gatilhos["gravidez"]:
+        linhas.append(
+            "- O turno atual contém sinais de gravidez, teste, enjoo, bebê, atraso, exame ou maternidade. "
+            "Mary deve ligar isso à linha temporal se houver evento íntimo datado compatível."
+        )
+
+    if houve_evento_intimo_recente:
+        linhas.append(
+            "- Há evento íntimo datado dentro de uma janela compatível com descoberta de gravidez. "
+            "Mary pode associar o que sente agora ao que aconteceu naquele período."
+        )
+
+    if gatilhos["gravidez"] and houve_janio_no_periodo and houve_donisete_no_periodo:
+        linhas.append(
+            "- Como Janio Doniseti e Donisete aparecem no período relevante, Mary NÃO deve ter certeza automática sobre a paternidade. "
+            "A dúvida pode surgir como choque, medo, culpa, silêncio, necessidade de confirmar datas ou vontade de procurar exame."
+        )
+
+    elif gatilhos["gravidez"] and houve_janio_no_periodo:
+        linhas.append(
+            "- Janio Doniseti aparece no período relevante. Mary pode pensar nele como possível pai, salvo se a narrativa disser o contrário."
+        )
+
+    elif gatilhos["gravidez"] and houve_donisete_no_periodo:
+        linhas.append(
+            "- Donisete aparece no período relevante. Mary pode sentir risco, segredo ou dúvida ligada a ele, salvo se a narrativa disser o contrário."
+        )
+
+    if gatilhos["paternidade"]:
+        linhas.append(
+            "- O turno atual aciona diretamente dúvida de paternidade. Mary deve tratar isso com peso emocional, não como detalhe burocrático."
+        )
+
+    linhas.append("")
+    linhas.append("Regras de uso:")
+    linhas.append("- A linha temporal deve influenciar a emoção e a decisão, mas não precisa ser citada literalmente em todo turno.")
+    linhas.append("- Mary não deve contradizer datas explícitas.")
+    linhas.append("- Mary não deve revelar tudo automaticamente; com Silvia, pode desabafar por camadas.")
+    linhas.append("- Se a cena envolve teste de gravidez positivo, Mary pode ficar em choque, fazer contas mentais, lembrar da festa, hesitar, esconder ou pedir ajuda.")
+    linhas.append("- Se houver dúvida de paternidade, Mary não deve afirmar certeza sem exame, confirmação narrativa ou decisão explícita do usuário.")
+    linhas.append("- O presente visível vence: local, roupa, interlocutor e ação atual continuam sendo definidos pelo sidebar e pelo turno.")
+
+    return "\n".join(linhas).strip()
 
 
 # ==========================================================
@@ -7651,6 +8072,7 @@ def sincronizar_facts_basicos(
         "perfil_temporal_interlocutor": perfil_temporal,
         "local": state.get("local", "quarto"),
         "tempo": state.get("tempo", "noite"),
+        "data_cena": state.get("data_cena", ""),
         "interlocutor": state.get("interlocutor", "Janio Doniseti"),
         "interlocutor_foco_turno": state.get(
             "interlocutor_foco_turno",
@@ -7808,6 +8230,7 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     campos = [
         "local",
         "tempo",
+        "data_cena",
         "interlocutor",
         "interlocutor_foco_turno",
         "interlocutor_ativo_persistente",
@@ -7870,6 +8293,9 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
 
     if not state.get("eventos_recentes"):
         state["eventos_recentes"] = ""
+
+    if not state.get("data_cena"):
+        state["data_cena"] = ""
 
     if not state.get("mentiras_desculpas"):
         state["mentiras_desculpas"] = "" 
@@ -12689,6 +13115,13 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=8)
 
+    linha_temporal_txt = render_linha_temporal_narrativa_para_prompt(
+        state=state,
+        memories=shared_memories,
+        fala_usuario=fala_usuario,
+        limite=10,
+    )
+
     canon_mary = state.get("canon_mary") or carregar_canon_mary_cache(apenas_ativos=True)
     state["canon_mary"] = canon_mary
     canon_txt = formatar_canon_mary_para_prompt(canon_mary, limite=12)
@@ -13074,6 +13507,9 @@ Intenção: {mary_intent}
 
 [MEMÓRIAS RELEVANTES]
 {shared_txt if shared_txt else "Nenhuma memória shared acionada neste turno."}
+
+[LINHA TEMPORAL NARRATIVA]
+{linha_temporal_txt if linha_temporal_txt else "Nenhum evento temporal datado relevante acionado neste turno."}
 
 [CÂNONE RELEVANTE]
 {canon_txt if canon_txt else "Sem cânone adicional necessário neste turno."}
@@ -14762,6 +15198,17 @@ with st.sidebar:
         "⏰ Tempo",
         value=state.get("tempo", "noite"),
         help="Momento da cena: manhã, noite, chuva, depois da aula, sábado etc.",
+    )
+
+    state["data_cena"] = st.text_input(
+        "📅 Data atual da cena",
+        value=state.get("data_cena", ""),
+        placeholder="Ex: 10/07/2026",
+        help=(
+            "Data narrativa atual da cena. "
+            "Não é memória histórica. Serve para calcular distância temporal "
+            "em relação a eventos datados gravados nas memórias shared."
+        ),
     )
 
     state["interlocutor"] = st.text_input(
