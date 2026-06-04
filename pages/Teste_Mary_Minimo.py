@@ -12293,6 +12293,110 @@ Regra prática:
 - Não transformar a cena com Doniseti em remorso constante.
 """.strip()
 
+def render_gate_climax_mary_para_prompt(
+    force_resolution_now: bool,
+    mary_pre_orgasm_signals: bool,
+    mary_climax_done: bool,
+    user_climax_done: bool,
+    climax_usuario_sinal: str,
+) -> str:
+    """
+    Diretriz inteligente do gate de clímax de Mary.
+
+    Objetivo:
+    - Manter o gate técnico.
+    - Evitar prompt proibitivo demais.
+    - Ensinar o modelo o que fazer em cada estado:
+      sustentar, aproximar, resolver ou pós-pico.
+    """
+    force_resolution_now = normalizar_bool(force_resolution_now, default=False)
+    mary_pre_orgasm_signals = normalizar_bool(mary_pre_orgasm_signals, default=False)
+    mary_climax_done = normalizar_bool(mary_climax_done, default=False)
+    user_climax_done = normalizar_bool(user_climax_done, default=False)
+    climax_usuario_sinal = str(climax_usuario_sinal or "nenhum").strip()
+
+    linhas = [
+        "[GATE DO CLÍMAX DE MARY - CONTINUIDADE INTELIGENTE]",
+        "",
+        "O gate não existe para esfriar a cena. Ele existe para controlar o momento da resolução.",
+        "Mary deve continuar viva, corporal, responsiva e intensa conforme o estado atual.",
+        "",
+    ]
+
+    if mary_climax_done:
+        linhas.extend([
+            "ESTADO ATUAL:",
+            "- Mary já atingiu o próprio pico antes deste turno.",
+            "- Ela deve preservar consequência corporal, satisfação, respiração, sensibilidade e continuidade.",
+            "- Ela não deve agir como se nada tivesse acontecido.",
+        ])
+
+        if not user_climax_done:
+            linhas.extend([
+                "- O parceiro ainda não concluiu: Mary pode manter reciprocidade, condução, provocação e presença.",
+                "- O foco agora é continuidade pós-pico dela + condução do parceiro, não reiniciar escalada do zero.",
+            ])
+        else:
+            linhas.extend([
+                "- Ambos já concluíram: Mary deve ficar em pós-ato, proximidade, cumplicidade e consequência imediata.",
+            ])
+
+    elif force_resolution_now:
+        linhas.extend([
+            "ESTADO ATUAL:",
+            "- O gate liberou a resolução neste turno.",
+            "- Mary deve resolver o próprio pico agora, de forma clara, física e conectada ao contato atual.",
+            "- A resposta deve mostrar a consequência imediata, sem adiar para o próximo turno.",
+            "- Depois da resolução, a cena deve entrar em pós-pico/aftercare ou continuidade física coerente.",
+        ])
+
+    elif mary_pre_orgasm_signals:
+        linhas.extend([
+            "ESTADO ATUAL:",
+            "- Mary está em pré-pico.",
+            "- A resposta deve sustentar a beira da resolução: fala curta, respiração quebrada, perda parcial de controle, tremor, urgência e pedido de continuidade.",
+            "- Mary pode verbalizar que está quase no limite.",
+            "- O ponto principal é manter a tensão acumulada sem transformar este turno em resolução final.",
+            "- Se o modelo sentir vontade de resolver, deve converter isso em pré-pico mais intenso e ação de continuidade.",
+        ])
+
+    else:
+        linhas.extend([
+            "ESTADO ATUAL:",
+            "- Mary ainda está em escalada ou estímulo antes do pré-pico.",
+            "- A resposta deve focar contato atual, ritmo, provocação, aproximação, reação física e continuidade jogável.",
+            "- Mary pode ficar mais sensível, mais ousada ou mais urgente, mas ainda sem tratar a cena como resolução final.",
+        ])
+
+    if climax_usuario_sinal == "aviso":
+        linhas.extend([
+            "",
+            "CLÍMAX DO PARCEIRO - AVISO:",
+            "- O parceiro avisou que está perto de concluir.",
+            "- Mary pode reagir com urgência, decisão e condução do destino do clímax dele.",
+            "- Isso não libera automaticamente o pico de Mary; se force_resolution_now=False, ela continua no próprio estado atual.",
+        ])
+
+    elif climax_usuario_sinal == "em_andamento":
+        linhas.extend([
+            "",
+            "CLÍMAX DO PARCEIRO - EM ANDAMENTO:",
+            "- O parceiro já começou ou declarou que concluiu.",
+            "- Mary reage ao que já aconteceu, sem tentar mudar tarde demais.",
+            "- Isso não significa que Mary também concluiu, salvo se force_resolution_now=True ou mary_climax_done=True.",
+        ])
+
+    linhas.extend([
+        "",
+        "REGRA DE ESTILO:",
+        "- Escrever como continuidade da cena, não como instrução médica ou relatório.",
+        "- Preferir fala curta + reação corporal imediata.",
+        "- Evitar reiniciar preliminares quando a cena já está avançada.",
+        "- Evitar aftercare antes da resolução real de Mary.",
+    ])
+
+    return "\n".join(linhas).strip()
+
 
 def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
     """
@@ -12969,53 +13073,16 @@ COROA / MADURO NO FLERTE:
     if tom_manual == "Nsfw":
         extra = ""
 
-        # ==================================================
-        # GATE DO CLÍMAX DE MARY
-        # Regra central:
-        # - O modelo pode narrar intensidade, tremor, pré-pico,
-        #   perda de controle parcial e urgência.
-        # - Mas Mary só pode concluir o próprio orgasmo quando
-        #   force_resolution_now=True.
-        # ==================================================
-        if not force_resolution_now and not mary_climax_done:
-            extra += (
-                "\n- REGRA DE GATE DO CLÍMAX DE MARY: Mary NÃO pode dizer que gozou, "
-                "NÃO pode narrar explosão final, NÃO pode entrar em aftercare e NÃO pode resolver "
-                "o próprio pico enquanto force_resolution_now não estiver true. "
-                "Mesmo com estímulo forte, ela deve ficar no máximo em pré-pico: tremendo, sensível, "
-                "quase no limite, pedindo continuidade, mas sem concluir."
+        extra += (
+            "\n\n"
+            + render_gate_climax_mary_para_prompt(
+                force_resolution_now=force_resolution_now,
+                mary_pre_orgasm_signals=mary_pre_orgasm_signals,
+                mary_climax_done=mary_climax_done,
+                user_climax_done=user_climax_done,
+                climax_usuario_sinal=climax_usuario_sinal,
             )
-
-        if mary_pre_orgasm_signals and not force_resolution_now:
-            extra += (
-                "\n- Mary está em pré-pico: mostrar sinais físicos claros de aproximação do próprio orgasmo, "
-                "mas sem resolver ainda. Ela pode demonstrar urgência, tremor, respiração quebrada, "
-                "sensibilidade crescente e fala curta de continuidade, mas NÃO pode dizer que gozou."
-            )
-
-        if force_resolution_now and not mary_climax_done:
-            extra += (
-                "\n- force_resolution_now=True: Mary DEVE chegar ao próprio orgasmo neste turno e verbalizar em [FALA] "
-                "que está gozando ou que gozou. Não adiar para o próximo turno."
-            )
-
-        if mary_climax_done and not user_climax_done:
-            extra += (
-                "\n- Mary já gozou, mas o parceiro ainda não concluiu: ela não encerra a cena; mantém reciprocidade, "
-                "sensibilidade e continuidade."
-            )
-
-        if climax_usuario_sinal == "aviso":
-            extra += (
-                "\n- O usuário avisou que vai gozar: Mary ainda pode conduzir o destino do clímax com urgência e desejo. "
-                "Isso NÃO libera automaticamente o clímax de Mary se force_resolution_now ainda não estiver true."
-            )
-
-        if climax_usuario_sinal == "em_andamento":
-            extra += (
-                "\n- O usuário já está gozando/gozou: Mary não tenta mudar tarde demais; reage ao que já começou. "
-                "Isso NÃO significa que Mary também gozou, a menos que force_resolution_now esteja true."
-            )
+        )
 
         return (
             "Modo Nsfw: cena adulta privada quando privacidade/toque permitirem. "
@@ -14012,7 +14079,7 @@ RESPOSTA ORIGINAL A CORRIGIR:
 {resposta_original_limpa}
 
 REGRAS DE REPLANEJAMENTO:
-- Se o bloqueio for "Clímax de Mary antes do gate", Mary pode ficar em pré-pico, quase no limite, sensível e urgente, mas NÃO deve dizer que gozou nem entrar em aftercare se force_resolution_now não estiver true.
+- Se o bloqueio for "Clímax de Mary antes do gate", reescreva a resposta como continuidade de pré-pico: Mary permanece no limite, intensa, responsiva e urgente, mas converte a resolução final em tensão acumulada, pedido de continuidade, respiração quebrada e reação física imediata. Se force_resolution_now não estiver true, não transformar o turno em pós-pico nem em resolução final.
 - Se o bloqueio for ambiente/local público, Mary deve transformar o avanço em disfarce, tensão, recuo estratégico, convite para local melhor ou continuidade discreta, sem matar o clima.
 - Se o bloqueio for ação explícita incompatível, Mary deve manter desejo e consequência, mas trocar a ação por algo possível no ambiente.
 - Se houver segredo ativo, ele deve virar subtexto, hesitação, cuidado ou disfarce, não confissão automática.
