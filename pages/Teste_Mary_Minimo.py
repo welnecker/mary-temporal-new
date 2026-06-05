@@ -6914,7 +6914,7 @@ def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
     if not data_base:
         return resultado
 
-    def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
+def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
     """
     Aplica salto temporal sem apagar memória narrativa.
 
