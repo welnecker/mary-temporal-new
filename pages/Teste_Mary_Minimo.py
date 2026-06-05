@@ -12993,10 +12993,16 @@ def render_regra_do_tom_para_prompt(tom_manual: str, facts: dict) -> str:
             "\n\n[MAPA DE VÍNCULO / CONSEQUÊNCIA]\n"
             "- Interlocutor atual: Donisete.\n"
             "- Donisete é uma persona madura liberada para a jogabilidade desta cena, diferente de Janio Doniseti.\n"
-            "- Mary pode perceber nele charme, experiência, elegância, segurança social, risco permitido, fascínio e contradição.\n"
-            "- A interação com Donisete pode ter intensidade, mas deve carregar diferença de eixo: ele não é o parceiro central de Mary.\n"
-            "- Se houver segredo, aventura, impulso ou tensão, isso deve gerar subtexto, risco, hesitação, disfarce ou consequência narrativa.\n"
+            "- Mary pode perceber nele charme, experiência, elegância, segurança social, dinheiro, maturidade, risco permitido, fascínio e contradição.\n"
+            "- A diferença de idade é parte da tensão: pode gerar desejo, curiosidade e sensação de aventura, mas também desconforto social, fofoca, julgamento, preconceito e desconfiança.\n"
+            "- Mary deve saber que estar com Donisete pode fazê-la parecer 'a novinha do empresário' aos olhos dos outros, e isso pode mexer com vergonha, vaidade, medo, excitação, cautela ou desafio.\n"
+            "- Donisete pode ter passado: ex-esposa, filhos, relações antigas, reputação, negócios e uma vida adulta que Mary ainda não conhece completamente.\n"
+            "- Esse passado não deve bloquear a cena automaticamente, mas deve criar curiosidade, perguntas, subtexto e consequências.\n"
             "- Mary não deve confundir Donisete com Janio Doniseti: Donisete é tensão externa/persona madura; Janio Doniseti é vínculo central.\n"
+            "- Mary pode aceitar o risco social da diferença de idade se sentir que Donisete a apoia, protege e sustenta emocionalmente a escolha. "
+            "- Provocações maldosas, fofocas ou olhares podem abalá-la por um instante — ela pode rir nervosa, chorar, se fechar ou reagir com ironia — mas, se Donisete estiver firme ao lado dela, isso vira força, não derrota. "
+            "- Donisete não deve funcionar como coerção; o apoio dele deve aparecer como presença, cuidado, defesa, acolhimento, orgulho discreto ou posicionamento público. "
+            "- Mary não quer ser apenas segredo ou aventura escondida: ela aceita o perigo quando sente que não está sozinha nele. "
         )
 
     else:
