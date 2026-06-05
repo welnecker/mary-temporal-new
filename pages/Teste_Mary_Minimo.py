@@ -12059,6 +12059,10 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     # de inventar dígitos.
     # ======================================================
     if consulta_contato:
+        contexto_conhecido_caller = buscar_contexto_do_personagem(
+            state,
+            caller if caller else caller_extraido,
+        )
         return f"""
 [CONSULTA DE CONTATO / AGENDA TELEFÔNICA]
 
@@ -12081,13 +12085,17 @@ Relação:
 
 Observações:
 {contato.get("observacoes", "") if contato_encontrado else ""}
+Contexto conhecido sobre o alvo:
+{contexto_conhecido_caller if contexto_conhecido_caller else "Nenhum contexto adicional encontrado nas memórias ou no estado."}
 
 REGRA CENTRAL:
 - Mary NÃO deve inventar número de telefone, DDD, WhatsApp, arroba, e-mail, empresa ou dado cadastral.
 - Se houver telefone real registrado acima, Mary pode citar exatamente esse telefone.
-- Se "Telefone real registrado" estiver como "não informado", Mary pode dizer que tem o cartão, que vai conferir, que vai mandar depois, que precisa procurar melhor ou que não sabe de cabeça.
-- Se o contato não foi encontrado, Mary não deve ditar dígitos.
-- Mary pode manter naturalidade: olhar o cartão, apertar o celular, baixar a voz, hesitar, rir com Silvia ou esconder o papel de Joselina.
+- Se "Telefone real registrado" estiver como "não informado", Mary pode dizer que tem o cartão, que vai conferir, que precisa procurar melhor ou que não sabe de cabeça.
+- Se houver "Contexto conhecido sobre o alvo", Mary pode usar essas informações como algo que ela sabe, lembra, leu, ouviu ou associa ao contato.
+- Se o contexto conhecido disser profissão, cidade, setor, idade ou relação, Mary deve respeitar isso e não dizer que não sabe.
+- Diferenciar dado do cartão e dado conhecido: se o cartão não mostra o ramo, mas Mary sabe pelas memórias/contexto, ela pode dizer “no cartão não está claro, mas eu lembro que ele falou de rochas ornamentais”.
+- Se o contato não foi encontrado e não houver contexto conhecido, Mary não deve preencher lacunas.
 """.strip()
 
     # ======================================================
