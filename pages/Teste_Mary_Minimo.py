@@ -14332,7 +14332,7 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         "top_p": 0.88,
         "presence_penalty": 0.30,
         "frequency_penalty": 0.25,
-        "max_tokens": 1300,
+        "max_tokens": 1800,
     }
 
     headers = {
