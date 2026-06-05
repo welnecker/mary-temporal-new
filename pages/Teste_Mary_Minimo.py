@@ -2499,6 +2499,65 @@ def inferir_perfil_temporal_e_risco_interacao(
     )
 
     # ======================================================
+    # 3.1) IDENTIDADE JANIO DONISETI / DONISETE
+    # ======================================================
+    # Existem dois eixos principais:
+    #
+    # 1) Janio Doniseti = parceiro central/eixo afetivo de Mary.
+    #    Pode aparecer como "Janio" no campo de cena, mas deve ser
+    #    interpretado como Janio Doniseti, não como personagem separado.
+    #
+    # 2) Donisete = coroa/persona madura externa da cena.
+    #
+    # Caso apareça "Donisete/Janio", tratar como CENA MISTA:
+    # Donisete está presente como coroa/persona madura,
+    # e Janio representa o eixo central afetivo de Mary.
+    # ======================================================
+
+    eh_janio_doniseti = False
+    eh_janio_pessoa = False
+    eh_donisete_coroa = False
+    eh_cena_mista_janio_donisete = False
+
+    texto_identidade = " ".join([
+        str(personagem or ""),
+        str(state.get("interlocutor", "") or ""),
+        str(state.get("interlocutor_foco_turno", "") or ""),
+        str(state.get("ultimo_interlocutor_explicito", "") or ""),
+        str(state.get("_fala_usuario_atual", "") or ""),
+        str(fala_usuario or ""),
+    ])
+
+    texto_identidade_norm = _texto_norm(texto_identidade)
+
+    tem_janio = "janio" in texto_identidade_norm
+    tem_doniseti = "doniseti" in texto_identidade_norm
+    tem_donisete = "donisete" in texto_identidade_norm
+
+    eh_cena_mista_janio_donisete = (
+        tem_janio
+        and tem_donisete
+        and not tem_doniseti
+    )
+
+    eh_janio_doniseti = (
+        "janio doniseti" in texto_identidade_norm
+        or (
+            tem_janio
+            and not eh_cena_mista_janio_donisete
+        )
+    )
+
+    eh_donisete_coroa = (
+        tem_donisete
+        and not tem_doniseti
+        and not eh_janio_doniseti
+        and not eh_cena_mista_janio_donisete
+    )
+
+    eh_janio_pessoa = eh_janio_doniseti
+
+    # ======================================================
     # 4) CLASSIFICAÇÃO TEMPORAL
     # ======================================================
     faixa_temporal = "desconhecida"
@@ -3063,61 +3122,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             ),
         }
     
-    # ======================================================
-    # IDENTIDADE JANIO DONISETI / DONISETE
-    # ======================================================
-    # Existem dois eixos principais:
-    #
-    # 1) Janio Doniseti = parceiro central/eixo afetivo de Mary.
-    #    Pode aparecer como "Janio" no campo de cena, mas deve ser
-    #    interpretado como Janio Doniseti, não como personagem separado.
-    #
-    # 2) Donisete = coroa/persona madura externa da cena.
-    #
-    # Caso apareça "Donisete/Janio", tratar como CENA MISTA:
-    # Donisete está presente como coroa/persona madura,
-    # e Janio representa o eixo central afetivo de Mary.
-    # ======================================================
-
-    eh_janio_doniseti = False
-    eh_janio_pessoa = False
-    eh_donisete_coroa = False
-    eh_cena_mista_janio_donisete = False
-
-    texto_identidade = " ".join([
-        str(personagem or "") if "personagem" in locals() else "",
-        str(state.get("interlocutor", "") or ""),
-        str(state.get("interlocutor_foco_turno", "") or ""),
-        str(state.get("ultimo_interlocutor_explicito", "") or ""),
-        str(state.get("_fala_usuario_atual", "") or ""),
-        str(fala_usuario or ""),
-    ])
-
-    texto_identidade_norm = _texto_norm(texto_identidade)
-
-    tem_janio = "janio" in texto_identidade_norm
-    tem_doniseti = "doniseti" in texto_identidade_norm
-    tem_donisete = "donisete" in texto_identidade_norm
-
-    eh_janio_doniseti = (
-        "janio doniseti" in texto_identidade_norm
-        or tem_janio
-    )
-
-    eh_cena_mista_janio_donisete = (
-        tem_janio
-        and tem_donisete
-        and not tem_doniseti
-    )
-
-    eh_donisete_coroa = (
-        tem_donisete
-        and not eh_cena_mista_janio_donisete
-        and not tem_doniseti
-    )
-
-    eh_janio_pessoa = eh_janio_doniseti and not eh_donisete_coroa
-
+   
     # ======================================================
     # 10) LEITURA PARA MARY
     # ======================================================
