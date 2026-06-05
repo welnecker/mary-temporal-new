@@ -12049,7 +12049,7 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
 
     contato_encontrado = bool(contato.get("encontrado", False))
 
-        telefone_caller = str(contato.get("telefone", "") or "").strip()
+    telefone_caller = str(contato.get("telefone", "") or "").strip()
     aliases_caller = contato.get("aliases", []) or []
 
     # ======================================================
