@@ -2244,7 +2244,8 @@ def inferir_perfil_temporal_e_risco_interacao(
     - aproximação desajeitada;
     - olhar invasivo;
     - assédio;
-    - assédio por poder/coerção.
+    - assédio por poder/coerção;
+    - leitura relacional contextual.
 
     Ideia central:
     - Idade NÃO é assédio.
@@ -2253,6 +2254,8 @@ def inferir_perfil_temporal_e_risco_interacao(
     - Homem/mulher maduro(a) pode ser atraente se houver contexto social e abertura.
     - Assédio depende de invasão, coerção, insistência, constrangimento,
       toque sem permissão, abuso de autoridade ou ausência de consentimento.
+    - Cânone e shared memories informam o mundo, mas não devem contaminar
+      automaticamente o interlocutor atual.
     """
     if not isinstance(state, dict):
         state = {}
@@ -2266,7 +2269,18 @@ def inferir_perfil_temporal_e_risco_interacao(
     personagem_norm = _texto_norm(personagem)
     fala_norm = _texto_norm(fala_usuario)
 
-    partes = [
+    # ======================================================
+    # CONTEXTO ESPECÍFICO DO PERSONAGEM
+    # Importante:
+    # - Buscar dados do personagem atual.
+    # - Não usar cânone/shared inteiro como texto de risco,
+    #   porque isso cola Anthony, Renan, Donisete etc. em cenas onde
+    #   eles não foram acionados.
+    # ======================================================
+    contexto_personagem = buscar_contexto_do_personagem(state, personagem)
+    contexto_personagem_norm = _texto_norm(contexto_personagem)
+
+    partes_cena = [
         personagem,
         fala_usuario,
         str(state.get("local", "") or ""),
@@ -2274,6 +2288,10 @@ def inferir_perfil_temporal_e_risco_interacao(
         str(state.get("tipo_de_cena", "") or ""),
         str(state.get("tom_manual_da_cena", "") or ""),
         str(state.get("relacao", "") or ""),
+        str(state.get("interlocutor", "") or ""),
+        str(state.get("interlocutor_foco_turno", "") or ""),
+        str(state.get("ultimo_interlocutor_explicito", "") or ""),
+        str(state.get("_fala_usuario_atual", "") or ""),
         str(state.get("segredo_ativo", "") or ""),
         str(state.get("plano_ativo", "") or ""),
         str(state.get("eventos_recentes", "") or ""),
@@ -2281,17 +2299,16 @@ def inferir_perfil_temporal_e_risco_interacao(
         str(state.get("memorias_ocultas_itens_guardados", "") or ""),
     ]
 
-    for item in state.get("canon_mary", []) or []:
-        if isinstance(item, dict):
-            partes.append(str(item.get("fato", "") or ""))
+    texto_cena = "\n".join(partes_cena)
+    texto_cena_norm = _texto_norm(texto_cena)
 
-    for item in state.get("shared_memories", []) or []:
-        if isinstance(item, dict):
-            partes.append(str(item.get("memoria", "") or ""))
-
-    texto_total = "\n".join(partes)
-    texto_norm = _texto_norm(texto_total)
-    texto_busca = texto_norm + "\n" + fala_norm
+    # Texto usado para inferência do turno atual.
+    # Inclui contexto do personagem, mas NÃO inclui todas as memórias do mundo.
+    texto_busca = "\n".join([
+        texto_cena_norm,
+        fala_norm,
+        contexto_personagem_norm,
+    ]).strip()
 
     # ======================================================
     # 1) IDADE NUMÉRICA ASSOCIADA AO PERSONAGEM
@@ -2299,17 +2316,25 @@ def inferir_perfil_temporal_e_risco_interacao(
     # - "Nando tem 48 anos"
     # - "Professor Renan tem 45 anos"
     # - "Anthony Meira tem 25 anos"
+    #
+    # Usa contexto específico do personagem, não o mundo inteiro.
     # ======================================================
     idade_detectada = None
 
     if personagem_norm:
+        texto_idade = "\n".join([
+            contexto_personagem_norm,
+            personagem_norm,
+            texto_cena_norm,
+        ])
+
         padroes_idade = [
-            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,120}}?tem\s*(\d{{1,3}})\s*anos",
-            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,120}}?(\d{{1,3}})\s*anos",
+            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,160}}?tem\s*(\d{{1,3}})\s*anos",
+            rf"{re.escape(personagem_norm)}[^.\n\r]{{0,160}}?(\d{{1,3}})\s*anos",
         ]
 
         for padrao in padroes_idade:
-            m = re.search(padrao, texto_norm, flags=re.IGNORECASE)
+            m = re.search(padrao, texto_idade, flags=re.IGNORECASE)
             if m:
                 try:
                     idade_detectada = int(m.group(1))
@@ -2334,11 +2359,6 @@ def inferir_perfil_temporal_e_risco_interacao(
         "silvia brum",
     )
 
-    eh_janio_pessoa = personagem_norm in (
-        "janio",
-        "janio doniseti",
-    )
-
     eh_mae = False
 
     if personagem_norm in (
@@ -2349,14 +2369,8 @@ def inferir_perfil_temporal_e_risco_interacao(
     ):
         eh_mae = True
     else:
-        contexto_personagem = buscar_contexto_do_personagem(state, personagem)
-        contexto_personagem_norm = _texto_norm(contexto_personagem)
-
-        # IMPORTANTE:
-        # Não procurar "mãe de Mary" no texto total inteiro,
-        # porque isso contamina Silvia, Donisete, Renan etc.
-        # Só considerar mãe se o próprio personagem for Joselina
-        # ou se o contexto específico desse personagem indicar isso.
+        # Só considerar mãe se o próprio personagem ou o contexto específico
+        # desse personagem indicar isso.
         eh_mae = (
             personagem_norm in ("joselina", "joselina massariol")
             or (
@@ -2375,60 +2389,136 @@ def inferir_perfil_temporal_e_risco_interacao(
                 )
             )
         )
-    eh_ancestral_familiar = _tem_algum(
-        texto_norm,
-        [
-            "avo de mary",
-            "avó de mary",
-            "avô de mary",
-            "avo da mary",
-            "avó da mary",
-            "avô da mary",
-            "bisavo de mary",
-            "bisavó de mary",
-            "bisavô de mary",
-            "bisavo da mary",
-            "bisavó da mary",
-            "bisavô da mary",
-            "meu avo",
-            "meu avô",
-            "minha avo",
-            "minha avó",
-            "meu bisavo",
-            "meu bisavô",
-            "minha bisavo",
-            "minha bisavó",
-            "bisavô",
-            "bisavó",
-            "bisa",
-        ],
+
+    eh_ancestral_familiar = (
+        not eh_mae
+        and _tem_algum(
+            texto_busca,
+            [
+                "avo de mary",
+                "avó de mary",
+                "avô de mary",
+                "avo da mary",
+                "avó da mary",
+                "avô da mary",
+                "bisavo de mary",
+                "bisavó de mary",
+                "bisavô de mary",
+                "bisavo da mary",
+                "bisavó da mary",
+                "bisavô da mary",
+                "meu avo",
+                "meu avô",
+                "minha avo",
+                "minha avó",
+                "meu bisavo",
+                "meu bisavô",
+                "minha bisavo",
+                "minha bisavó",
+                "bisavô",
+                "bisavó",
+                "bisa",
+            ],
+        )
     )
 
-    eh_professor_ou_autoridade = _tem_algum(
-        texto_busca,
-        [
-            "professor",
-            "professora",
-            "renan",
-            "doutor",
-            "doutora",
-            "chefe",
-            "orientador",
-            "orientadora",
-            "autoridade",
-            "nota",
-            "prova",
-            "aprovação",
-            "aprovacao",
-            "cargo",
-            "emprego",
-            "bolsa",
-            "favorecimento",
-        ],
+    # Autoridade só deve acender se:
+    # - o próprio personagem é autoridade;
+    # - ou o turno atual traz autoridade ligada ao interlocutor;
+    # - ou o contexto específico do personagem indica isso.
+    # Não deve acender só porque existe Renan no cânone.
+    eh_professor_ou_autoridade = (
+        not eh_mae
+        and not eh_silvia
+        and _tem_algum(
+            "\n".join([
+                personagem_norm,
+                contexto_personagem_norm,
+                fala_norm,
+                texto_cena_norm,
+            ]),
+            [
+                "professor",
+                "professora",
+                "renan",
+                "doutor",
+                "doutora",
+                "chefe",
+                "orientador",
+                "orientadora",
+                "autoridade",
+                "nota",
+                "prova",
+                "aprovação",
+                "aprovacao",
+                "cargo",
+                "emprego",
+                "bolsa",
+                "favorecimento",
+            ],
+        )
     )
 
     # ======================================================
-    # 3) MARCADORES DE IDADE / GERAÇÃO
+    # 3) IDENTIDADE JANIO DONISETI / DONISETE
+    # ======================================================
+    # Existem dois eixos principais:
+    #
+    # 1) Janio Doniseti = parceiro central/eixo afetivo de Mary.
+    #    Pode aparecer como "Janio" no campo de cena, mas deve ser
+    #    interpretado como Janio Doniseti.
+    #
+    # 2) Donisete = coroa/persona madura externa da cena.
+    #
+    # Caso apareça "Donisete/Janio", tratar como CENA MISTA:
+    # Donisete está presente como coroa/persona madura,
+    # e Janio representa o eixo central afetivo de Mary.
+    # ======================================================
+    eh_janio_doniseti = False
+    eh_janio_pessoa = False
+    eh_donisete_coroa = False
+    eh_cena_mista_janio_donisete = False
+
+    texto_identidade = " ".join([
+        str(personagem or ""),
+        str(state.get("interlocutor", "") or ""),
+        str(state.get("interlocutor_foco_turno", "") or ""),
+        str(state.get("ultimo_interlocutor_explicito", "") or ""),
+        str(state.get("_fala_usuario_atual", "") or ""),
+        str(fala_usuario or ""),
+    ])
+
+    texto_identidade_norm = _texto_norm(texto_identidade)
+
+    tem_janio = "janio" in texto_identidade_norm
+    tem_doniseti = "doniseti" in texto_identidade_norm
+    tem_donisete = "donisete" in texto_identidade_norm
+
+    eh_cena_mista_janio_donisete = (
+        tem_janio
+        and tem_donisete
+        and not tem_doniseti
+    )
+
+    eh_janio_doniseti = (
+        "janio doniseti" in texto_identidade_norm
+        or (
+            tem_janio
+            and not eh_cena_mista_janio_donisete
+        )
+    )
+
+    eh_donisete_coroa = (
+        tem_donisete
+        and not tem_doniseti
+        and not eh_janio_doniseti
+        and not eh_cena_mista_janio_donisete
+    )
+
+    eh_janio_pessoa = eh_janio_doniseti
+
+    # ======================================================
+    # 4) MARCADORES DE IDADE / GERAÇÃO
     # ======================================================
     marcador_coroa = _tem_algum(
         texto_busca,
@@ -2486,7 +2576,6 @@ def inferir_perfil_temporal_e_risco_interacao(
             "jovem",
             "universitario",
             "universitária",
-            "universitario",
             "estudante",
             "colega de classe",
             "amigo de classe",
@@ -2499,66 +2588,7 @@ def inferir_perfil_temporal_e_risco_interacao(
     )
 
     # ======================================================
-    # 3.1) IDENTIDADE JANIO DONISETI / DONISETE
-    # ======================================================
-    # Existem dois eixos principais:
-    #
-    # 1) Janio Doniseti = parceiro central/eixo afetivo de Mary.
-    #    Pode aparecer como "Janio" no campo de cena, mas deve ser
-    #    interpretado como Janio Doniseti, não como personagem separado.
-    #
-    # 2) Donisete = coroa/persona madura externa da cena.
-    #
-    # Caso apareça "Donisete/Janio", tratar como CENA MISTA:
-    # Donisete está presente como coroa/persona madura,
-    # e Janio representa o eixo central afetivo de Mary.
-    # ======================================================
-
-    eh_janio_doniseti = False
-    eh_janio_pessoa = False
-    eh_donisete_coroa = False
-    eh_cena_mista_janio_donisete = False
-
-    texto_identidade = " ".join([
-        str(personagem or ""),
-        str(state.get("interlocutor", "") or ""),
-        str(state.get("interlocutor_foco_turno", "") or ""),
-        str(state.get("ultimo_interlocutor_explicito", "") or ""),
-        str(state.get("_fala_usuario_atual", "") or ""),
-        str(fala_usuario or ""),
-    ])
-
-    texto_identidade_norm = _texto_norm(texto_identidade)
-
-    tem_janio = "janio" in texto_identidade_norm
-    tem_doniseti = "doniseti" in texto_identidade_norm
-    tem_donisete = "donisete" in texto_identidade_norm
-
-    eh_cena_mista_janio_donisete = (
-        tem_janio
-        and tem_donisete
-        and not tem_doniseti
-    )
-
-    eh_janio_doniseti = (
-        "janio doniseti" in texto_identidade_norm
-        or (
-            tem_janio
-            and not eh_cena_mista_janio_donisete
-        )
-    )
-
-    eh_donisete_coroa = (
-        tem_donisete
-        and not tem_doniseti
-        and not eh_janio_doniseti
-        and not eh_cena_mista_janio_donisete
-    )
-
-    eh_janio_pessoa = eh_janio_doniseti
-
-    # ======================================================
-    # 4) CLASSIFICAÇÃO TEMPORAL
+    # 5) CLASSIFICAÇÃO TEMPORAL
     # ======================================================
     faixa_temporal = "desconhecida"
 
@@ -2607,7 +2637,7 @@ def inferir_perfil_temporal_e_risco_interacao(
         faixa_temporal = "adulto_ou_maduro_autoridade"
 
     # ======================================================
-    # 5) GERAÇÃO EM RELAÇÃO À MARY
+    # 6) GERAÇÃO EM RELAÇÃO À MARY
     # Mary tem 19 anos no cânone.
     # ======================================================
     idade_mary = 19
@@ -2654,7 +2684,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             geracao = "mesma_ou_proxima_geracao"
 
     # ======================================================
-    # 6) CONTEXTO SOCIAL
+    # 7) CONTEXTO SOCIAL
     # ======================================================
     local_norm = _texto_norm(state.get("local", ""))
     tom_norm = _texto_norm(state.get("tom_manual_da_cena", ""))
@@ -2695,6 +2725,11 @@ def inferir_perfil_temporal_e_risco_interacao(
                 "pista",
                 "pista de dança",
                 "pista de danca",
+                "praia",
+                "hotel",
+                "resort",
+                "viagem",
+                "piscina",
             ],
         )
         or tom_norm in (
@@ -2711,14 +2746,13 @@ def inferir_perfil_temporal_e_risco_interacao(
     )
 
     # ======================================================
-    # 7) ABERTURA / INTERESSE DA MARY
-    # Isso impede a função de "cozinhar" ou podar uma interação
-    # em que Mary demonstrou curiosidade primeiro.
+    # 8) ABERTURA / INTERESSE DA MARY
     # ======================================================
     mary_deu_abertura = _tem_algum(
         texto_busca,
         [
             "mary percebe alguém atraente",
+            "mary percebe alguem atraente",
             "mary achou atraente",
             "mary sente atração",
             "mary sentiu atração",
@@ -2790,7 +2824,7 @@ def inferir_perfil_temporal_e_risco_interacao(
     )
 
     # ======================================================
-    # 8) INVASÃO / ASSÉDIO / COERÇÃO
+    # 9) INVASÃO / ASSÉDIO / COERÇÃO
     # ======================================================
     olhar_invasivo = _tem_algum(
         texto_busca,
@@ -2929,9 +2963,10 @@ def inferir_perfil_temporal_e_risco_interacao(
     )
 
     # ======================================================
-    # 9) CLASSIFICAÇÃO DA INTERAÇÃO
+    # 10) CLASSIFICAÇÃO DA INTERAÇÃO
     # Ordem importa:
-    # coerção/invasão real vencem atração social.
+    # família e vínculos centrais vencem autoridade genérica;
+    # coerção/invasão real vencem atração social;
     # atração social com abertura de Mary não deve ser podada.
     # ======================================================
     tipo_interacao = "neutra"
@@ -2952,6 +2987,21 @@ def inferir_perfil_temporal_e_risco_interacao(
         tipo_interacao = "ancestral_familiar"
         risco_assedio = "nenhum"
         consentimento_percebido = "nao_aplicavel"
+
+    elif eh_janio_pessoa:
+        tipo_interacao = "parceiro_central"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "consensual_por_vinculo"
+
+    elif eh_silvia:
+        tipo_interacao = "amiga_confidente"
+        risco_assedio = "nenhum"
+        consentimento_percebido = "nao_aplicavel"
+
+    elif eh_donisete_coroa:
+        tipo_interacao = "persona_madura_liberada"
+        risco_assedio = "baixo"
+        consentimento_percebido = "contextual"
 
     elif coerção_por_poder:
         tipo_interacao = "assedio_por_poder"
@@ -2994,11 +3044,9 @@ def inferir_perfil_temporal_e_risco_interacao(
         consentimento_percebido = "ambíguo"
 
     # ======================================================
-    # 9.1) LEITURA RELACIONAL CONTEXTUAL
-    # Substitui lógica rígida de "pode/não pode" por nuance:
-    # risco, coerção, abertura, contexto social e consequência.
+    # 11) LEITURA RELACIONAL CONTEXTUAL
+    # Agora família/amizade/eixos centrais vencem autoridade genérica.
     # ======================================================
-
     perfil_relacional_contextual = {
         "categoria": "contextual",
         "risco_poder": False,
@@ -3012,7 +3060,89 @@ def inferir_perfil_temporal_e_risco_interacao(
         ),
     }
 
-    if coerção_por_poder:
+    if eh_mary:
+        perfil_relacional_contextual = {
+            "categoria": "autopercepcao_mary",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "nao_aplicavel",
+            "cautela_recomendada": "autoconhecimento",
+            "consequencia_narrativa": (
+                "Mary está percebendo a si mesma. O foco deve ser agência, desejo, contradição, "
+                "memória corporal, culpa, curiosidade ou decisão."
+            ),
+            "leitura": (
+                "Mary deve ler seus próprios impulsos sem se tratar como vítima automática nem como personagem sem agência."
+            ),
+        }
+
+    elif eh_mae or tipo_interacao == "familiar_mae":
+        perfil_relacional_contextual = {
+            "categoria": "familia / mae",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "nao_aplicavel",
+            "cautela_recomendada": "familiar",
+            "consequencia_narrativa": (
+                "Joselina é mãe de Mary. A relação envolve cuidado, julgamento, intimidade familiar, "
+                "cobrança, proteção da imagem, rotina doméstica e possibilidade de esconder segredos dentro de casa."
+            ),
+            "leitura": (
+                "Mary deve tratar Joselina como mãe/família. "
+                "Não interpretar como autoridade sedutora, adulto interessante, professor, chefe, anfitrião ou figura de tensão romântica."
+            ),
+        }
+
+    elif eh_silvia or tipo_interacao == "amiga_confidente":
+        perfil_relacional_contextual = {
+            "categoria": "amiga_confidente",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "nao_aplicavel_por_padrao",
+            "cautela_recomendada": "baixa_com_cumplicidade",
+            "consequencia_narrativa": (
+                "Silvia é amiga íntima e confidente. Mary pode desabafar, brincar, confessar por camadas, "
+                "pedir cobertura, rir, sentir vergonha, medo ou empolgação sem transformar isso automaticamente em tensão romântica."
+            ),
+            "leitura": (
+                "Mary deve tratar Silvia como cúmplice confiável, não como mãe, autoridade, ameaça ou rival."
+            ),
+        }
+
+    elif eh_janio_pessoa or tipo_interacao == "parceiro_central":
+        perfil_relacional_contextual = {
+            "categoria": "parceiro_central",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "sim_por_vinculo",
+            "cautela_recomendada": "afetiva_contextual",
+            "consequencia_narrativa": (
+                "Janio Doniseti é o eixo afetivo central de Mary. A relação envolve vínculo, casa, desejo, "
+                "confiança, pertencimento e também risco de ferir essa confiança se houver segredo."
+            ),
+            "leitura": (
+                "Mary deve tratar Janio Doniseti como parceiro central, não como coroa externo nem rival. "
+                "A maturidade dele aparece como segurança, força e intimidade, não como distância geracional."
+            ),
+        }
+
+    elif eh_donisete_coroa or tipo_interacao == "persona_madura_liberada":
+        perfil_relacional_contextual = {
+            "categoria": "persona_madura_liberada",
+            "risco_poder": False,
+            "risco_coercao": False,
+            "atracao_possivel": "sim_contextual",
+            "cautela_recomendada": "moderada_por_consequencia",
+            "consequencia_narrativa": (
+                "Donisete é uma persona madura externa e socialmente magnética. Pode gerar fascínio, vaidade, "
+                "curiosidade, risco, segredo e contradição, mas não deve ser confundido com Janio Doniseti."
+            ),
+            "leitura": (
+                "Mary percebe Donisete como coroa/persona madura atraente em contexto social, não como parceiro central."
+            ),
+        }
+
+    elif coerção_por_poder:
         perfil_relacional_contextual = {
             "categoria": "autoridade coercitiva / assédio por poder",
             "risco_poder": True,
@@ -3121,10 +3251,9 @@ def inferir_perfil_temporal_e_risco_interacao(
                 "Mary deve ler a pessoa pelo contexto vivo, sem bloquear nem avançar automaticamente."
             ),
         }
-    
-   
+
     # ======================================================
-    # 10) LEITURA PARA MARY
+    # 12) LEITURA PARA MARY
     # ======================================================
     if tipo_interacao == "autopercepcao_mary":
         leitura = (
@@ -3143,7 +3272,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             "pele madura, velhice ou distância geracional; e não tratar Donisete como se fosse o parceiro central dela. "
             "Se houver tensão entre os dois eixos, Mary pode sentir conflito, curiosidade ou necessidade de disfarce, "
             "mas sem misturar as identidades."
-        )    
+        )
 
     elif eh_janio_pessoa:
         leitura = (
@@ -3177,7 +3306,7 @@ def inferir_perfil_temporal_e_risco_interacao(
             "em fala baixa, hesitação, confissão parcial ou cumplicidade. "
             "Não tratar Silvia como mãe, autoridade familiar ou figura materna."
         )
-    
+
     elif tipo_interacao == "familiar_mae":
         leitura = (
             "Mary percebe como mãe/família: geração acima, autoridade afetiva, cuidado, "
@@ -3189,6 +3318,22 @@ def inferir_perfil_temporal_e_risco_interacao(
             "Mary percebe como ancestral familiar idoso: avô/avó/bisavô/bisavó, ligado a respeito, "
             "memória familiar, carinho e cuidado. Se houver menção a lucidez ou vigor, entender como saúde, "
             "vitalidade e clareza mental para a idade, não como conotação sexual."
+        )
+
+    elif tipo_interacao == "parceiro_central":
+        leitura = (
+            "Mary percebe como parceiro central, com vínculo afetivo, história, desejo, intimidade e pertencimento."
+        )
+
+    elif tipo_interacao == "amiga_confidente":
+        leitura = (
+            "Mary percebe como amiga confidente: cumplicidade, humor, segredo por camadas, apoio e liberdade emocional."
+        )
+
+    elif tipo_interacao == "persona_madura_liberada":
+        leitura = (
+            "Mary percebe como persona madura liberada da cena: charme, maturidade, risco social e fascínio contextual, "
+            "sem confundir com o parceiro central."
         )
 
     elif tipo_interacao == "assedio_por_poder":
