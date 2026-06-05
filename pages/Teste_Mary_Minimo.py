@@ -5398,7 +5398,7 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
 
     # ======================================================
     # SINAIS QUE CONFIRMAM QUE A CENA CONTINUA INTENSA
-    # Não são obrigatórios, mas ajudam a evitar orgasmo seco
+    # Não são obrigatórios, mas ajudam a evitar resolução seca
     # quando a cena esfriou.
     # ======================================================
     sinais_intensidade_atual = [
@@ -5429,18 +5429,71 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         "gemendo",
         "ahhh",
         "humm",
+        "slup",
+        "chup",
+        "pop",
     ]
 
     cena_ainda_intensa = _tem_algum(texto, sinais_intensidade_atual) or fase >= 5
 
     # ======================================================
-    # LIBERAÇÃO POR TURNO
+    # PROMESSA DE PICO NO HISTÓRICO RECENTE
+    # Se Mary já verbalizou que estava quase chegando, o próximo
+    # turno intenso pode liberar um pouco antes do mínimo bruto.
+    # Isso evita a sensação artificial de "cozinhar" a cena.
     # ======================================================
-    if (
+    historico_recente_txt = " ".join(
+        str(m.get("content", "") or "")
+        for m in state.get("history", [])[-4:]
+        if isinstance(m, dict)
+    )
+
+    historico_recente_norm = _texto_norm(historico_recente_txt)
+
+    mary_prometeu_pico = _tem_algum(
+        historico_recente_norm,
+        [
+            "vou gozar",
+            "eu vou gozar",
+            "vou perder o controle",
+            "to quase",
+            "tô quase",
+            "estou quase",
+            "ta chegando",
+            "tá chegando",
+            "nao para",
+            "não para",
+            "continua",
+            "chupa mais",
+            "mais forte",
+        ],
+    )
+
+    liberar_por_promessa_de_pico = (
         fase >= 5
         and pre_pico
-        and stimulation_turns >= min_turns
         and cena_ainda_intensa
+        and mary_prometeu_pico
+        and stimulation_turns >= max(4, min_turns - 2)
+    )
+
+    # ======================================================
+    # LIBERAÇÃO POR TURNO
+    # Caminho normal:
+    # - respeita mínimo cheio.
+    #
+    # Caminho dramático:
+    # - se Mary já prometeu o pico no histórico recente,
+    #   permite resolver com pequena antecipação controlada.
+    # ======================================================
+    if (
+        (
+            fase >= 5
+            and pre_pico
+            and stimulation_turns >= min_turns
+            and cena_ainda_intensa
+        )
+        or liberar_por_promessa_de_pico
     ):
         state["force_resolution_now"] = True
         state["mary_intent"] = "resolver_pico_mary"
@@ -5458,6 +5511,7 @@ def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> Non
         state["scene_stage"] = "pre_pico_mary"
         state["mary_intent"] = "sustentar_tensao_intensa"
         state["mary_pre_orgasm_signals"] = True
+
     elif stimulation_turns > 0:
         state["physical_phase"] = max(fase, 4)
         state["scene_stage"] = "sexo_ou_estimulo"
@@ -6404,7 +6458,26 @@ def derivar_controles_de_cena(state: dict) -> None:
                 state["scene_stage"] = cfg.get("scene_stage", "decisao")
 
             elif tom_manual == "Nsfw":
-                state["scene_stage"] = cfg.get("scene_stage", "nsfw_preliminares")
+                fase_tmp = safe_int(state.get("physical_phase", 0), 0)
+                pre_tmp = normalizar_bool(
+                    state.get("mary_pre_orgasm_signals", False),
+                    default=False,
+                )
+                force_tmp = normalizar_bool(
+                    state.get("force_resolution_now", False),
+                    default=False,
+                )
+            
+                if force_tmp:
+                    state["scene_stage"] = "pico_mary"
+                    state["mary_intent"] = "resolver_pico_mary"
+            
+                elif pre_tmp or fase_tmp >= 5:
+                    state["scene_stage"] = "pre_pico_mary"
+                    state["mary_intent"] = "sustentar_tensao_intensa"
+            
+                else:
+                    state["scene_stage"] = cfg.get("scene_stage", "nsfw_preliminares")
 
             else:
                 state["scene_stage"] = cfg.get("scene_stage", "inicio")
@@ -6876,6 +6949,7 @@ def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
     - "duas semanas depois..."
     - "um mês depois..."
     - "no dia 10/07/2026..."
+    - "10/07/2026. Mary está..."
     """
     fala = str(fala_usuario or "")
     fala_norm = _texto_norm(fala)
@@ -6892,9 +6966,10 @@ def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
     data_base = parse_data_cena(state.get("data_cena", ""))
 
     # ======================================================
-    # DATA EXPLÍCITA: 10/07/2026, 10-07-26 etc.
+    # 1) DATA EXPLÍCITA: 10/07/2026, 10-07-26 etc.
     # ======================================================
     m_data = re.search(r"\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b", fala)
+
     if m_data:
         dia = int(m_data.group(1))
         mes = int(m_data.group(2))
@@ -6905,19 +6980,100 @@ def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
 
         try:
             nova_data = datetime(ano, mes, dia).date()
+
             resultado.update({
                 "houve": True,
-                "descricao": f"Data explícita informada no turno: {formatar_data_cena(nova_data)}.",
+                "descricao": (
+                    f"Data explícita informada no turno: "
+                    f"{formatar_data_cena(nova_data)}."
+                ),
                 "data_nova": formatar_data_cena(nova_data),
                 "quantidade": None,
                 "unidade": "data_explicita",
             })
+
             return resultado
+
         except Exception:
             pass
 
+    # Se não existe data base no state, não dá para calcular salto relativo.
     if not data_base:
         return resultado
+
+    # ======================================================
+    # 2) SALTO RELATIVO: 30 dias, 2 semanas, 1 mês...
+    # ======================================================
+    mapa_palavras = {
+        "um": 1,
+        "uma": 1,
+        "dois": 2,
+        "duas": 2,
+        "tres": 3,
+        "três": 3,
+        "quatro": 4,
+        "cinco": 5,
+        "seis": 6,
+        "sete": 7,
+        "oito": 8,
+        "nove": 9,
+        "dez": 10,
+        "quinze": 15,
+        "trinta": 30,
+    }
+
+    padrao = (
+        r"\b("
+        r"\d+|um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove|dez|quinze|trinta"
+        r")\s+"
+        r"(dia|dias|semana|semanas|mes|mês|meses|ano|anos)\s+"
+        r"(se passam|se passou|depois|mais tarde|passaram)"
+        r"\b"
+    )
+
+    m = re.search(padrao, fala_norm)
+
+    if not m:
+        return resultado
+
+    qtd_raw = m.group(1)
+    unidade = m.group(2)
+
+    try:
+        qtd = int(qtd_raw)
+    except Exception:
+        qtd = mapa_palavras.get(qtd_raw, None)
+
+    if not qtd:
+        return resultado
+
+    nova_data = data_base
+
+    if unidade in ("dia", "dias"):
+        nova_data = data_base + timedelta(days=qtd)
+
+    elif unidade in ("semana", "semanas"):
+        nova_data = data_base + timedelta(weeks=qtd)
+
+    elif unidade in ("mes", "mês", "meses"):
+        # Aproximação segura para tempo narrativo.
+        nova_data = data_base + timedelta(days=30 * qtd)
+
+    elif unidade in ("ano", "anos"):
+        nova_data = data_base + timedelta(days=365 * qtd)
+
+    resultado.update({
+        "houve": True,
+        "descricao": (
+            f"Salto temporal detectado: {qtd} {unidade} "
+            f"após {formatar_data_cena(data_base)}."
+        ),
+        "data_nova": formatar_data_cena(nova_data),
+        "quantidade": qtd,
+        "unidade": unidade,
+    })
+
+    return resultado
 
 def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
     """
@@ -6945,6 +7101,7 @@ def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
         return state
 
     data_nova = str(salto.get("data_nova", "") or "").strip()
+
     if data_nova:
         state["data_cena"] = data_nova
 
@@ -6974,85 +7131,33 @@ def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
     state["mary_frustracao_climax"] = ""
     state["destino_climax_parceiro"] = ""
 
-    # Surpresa antiga não deve atravessar salto temporal.
+    # ======================================================
+    # Surpresa antiga não atravessa salto temporal.
+    # ======================================================
     state["modo_surpresa"] = "Desligado"
     state["direcao_surpresa"] = ""
     state["evento_inesperado"] = ""
     state["disparar_evento_inesperado"] = False
 
+    # ======================================================
     # Reduz calor imediato sem apagar vínculo.
-    state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.35)
-    state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.45)
-    state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.50)
-
-    return state
-
     # ======================================================
-    # SALTO RELATIVO: 30 dias, 2 semanas, 1 mês...
-    # ======================================================
-    mapa_palavras = {
-        "um": 1,
-        "uma": 1,
-        "dois": 2,
-        "duas": 2,
-        "tres": 3,
-        "três": 3,
-        "quatro": 4,
-        "cinco": 5,
-        "seis": 6,
-        "sete": 7,
-        "oito": 8,
-        "nove": 9,
-        "dez": 10,
-        "quinze": 15,
-        "trinta": 30,
-    }
-
-    padrao = (
-        r"\b(\d+|um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove|dez|quinze|trinta)\s+"
-        r"(dia|dias|semana|semanas|mes|mês|meses|ano|anos)\s+"
-        r"(se passam|se passou|depois|mais tarde|passaram)\b"
+    state["desire_level"] = min(
+        float(state.get("desire_level", 0.0) or 0.0),
+        0.35,
     )
 
-    m = re.search(padrao, fala_norm)
-    if not m:
-        return resultado
+    state["tension_level"] = min(
+        float(state.get("tension_level", 0.0) or 0.0),
+        0.45,
+    )
 
-    qtd_raw = m.group(1)
-    unidade = m.group(2)
+    state["connection_level"] = max(
+        float(state.get("connection_level", 0.0) or 0.0),
+        0.50,
+    )
 
-    try:
-        qtd = int(qtd_raw)
-    except Exception:
-        qtd = mapa_palavras.get(qtd_raw, None)
-
-    if not qtd:
-        return resultado
-
-    nova_data = data_base
-
-    if unidade in ("dia", "dias"):
-        nova_data = data_base + timedelta(days=qtd)
-
-    elif unidade in ("semana", "semanas"):
-        nova_data = data_base + timedelta(weeks=qtd)
-
-    elif unidade in ("mes", "mês", "meses"):
-        # aproximação segura: 30 dias por mês narrativo
-        nova_data = data_base + timedelta(days=30 * qtd)
-
-    elif unidade in ("ano", "anos"):
-        nova_data = data_base + timedelta(days=365 * qtd)
-
-    resultado.update({
-        "houve": True,
-        "descricao": f"Salto temporal detectado: {qtd} {unidade} após {formatar_data_cena(data_base)}.",
-        "data_nova": formatar_data_cena(nova_data),
-        "quantidade": qtd,
-        "unidade": unidade,
-    })
-
-    return resultado
+    return state
 
 
 def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
@@ -9898,6 +10003,7 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
 
     if not force_now:
         if fase >= 6 or stage == "pico_mary":
+            state["_gate_rebaixou_pico_sem_force"] = True
             state["physical_phase"] = 5
             state["scene_stage"] = "pre_pico_mary"
             state["mary_intent"] = "sustentar_tensao_intensa"
