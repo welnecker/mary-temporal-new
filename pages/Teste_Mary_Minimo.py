@@ -4,7 +4,7 @@ import html
 import os
 import sys
 import requests
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import unicodedata
 import base64
 import tempfile
@@ -2084,6 +2084,39 @@ def eh_sem_interlocutor(valor: str) -> bool:
         "ninguem",
         "",
     }
+
+def render_salto_temporal_para_prompt(state: dict, fala_usuario: str = "") -> str:
+    salto = state.get("_salto_temporal", {})
+
+    if not isinstance(salto, dict) or not salto.get("houve"):
+        return ""
+
+    return f"""
+[SALTO TEMPORAL / NOVO RECORTE DE CENA]
+
+{salto.get("descricao", "")}
+
+Data anterior:
+{salto.get("data_anterior", "não informada")}
+
+Data atual da cena:
+{salto.get("data_nova", state.get("data_cena", "não informada"))}
+
+REGRA CENTRAL:
+- O usuário declarou passagem de tempo.
+- A cena anterior terminou.
+- O histórico salvo continua válido como passado, memória, consequência, segredo ou vínculo.
+- O histórico anterior NÃO deve ser tratado como ação física em andamento.
+- Mary não deve continuar posição corporal, clímax, telefonema, roupa, toque ou emoção imediata da cena anterior se o novo turno mudou tempo/local.
+- Se o usuário informou novo local, nova situação ou nova ação no turno atual, isso vence o estado antigo do sidebar para a resposta deste turno.
+- Mary deve reagir ao novo presente, levando o passado como peso emocional e não como continuidade literal.
+
+EFEITO NARRATIVO:
+- Segredos antigos podem amadurecer.
+- Culpa, desejo, medo, saudade, atraso menstrual, fofoca, convite, mensagem não respondida ou consequência social podem aparecer se fizerem sentido.
+- Não resumir os 30 dias como relatório longo.
+- Mostrar no corpo, na fala ou no gesto como o tempo mudou Mary.
+""".strip()
 
 def render_leitura_relacional_contextual_para_prompt(state: dict) -> str:
     """
@@ -6811,6 +6844,211 @@ def detectar_falante_explicito(fala_usuario: str, personagens_conhecidos=None) -
 
     return ""
 
+def parse_data_cena(data_txt: str):
+    data_txt = str(data_txt or "").strip()
+
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(data_txt, fmt).date()
+        except Exception:
+            pass
+
+    return None
+
+
+def formatar_data_cena(data_obj) -> str:
+    if not data_obj:
+        return ""
+    return data_obj.strftime("%d/%m/%Y")
+
+
+def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
+    """
+    Detecta saltos temporais explícitos no turno do usuário.
+
+    Exemplos:
+    - "30 dias se passam..."
+    - "duas semanas depois..."
+    - "um mês depois..."
+    - "no dia 10/07/2026..."
+    """
+    fala = str(fala_usuario or "")
+    fala_norm = _texto_norm(fala)
+
+    resultado = {
+        "houve": False,
+        "descricao": "",
+        "data_anterior": str(state.get("data_cena", "") or ""),
+        "data_nova": "",
+        "quantidade": None,
+        "unidade": "",
+    }
+
+    data_base = parse_data_cena(state.get("data_cena", ""))
+
+    # ======================================================
+    # DATA EXPLÍCITA: 10/07/2026, 10-07-26 etc.
+    # ======================================================
+    m_data = re.search(r"\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b", fala)
+    if m_data:
+        dia = int(m_data.group(1))
+        mes = int(m_data.group(2))
+        ano = int(m_data.group(3))
+
+        if ano < 100:
+            ano += 2000
+
+        try:
+            nova_data = datetime(ano, mes, dia).date()
+            resultado.update({
+                "houve": True,
+                "descricao": f"Data explícita informada no turno: {formatar_data_cena(nova_data)}.",
+                "data_nova": formatar_data_cena(nova_data),
+                "quantidade": None,
+                "unidade": "data_explicita",
+            })
+            return resultado
+        except Exception:
+            pass
+
+    if not data_base:
+        return resultado
+
+    def aplicar_salto_temporal_no_state(state: dict, salto: dict) -> dict:
+    """
+    Aplica salto temporal sem apagar memória narrativa.
+
+    O que zera:
+    - estados físicos imediatos;
+    - clímax;
+    - pós-ato;
+    - evento surpresa antigo;
+    - flags de resolução.
+
+    O que mantém:
+    - shared memories;
+    - canon;
+    - segredos;
+    - eventos recentes;
+    - plano ativo, se ainda fizer sentido;
+    - histórico, mas como passado.
+    """
+    if not isinstance(state, dict):
+        state = {}
+
+    if not isinstance(salto, dict) or not salto.get("houve"):
+        return state
+
+    data_nova = str(salto.get("data_nova", "") or "").strip()
+    if data_nova:
+        state["data_cena"] = data_nova
+
+    state["_salto_temporal"] = salto
+    state["_salto_temporal_ativo"] = True
+
+    # ======================================================
+    # O passado continua existindo, mas a cena física antiga acabou.
+    # ======================================================
+    state["physical_phase"] = 0
+    state["scene_stage"] = "novo_recorte_temporal"
+    state["mary_intent"] = "reagir_ao_novo_momento"
+    state["mary_physical_intent"] = "presenca_viva"
+
+    state["force_resolution_now"] = False
+    state["mary_pre_orgasm_signals"] = False
+    state["partner_climax_pending"] = False
+    state["resolution_done"] = False
+
+    state["mary_climax_done"] = False
+    state["user_climax_done"] = False
+    state["mary_stimulation_turns"] = 0
+    state["climax_usuario_sinal"] = False
+    state["climax_usuario_tipo"] = "nenhum"
+
+    state["mary_reacao_climax_parceiro"] = ""
+    state["mary_frustracao_climax"] = ""
+    state["destino_climax_parceiro"] = ""
+
+    # Surpresa antiga não deve atravessar salto temporal.
+    state["modo_surpresa"] = "Desligado"
+    state["direcao_surpresa"] = ""
+    state["evento_inesperado"] = ""
+    state["disparar_evento_inesperado"] = False
+
+    # Reduz calor imediato sem apagar vínculo.
+    state["desire_level"] = min(float(state.get("desire_level", 0.0) or 0.0), 0.35)
+    state["tension_level"] = min(float(state.get("tension_level", 0.0) or 0.0), 0.45)
+    state["connection_level"] = max(float(state.get("connection_level", 0.0) or 0.0), 0.50)
+
+    return state
+
+    # ======================================================
+    # SALTO RELATIVO: 30 dias, 2 semanas, 1 mês...
+    # ======================================================
+    mapa_palavras = {
+        "um": 1,
+        "uma": 1,
+        "dois": 2,
+        "duas": 2,
+        "tres": 3,
+        "três": 3,
+        "quatro": 4,
+        "cinco": 5,
+        "seis": 6,
+        "sete": 7,
+        "oito": 8,
+        "nove": 9,
+        "dez": 10,
+        "quinze": 15,
+        "trinta": 30,
+    }
+
+    padrao = (
+        r"\b(\d+|um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove|dez|quinze|trinta)\s+"
+        r"(dia|dias|semana|semanas|mes|mês|meses|ano|anos)\s+"
+        r"(se passam|se passou|depois|mais tarde|passaram)\b"
+    )
+
+    m = re.search(padrao, fala_norm)
+    if not m:
+        return resultado
+
+    qtd_raw = m.group(1)
+    unidade = m.group(2)
+
+    try:
+        qtd = int(qtd_raw)
+    except Exception:
+        qtd = mapa_palavras.get(qtd_raw, None)
+
+    if not qtd:
+        return resultado
+
+    nova_data = data_base
+
+    if unidade in ("dia", "dias"):
+        nova_data = data_base + timedelta(days=qtd)
+
+    elif unidade in ("semana", "semanas"):
+        nova_data = data_base + timedelta(weeks=qtd)
+
+    elif unidade in ("mes", "mês", "meses"):
+        # aproximação segura: 30 dias por mês narrativo
+        nova_data = data_base + timedelta(days=30 * qtd)
+
+    elif unidade in ("ano", "anos"):
+        nova_data = data_base + timedelta(days=365 * qtd)
+
+    resultado.update({
+        "houve": True,
+        "descricao": f"Salto temporal detectado: {qtd} {unidade} após {formatar_data_cena(data_base)}.",
+        "data_nova": formatar_data_cena(nova_data),
+        "quantidade": qtd,
+        "unidade": unidade,
+    })
+
+    return resultado
+
 
 def detectar_foco_do_turno(fala_usuario: str, interlocutor_atual: str) -> str:
     """
@@ -8444,6 +8682,13 @@ def sincronizar_facts_basicos(
         "mary_autonomous_action": str(
             state.get("mary_autonomous_action", "") or ""
         ),
+
+        "salto_temporal": state.get("_salto_temporal", {
+            "houve": False,
+            "descricao": "",
+            "data_anterior": "",
+            "data_nova": "",
+        }),
 
         "toque_provocativo_permitido": normalizar_bool(
             state.get("toque_provocativo_permitido", False),
@@ -13835,6 +14080,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     consciencia_cena_txt = formatar_estado_emocional_para_prompt(state)
     evento_inesperado_txt = preparar_evento_inesperado_para_prompt(state)
+    salto_temporal_txt = render_salto_temporal_para_prompt(state, fala_usuario)
 
     bloco_doniseti_avatar = ""
 
@@ -14254,6 +14500,7 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 26. Se Mary estiver olhando um cartão ou contato, mas o número real não foi fornecido ao prompt, ela pode dizer que tem o cartão, que vai conferir ou que vai mandar depois, mas não deve criar dígitos.
 
 {bloco_silvia_confidente}
+{salto_temporal_txt}
 
 [HISTÓRICO RECENTE]
 {historico_txt}
@@ -15136,15 +15383,16 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     Ordem robusta:
     1. registra fala atual;
-    2. normaliza estado;
-    3. prepara progressão física / pico / clímax;
-    4. prepara clímax do parceiro;
-    5. monta prompt uma única vez;
-    6. chama modelo;
-    7. limpa resposta;
-    8. aplica STATE_UPDATE;
-    9. atualiza pós-clímax / aftercare;
-    10. salva histórico e facts.
+    2. detecta e aplica salto temporal, se houver;
+    3. normaliza estado;
+    4. prepara progressão física / pico / clímax;
+    5. prepara clímax do parceiro;
+    6. monta prompt uma única vez;
+    7. chama modelo;
+    8. limpa resposta;
+    9. aplica STATE_UPDATE;
+    10. atualiza pós-clímax / aftercare;
+    11. salva histórico e facts.
     """
     if not isinstance(state, dict):
         state = {}
@@ -15153,12 +15401,39 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
 
     state["turno"] = int(state.get("turno", 0) or 0) + 1
     state["_fala_usuario_atual"] = fala_usuario
-    
+
     atualizar_interlocutor_ativo(state, fala_usuario)
 
     if "history" not in state or not isinstance(state.get("history"), list):
         state["history"] = []
 
+    # ======================================================
+    # SALTO TEMPORAL
+    # Ex:
+    # - "30 dias se passam..."
+    # - "duas semanas depois..."
+    # - "um mês depois..."
+    # - "10/07/2026. Mary está..."
+    #
+    # Importante:
+    # - Deve acontecer ANTES de normalizar_estado().
+    # - O histórico continua existindo, mas vira passado.
+    # - Estado físico imediato/clímax/telefonema antigo não atravessa
+    #   automaticamente para a nova cena.
+    # ======================================================
+    salto_temporal = detectar_salto_temporal_na_fala(
+        fala_usuario,
+        state,
+    )
+
+    if isinstance(salto_temporal, dict) and salto_temporal.get("houve"):
+        aplicar_salto_temporal_no_state(
+            state,
+            salto_temporal,
+        )
+    else:
+        # Garante que salto antigo não continue marcado em turnos normais.
+        state["_salto_temporal_ativo"] = False
     # ======================================================
     # 1) EVENTOS DE TURNO / TRAVAS
     # ======================================================
@@ -16686,6 +16961,27 @@ with st.sidebar:
     st.divider()
     with st.expander("🧩 Facts avançados", expanded=False):
         st.json(state.get("facts", {}))
+    
+    with st.expander("⏳ Debug salto temporal", expanded=False):
+        st.json({
+            "salto_temporal_ativo": state.get("_salto_temporal_ativo", False),
+            "salto_temporal": state.get("_salto_temporal", {
+                "houve": False,
+                "descricao": "",
+                "data_anterior": "",
+                "data_nova": "",
+                "quantidade": None,
+                "unidade": "",
+            }),
+            "data_cena": state.get("data_cena", ""),
+            "scene_stage": state.get("scene_stage", ""),
+            "mary_intent": state.get("mary_intent", ""),
+            "physical_phase": state.get("physical_phase", 0),
+            "climax_usuario_sinal": state.get("climax_usuario_sinal", False),
+            "mary_climax_done": state.get("mary_climax_done", False),
+            "user_climax_done": state.get("user_climax_done", False),
+        })
+    
     with st.expander("🧪 Debug state", expanded=False):
         st.json(state)
 
