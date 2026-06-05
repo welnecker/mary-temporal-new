@@ -11969,16 +11969,74 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
         state.get("modo_surpresa", "Desligado")
     )
 
-    if modo_surpresa != "Telefonema / Mensagem":
-        return ""
-
     direcao = str(state.get("direcao_surpresa", "") or "").strip()
     fala = str(fala_usuario or "").strip()
+    fala_norm = _texto_norm(fala)
 
     # ======================================================
-    # 1. EXTRAI CALLER
+    # CONSULTA DE CONTATO
+    # Ex: "você tem o contato dele?", "qual o número?",
+    # "manda o WhatsApp", "anota aí".
+    #
+    # Importante:
+    # - Isso NÃO é telefonema recebido.
+    # - Mas ainda precisa usar a agenda_telefonica.
+    # ======================================================
+    consulta_contato = _tem_algum(
+        fala_norm,
+        [
+            "tem o contato",
+            "tem contato",
+            "contato dele",
+            "contato dela",
+            "telefone dele",
+            "telefone dela",
+            "numero dele",
+            "número dele",
+            "numero dela",
+            "número dela",
+            "whatsapp dele",
+            "whatsapp dela",
+            "zap dele",
+            "zap dela",
+            "manda o contato",
+            "me passa o contato",
+            "me passa o numero",
+            "me passa o número",
+            "anota o numero",
+            "anota o número",
+            "qual o numero",
+            "qual o número",
+        ],
+    )
+
+    if modo_surpresa != "Telefonema / Mensagem" and not consulta_contato:
+        return ""
+
+    # ======================================================
+    # 1. EXTRAI CALLER / ALVO DO CONTATO
     # ======================================================
     caller_extraido = extrair_caller_da_direcao_surpresa(direcao, fala)
+
+    # Em consulta de contato, a fala pode dizer "ele", "o coroa",
+    # "contato dele", sem repetir o nome Donisete.
+    # Neste caso, usamos o contexto ativo da cena para inferir o alvo.
+    if consulta_contato and not caller_extraido:
+        contexto_contato_norm = _texto_norm(
+            " ".join(
+                [
+                    str(state.get("segredo_ativo", "") or ""),
+                    str(state.get("plano_ativo", "") or ""),
+                    str(state.get("eventos_recentes", "") or ""),
+                    str(state.get("mentiras_desculpas", "") or ""),
+                    str(state.get("_fala_usuario_atual", "") or ""),
+                    str(fala_usuario or ""),
+                ]
+            )
+        )
+
+        if "donisete" in contexto_contato_norm or "coroa" in fala_norm:
+            caller_extraido = "Donisete"
 
     agenda = carregar_agenda_telefonica_cache(apenas_ativos=True)
     contato = buscar_contato_na_agenda_telefonica(caller_extraido, agenda)
@@ -11990,6 +12048,47 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     ).strip()
 
     contato_encontrado = bool(contato.get("encontrado", False))
+
+        telefone_caller = str(contato.get("telefone", "") or "").strip()
+    aliases_caller = contato.get("aliases", []) or []
+
+    # ======================================================
+    # CONSULTA DE CONTATO / AGENDA
+    # Quando o usuário pede telefone/WhatsApp/contato,
+    # o modelo precisa receber o dado real ou ser proibido
+    # de inventar dígitos.
+    # ======================================================
+    if consulta_contato:
+        return f"""
+[CONSULTA DE CONTATO / AGENDA TELEFÔNICA]
+
+O usuário pediu contato, telefone, número, WhatsApp ou dado semelhante.
+
+Alvo inferido:
+{caller if caller else "não identificado"}
+
+Contato encontrado na agenda:
+{"sim" if contato_encontrado else "não"}
+
+Telefone real registrado:
+{telefone_caller if telefone_caller else "não informado"}
+
+Aliases registrados:
+{", ".join(aliases_caller) if aliases_caller else "nenhum"}
+
+Relação:
+{contato.get("relacao", "") if contato_encontrado else ""}
+
+Observações:
+{contato.get("observacoes", "") if contato_encontrado else ""}
+
+REGRA CENTRAL:
+- Mary NÃO deve inventar número de telefone, DDD, WhatsApp, arroba, e-mail, empresa ou dado cadastral.
+- Se houver telefone real registrado acima, Mary pode citar exatamente esse telefone.
+- Se "Telefone real registrado" estiver como "não informado", Mary pode dizer que tem o cartão, que vai conferir, que vai mandar depois, que precisa procurar melhor ou que não sabe de cabeça.
+- Se o contato não foi encontrado, Mary não deve ditar dígitos.
+- Mary pode manter naturalidade: olhar o cartão, apertar o celular, baixar a voz, hesitar, rir com Silvia ou esconder o papel de Joselina.
+""".strip()
 
     # ======================================================
     # 2. DEFINE PRESENÇA FÍSICA
@@ -14136,6 +14235,9 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 21. Onomatopeias do usuário são pistas de ação, não texto obrigatório para repetir. Ex: "ploft" = queda/sentar pesado; "tim tim" = brinde; "glub" = beber; "smack" = beijo; "opa" = desequilíbrio/susto.
 22. Se o usuário disser "zonzo", "tonto", "bêbado", "no grau", "equilíbrio ruim" ou "dormente", Mary deve entender como efeito de álcool/cansaço: segurar, orientar, brincar com cuidado e manter o clima sem tratar como apagão automático.
 23. A resposta deve priorizar continuidade viva sobre formato. Se uma regra de formato deixar a cena artificial, a naturalidade vence.
+24. Mary não deve inventar telefone, DDD, WhatsApp, e-mail, endereço, CPF, placa, empresa, perfil social ou dado cadastral exato.
+25. Se o dado exato não estiver no contexto, na agenda telefônica, na memória ou na fala do usuário, Mary deve tratar como desconhecido.
+26. Se Mary estiver olhando um cartão ou contato, mas o número real não foi fornecido ao prompt, ela pode dizer que tem o cartão, que vai conferir ou que vai mandar depois, mas não deve criar dígitos.
 
 {bloco_silvia_confidente}
 
