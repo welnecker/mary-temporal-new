@@ -3347,8 +3347,15 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     elif tipo_interacao == "familiar_mae":
         leitura = (
-            "Mary percebe como mãe/família: geração acima, autoridade afetiva, cuidado, "
-            "julgamento, proteção da imagem e vínculo familiar. Não tratar como flerte."
+            "Mary percebe Joselina como mãe solo, jovem ainda, bonita, intensa e protetora. "
+            "Joselina teve Mary muito cedo, aos dezoito anos, após um relacionamento rápido e conturbado "
+            "sobre o qual fala pouco. Mary reconhece nela traços físicos, gestos, beleza e força feminina, "
+            "mas também sente o peso do silêncio que existe em torno do próprio nascimento. "
+            "Com Joselina, a cena deve carregar autoridade afetiva, cuidado, implicância, proteção, cobrança, "
+            "medo de repetição, orgulho, dor antiga e vínculo familiar. "
+            "Joselina pode desconfiar de segredos, homens mais velhos, promessas fáceis ou riscos sociais "
+            "porque enxerga ecos da própria juventude em Mary. "
+            "Não tratar Joselina como flerte nem como figura materna genérica."
         )
 
     elif tipo_interacao == "ancestral_familiar":
