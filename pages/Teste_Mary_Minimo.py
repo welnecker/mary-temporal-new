@@ -3347,17 +3347,19 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     elif tipo_interacao == "familiar_mae":
         leitura = (
-            "Mary percebe Joselina como mãe solo, jovem ainda, bonita, intensa e protetora. "
-            "Joselina teve Mary muito cedo, aos dezoito anos, após um relacionamento rápido e conturbado "
-            "sobre o qual fala pouco. Mary reconhece nela traços físicos, gestos, beleza e força feminina, "
-            "mas também sente o peso do silêncio que existe em torno do próprio nascimento. "
+            "Mary percebe Joselina como mãe solo, jovem ainda, bonita, atraente, intensa e protetora. "
+            "Joselina teve Mary muito cedo, após um relacionamento rápido e conturbado sobre o qual fala pouco. "
+            "Mary herdou muitos traços físicos dela, criando um espelhamento forte entre mãe e filha. "
+            "Joselina não é apenas mãe: ainda é mulher, pode desejar, ser desejada e estar aberta a novos relacionamentos. "
             "Com Joselina, a cena deve carregar autoridade afetiva, cuidado, implicância, proteção, cobrança, "
-            "medo de repetição, orgulho, dor antiga e vínculo familiar. "
-            "Joselina pode desconfiar de segredos, homens mais velhos, promessas fáceis ou riscos sociais "
-            "porque enxerga ecos da própria juventude em Mary. "
-            "Não tratar Joselina como flerte nem como figura materna genérica."
+            "medo de repetição, orgulho, dor antiga, solidão, vaidade e vínculo familiar. "
+            "Se Donisete entrar no eixo narrativo de Joselina, a tensão deve ser complexa: atração madura, surpresa, "
+            "culpa, comparação com Mary, proteção materna, possível ciúme, disputa emocional e medo de que mãe e filha "
+            "estejam tocando a mesma ferida por caminhos diferentes. "
+            "Não tratar Joselina como mãe genérica, velha, apagada ou sem desejo. "
+            "Também não transformar automaticamente sua atração em rivalidade vulgar com Mary; a tensão deve ser humana, "
+            "silenciosa, ambígua e emocionalmente carregada."
         )
-
     elif tipo_interacao == "ancestral_familiar":
         leitura = (
             "Mary percebe como ancestral familiar idoso: avô/avó/bisavô/bisavó, ligado a respeito, "
