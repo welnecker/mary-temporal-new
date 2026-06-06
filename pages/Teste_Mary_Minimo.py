@@ -4550,7 +4550,12 @@ def _set_fase_limitada(state: dict, limite: int, stage_padrao: str) -> None:
     state["scene_stage"] = mapa.get(fase, stage_padrao or "inicio")
 
 
-def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_limpa: str = "") -> None:
+def atualizar_pico_mary_por_contexto(
+    state: dict,
+    fala_usuario: str,
+    resposta_limpa: str = "",
+    atualizar_contador: bool = True,
+) -> None:
     """
     Detecta progressão física real da cena e prepara sinais de pico de Mary.
 
@@ -4922,13 +4927,18 @@ def atualizar_pico_mary_por_contexto(state: dict, fala_usuario: str, resposta_li
     
     turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
     
-    if estimulacao_para_contador:
-        turns += 1
-    else:
-        # Não zera de uma vez: permite pausas curtas sem perder tudo.
-        turns = max(0, turns - 1)
+    if atualizar_contador:
+        if estimulacao_para_contador:
+            turns += 1
+        else:
+            # Não zera de uma vez: permite pausas curtas sem perder tudo.
+            turns = max(0, turns - 1)
     
-    state["mary_stimulation_turns"] = turns
+        state["mary_stimulation_turns"] = turns
+    else:
+        # No pré-prompt, a função pode ajustar fase/stage,
+        # mas não deve consumir ou alterar o contador ainda.
+        turns = safe_int(state.get("mary_stimulation_turns", 0), 0)
 
     # ======================================================
     # DECISÃO DE FASE / STAGE / INTENÇÃO
@@ -15595,6 +15605,7 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
             state,
             fala_usuario,
             resposta_limpa="",
+            atualizar_contador=False,
         )
 
     if "preparar_resolucao_mary_se_necessario" in globals():
@@ -15686,6 +15697,22 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # ======================================================
     aplicar_state_update(state, update_final or update)
 
+    # Atualiza a progressão física real também com a resposta final.
+    # Isso permite que o contador de estímulo considere a continuidade
+    # narrada pela própria Mary, não apenas a fala do usuário antes do prompt.
+    atualizar_pico_mary_por_contexto(
+        state,
+        fala_usuario,
+        resposta_limpa=resposta_final_limpa,
+    )
+    
+    atualizar_pico_mary_por_contexto(
+        state,
+        fala_usuario,
+        resposta_limpa=resposta_final_limpa,
+        atualizar_contador=True,
+    )
+    
     atualizar_psique_e_fase(state, fala_usuario, resposta_final_limpa)
 
     # ======================================================
