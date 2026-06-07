@@ -598,34 +598,9 @@ def get_shared_memories_sheet():
     try:
         return ss.worksheet(SHEET_SHARED_MEMORIES)
     except gspread.WorksheetNotFound:
-        ws = ss.add_worksheet(title=SHEET_SHARED_MEMORIES, rows=1000, cols=6)
+        ws = ss.add_worksheet(title=SHEET_SHARED_MEMORIES, rows=1000, cols=7)
         ws.append_row(
-            ["id", "tipo", "memoria", "ativa", "peso", "timestamp"],
-            value_input_option="USER_ENTERED",
-        )
-        return ws
-
-
-def get_facts_sheet():
-    ss = _get_spreadsheet()
-
-    try:
-        return ss.worksheet(SHEET_FACTS)
-    except gspread.WorksheetNotFound:
-        ws = ss.add_worksheet(title=SHEET_FACTS, rows=500, cols=2)
-        ws.append_row(["chave", "valor"], value_input_option="USER_ENTERED")
-        return ws
-
-
-def get_shared_memories_sheet():
-    ss = _get_spreadsheet()
-
-    try:
-        return ss.worksheet(SHEET_SHARED_MEMORIES)
-    except gspread.WorksheetNotFound:
-        ws = ss.add_worksheet(title=SHEET_SHARED_MEMORIES, rows=1000, cols=6)
-        ws.append_row(
-            ["id", "tipo", "memoria", "ativa", "peso", "timestamp"],
+            ["id", "tipo", "memoria", "ativa", "peso", "timestamp", "ativa_prompt"],
             value_input_option="USER_ENTERED",
         )
         return ws
@@ -1244,10 +1219,13 @@ def carregar_shared_memories_da_planilha(apenas_ativas: bool = True) -> list[dic
                 continue
 
             ativa_raw = str(row.get("ativa", "TRUE") or "TRUE").strip().lower()
-            ativa = ativa_raw in ("true", "1", "sim", "yes", "ativa")
+            ativa = ativa_raw in ("true", "1", "sim", "yes", "ativa", "ativo")
 
             if apenas_ativas and not ativa:
                 continue
+
+            ativa_prompt_raw = str(row.get("ativa_prompt", "TRUE") or "TRUE").strip().lower()
+            ativa_prompt = ativa_prompt_raw in ("true", "1", "sim", "yes", "ativa", "ativo")
 
             try:
                 peso = float(row.get("peso", 1.0) or 1.0)
@@ -1260,6 +1238,7 @@ def carregar_shared_memories_da_planilha(apenas_ativas: bool = True) -> list[dic
                     "tipo": str(row.get("tipo", "shared") or "shared").strip(),
                     "memoria": memoria,
                     "ativa": ativa,
+                    "ativa_prompt": ativa_prompt,
                     "peso": peso,
                     "timestamp": str(row.get("timestamp", "") or "").strip(),
                 }
@@ -1293,6 +1272,7 @@ def salvar_shared_memory_na_planilha(memoria: str, tipo: str = "shared", peso: f
                 "TRUE",
                 float(peso or 1.0),
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "TRUE",
             ],
             value_input_option="USER_ENTERED",
         )
@@ -1301,6 +1281,56 @@ def salvar_shared_memory_na_planilha(memoria: str, tipo: str = "shared", peso: f
 
     except Exception as e:
         st.warning(f"Não foi possível salvar memória: {type(e).__name__}: {e}")
+        return False
+
+def atualizar_shared_memory_ativa_prompt(memory_id: str, ativa_prompt: bool) -> bool:
+    """
+    Atualiza a coluna ativa_prompt de uma shared memory pelo ID.
+
+    ativa_prompt:
+    - TRUE: memória entra no prompt.
+    - FALSE: memória fica guardada, mas não entra no prompt.
+    """
+    try:
+        memory_id = str(memory_id or "").strip()
+
+        if not memory_id:
+            return False
+
+        ws = get_shared_memories_sheet()
+        values = ws.get_all_values()
+
+        if not values:
+            return False
+
+        headers = values[0]
+
+        try:
+            col_id = headers.index("id") + 1
+        except ValueError:
+            col_id = 1
+
+        if "ativa_prompt" in headers:
+            col_ativa_prompt = headers.index("ativa_prompt") + 1
+        else:
+            # Cria a coluna se não existir.
+            col_ativa_prompt = len(headers) + 1
+            ws.update_cell(1, col_ativa_prompt, "ativa_prompt")
+
+        valor_final = "TRUE" if ativa_prompt else "FALSE"
+
+        for row_idx, row in enumerate(values[1:], start=2):
+            row_id = str(row[col_id - 1] if len(row) >= col_id else "").strip()
+
+            if row_id == memory_id:
+                ws.update_cell(row_idx, col_ativa_prompt, valor_final)
+                limpar_cache_planilhas()
+                return True
+
+        return False
+
+    except Exception as e:
+        st.warning(f"Não foi possível atualizar ativa_prompt: {type(e).__name__}: {e}")
         return False
 
 
@@ -14183,6 +14213,10 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
         shared_memories = state.get("shared_memories", [])
     else:
         shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
+        shared_memories = [
+            m for m in shared_memories
+            if normalizar_bool(m.get("ativa_prompt", True), default=True)
+        ]
 
     state["shared_memories"] = shared_memories
     shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=8)
@@ -16914,14 +16948,30 @@ with st.sidebar:
     
     st.divider()
     st.subheader("🧠 Memórias shared")
+
     nova_memoria = st.text_area("Nova memória", value="", height=90)
+
     col_mem_1, col_mem_2 = st.columns([2, 1])
+
     with col_mem_1:
         tipo_memoria = st.text_input("Tipo", value="shared")
+
     with col_mem_2:
-        peso_memoria = st.number_input("Peso", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+        peso_memoria = st.number_input(
+            "Peso",
+            min_value=0.1,
+            max_value=11.0,
+            value=1.0,
+            step=0.1,
+        )
+
     if st.button("💾 Salvar memória", use_container_width=True):
-        ok = salvar_shared_memory_na_planilha(nova_memoria, tipo_memoria, peso_memoria)
+        ok = salvar_shared_memory_na_planilha(
+            nova_memoria,
+            tipo_memoria,
+            peso_memoria,
+        )
+
         if ok:
             limpar_cache_planilhas()
             state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
@@ -16930,20 +16980,102 @@ with st.sidebar:
             st.rerun()
         else:
             st.warning("Nenhuma memória foi salva.")
+
+    # ======================================================
+    # SHARED MEMORIES NO PROMPT
+    # ativa = memória existe no sistema.
+    # ativa_prompt = memória entra ou não entra no prompt.
+    # ======================================================
+    with st.expander("🧠 Shared memories no prompt", expanded=False):
+        shared_all = carregar_shared_memories_da_planilha(apenas_ativas=True)
+
+        if not shared_all:
+            st.info("Nenhuma shared memory ativa encontrada.")
+        else:
+            st.caption(
+                "Marque quais memórias shared entram no prompt. "
+                "Desmarcar não apaga a memória; apenas tira da camada ativa da Mary."
+            )
+
+            for m in shared_all:
+                memory_id = str(m.get("id", "") or "").strip()
+                tipo = str(m.get("tipo", "shared") or "shared").strip()
+                memoria = str(m.get("memoria", "") or "").strip()
+                peso = m.get("peso", 1.0)
+
+                if not memory_id:
+                    continue
+
+                ativa_prompt_atual = normalizar_bool(
+                    m.get("ativa_prompt", True),
+                    default=True,
+                )
+
+                resumo = memoria.replace("\n", " ").strip()
+                if len(resumo) > 120:
+                    resumo = resumo[:120] + "..."
+
+                novo_valor = st.checkbox(
+                    f"{memory_id} · {tipo} · peso {peso} · {resumo}",
+                    value=ativa_prompt_atual,
+                    key=f"ativa_prompt_{memory_id}",
+                )
+
+                if novo_valor != ativa_prompt_atual:
+                    ok = atualizar_shared_memory_ativa_prompt(
+                        memory_id,
+                        novo_valor,
+                    )
+
+                    if ok:
+                        limpar_cache_planilhas()
+                        state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+                        st.session_state.mary_state_minimo = state
+                        st.success(f"{memory_id} atualizado.")
+                        st.rerun()
+                    else:
+                        st.warning(f"Não foi possível atualizar {memory_id}.")
+
     with st.expander("📚 Ver memórias", expanded=False):
-        memories = state.get("shared_memories", [])
+        memories = carregar_shared_memories_da_planilha(apenas_ativas=True)
+
         if not memories:
             st.info("Nenhuma memória shared ativa.")
         else:
             for m in memories:
-                st.markdown(f"**{m.get('id', '')}** · `{m.get('tipo', 'shared')}` · peso `{m.get('peso', 1.0)}`")
+                ativa_prompt = normalizar_bool(
+                    m.get("ativa_prompt", True),
+                    default=True,
+                )
+
+                status_prompt = "✅ entra no prompt" if ativa_prompt else "⛔ fora do prompt"
+
+                st.markdown(
+                    f"**{m.get('id', '')}** · `{m.get('tipo', 'shared')}` · "
+                    f"peso `{m.get('peso', 1.0)}` · {status_prompt}"
+                )
                 st.write(m.get("memoria", ""))
                 st.divider()
+
     with st.expander("🗑️ Apagar memória", expanded=False):
-        memory_id = st.text_input("ID da memória", value="", placeholder="Ex: mem_3")
-        confirmar = st.checkbox("Confirmar apagar memória", value=False)
-        if st.button("Apagar memória", use_container_width=True, disabled=not confirmar):
+        memory_id = st.text_input(
+            "ID da memória",
+            value="",
+            placeholder="Ex: mem_3",
+        )
+
+        confirmar = st.checkbox(
+            "Confirmar apagar memória",
+            value=False,
+        )
+
+        if st.button(
+            "Apagar memória",
+            use_container_width=True,
+            disabled=not confirmar,
+        ):
             if apagar_shared_memory_por_id(memory_id):
+                limpar_cache_planilhas()
                 state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
                 st.session_state.mary_state_minimo = state
                 st.success("Memória apagada.")
