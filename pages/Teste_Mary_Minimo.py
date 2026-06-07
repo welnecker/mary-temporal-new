@@ -122,6 +122,13 @@ SCENE_STAGES_VALIDOS = {
     "nsfw_preliminares",
     "alivio_rapido",
     "pos_ato_arriscado",
+    # ======================================================
+    # NSFW / PÓS-PICO ATIVO
+    # Mary já gozou, mas a cena ainda não acabou.
+    # ======================================================
+    "pos_pico_mary_com_parceiro_pendente",
+    "conduzindo_climax_parceiro",
+    "parceiro_pos_pico_mary_pendente",
 }
 
 def normalizar_scene_stage(valor: str, padrao: str = "inicio") -> str:
@@ -169,6 +176,12 @@ MARY_INTENTS_VALIDOS = {
     "preparar_noite_refletindo",
     "intensificar_com_cuidado",
     "presenca_viva",
+    # ======================================================
+    # NSFW / PÓS-PICO ATIVO
+    # ======================================================
+    "conduzir_climax_do_parceiro",
+    "acolher_climax_do_parceiro",
+    "conduzir_prazer_de_mary",
 }
 
 
@@ -5303,10 +5316,12 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
     """
     Sincroniza flags de clímax depois que a resposta final foi gerada.
 
-    Regra:
-    - Se Mary verbalizou o próprio pico, o próximo turno deve entrar em aftercare.
-    - Se o parceiro também concluiu, aftercare pleno.
-    - Se só Mary concluiu, aftercare com continuidade.
+    Regras:
+    - Se Mary verbalizou o próprio pico pela primeira vez, só confirma se force_resolution_now=True.
+    - Se Mary já tinha climax confirmado, menções posteriores ao pico NÃO rebaixam o estado.
+    - Se só Mary concluiu, a cena entra em pós-pico ativo com parceiro pendente.
+    - Se só o parceiro concluiu, Mary pode continuar com desejo pendente.
+    - Se ambos concluíram, aftercare pleno.
     - Não deixar normalizar_estado() apagar o pós-pico imediatamente.
     """
     if not isinstance(state, dict):
@@ -5322,18 +5337,31 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
         default=False,
     )
 
-    if detectar_climax_mary_na_resposta(resposta_final):
+    mary_detectado_na_resposta = detectar_climax_mary_na_resposta(resposta_final)
+    parceiro_detectado_na_resposta = detectar_climax_parceiro_na_resposta(resposta_final)
+
+    # ======================================================
+    # 1) CLÍMAX DE MARY DETECTADO NA RESPOSTA
+    # ======================================================
+    if mary_detectado_na_resposta:
         force_now = normalizar_bool(
             state.get("force_resolution_now", False),
             default=False,
         )
-    
-        if force_now:
+
+        if mary_done:
+            # Mary já tinha gozado antes.
+            # Se ela mencionar o pico no aftercare, isso NÃO é tentativa precoce.
+            state["mary_climax_done"] = True
+
+        elif force_now:
+            # Primeira confirmação válida do pico de Mary.
             mary_done = True
             state["mary_climax_done"] = True
             state["force_resolution_now"] = False
             state["mary_pre_orgasm_signals"] = False
             state["mary_stimulation_turns"] = 0
+
         else:
             # O modelo tentou resolver o pico cedo demais.
             # Não confirma no state.
@@ -5348,66 +5376,76 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
                 safe_int(state.get("physical_phase", 4), 4),
                 5,
             )
+            state["partner_climax_pending"] = False
+            return
 
-    if detectar_climax_parceiro_na_resposta(resposta_final):
+    # ======================================================
+    # 2) CLÍMAX DO PARCEIRO DETECTADO NA RESPOSTA
+    # ======================================================
+    if parceiro_detectado_na_resposta:
         user_done = True
         state["user_climax_done"] = True
+        state["climax_usuario_sinal"] = True
+        state["climax_usuario_tipo"] = "confirmado_na_resposta"
 
-    state["partner_climax_pending"] = bool(mary_done and not user_done)
-
-    if mary_done:
-        state["scene_stage"] = "aftercare"
-        state["mary_intent"] = "desacelerar_com_presenca"
-        state["physical_phase"] = 7 if user_done else 6
-        state["resolution_done"] = bool(user_done)
-        state["force_resolution_now"] = False
-        state["mary_pre_orgasm_signals"] = False
-
-
-def minimo_estimulos_para_mary(state: dict) -> int:
-    """
-    Define quantos turnos de estímulo sexual direto são necessários
-    antes de Mary poder resolver o pico.
-
-    Regra geral:
-    - Funciona para Janio, Rico, Bianca ou qualquer novo interlocutor.
-    - O nome do interlocutor só ajusta levemente o ritmo.
-    - A base da decisão é o estímulo direto real, não a identidade da pessoa.
-    """
-    if not isinstance(state, dict):
-        return 5
-
-    interlocutor = _texto_norm(
-        state.get("interlocutor_foco_turno")
-        or state.get("interlocutor")
-        or ""
+    # Releitura final após possíveis alterações.
+    mary_done = normalizar_bool(
+        state.get("mary_climax_done", mary_done),
+        default=False,
     )
 
-    relacao = _texto_norm(state.get("relacao", ""))
-    tipo = _texto_norm(state.get("tipo_de_cena", ""))
+    user_done = normalizar_bool(
+        state.get("user_climax_done", user_done),
+        default=False,
+    )
 
-    # Relações centrais / mais carregadas emocionalmente:
-    # segura um pouco mais para manter tensão e reciprocidade.
-    if "janio" in interlocutor:
-        return 6
+    # ======================================================
+    # 3) MARY CONCLUIU, PARCEIRO AINDA NÃO
+    # ======================================================
+    if mary_done and not user_done:
+        state["partner_climax_pending"] = True
+        state["scene_stage"] = "pos_pico_mary_com_parceiro_pendente"
+        state["mary_intent"] = "conduzir_climax_do_parceiro"
+        state["physical_phase"] = max(
+            safe_int(state.get("physical_phase", 6), 6),
+            6,
+        )
+        state["resolution_done"] = False
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        return
 
-    if "bianca" in interlocutor:
-        return 6
+    # ======================================================
+    # 4) PARCEIRO CONCLUIU, MARY AINDA NÃO
+    # ======================================================
+    if user_done and not mary_done:
+        state["partner_climax_pending"] = False
+        state["scene_stage"] = "parceiro_pos_pico_mary_pendente"
+        state["mary_intent"] = "conduzir_prazer_de_mary"
+        state["physical_phase"] = max(
+            safe_int(state.get("physical_phase", 4), 4),
+            4,
+        )
+        state["resolution_done"] = False
+        state["force_resolution_now"] = False
+        # Não zera mary_stimulation_turns aqui.
+        # Mary ainda pode estar em progressão própria.
+        return
 
-    # Rico ou novo amigo íntimo: padrão com leve sustentação.
-    if "rico" in interlocutor or "ricardo" in interlocutor:
-        return 5
-
-    # Qualquer relação íntima, ficante, paquera, interesse ou contato ambíguo.
-    if any(t in relacao for t in ["intima", "íntima", "ficante", "paquera", "interesse", "ambigua", "ambígua"]):
-        return 5
-
-    # Se o tom da cena já é intimidade, vale para qualquer pessoa.
-    if "intimidade" in tipo:
-        return 5
-
-    # Default para qualquer novo personagem.
-    return 5
+    # ======================================================
+    # 5) AMBOS CONCLUÍRAM: AFTERCARE PLENO
+    # ======================================================
+    if mary_done and user_done:
+        state["partner_climax_pending"] = False
+        state["scene_stage"] = "aftercare"
+        state["mary_intent"] = "desacelerar_com_presenca"
+        state["physical_phase"] = 7
+        state["resolution_done"] = True
+        state["force_resolution_now"] = False
+        state["mary_pre_orgasm_signals"] = False
+        state["mary_stimulation_turns"] = 0
+        return
 
 
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
@@ -9732,16 +9770,24 @@ def preparar_climax_parceiro_mary(state: dict, fala_usuario: str) -> None:
 
     # ======================================================
     # 1) PARCEIRO AVISOU: ainda dá tempo de Mary conduzir.
-    # ======================================================
+    # ======================================================   
     if sinal == "aviso":
         state["climax_usuario_sinal"] = True
+        state["climax_usuario_tipo"] = "aviso"
         state["user_climax_done"] = False
 
         if mary_done:
             state["mary_reacao_climax_parceiro"] = "conduzir_apos_pico_mary"
             state["mary_frustracao_climax"] = ""
             state["partner_climax_pending"] = True
+            state["user_climax_done"] = False
+            state["scene_stage"] = "conduzindo_climax_parceiro"
             state["mary_intent"] = "conduzir_climax_do_parceiro"
+            state["physical_phase"] = max(
+                safe_int(state.get("physical_phase", 6), 6),
+                6,
+            )
+            state["resolution_done"] = False
             return
 
         # Mary ainda não gozou.
@@ -9765,13 +9811,17 @@ def preparar_climax_parceiro_mary(state: dict, fala_usuario: str) -> None:
     # ======================================================
     if sinal == "em_andamento":
         state["climax_usuario_sinal"] = True
-        state["user_climax_done"] = True
-        state["partner_climax_pending"] = False
+        state["climax_usuario_tipo"] = "em_andamento"
 
         if mary_done:
-            state["mary_reacao_climax_parceiro"] = "reagir_climax_em_andamento"
+            state["mary_reacao_climax_parceiro"] = "acolher_gozo_apos_pico_mary"
             state["mary_frustracao_climax"] = ""
+            state["partner_climax_pending"] = False
+            state["user_climax_done"] = True
+            state["scene_stage"] = "aftercare"
             state["mary_intent"] = "acolher_climax_do_parceiro"
+            state["physical_phase"] = 7
+            state["resolution_done"] = True
             return
 
         # Mary ainda não gozou.
@@ -10028,26 +10078,37 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
 
     fase = safe_int(state.get("physical_phase", 0), 0)
     stage = _texto_norm(state.get("scene_stage", ""))
-
-    if mary_done:
-        user_done = normalizar_bool(state.get("user_climax_done", False), default=False)
     
+    if mary_done:
+        user_done = normalizar_bool(
+            state.get("user_climax_done", False),
+            default=False,
+        )
+
         state["force_resolution_now"] = False
         state["mary_pre_orgasm_signals"] = False
         state["mary_stimulation_turns"] = 0
         state["partner_climax_pending"] = not user_done
-    
-        # Garante que o estado reflita que o pico de Mary já aconteceu.
-        # Não força novo orgasmo; apenas estabiliza a cena depois dele.
+
         fase_atual = safe_int(state.get("physical_phase", 0), 0)
-    
+
         if fase_atual < 6:
             state["physical_phase"] = 6
-    
-        if _texto_norm(state.get("scene_stage", "")) in ("pre_pico_mary", "pico", "pico_mary"):
+
+        if not user_done:
+            # ======================================================
+            # Mary já gozou, mas o parceiro ainda não.
+            # Não transformar em aftercare pleno.
+            # ======================================================
+            state["scene_stage"] = "pos_pico_mary_com_parceiro_pendente"
+            state["mary_intent"] = "conduzir_climax_do_parceiro"
+            state["resolution_done"] = False
+        else:
             state["scene_stage"] = "aftercare"
             state["mary_intent"] = "desacelerar_com_presenca"
-    
+            state["resolution_done"] = True
+            state["partner_climax_pending"] = False
+
         return
 
     if not force_now:
@@ -10060,82 +10121,95 @@ def atualizar_gate_orgasmo_mary(state: dict, fala_usuario: str = "") -> None:
 
 def render_aftercare_sexual_mary() -> str:
     """
-    Diretriz específica para o pós-pico / aftercare de Mary
+    Diretriz específica para pós-pico, pausa íntima e aftercare
     em cena NSFW privada consensual.
-    Não força clímax. Só define o vocabulário e a postura depois que Mary já gozou.
+
+    Não força clímax.
+    Não decide quem gozou.
+    Apenas orienta a postura de Mary conforme o estado atual:
+    - Mary já gozou;
+    - parceiro já gozou;
+    - ambos gozaram;
+    - a cena pausou, mas ainda pode continuar.
     """
     return """
-[AFTERCARE SEXUAL DE MARY]
+[PÓS-PICO / PAUSA ÍNTIMA / AFTERCARE SEXUAL DE MARY]
 
 Esta regra só vale quando:
 - tom_manual_da_cena for "Nsfw";
 - privacidade for "privado";
-- mary_climax_done for true OU scene_stage for "aftercare" OU mary_intent for "desacelerar_com_presenca".
+- houver clímax recente, pausa íntima, scene_stage="aftercare",
+  scene_stage="pos_pico_mary_com_parceiro_pendente",
+  scene_stage="conduzindo_climax_parceiro",
+  ou mary_intent ligado a desaceleração, acolhimento ou continuidade pós-pico.
 
-OBJETIVO:
-Depois de gozar, Mary não deve virar neutra, clínica, romântica genérica ou distante.
-Ela deve reconhecer o prazer que acabou de sentir, com fala adulta, satisfeita, íntima e corporal.
+REGRA CENTRAL:
+Aftercare não significa fim automático da cena.
+Pós-pico não significa neutralidade.
+Pausa íntima não significa que o desejo acabou.
+
+Mary deve ler o estado real:
+- Se Mary já gozou e o parceiro ainda não, ela pode continuar sensível, satisfeita, provocante e ativa.
+- Se o parceiro já gozou e Mary ainda não, ela pode reagir ao prazer dele, acolher, provocar, cobrar continuidade ou conduzir o próprio desejo.
+- Se ambos gozaram, ela pode desacelerar com presença, corpo relaxando, carinho, riso baixo, beijo ou provocação de repetição.
+- Se ninguém gozou, mas houve pausa, Mary pode retomar o calor com fala curta, toque, olhar, pergunta ou provocação.
 
 TOM:
-- satisfeita;
-- ofegante;
-- entregue;
-- provocante;
-- carinhosa sem perder o tesão;
-- consciente de que foi bom;
-- ainda conectada ao parceiro.
+- íntimo;
+- corporal;
+- ofegante quando fizer sentido;
+- satisfeito quando houver clímax;
+- provocante se a cena ainda tiver desejo;
+- carinhoso sem apagar a tensão;
+- direto, sem relatório psicológico.
 
-VOCABULÁRIO PERMITIDO:
-Mary pode verbalizar o pós-pico com frases como:
-- "Gozei, delícia... do jeito que eu queria..."
-- "Gostoso... você me fez gozar do jeitinho que eu imaginei..."
-- "Você fode muito gostoso... foi maravilhoso..."
-- "Caralho... eu gozei gostoso demais..."
-- "Foi do jeito que eu queria..."
-- "Meu corpo ainda tá tremendo..."
-- "Eu precisava disso..."
-- "Temos que combinar mais fodas assim..."
-- "Quero repetir isso com você..."
+SE MARY JÁ GOZOU:
+- Mary deve lembrar que gozou.
+- Ela pode reconhecer o prazer, o tremor, a sensibilidade e a satisfação.
+- Se o parceiro ainda não gozou, ela não deve encerrar a cena.
+- Ela pode incentivar, conduzir, provocar, acolher ou perguntar algo curto.
+- Ela pode misturar satisfação com desejo de continuar.
 
-REGRA DE USO:
-- Não usar todas as frases de uma vez.
-- Escolher 1 ou 2 falas fortes por turno.
-- Misturar satisfação física com presença íntima.
-- Mary pode rir baixo, respirar fundo, se encostar, puxar o parceiro, beijar, abraçar ou provocar de novo.
-- A cena não precisa acabar imediatamente.
-- Aftercare não significa apagar o desejo.
-- Aftercare pode manter calor, cumplicidade e vontade de repetir.
-
-SE O PARCEIRO AINDA NÃO GOZOU:
-- Mary não deve encerrar a cena como se ambos tivessem terminado.
-- Ela pode estar sensível e ofegante, mas ainda conectada.
-- Ela pode dizer que gozou e, em seguida, incentivar ou acolher o parceiro.
-- Não transformar o pós-pico dela em fim obrigatório da cena.
+SE O PARCEIRO JÁ GOZOU:
+- Mary deve reconhecer o efeito que causou nele.
+- Ela pode reagir com orgulho, carinho, provocação, acolhimento ou desejo de continuar.
+- Se Mary ainda não gozou, ela não deve se apagar nem fingir que a cena terminou.
+- Ela pode puxar a continuidade de forma coerente com posição, ritmo e vínculo.
 
 SE AMBOS JÁ GOZARAM:
-- Mary pode assumir tom de satisfação plena.
-- Pode comentar que foi gostoso, que quer repetir, que ficou marcada pelo momento.
-- Pode relaxar no corpo do parceiro, pedir carinho, rir, beijar ou provocar sobre uma próxima vez.
+- Mary pode relaxar de verdade.
+- Pode rir baixo, beijar, se aninhar, respirar fundo, provocar sobre repetir ou sentir o peso emocional do momento.
+- O corpo deve aparecer: calor, suor, tremor, pele, respiração, silêncio, cama, cheiro e contato.
 
-PROIBIDO:
-- Falar como terapeuta.
-- Usar aftercare genérico demais.
-- Dizer apenas "foi bom".
-- Resumir o ato de forma fria.
-- Ignorar que Mary gozou.
-- Apagar a intensidade sexual imediatamente.
-- Fazer discurso longo e explicativo.
-- Repetir a mesma frase em todo aftercare.
+SE A CENA AINDA ESTÁ ATIVA:
+- Mary pode usar perguntas óbvias, mas curtas e úteis.
+- Perguntas devem conduzir, provocar ou aumentar cumplicidade, não pedir permissão vazia.
+- Exemplos de função da pergunta:
+  perguntar se ele ainda quer;
+  provocar se ele aguenta;
+  confirmar ritmo;
+  chamar para continuar;
+  brincar com o efeito que ela causou.
 
 FORMATO PREFERIDO:
-[FALA]
-fala curta de satisfação, prazer reconhecido ou provocação pós-pico.
+- 1 ou 2 blocos.
+- Fala curta + ação concreta.
+- Evitar parágrafo longo.
+- Evitar explicar a emoção.
+- Mostrar no corpo e na fala.
 
-[ACAO]
-ação física breve: respiração, tremor, corpo relaxando, beijo, abraço, riso baixo, mão buscando contato.
+PROIBIDO:
+- Tratar aftercare como encerramento obrigatório.
+- Tratar pós-pico como pausa morta.
+- Ignorar quem já gozou e quem ainda não.
+- Fazer Mary virar terapeuta.
+- Fazer discurso longo e explicativo.
+- Repetir sempre a mesma frase.
+- Apagar a intensidade sexual imediatamente.
 
 REGRA FINAL:
-Depois de gozar, Mary deve lembrar que gozou, assumir que gostou e deixar isso aparecer na fala e no corpo.
+Mary deve responder ao estado real da cena, não a uma fórmula fixa.
+Depois de um clímax ou pausa íntima, ela pode acolher, provocar, conduzir, desacelerar ou reacender — conforme o parceiro, o corpo dela, o contexto e o desejo ainda vivo.
 """.strip()
 
 def reconciliar_pos_climax(state: dict) -> None:
