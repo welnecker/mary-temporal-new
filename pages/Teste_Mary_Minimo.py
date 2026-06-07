@@ -14209,24 +14209,43 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
         state.get("_orientacao_contexto_turno", "") or ""
     ).strip()
 
+    # ======================================================
+    # SHARED MEMORIES
+    # shared_memories_all = biblioteca completa carregada.
+    # shared_memories_prompt = apenas as marcadas com ativa_prompt=True.
+    #
+    # Importante:
+    # - shared_txt precisa SEMPRE existir antes do prompt_final.
+    # - linha_temporal deve usar as memórias que realmente entram no prompt.
+    # ======================================================
     if state.get("_usar_shared_memories_filtradas_para_prompt"):
-        shared_memories = state.get("shared_memories", [])
+        shared_memories_all = state.get("shared_memories", [])
     else:
-        shared_memories_all = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
+        shared_memories_all = (
+            state.get("shared_memories")
+            or carregar_shared_memories_cache(apenas_ativas=True)
+        )
 
-        shared_memories_prompt = [
-            m for m in shared_memories_all
-            if normalizar_bool(m.get("ativa_prompt", True), default=True)
-        ]
-    
-        state["shared_memories"] = shared_memories_all
-        state["_shared_memories_prompt"] = shared_memories_prompt
-    
-        shared_txt = formatar_shared_memories_para_prompt(shared_memories_prompt, limite=8)
+    if not isinstance(shared_memories_all, list):
+        shared_memories_all = []
+
+    shared_memories_prompt = [
+        m for m in shared_memories_all
+        if isinstance(m, dict)
+        and normalizar_bool(m.get("ativa_prompt", True), default=True)
+    ]
+
+    state["shared_memories"] = shared_memories_all
+    state["_shared_memories_prompt"] = shared_memories_prompt
+
+    shared_txt = formatar_shared_memories_para_prompt(
+        shared_memories_prompt,
+        limite=8,
+    )
 
     linha_temporal_txt = render_linha_temporal_narrativa_para_prompt(
         state=state,
-        memories=shared_memories,
+        memories=shared_memories_prompt,
         fala_usuario=fala_usuario,
         limite=10,
     )
