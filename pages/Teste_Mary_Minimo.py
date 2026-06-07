@@ -5447,6 +5447,52 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
         state["mary_stimulation_turns"] = 0
         return
 
+def minimo_estimulos_para_mary(state: dict) -> int:
+    """
+    Define quantos turnos de estímulo sexual direto são necessários
+    antes de Mary poder resolver o pico.
+
+    Regra geral:
+    - Funciona para Janio, Rico, Bianca ou qualquer novo interlocutor.
+    - O nome do interlocutor só ajusta levemente o ritmo.
+    - A base da decisão é o estímulo direto real, não a identidade da pessoa.
+    """
+    if not isinstance(state, dict):
+        return 5
+
+    interlocutor = _texto_norm(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor")
+        or ""
+    )
+
+    relacao = _texto_norm(state.get("relacao", ""))
+    tipo = _texto_norm(state.get("tipo_de_cena", ""))
+
+    # Relações centrais / mais carregadas emocionalmente:
+    # segura um pouco mais para manter tensão e reciprocidade.
+    if "janio" in interlocutor:
+        return 6
+
+    if "bianca" in interlocutor:
+        return 6
+
+    # Rico ou novo amigo íntimo: padrão com leve sustentação.
+    if "rico" in interlocutor or "ricardo" in interlocutor:
+        return 5
+
+    # Qualquer relação íntima, ficante, paquera, interesse ou contato ambíguo.
+    if any(t in relacao for t in ["intima", "íntima", "ficante", "paquera", "interesse", "ambigua", "ambígua"]):
+        return 5
+
+    # Se o tom da cena já é intimidade, vale para qualquer pessoa.
+    if "intimidade" in tipo:
+        return 5
+
+    # Default para qualquer novo personagem.
+    return 5
+
+
 
 def preparar_resolucao_mary_se_necessario(state: dict, fala_usuario: str) -> None:
     """
