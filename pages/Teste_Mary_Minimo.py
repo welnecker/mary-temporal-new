@@ -14212,14 +14212,17 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     if state.get("_usar_shared_memories_filtradas_para_prompt"):
         shared_memories = state.get("shared_memories", [])
     else:
-        shared_memories = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
-        shared_memories = [
-            m for m in shared_memories
+        shared_memories_all = state.get("shared_memories") or carregar_shared_memories_cache(apenas_ativas=True)
+
+        shared_memories_prompt = [
+            m for m in shared_memories_all
             if normalizar_bool(m.get("ativa_prompt", True), default=True)
         ]
-
-    state["shared_memories"] = shared_memories
-    shared_txt = formatar_shared_memories_para_prompt(shared_memories, limite=8)
+    
+        state["shared_memories"] = shared_memories_all
+        state["_shared_memories_prompt"] = shared_memories_prompt
+    
+        shared_txt = formatar_shared_memories_para_prompt(shared_memories_prompt, limite=8)
 
     linha_temporal_txt = render_linha_temporal_narrativa_para_prompt(
         state=state,
@@ -14301,6 +14304,9 @@ REGRAS:
 - Se um segredo/objeto/pessoa for citado diretamente, Mary deve reagir ao gatilho: pausa, disfarce, mentira curta, riso forçado, celular virado, mudança de tom ou tentativa de desviar.
 - Mary não confessa tudo sem pressão suficiente.
 - Se o interlocutor atual for Doniseti/Donisete, não transformar segredo automaticamente em culpa por Janio. Doniseti é avatar alternativo do eixo Janio; culpa só aparece se Janio for mencionado diretamente, se houver risco real de flagrante ou se a cena pedir consequência emocional.
+- Quando houver destino, local, aeroporto, hotel ou endereço no Plano ativo ou Eventos recentes, o nome atual desses campos vence nomes antigos do histórico.
+- Se o Plano ativo disser "Aeroporto Tom Jobim", Mary deve usar "Aeroporto Tom Jobim" ou "Tom Jobim" na resposta atual, mesmo que no histórico recente tenha aparecido "Galeão".
+- Histórico recente pode conter aliases ou nomes antigos, mas não deve substituir o local atual informado no state.
 """.strip()
 
     bloco_surpresa = render_prioridades_surpresa_evento_para_prompt(
@@ -16992,49 +16998,130 @@ with st.sidebar:
         if not shared_all:
             st.info("Nenhuma shared memory ativa encontrada.")
         else:
+            shared_prompt_ativas = [
+                m for m in shared_all
+                if normalizar_bool(m.get("ativa_prompt", True), default=True)
+            ]
+
+            shared_prompt_inativas = [
+                m for m in shared_all
+                if not normalizar_bool(m.get("ativa_prompt", True), default=True)
+            ]
+
+            state["_shared_memories_prompt"] = shared_prompt_ativas
+            st.session_state.mary_state_minimo = state
+
             st.caption(
                 "Marque quais memórias shared entram no prompt. "
                 "Desmarcar não apaga a memória; apenas tira da camada ativa da Mary."
             )
 
-            for m in shared_all:
-                memory_id = str(m.get("id", "") or "").strip()
-                tipo = str(m.get("tipo", "shared") or "shared").strip()
-                memoria = str(m.get("memoria", "") or "").strip()
-                peso = m.get("peso", 1.0)
+            st.info(
+                f"Entrando no prompt: {len(shared_prompt_ativas)} "
+                f"de {len(shared_all)} memórias shared ativas."
+            )
 
-                if not memory_id:
-                    continue
+            st.markdown("### ✅ Entram no prompt")
 
-                ativa_prompt_atual = normalizar_bool(
-                    m.get("ativa_prompt", True),
-                    default=True,
-                )
+            if not shared_prompt_ativas:
+                st.warning("Nenhuma memória shared está entrando no prompt.")
+            else:
+                for m in shared_prompt_ativas:
+                    memory_id = str(m.get("id", "") or "").strip()
+                    tipo = str(m.get("tipo", "shared") or "shared").strip()
+                    memoria = str(m.get("memoria", "") or "").strip()
+                    peso = m.get("peso", 1.0)
 
-                resumo = memoria.replace("\n", " ").strip()
-                if len(resumo) > 120:
-                    resumo = resumo[:120] + "..."
+                    if not memory_id:
+                        continue
 
-                novo_valor = st.checkbox(
-                    f"{memory_id} · {tipo} · peso {peso} · {resumo}",
-                    value=ativa_prompt_atual,
-                    key=f"ativa_prompt_{memory_id}",
-                )
+                    resumo = memoria.replace("\n", " ").replace("\r", " ").strip()
+                    if len(resumo) > 120:
+                        resumo = resumo[:120] + "..."
 
-                if novo_valor != ativa_prompt_atual:
-                    ok = atualizar_shared_memory_ativa_prompt(
-                        memory_id,
-                        novo_valor,
+                    novo_valor = st.checkbox(
+                        f"✅ {memory_id} · {tipo} · peso {peso} · {resumo}",
+                        value=True,
+                        key=f"ativa_prompt_{memory_id}",
                     )
 
-                    if ok:
-                        limpar_cache_planilhas()
-                        state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
-                        st.session_state.mary_state_minimo = state
-                        st.success(f"{memory_id} atualizado.")
-                        st.rerun()
-                    else:
-                        st.warning(f"Não foi possível atualizar {memory_id}.")
+                    if novo_valor is False:
+                        ok = atualizar_shared_memory_ativa_prompt(
+                            memory_id,
+                            False,
+                        )
+
+                        if ok:
+                            limpar_cache_planilhas()
+                            state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+                            state["_shared_memories_prompt"] = [
+                                mm for mm in state["shared_memories"]
+                                if normalizar_bool(mm.get("ativa_prompt", True), default=True)
+                            ]
+                            st.session_state.mary_state_minimo = state
+                            st.success(f"{memory_id} saiu do prompt.")
+                            st.rerun()
+                        else:
+                            st.warning(f"Não foi possível atualizar {memory_id}.")
+
+            st.divider()
+            st.markdown("### ⛔ Fora do prompt")
+
+            if not shared_prompt_inativas:
+                st.caption("Nenhuma memória shared está fora do prompt.")
+            else:
+                for m in shared_prompt_inativas:
+                    memory_id = str(m.get("id", "") or "").strip()
+                    tipo = str(m.get("tipo", "shared") or "shared").strip()
+                    memoria = str(m.get("memoria", "") or "").strip()
+                    peso = m.get("peso", 1.0)
+
+                    if not memory_id:
+                        continue
+
+                    resumo = memoria.replace("\n", " ").replace("\r", " ").strip()
+                    if len(resumo) > 120:
+                        resumo = resumo[:120] + "..."
+
+                    novo_valor = st.checkbox(
+                        f"⛔ {memory_id} · {tipo} · peso {peso} · {resumo}",
+                        value=False,
+                        key=f"ativa_prompt_{memory_id}",
+                    )
+
+                    if novo_valor is True:
+                        ok = atualizar_shared_memory_ativa_prompt(
+                            memory_id,
+                            True,
+                        )
+
+                        if ok:
+                            limpar_cache_planilhas()
+                            state["shared_memories"] = carregar_shared_memories_da_planilha(apenas_ativas=True)
+                            state["_shared_memories_prompt"] = [
+                                mm for mm in state["shared_memories"]
+                                if normalizar_bool(mm.get("ativa_prompt", True), default=True)
+                            ]
+                            st.session_state.mary_state_minimo = state
+                            st.success(f"{memory_id} entrou no prompt.")
+                            st.rerun()
+                        else:
+                            st.warning(f"Não foi possível atualizar {memory_id}.")
+
+            st.divider()
+
+            with st.expander("🔎 Debug: shared realmente usadas no prompt", expanded=False):
+                st.json([
+                    {
+                        "id": m.get("id", ""),
+                        "tipo": m.get("tipo", ""),
+                        "ativa": m.get("ativa", True),
+                        "ativa_prompt": m.get("ativa_prompt", True),
+                        "peso": m.get("peso", 1.0),
+                        "preview": str(m.get("memoria", "") or "")[:220],
+                    }
+                    for m in state.get("_shared_memories_prompt", [])
+                ])
 
     with st.expander("📚 Ver memórias", expanded=False):
         memories = carregar_shared_memories_da_planilha(apenas_ativas=True)
