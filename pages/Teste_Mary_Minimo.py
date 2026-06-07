@@ -1517,7 +1517,6 @@ def extrair_eventos_datados_shared(memories: list) -> list[dict]:
 
     return eventos
 
-
 def detectar_gatilho_temporal_no_turno(fala_usuario: str, state: dict) -> dict:
     """
     Detecta se o turno atual pede leitura temporal.
@@ -8783,6 +8782,27 @@ def consumir_evento_inesperado_se_usado(state: dict, resposta_gerada: bool = Tru
         state["disparar_evento_inesperado"] = False
         state["evento_inesperado"] = ""
 
+def corrigir_relacao_donisete_externo(state: dict) -> None:
+    """
+    Evita que Donisete seja confundido com Janio Doniseti
+    ou classificado como família/parceiro central.
+    """
+    if not isinstance(state, dict):
+        return
+
+    foco = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    )
+
+    foco_norm = _texto_norm(foco)
+
+    if "donisete" in foco_norm and "doniseti" not in foco_norm:
+        state["relacao"] = "persona_madura_externa"
+        state["modo_relacional"] = "atracao_social_contextual"
+
 
 def sincronizar_facts_basicos(
     state: dict,
@@ -8850,6 +8870,8 @@ def sincronizar_facts_basicos(
             state,
             state.get("_fala_usuario_atual", ""),
         )
+
+    corrigir_relacao_donisete_externo(state)
     
     atualizar_silvia_confidente(state)
     
@@ -14288,8 +14310,8 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     interlocutor_norm = _texto_norm(interlocutor)
     doniseti_avatar_ativo = (
-        "doniseti" in interlocutor_norm
-        or "donisete" in interlocutor_norm
+        "janio doniseti" in interlocutor_norm
+        or re.search(r"\bdoniseti\b", interlocutor_norm) is not None
     )
 
     privacidade = str(facts.get("privacidade", state.get("privacidade", "")) or "").strip()
@@ -14442,7 +14464,9 @@ REGRAS:
 - Memória oculta não muda roupa, local, interlocutor nem ação atual sozinha.
 - Se um segredo/objeto/pessoa for citado diretamente, Mary deve reagir ao gatilho: pausa, disfarce, mentira curta, riso forçado, celular virado, mudança de tom ou tentativa de desviar.
 - Mary não confessa tudo sem pressão suficiente.
-- Se o interlocutor atual for Doniseti/Donisete, não transformar segredo automaticamente em culpa por Janio. Doniseti é avatar alternativo do eixo Janio; culpa só aparece se Janio for mencionado diretamente, se houver risco real de flagrante ou se a cena pedir consequência emocional.
+- Se o interlocutor atual for Janio Doniseti/Doniseti, não transformar segredo automaticamente em culpa por Janio, pois Doniseti pode representar o eixo Janio conforme a cena.
+- Se o interlocutor atual for Donisete, tratar Donisete como personagem externo, maduro e socialmente magnético, sem confundi-lo com Janio Doniseti.
+- Culpa, medo ou risco envolvendo Janio só devem aparecer se Janio for mencionado diretamente, se houver risco real de descoberta, se a data de retorno estiver próxima ou se a cena pedir consequência emocional.
 - Quando houver destino, local, aeroporto, hotel ou endereço no Plano ativo ou Eventos recentes, o nome atual desses campos vence nomes antigos do histórico.
 - Se o Plano ativo disser "Aeroporto Tom Jobim", Mary deve usar "Aeroporto Tom Jobim" ou "Tom Jobim" na resposta atual, mesmo que no histórico recente tenha aparecido "Galeão".
 - Histórico recente pode conter aliases ou nomes antigos, mas não deve substituir o local atual informado no state.
