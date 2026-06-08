@@ -14342,7 +14342,7 @@ def bloco_template_shopping_donisete(state: dict) -> str:
     if not (template_ativo or contexto_compativel):
         return ""
 
-       return """
+    return """
 [TEMPLATE DE CENA: SHOPPING COM DONISETE]
 
 Contexto:
