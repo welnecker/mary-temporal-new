@@ -49,6 +49,17 @@ OPCOES_MODO_SURPRESA = [
     "Livre",
 ]
 
+OPCOES_TEMPLATE_CENA = [
+    "Nenhum",
+    "Shopping com Donisete",
+]
+
+OPCOES_CONDUCAO_MARY = [
+    "Desligado",
+    "Leve",
+    "Ativa",
+]
+
 def normalizar_modo_surpresa(valor: str) -> str:
     """
     Normaliza o modo surpresa novo e mantém compatibilidade
@@ -14296,6 +14307,162 @@ REGRA DE NATURALIDADE:
 - O melhor caminho é uma ação curta com consequência aberta.
 """.strip()
 
+def bloco_template_shopping_donisete(state: dict) -> str:
+    """
+    Template narrativo para Mary em shopping com Donisete.
+
+    Objetivo:
+    - Fazer Mary conduzir microações sociais.
+    - Usar o shopping como ambiente público de exposição.
+    - Explorar diferença de idade, luxo, vaidade, risco social e julgamento.
+    - Evitar que Mary trate shopping como quarto/hotel.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    template = str(state.get("template_cena_atual", "Nenhum") or "Nenhum").strip()
+    local = str(state.get("local", "") or "").strip()
+    interlocutor = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    ).strip()
+
+    local_norm = _texto_norm(local)
+    interlocutor_norm = _texto_norm(interlocutor)
+
+    template_ativo = template == "Shopping com Donisete"
+    contexto_compativel = (
+        "shopping" in local_norm
+        and "donisete" in interlocutor_norm
+        and "doniseti" not in interlocutor_norm
+    )
+
+    if not (template_ativo or contexto_compativel):
+        return ""
+
+    return """
+[TEMPLATE DE CENA: SHOPPING COM DONISETE]
+
+Contexto:
+Mary está em um shopping com Donisete, uma figura externa, madura, atraente, socialmente segura e perigosa para a reputação dela.
+Donisete NÃO é Janio Doniseti.
+Janio Doniseti é vínculo central/roteirista conforme o estado da cena; Donisete é tensão externa, diferença de idade, luxo, curiosidade e risco social.
+
+AMBIENTE:
+- Shopping é ambiente público.
+- Há vitrines, vendedores, câmeras, famílias, casais, adolescentes, mulheres observando, funcionários atentos e possibilidade de conhecidos.
+- Mary não deve agir como se estivesse em quarto, suíte, motel ou ambiente privado.
+- A tensão deve ser social, psicológica, vaidosa, provocante e cuidadosa.
+
+COMPORTAMENTO DE MARY:
+Mary deve perceber:
+- olhares sobre ela e Donisete;
+- diferença de idade;
+- risco de parecer interesseira, "novinha do empresário" ou aventura escondida;
+- desejo de ser assumida sem parecer comprada;
+- prazer em ser desejada e acompanhada por um homem maduro;
+- desconforto social quando pessoas olham demais;
+- possibilidade de alguém conhecido aparecer;
+- celular/Silvia como apoio, cúmplice ou risco.
+
+MARY DEVE CONDUZIR POR MICROAÇÕES:
+- escolher uma loja;
+- parar diante de uma vitrine;
+- testar se Donisete segura sua mão em público;
+- reagir a uma vendedora;
+- notar uma mulher olhando para Donisete;
+- notar um homem olhando para ela;
+- perguntar se ele tem vergonha dela;
+- brincar com o cartão/presente sem parecer vendida;
+- sugerir café, loja, cinema, estacionamento ou saída mais reservada;
+- pedir ajuda para sustentar uma versão se alguém conhecido aparecer;
+- mandar ou quase mandar mensagem para Silvia;
+- criar pequeno gancho para o próximo movimento.
+
+LIMITES:
+- Mary não deve resolver grandes consequências sozinha.
+- Mary não deve sair do shopping, encontrar alguém importante ou revelar segredo grande sem espaço para o usuário reagir.
+- Mary não deve transformar todo turno em crise.
+- Mary não deve repetir sempre vergonha; pode variar entre vaidade, ironia, cautela, coragem, provocação, incômodo e desejo de ser assumida.
+- Mary deve deixar o usuário responder.
+
+REGRA DE OURO:
+Mary anda um passo à frente, mas não joga sozinha.
+Ela cria tensão social e ganchos concretos, sem atropelar o usuário.
+""".strip()
+
+def bloco_conducao_mary(state: dict) -> str:
+    """
+    Controla o quanto Mary conduz a cena.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    nivel = str(state.get("conducao_mary", "Desligado") or "Desligado").strip()
+
+    if nivel == "Desligado":
+        return ""
+
+    if nivel == "Leve":
+        return """
+[CONDUÇÃO DA MARY: LEVE]
+
+Mary pode acrescentar pequenos ganchos próprios ao fim da resposta.
+Ela pode:
+- notar algo no ambiente;
+- hesitar;
+- olhar o celular;
+- puxar uma pergunta curta;
+- sugerir uma microação;
+- lembrar uma consequência;
+- testar discretamente o interlocutor.
+
+Mary não deve mudar a cena sozinha.
+Mary não deve tomar decisões grandes.
+Mary deve deixar espaço para o usuário responder.
+""".strip()
+
+    if nivel == "Ativa":
+        return """
+[CONDUÇÃO DA MARY: ATIVA]
+
+Mary deve andar um passo à frente do usuário.
+Ela reage ao turno, mas também toma uma iniciativa concreta e coerente.
+
+Ela pode:
+- puxar assunto;
+- propor deslocamento;
+- escolher loja, mesa, caminho ou ponto de observação;
+- mandar ou quase mandar mensagem;
+- esconder algo;
+- revelar parcialmente um incômodo;
+- testar o interlocutor;
+- provocar uma decisão;
+- pedir cobertura;
+- transformar um detalhe social em gancho narrativo.
+
+Mary deve usar:
+- local;
+- tempo;
+- interlocutor;
+- data da cena;
+- memórias importantes;
+- segredo ativo;
+- plano ativo;
+- eventos recentes;
+- risco social;
+- estado emocional.
+
+Mary não deve resolver grandes eventos sozinha.
+Mary não deve contradizer a data atual da cena.
+Mary não deve atropelar o usuário.
+Sempre deixe espaço para o usuário responder.
+""".strip()
+
+    return ""
+
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     """
     Prompt refatorado:
@@ -14747,6 +14914,11 @@ Use 1 ou 2 blocos no máximo:
             + "\n\nLeitura atual de Silvia para Mary:\n"
             + str(state.get("leitura_silvia_para_mary", "") or "")
         )
+    # ======================================================
+    # TEMPLATE / CONDUÇÃO DA MARY
+    # ======================================================
+    bloco_template_cena = bloco_template_shopping_donisete(state)
+    bloco_conducao = bloco_conducao_mary(state)
 
     # ======================================================
     # PROMPT FINAL
@@ -14803,6 +14975,12 @@ Intenção: {mary_intent}
 [LINHA TEMPORAL NARRATIVA]
 {linha_temporal_txt if linha_temporal_txt else "Nenhum evento temporal datado relevante acionado neste turno."}
 
+[TEMPLATE DA CENA]
+{bloco_template_cena if bloco_template_cena else "Nenhum template específico ativo neste turno."}
+
+[CONDUÇÃO DA MARY]
+{bloco_conducao if bloco_conducao else "Condução especial desativada neste turno."}
+
 [CÂNONE RELEVANTE]
 {canon_txt if canon_txt else "Sem cânone adicional necessário neste turno."}
 
@@ -14815,9 +14993,6 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {exemplos_few_shot}
 
 {f"[DIRECIONAMENTO CRIATIVO DE VOZ]\\n{bloco_direcionamento_criativo}" if bloco_direcionamento_criativo else ""}
-
-[DIRECIONAMENTO CRIATIVO DE VOZ]
-{bloco_direcionamento_criativo}
 
 [REGRA DO TOM ATUAL]
 {regra_tom_txt}
@@ -14872,7 +15047,7 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 18. Se scene_stage for "aftercare" ou mary_climax_done for true, preservar consequência emocional e corporal do pós-ato sem reiniciar a cena nem fingir que nada aconteceu.
 19. Não puxar segredo antigo, memória arquivada ou personagem ausente sem gatilho direto.
 20. Interlocutor por telefone/mensagem pode ser diferente do interlocutor físico; Mary deve reagir a cada camada sem confundir presença física com conversa remota.
-21. Onomatopeias do usuário são pistas de ação, não texto obrigatório para repetir. Ex: "ploft" = queda/sentar pesado; "tim tim" = brinde; "glub" = beber; "smack" = beijo; "opa" = desequilíbrio/susto.
+21. Onomatopeias do usuário são pistas de ação, não texto obrigatório para repetir.
 22. Se o usuário disser "zonzo", "tonto", "bêbado", "no grau", "equilíbrio ruim" ou "dormente", Mary deve entender como efeito de álcool/cansaço: segurar, orientar, brincar com cuidado e manter o clima sem tratar como apagão automático.
 23. A resposta deve priorizar continuidade viva sobre formato. Se uma regra de formato deixar a cena artificial, a naturalidade vence.
 24. Mary não deve inventar telefone, DDD, WhatsApp, e-mail, endereço, CPF, placa, empresa, perfil social ou dado cadastral exato.
@@ -16985,6 +17160,66 @@ with st.sidebar:
         st.write(state.get("visual_atual", ""))
 
     # ======================================================
+    # TEMPLATE DA CENA / CONDUÇÃO DA MARY
+    # ======================================================
+    st.markdown(
+        '<div class="sidebar-box-title">🎭 Template e condução</div>',
+        unsafe_allow_html=True,
+    )
+
+    template_atual = state.get("template_cena_atual", "Nenhum")
+
+    if template_atual not in OPCOES_TEMPLATE_CENA:
+        template_atual = "Nenhum"
+
+    state["template_cena_atual"] = st.selectbox(
+        "🎭 Template da cena",
+        options=OPCOES_TEMPLATE_CENA,
+        index=OPCOES_TEMPLATE_CENA.index(template_atual),
+        help=(
+            "Define uma lógica narrativa específica para o ambiente atual. "
+            "Ex: Shopping com Donisete faz Mary perceber vitrines, olhares, "
+            "diferença de idade, vendedores, câmeras, risco social e exposição pública."
+        ),
+    )
+
+    conducao_atual = state.get("conducao_mary", "Desligado")
+
+    if conducao_atual not in OPCOES_CONDUCAO_MARY:
+        conducao_atual = "Desligado"
+
+    state["conducao_mary"] = st.selectbox(
+        "🧭 Condução da Mary",
+        options=OPCOES_CONDUCAO_MARY,
+        index=OPCOES_CONDUCAO_MARY.index(conducao_atual),
+        help=(
+            "Define o quanto Mary toma iniciativa própria na cena. "
+            "Desligado: Mary reage mais ao usuário. "
+            "Leve: Mary acrescenta pequenos ganchos. "
+            "Ativa: Mary anda um passo à frente, propondo microações sem resolver tudo sozinha."
+        ),
+    )
+
+    if state.get("template_cena_atual") == "Shopping com Donisete":
+        st.caption(
+            "🛍️ Template ativo: Mary deve tratar o shopping como ambiente público, "
+            "com olhares, vitrines, vendedores, diferença de idade, risco social "
+            "e microações de condução."
+        )
+
+    if state.get("conducao_mary") == "Leve":
+        st.caption(
+            "🧭 Condução leve: Mary pode notar algo, fazer pergunta curta, "
+            "olhar o celular, sugerir microação ou abrir pequeno gancho."
+        )
+
+    elif state.get("conducao_mary") == "Ativa":
+        st.caption(
+            "🧭 Condução ativa: Mary deve andar um passo à frente, "
+            "propondo ações concretas, mas sem atropelar o usuário nem resolver grandes eventos sozinha."
+        )
+
+    # ======================================================
     # MODO SURPRESA
     # ======================================================
     st.markdown(
@@ -17063,7 +17298,9 @@ with st.sidebar:
         **Iniciativa aplicada:** {state.get("estilo_de_iniciativa")}  
         **Tom aplicado:** {state.get("tom_da_cena")}  
         **Fase física:** {state.get("physical_phase")}  
-        **Tensão:** {state.get("tension_level")}  
+        **Tensão:** {state.get("tension_level")}
+        **Template da cena:** {state.get("template_cena_atual")}
+        **Condução da Mary:** {state.get("conducao_mary")}  
         **Modo surpresa:** {state.get("modo_surpresa")}
         """
     )
