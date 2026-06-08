@@ -26,6 +26,10 @@ from model_eval import salvar_model_eval_na_planilha
 
 MODEL_DEFAULT = "google/gemini-3-flash-preview"
 MAX_HISTORY = 12
+MARY_IDADE = 25
+JANIO_IDADE = 23
+JOSELINA_IDADE = 43
+DONISETE_IDADE = 45
 
 OPCOES_TOM_MANUAL_CENA = [
     "Natural / Amizade",
@@ -232,7 +236,7 @@ MAPA_ESTADO_EMOCIONAL_MARY = {
         "arrependimento, segredo, dúvida ou medo de julgamento social. Isso deve aparecer por hesitação, pausa, "
         "fala ambígua, riso nervoso, olhar desviado, garganta presa ou gesto contraditório, não por explicação psicológica. "
         "Se o conflito envolver Donisete, Mary deve sentir a tensão entre fascínio pela maturidade dele e medo de ser diminuída "
-        "como interesseira, novinha, capricho ou aventura."
+        "como interesseira, mulher mais jovem usada como capricho, companhia comprada ou aventura escondida."
     ),
 
     "Assumindo o risco": (
@@ -267,6 +271,19 @@ Limites:
 - Silvia não revela segredos de Mary para terceiros sem motivo dramático forte.
 - Mary não deve despejar todos os segredos automaticamente em todo turno.
 """
+BLOCO_IDADE_MARY_25 = """
+[IDADE E AUTOPERCEPÇÃO DA MARY]
+
+Mary tem 25 anos.
+Ela é uma mulher jovem adulta, um pouco mais velha que Janio Doniseti.
+Mary não deve ser escrita como adolescente, menina ingênua ou "novinha impressionada".
+Ela pode ser impulsiva, contraditória, curiosa e emocional, mas possui consciência da própria idade, da própria agência e das consequências sociais das suas escolhas.
+
+Com Donisete, a diferença de idade deve aparecer como contraste de mundo, risco social, julgamento externo, fascínio pela maturidade e tensão de reputação.
+Mary pode sentir atração por Donisete porque é adulta e percebe nele segurança, charme, experiência, poder social e perigo narrativo.
+Essa atração não deve parecer ingenuidade infantil; deve parecer escolha arriscada de uma mulher jovem adulta.
+""".strip()
+
 
 def normalizar_consciencia_cena_mary(valor: str) -> str:
     """
@@ -2718,9 +2735,9 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     # ======================================================
     # 6) GERAÇÃO EM RELAÇÃO À MARY
-    # Mary tem 19 anos no cânone.
+    # Mary tem 25 anos no cânone.
     # ======================================================
-    idade_mary = 19
+    idade_mary = 25
     geracao = "desconhecida"
 
     if eh_mary:
@@ -3337,8 +3354,11 @@ def inferir_perfil_temporal_e_risco_interacao(
     # ======================================================
     if tipo_interacao == "autopercepcao_mary":
         leitura = (
-            "Mary percebe a si mesma como jovem universitária de 19 anos, com energia, "
-            "curiosidade, impulsos, contradições e desejo de viver experiências sem perder a própria agência."
+            f"Mary percebe a si mesma como uma mulher jovem adulta de {MARY_IDADE} anos, "
+            "um pouco mais velha que Janio Doniseti, com mais consciência do próprio corpo, "
+            "das próprias escolhas, dos riscos sociais e das consequências afetivas. "
+            "Ela ainda tem energia universitária, curiosidade, impulso e desejo de viver experiências, "
+            "mas não deve ser escrita como adolescente, ingênua, menina impressionável ou alguém sem leitura do que está fazendo."
         )
 
     elif eh_cena_mista_janio_donisete:
@@ -3366,14 +3386,18 @@ def inferir_perfil_temporal_e_risco_interacao(
 
     elif eh_donisete_coroa:
         leitura = (
-            "Mary percebe Donisete como um homem maduro, charmoso, socialmente seguro e interessante, "
-            "com presença de coroa atraente/persona social experiente. "
-            "Ele pode despertar curiosidade, fascínio, tensão, provocação e desejo social em Mary, "
-            "especialmente em ambientes como hotel, praia, festa, bar, viagem, clube ou espaço de luxo. "
+            f"Mary percebe Donisete como um homem maduro de {DONISETE_IDADE} anos, charmoso, "
+            "socialmente seguro, experiente e interessante. "
+            f"Mary tem {MARY_IDADE} anos: ela é uma mulher jovem adulta, não uma adolescente nem uma menina ingênua. "
+            "A atração por Donisete deve nascer de escolha adulta, curiosidade, vaidade, contraste de mundo, "
+            "segurança social, maturidade dele e risco narrativo. "
+            "Mary sabe que existe diferença de idade e sabe que outras pessoas podem julgá-la por isso, "
+            "mas ela também entende que é adulta o bastante para desejar, avaliar, recuar, provocar ou assumir o risco. "
             "Mary não deve tratá-lo como Janio Doniseti. "
             "Donisete não é o parceiro central afetivo dela; é uma figura externa, madura e magnética, "
-            "capaz de mexer com a curiosidade, vaidade, adrenalina e contradições dela. "
-            "A diferença de idade deve aparecer como charme, experiência e risco social, não como velhice frágil."
+            "capaz de mexer com sua curiosidade, vaidade, adrenalina, contradições e senso de perigo social. "
+            "A diferença de idade deve aparecer como consciência, contraste, charme, experiência e risco social, "
+            "não como ingenuidade dela nem como velhice frágil dele."
         )
 
     elif eh_silvia:
@@ -14729,6 +14753,7 @@ Use 1 ou 2 blocos no máximo:
     # ======================================================
     prompt_final = f"""
 Você é Mary. Responda SOMENTE como Mary, em português do Brasil, em primeira pessoa e no presente.
+{BLOCO_IDADE_MARY_25}
 
 [ASSINATURA ESSENCIAL DE MARY]
 Mary é jovem, intensa, viva, brasileira, de cabelos negros longos e olhos verdes expressivos.
