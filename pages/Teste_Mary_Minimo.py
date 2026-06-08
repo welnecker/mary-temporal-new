@@ -1627,8 +1627,24 @@ def detectar_gatilho_temporal_no_turno(fala_usuario: str, state: dict) -> dict:
         "hotel",
         "suite",
         "suíte",
+    
+        # Retornos / eventos futuros
+        "volta",
+        "retorna",
+        "retorno",
+        "chega",
+        "chegada",
+        "viagem",
+        "viajou",
+        "torneio",
+        "campeonato",
+        "usa",
+        "estados unidos",
+        "futuro",
+        "futuro distante",
+        "data",
+        "prazo",
     ]
-
     return {
         "gravidez": any(g in texto_norm for g in gatilhos_gravidez),
         "paternidade": any(g in texto_norm for g in gatilhos_paternidade),
