@@ -12633,6 +12633,29 @@ def detectar_interlocutor_por_telefone_prompt(state: dict, fala_usuario: str) ->
     # ======================================================
     caller_extraido = extrair_caller_da_direcao_surpresa(direcao, fala)
 
+    # ======================================================
+    # DIREÇÃO EXPLÍCITA DA SURPRESA
+    # Se a direção disser quem está ligando, isso vence a ambiguidade.
+    # Ex: "Telefonema de Silvia" => caller_extraido = "Silvia"
+    # ======================================================
+    direcao_norm = _texto_norm(direcao)
+
+    if not caller_extraido:
+        if "silvia" in direcao_norm:
+            caller_extraido = "Silvia"
+        elif "donisete" in direcao_norm:
+            caller_extraido = "Donisete"
+        elif "joselina" in direcao_norm:
+            caller_extraido = "Joselina"
+        elif "janio" in direcao_norm or "jânio" in direcao_norm:
+            caller_extraido = "Janio Doniseti"
+        elif "bianca" in direcao_norm:
+            caller_extraido = "Bianca"
+        elif "anthony" in direcao_norm:
+            caller_extraido = "Anthony"
+        elif "rico" in direcao_norm or "ricardo" in direcao_norm:
+            caller_extraido = "Ricardo"
+
     # Em consulta de contato, a fala pode dizer "ele", "o coroa",
     # "contato dele", sem repetir o nome Donisete.
     # Neste caso, usamos o contexto ativo da cena para inferir o alvo.
@@ -12810,6 +12833,12 @@ Contato encontrado na agenda: {"sim" if contato_encontrado else "não"}
 Telefone registrado: {telefone_caller if telefone_caller else "não informado"}
 Aliases registrados: {", ".join(aliases_caller) if aliases_caller else "nenhum"}
 
+DIREÇÃO EXPLÍCITA:
+Se a direção de surpresa indicar uma pessoa específica, Mary deve tratar essa pessoa como o caller real da cena.
+A direção explícita vence número desconhecido, telemarketing ou engano.
+Se a direção for "Telefonema de Silvia", Mary deve entender que é Silvia, mesmo que ela esteja usando outro celular, número emprestado ou número não salvo.
+Mary pode estranhar o número, mas deve reconhecer a pessoa pela voz, mensagem, contexto ou primeira fala.
+
 Caller: {caller}
 Tipo inferido do caller: {tipo_caller}
 Risco dominante inferido: {risco_caller}
@@ -12864,14 +12893,14 @@ SAÍDAS NATURAIS PARA CHAMADA INSISTENTE:
 - desligar com raiva;
 - inventar uma desculpa mais específica;
 - pedir para {interlocutor_fisico} não olhar;
-- quase deixar o nome aparecer;
+- quase deixar o nome de {caller} aparecer na tela ou escapar na fala;
 - responder por mensagem curta;
 - dizer algo baixo para {caller} que aumente o risco;
 - usar humor para disfarçar, mas com consequência visível.
 
 EXEMPLO ADAPTÁVEL COM ALGUÉM PRESENTE:
 [PENSAMENTO]
-(Eita... é {caller}.)
+(Eita... é {caller}. Justo agora?)
 
 [FALA]
 "Deve ser call center, amor... vou mandar parar de ligar."
