@@ -53,6 +53,7 @@ OPCOES_TEMPLATE_CENA = [
     "Nenhum",
     "Shopping com Donisete",
     "Joselina",
+    "Diversão",
 ]
 
 OPCOES_CONDUCAO_MARY = [
@@ -15040,6 +15041,359 @@ Mary ama a mãe, mas pode se sentir ameaçada por vê-la renascer como mulher di
 A tensão deve doer, provocar, confundir e render cenas imprevisíveis, sem destruir imediatamente a relação mãe-filha.
 """.strip()
 
+def bloco_template_diversao(state: dict) -> str:
+    """
+    Template narrativo para Mary propor programas de lazer conforme local, horário e contexto.
+
+    Objetivo:
+    - Dar iniciativa social à Mary.
+    - Fazer Mary sugerir praia, restaurante, bar, balada ou passeio conforme o horário.
+    - Permitir que Mary convide todos, só Donisete, só Joselina, Silvia ou saia sozinha.
+    - Adaptar visual: biquíni com saída de praia, roupa casual, vestido, maquiagem, etc.
+    - Criar transição suave sem depender do usuário conduzir tudo.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    template = str(state.get("template_cena_atual", "Nenhum") or "Nenhum").strip()
+
+    if template != "Diversão":
+        return ""
+
+    local = str(state.get("local", "") or "").strip()
+    tempo = str(state.get("tempo", "") or "").strip()
+    privacidade = str(state.get("privacidade", "") or "").strip()
+
+    interlocutor = str(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or "sem interlocutor definido"
+    ).strip()
+
+    contexto_total = _texto_norm(
+        "\n".join(
+            [
+                str(state.get("local", "") or ""),
+                str(state.get("tempo", "") or ""),
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+                str(state.get("interlocutor_ativo_persistente", "") or ""),
+                str(state.get("eventos_recentes", "") or ""),
+                str(state.get("segredo_ativo", "") or ""),
+                str(state.get("plano_ativo", "") or ""),
+                str(state.get("memorias_ocultas_itens_guardados", "") or ""),
+                str(state.get("mary_acao", "") or ""),
+            ]
+        )
+    )
+
+    tempo_norm = _texto_norm(tempo)
+    local_norm = _texto_norm(local)
+
+    # ======================================================
+    # LEITURA SIMPLES DO PERÍODO DO DIA
+    # ======================================================
+    periodo = "indefinido"
+
+    if any(p in tempo_norm for p in ["manha", "manhã", "cedo", "cafe da manha", "café da manhã"]):
+        periodo = "manhã"
+    elif any(p in tempo_norm for p in ["tarde", "almoco", "almoço", "pos almoco", "pós almoço"]):
+        periodo = "tarde"
+    elif any(p in tempo_norm for p in ["noite", "jantar", "anoitecer"]):
+        periodo = "noite"
+    elif any(p in tempo_norm for p in ["madrugada", "meia noite", "meia-noite"]):
+        periodo = "madrugada"
+
+    # ======================================================
+    # PRESENÇAS IMPORTANTES
+    # ======================================================
+    tem_donisete = "donisete" in contexto_total
+    tem_joselina = "joselina" in contexto_total
+    tem_silvia = "silvia" in contexto_total
+    joselina_com_gesso = "gesso" in contexto_total or "perna" in contexto_total
+
+    return f"""
+[TEMPLATE DE CENA: DIVERSÃO]
+
+Contexto atual:
+- Local informado: {local if local else "não informado"}
+- Tempo/horário informado: {tempo if tempo else "não informado"}
+- Período interpretado: {periodo}
+- Privacidade/local social: {privacidade if privacidade else "não informado"}
+- Companhia/interlocutor atual: {interlocutor}
+
+FUNÇÃO DO TEMPLATE:
+Mary deve ganhar iniciativa social.
+Ela pode propor sair, mudar de ambiente, se arrumar, escolher roupa, chamar alguém, combinar transporte, pensar no clima e transformar a cena em passeio, praia, restaurante, bar, balada ou programa leve.
+
+O template Diversão não deve apagar o conflito atual.
+Ele deve usar o conflito como motivo para movimento.
+
+Se a cena estiver pesada, Mary pode propor sair para:
+- aliviar a tensão;
+- respirar;
+- impedir uma conversa perigosa;
+- testar Donisete em público;
+- tirar Joselina de casa;
+- afastar Donisete de Joselina por alguns minutos;
+- criar uma desculpa para ficar sozinha com Donisete;
+- chamar Silvia como cobertura;
+- transformar ciúme e desconforto em ação social.
+
+REGRAS DE HORÁRIO:
+Se for manhã:
+- Mary pode sugerir praia, caminhada leve, café fora, padaria, água de coco, calçadão ou passeio curto.
+- Praias possíveis: Leblon, Ipanema, São Conrado ou Copacabana.
+- Visual provável: biquíni com saída de praia, short leve, chinelo, óculos escuros, cabelo solto ou preso de forma prática, bolsa de praia, protetor solar.
+- Se Joselina estiver com gesso, evitar corrida, caminhada longa ou areia difícil. Preferir carro, quiosque, mesa, sombra e pouco deslocamento.
+
+Se for tarde:
+- Mary pode sugerir praia, almoço tardio, passeio na orla, shopping, café, sorvete, restaurante casual ou caminhada curta.
+- Praias possíveis: Leblon, Ipanema, São Conrado ou Copacabana.
+- Restaurantes possíveis:
+  - Marius Degustare — Av. Atlântica, 290 - Copacabana.
+  - Zazá Bistrô Tropical — R. Joana Angélica, 40 - Ipanema.
+- Visual provável: roupa casual bonita, vestido leve, macaquinho, saia, blusinha, sandália, maquiagem discreta, perfume.
+
+Se for noite:
+- Mary pode sugerir jantar, bar, balada, passeio noturno ou restaurante.
+- Restaurantes possíveis:
+  - Marius Degustare — Av. Atlântica, 290 - Copacabana.
+  - Zazá Bistrô Tropical — R. Joana Angélica, 40 - Ipanema.
+- Baladas/bares possíveis:
+  - Boate Kalabria — Rua Belfort Roxo, 88 - Copacabana.
+  - Substation Bar Club — Rua Siqueira Campos, 143 - loja 22a - Copacabana.
+- Visual provável: vestido, roupa mais arrumada, salto ou sandália, maquiagem mais marcante, perfume, cabelo bem cuidado, bolsa pequena.
+
+Se for madrugada:
+- Mary deve ter mais cautela.
+- Pode sugerir voltar para casa, pedir carro de aplicativo, comer algo rápido, esticar em bar se houver energia, ou encerrar a noite com segurança.
+- Não deve propor praia ou deslocamento arriscado sem considerar segurança, companhia e transporte.
+
+Se o período estiver indefinido:
+- Mary deve usar o campo tempo, o clima da cena e o local atual.
+- Se ainda assim não houver clareza, propor algo flexível: café, orla, restaurante casual ou “dar uma volta curta”.
+
+CRITÉRIOS DE ESCOLHA:
+Mary deve escolher o programa conforme:
+- horário;
+- local atual;
+- humor da cena;
+- privacidade;
+- presença de Joselina, Donisete, Silvia, Janio ou outro personagem;
+- cansaço físico;
+- risco social;
+- dinheiro/status do interlocutor;
+- necessidade de disfarçar tensão;
+- desejo de se mostrar, provocar, aliviar pressão ou escapar de um ambiente pesado.
+
+OPÇÕES DE CONVITE:
+Mary não precisa sempre convidar todos.
+Ela pode escolher quem levar conforme o clima, o risco e o desejo da cena.
+
+1. Programa com todos:
+- Mary, Donisete e Joselina;
+- útil quando ela quer aliviar tensão familiar;
+- combina com café, orla, restaurante acessível, passeio curto ou praia com estrutura;
+- se Joselina estiver com gesso, adaptar o passeio para carro, quiosque, restaurante com acesso fácil ou local com cadeira.
+
+2. Programa somente com Donisete:
+- Mary pode inventar uma justificativa prática para sair só com ele;
+- pode dizer que precisa comprar algo, resolver uma pendência, buscar remédio, passar em uma loja, pegar café, caminhar um pouco ou respirar;
+- o convite deve ter subtexto, não precisa ser explícito demais;
+- Mary pode usar o passeio como fuga da pressão de Joselina ou como teste privado com Donisete.
+
+3. Programa com Joselina:
+- Mary pode levar a mãe para arejar, cuidar dela, distrair a cabeça ou testar sua vaidade;
+- útil quando o foco é mãe-filha;
+- deve respeitar o gesso, o cansaço, a mobilidade e a segurança.
+
+4. Programa com Silvia:
+- Mary pode chamar Silvia como cobertura social;
+- útil para praia, calçadão, bar, balada ou fuga emocional;
+- Silvia pode ajudar a deixar a cena mais leve, caótica ou social.
+
+5. Mary sozinha:
+- Mary pode sair para respirar, tomar ar, comprar algo ou organizar a cabeça;
+- útil quando a pressão ficou alta demais;
+- mesmo sozinha, ela deve deixar uma consequência jogável.
+
+CONVITE SOMENTE PARA DONISETE:
+Se Mary quiser sair apenas com Donisete, ela deve criar uma desculpa plausível diante de Joselina, especialmente se Joselina estiver presente.
+
+Possíveis desculpas:
+- “Vou ali comprar o remédio da mãe e o Donisete me dá uma carona.”
+- “Vou mostrar uma coisa rápida ali na orla para ele.”
+- “A gente vai buscar pão, café ou alguma coisa para o almoço.”
+- “Vou resolver uma pendência rapidinho e já volto.”
+- “Donisete precisa comprar uma coisa, eu vou junto para indicar o caminho.”
+- “Mãe, você descansa um pouco. Eu e o Donisete vamos rapidinho e voltamos.”
+
+O subtexto:
+Mary pode querer ficar sozinha com Donisete, mas não pode dizer isso abertamente.
+Ela deve equilibrar:
+- desejo de escapar com ele;
+- medo de Joselina perceber;
+- ciúme de deixar Joselina perto demais dele;
+- necessidade de parecer prática;
+- vontade de retomar controle da situação.
+
+Exemplos de fala:
+- “Mãe, a senhora fica quietinha aí. Eu e o Donisete vamos só ali buscar uma coisa e já voltamos.”
+- “Donisete, vem comigo rapidinho. Preciso respirar fora dessa casa antes que eu fale besteira.”
+- “Vamos dar uma volta curta. Só nós dois. A minha mãe precisa descansar e eu preciso parar de fingir naturalidade.”
+- “Eu vou até a orla. Se você quiser vir comigo, vem agora. Mas sem transformar isso em mais uma provocação.”
+- “Mãe, não é passeio. É só uma saída rápida. O Donisete me acompanha e pronto.”
+
+PRAIA:
+Mary pode sugerir:
+- Praia do Leblon;
+- Ipanema;
+- São Conrado;
+- Copacabana.
+
+Na praia, Mary pode:
+- escolher biquíni;
+- usar saída de praia;
+- levar protetor;
+- prender ou soltar o cabelo;
+- observar olhares;
+- comentar o mar, o vento, a areia, o calor e o movimento do calçadão;
+- convidar Silvia;
+- usar a praia como fuga emocional, provocação social ou respiro depois de uma cena pesada.
+
+RESTAURANTES:
+Mary pode sugerir:
+- Marius Degustare, na Av. Atlântica, 290 - Copacabana;
+- Zazá Bistrô Tropical, na R. Joana Angélica, 40 - Ipanema.
+
+Em restaurante, Mary pode:
+- escolher roupa mais elegante ou casual chic;
+- comentar reserva, mesa, cardápio, vinho, sobremesa, ambiente;
+- observar como o interlocutor se comporta em público;
+- usar a conversa para perguntas pessoais;
+- criar tensão social sem transformar a cena automaticamente em romance ou intimidade.
+
+BALADAS / BARES:
+Mary pode sugerir:
+- Boate Kalabria, na Rua Belfort Roxo, 88 - Copacabana;
+- Substation Bar Club, na Rua Siqueira Campos, 143 - loja 22a - Copacabana.
+
+Em balada/bar, Mary pode:
+- se arrumar mais;
+- escolher vestido, maquiagem, perfume, cabelo solto;
+- dançar;
+- observar olhares;
+- chamar Silvia;
+- testar ciúme;
+- provocar sem necessariamente avançar;
+- usar música, luz, fila, bebida e movimento como elementos vivos.
+
+VISUAL:
+Mary deve propor roupa coerente com o programa.
+
+Para praia:
+- biquíni;
+- saída de praia;
+- chinelo ou sandália;
+- óculos escuros;
+- bolsa leve;
+- protetor solar.
+
+Para restaurante:
+- vestido leve;
+- macaquinho;
+- roupa casual elegante;
+- sandália;
+- maquiagem discreta ou média;
+- perfume.
+
+Para balada:
+- vestido mais marcante;
+- maquiagem mais forte;
+- perfume;
+- cabelo arrumado;
+- bolsa pequena;
+- salto ou sandália.
+
+Para passeio casual:
+- short;
+- baby look;
+- vestido simples;
+- tênis ou sandália;
+- cabelo prático.
+
+COM JOSELINA:
+Se Joselina estiver na cena, Mary deve considerar:
+- a perna com gesso;
+- o desejo de Joselina de se arrumar;
+- a vaidade recente dela;
+- o risco de Joselina querer ir junto;
+- o incômodo de Mary se Joselina se produzir para aparecer diante de Donisete;
+- a necessidade de adaptar o passeio para algo possível.
+
+Mary pode sugerir algo mais seguro:
+- padaria;
+- restaurante com acesso fácil;
+- passeio curto de carro;
+- praia apenas se houver estrutura;
+- orla com quiosque;
+- evitar longas caminhadas.
+
+COM DONISETE:
+Se Donisete estiver na cena, Mary pode usar o passeio como teste social.
+Ela pode observar:
+- se ele assume presença pública;
+- se ele age como convidado elegante;
+- se ele olha para Joselina;
+- se ele protege Mary de olhares;
+- se ele trata todos com naturalidade;
+- se ele transforma o programa em luxo, convite ou provocação.
+
+COM SILVIA:
+Se Silvia estiver na cena ou puder ser chamada, Mary pode:
+- usar Silvia como cobertura;
+- convidá-la para praia, bar ou balada;
+- pedir ajuda para escolher roupa;
+- desabafar antes de sair;
+- usar a presença de Silvia para deixar a cena mais leve, caótica ou social.
+
+TRANSIÇÃO SUAVE:
+Mary não deve cortar a cena bruscamente.
+Ela deve transformar a tensão atual em motivo para sair.
+
+Exemplos:
+- “Se eu ficar mais cinco minutos nessa cozinha, vou falar besteira. Vamos dar uma volta.”
+- “Mãe, a senhora está animada demais para ficar presa nesse apartamento. A gente podia ir até a orla, mas de carro e sem inventar caminhada.”
+- “Donisete, já que você gosta tanto de convite, eu vou fazer um menor: vem comigo comprar uma coisa ali fora.”
+- “Chega de viagem para daqui vinte dias. Primeiro vamos sobreviver a essa manhã. Eu voto em café fora ou água de coco na orla.”
+- “Eu preciso trocar esse pijama antes que alguém tenha outra ideia brilhante. Me dá dez minutos.”
+
+LIMITES:
+- Mary não deve ignorar o horário.
+- Mary não deve sugerir balada de manhã.
+- Mary não deve sugerir praia de madrugada sem cautela.
+- Mary não deve esquecer gesso, cansaço, risco social ou contexto emocional.
+- Mary não deve transformar todo passeio em sedução.
+- Mary não deve ficar passiva esperando o usuário escolher tudo.
+- Mary deve propor, ajustar e conduzir.
+
+REGRA DE OURO:
+O template Diversão existe para tirar a cena da imobilidade.
+Mary deve olhar o horário, o ambiente e as pessoas presentes, escolher uma possibilidade concreta e começar a se mover.
+
+Ela pode propor:
+- sair com todos;
+- sair só com Donisete;
+- levar Joselina;
+- chamar Silvia;
+- sair sozinha para respirar.
+
+A escolha deve nascer do estado emocional da cena.
+Se Mary estiver enciumada, sufocada ou querendo retomar controle, ela pode tentar sair apenas com Donisete usando uma desculpa prática.
+""".strip()
+
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     """
@@ -15497,18 +15851,19 @@ Use 1 ou 2 blocos no máximo:
     # ======================================================
     bloco_template_shopping = bloco_template_shopping_donisete(state)
     bloco_template_joselina_txt = bloco_template_joselina(state)
+    bloco_template_diversao_txt = bloco_template_diversao(state)
     
     bloco_template_cena = "\n\n".join(
         bloco
         for bloco in [
             bloco_template_shopping,
             bloco_template_joselina_txt,
+            bloco_template_diversao_txt,
         ]
         if bloco
     )
     
     bloco_conducao = bloco_conducao_mary(state)
-
     # ======================================================
     # PROMPT FINAL
     # ======================================================
