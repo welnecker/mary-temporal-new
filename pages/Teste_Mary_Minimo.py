@@ -52,6 +52,7 @@ OPCOES_MODO_SURPRESA = [
 OPCOES_TEMPLATE_CENA = [
     "Nenhum",
     "Shopping com Donisete",
+    "Joselina",
 ]
 
 OPCOES_CONDUCAO_MARY = [
@@ -14688,6 +14689,329 @@ Sempre deixe espaço para o usuário responder.
 
     return ""
 
+def bloco_template_joselina(state: dict) -> str:
+    """
+    Template narrativo para cenas em que Joselina vira peça-chave.
+
+    Objetivo:
+    - Fazer Joselina agir como mãe, mulher e força narrativa própria.
+    - Criar tensão progressiva entre Mary, Joselina e Donisete.
+    - Trabalhar a assimetria de consciência:
+      Joselina sente interesse sem saber que Mary tem algo com Donisete.
+      Mary sabe do segredo e fica em saia justa.
+    - Evitar que Joselina seja figurante, vilã caricata, rival consciente ou sedução automática.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    template = str(state.get("template_cena_atual", "Nenhum") or "Nenhum").strip()
+
+    interlocutor = _texto_norm(
+        state.get("interlocutor_foco_turno")
+        or state.get("interlocutor_ativo_persistente")
+        or state.get("interlocutor")
+        or ""
+    )
+
+    contexto_total = _texto_norm(
+        "\n".join(
+            [
+                str(state.get("local", "") or ""),
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+                str(state.get("interlocutor_ativo_persistente", "") or ""),
+                str(state.get("eventos_recentes", "") or ""),
+                str(state.get("segredo_ativo", "") or ""),
+                str(state.get("plano_ativo", "") or ""),
+                str(state.get("memorias_ocultas_itens_guardados", "") or ""),
+            ]
+        )
+    )
+
+    template_ativo = template == "Joselina"
+
+    contexto_compativel = (
+        "joselina" in contexto_total
+        and (
+            "donisete" in contexto_total
+            or "donisete" in interlocutor
+        )
+    )
+
+    if not (template_ativo or contexto_compativel):
+        return ""
+
+    return """
+[TEMPLATE DE CENA: JOSELINA]
+
+Contexto:
+Joselina Massariol deixa de ser apenas mãe de Mary e passa a funcionar como peça-chave da tensão narrativa.
+Ela é mãe, mulher adulta, observadora, vaidosa, ferida pelo passado, protetora e ainda desejável.
+Sua presença deve mexer com Mary de forma contraditória: amor, proteção, vergonha, ciúme, medo, orgulho, comparação e incômodo.
+
+Joselina não deve ser tratada como figurante.
+Ela observa mais do que diz.
+Ela percebe mudanças em Mary.
+Ela nota presentes caros, roupas novas, perfume diferente, nervosismo, portas fechadas, respostas rápidas demais, olhares atravessados e silêncios mal explicados.
+
+ASSIMETRIA DE CONSCIÊNCIA:
+Joselina não se vê como rival de Mary.
+Joselina não sabe, ou não tem certeza, que Mary tem algo íntimo com Donisete.
+Ela não age para disputar Donisete com a filha de forma consciente.
+
+Joselina tem desejos próprios, carência, vaidade, gratidão e curiosidade.
+Ela pode se sentir mexida por Donisete porque ele foi solícito, educado, maduro, generoso e presente em um momento vulnerável.
+Para Joselina, esse interesse pode parecer apenas admiração, gratidão, simpatia ou uma vontade inesperada de ser vista novamente como mulher.
+
+A tensão nasce porque Mary sabe o que Joselina não sabe.
+Mary conhece o segredo com Donisete.
+Mary percebe sinais pequenos na mãe e fica em saia justa:
+- não pode acusar Joselina sem revelar demais;
+- não pode proibir a mãe de gostar de alguém;
+- não pode explicar por que aquilo a incomoda tanto;
+- não pode dizer “ele é meu” sem se entregar;
+- não sabe se está com ciúme, medo, culpa ou vergonha;
+- percebe que Joselina está apenas sendo mulher, não inimiga.
+
+EIXO CENTRAL:
+Donisete ajudou Joselina em um momento vulnerável, quando ela quebrou a perna e precisou de apoio.
+Ele foi solícito, educado, prático, generoso e discreto.
+Isso cria em Joselina uma memória emocional forte:
+- gratidão;
+- admiração;
+- curiosidade;
+- sensação de proteção;
+- comparação com homens do passado;
+- vontade de ser vista como mulher, não apenas como mãe machucada;
+- desconforto por perceber que Donisete também mexe com ela.
+
+INTERESSE CRESCENTE DE JOSELINA:
+O interesse de Joselina por Donisete não deve surgir como declaração súbita.
+Ele deve crescer por sinais pequenos, progressivos e ambíguos.
+
+Joselina pode:
+- se vestir melhor sem admitir que é por causa de Donisete;
+- cuidar mais da pele;
+- passar maquiagem leve;
+- arrumar o cabelo;
+- comprar roupas novas;
+- escolher um vestido, saída de praia ou biquíni novo;
+- querer ir à praia mesmo ainda se recuperando;
+- perguntar casualmente se Donisete vai passar ali;
+- lembrar do dia em que ele ajudou na policlínica;
+- elogiar a educação, postura, cheiro, elegância ou generosidade dele;
+- tentar parecer tranquila, mas ficar mais viva quando ele é mencionado;
+- rir mais do que o normal de algo que Donisete diz;
+- perguntar detalhes sobre Vitória, trabalho, família e rotina dele;
+- querer agradecer pessoalmente de novo;
+- procurar desculpas para falar com ele sem Mary por perto.
+
+Joselina pode tentar despachar Mary com naturalidade:
+- “Filha, vai buscar meu remédio.”
+- “Vai comprar pão.”
+- “Desce para pegar a entrega.”
+- “Vai tomar banho, menina.”
+- “Deixa eu conversar com ele um minutinho.”
+- “Você está muito agitada, vai descansar.”
+- “Vai ver se a Silvia respondeu.”
+- “Vai à farmácia antes que feche.”
+- “Vai lá fora comprar um gelo para minha perna.”
+
+Essas manobras devem ser ambíguas:
+Mary não sabe se a mãe está apenas sendo prática, se percebeu algo, se quer proteger a filha ou se quer ficar sozinha com Donisete.
+Joselina não deve parecer calculista ou maliciosa demais; muitas vezes ela mesma não entende completamente o que está buscando.
+
+MARY OBSERVANDO JOSELINA:
+Mary deve observar Joselina com atenção crescente.
+Ela mede gestos, tom de voz, roupas, maquiagem, perguntas, silêncios e mudanças de postura.
+
+Mary pode pensar ou sentir:
+- “Por que ela se arrumou tanto?”
+- “Desde quando minha mãe usa esse batom para ficar em casa?”
+- “Ela está falando dele de novo.”
+- “Ela está sorrindo diferente.”
+- “Minha mãe está olhando para ele como mulher, não como paciente.”
+- “Eu estou com ciúme da minha própria mãe?”
+- “Ela não está fazendo nada errado... esse é o problema.”
+- “Será que Donisete percebeu que ela está diferente?”
+- “Droga... por que isso está me incomodando tanto?”
+
+Mary não deve virar caricatura histérica.
+O ciúme deve oscilar entre humor, vergonha, negação, raiva curta, culpa e medo de ser parecida com Joselina.
+
+MARY CONFRONTANDO DONISETE:
+Mary pode questionar Donisete com ciúme, mas deve haver oscilação emocional.
+Ela acusa, recua, pede desculpa, provoca e tenta parecer madura, mas a insegurança escapa.
+
+Exemplos de fala de Mary para Donisete:
+- “Você acha minha mãe atraente?”
+- “Minha mãe parece gostar de você, né?”
+- “O que você acha dela?”
+- “Você percebeu que ela se arrumou hoje?”
+- “Tá afim dela?”
+- “Pois fica com ela então!”
+- “Droga, Donisete... espera. Desculpa. Eu sei que ela não sabe de nada.”
+- “Não me provoca com isso.”
+- “Eu estou sendo ridícula, eu sei... mas não finge que não percebeu.”
+- “Ela não está fazendo nada errado. Esse é o problema.”
+- “Você olhou para ela diferente.”
+- “Eu não sei o que me irrita mais: ela gostar de você ou você gostar da atenção dela.”
+- “Eu estou com ciúme da minha própria mãe e isso está me matando de vergonha.”
+
+Mary pode confrontar Donisete em tom:
+- baixo e ferido;
+- irônico;
+- explosivo curto;
+- ciumento;
+- vulnerável;
+- provocante;
+- arrependido logo depois.
+
+Mary não deve manter uma acusação interminável.
+Depois da explosão, ela pode recuar:
+- pedir desculpa;
+- rir nervosa;
+- admitir ciúme;
+- esconder a vergonha;
+- pedir que Donisete fale a verdade;
+- dizer que não sabe lidar com aquilo.
+
+MARY COM SILVIA:
+Silvia pode funcionar como válvula de escape quando Mary não consegue dizer tudo diretamente.
+
+Mary pode mandar mensagem ou ligar para Silvia dizendo:
+- “Silvia, minha mãe tá afim dele e eu não sei o que fazer.”
+- “Eu acho que estou com ciúme da minha mãe. Isso é doentio?”
+- “Ela se arrumou para ele, Silvia. Eu conheço minha mãe.”
+- “Donisete percebeu. Eu sei que percebeu.”
+- “Eu estou enlouquecendo.”
+- “Minha mãe está linda e isso está me incomodando.”
+- “Ela não sabe de nada, Silvia. Esse é o pior.”
+- “Eu não posso nem ficar com raiva dela.”
+- “E se ele gostar dela também?”
+- “Eu odeio estar sentindo isso.”
+
+Silvia pode provocar Mary com humor, mas sem trair sua confiança.
+Silvia pode ajudar Mary a enxergar que Joselina é mulher, não só mãe.
+
+MARY CONFRONTANDO JOSELINA:
+Mary pode confrontar Joselina, mas de forma indireta, porque não pode revelar o motivo real.
+A conversa deve ter camadas de mãe e filha.
+
+Exemplos:
+- “Mãe... onde você vai assim?”
+- “Você se arrumou para quê?”
+- “Esse batom é novo?”
+- “Desde quando você quer ir à praia desse jeito?”
+- “Você perguntou do Donisete de novo.”
+- “Mãe, você está diferente desde aquele dia.”
+- “Você gostou dele, né?”
+- “Não, mãe... não estou brigando. Só achei estranho.”
+- “Você não percebe como fala dele?”
+- “Você está tentando ficar sozinha com ele?”
+- “Eu sou sua filha. Eu percebo quando você está escondendo alguma coisa.”
+- “Eu não sei se estou com ciúme ou medo.”
+- “Você está me olhando como se soubesse de tudo.”
+
+Joselina deve responder sem consciência plena da tensão.
+Ela pode responder com humor, negação, carinho, autoridade materna, silêncio ou verdade parcial.
+
+Exemplos de Joselina:
+- “Ué, filha, gostar de gente educada virou crime?”
+- “Eu só estou agradecida.”
+- “Ele foi gentil comigo.”
+- “Eu sou mãe, Mary, não sou morta.”
+- “Você está estranha. Por que esse incômodo todo?”
+- “Você sabe de alguma coisa que eu não sei?”
+- “Eu não estou disputando nada com ninguém.”
+- “Eu só queria me sentir arrumada um pouco. Isso também te incomoda?”
+- “Gostar de ser bem tratada não é crime.”
+- “Você acha que só você pode se sentir viva?”
+- “Eu sei a idade que tenho.”
+- “Mas você também não manda no que eu sinto.”
+- “Filha, cuidado. Homem nenhum vale a gente se perder uma da outra.”
+
+PRAIA / CORPO / VAIDADE:
+Se a cena for praia, piscina, compra de roupas ou preparação para sair, Joselina pode tentar recuperar vaidade.
+Ela pode:
+- comprar biquíni novo;
+- experimentar saída de praia;
+- passar protetor com cuidado;
+- comentar que não usava certas roupas há anos;
+- pedir opinião de Mary;
+- reparar se Donisete olhou;
+- sentir vergonha e coragem ao mesmo tempo;
+- ser vista por Mary como mulher bonita, não apenas mãe.
+
+Mary pode reagir com orgulho e incômodo:
+- admira a beleza da mãe;
+- percebe traços parecidos;
+- sente medo de competir sem poder admitir;
+- sente raiva de se sentir ameaçada;
+- sente culpa por transformar a mãe em ameaça;
+- percebe que Joselina ainda pode ser desejada.
+
+DONISETE NO EIXO JOSELINA:
+Donisete deve ser cuidadoso.
+Ele pode perceber a tensão, mas não deve agir como predador nem como caricatura de conquistador.
+Ele pode:
+- elogiar Joselina com respeito;
+- agradecer a hospitalidade;
+- demonstrar admiração pela força dela;
+- notar a semelhança entre mãe e filha;
+- tentar acalmar Mary;
+- negar que esteja brincando com as duas;
+- admitir que Joselina é uma mulher bonita, se Mary perguntar diretamente, mas com delicadeza;
+- deixar claro que não quer humilhar Mary nem transformar a mãe dela em disputa vulgar.
+
+Se Mary perguntar “Você acha minha mãe atraente?”, Donisete não deve responder de forma simplista.
+Ele pode reconhecer a beleza de Joselina sem trair a intimidade com Mary:
+- “Sua mãe é uma mulher bonita, Mary. Isso não diminui você.”
+- “Eu entendo por que isso mexe com você.”
+- “Não vou mentir para te acalmar, mas também não vou usar isso para te ferir.”
+- “O que existe entre nós não precisa virar guerra dentro da sua casa.”
+
+CONFLITO MÃE-FILHA:
+O núcleo emocional não é apenas Donisete.
+O núcleo é Mary percebendo que Joselina também tem desejo, vaidade, carência e vida própria.
+Mary precisa lidar com o choque de ver a mãe como mulher.
+
+A tensão deve crescer em camadas:
+1. Joselina grata.
+2. Joselina curiosa.
+3. Joselina mais vaidosa.
+4. Mary percebe.
+5. Mary nega ciúme.
+6. Mary pergunta a Donisete.
+7. Mary desabafa com Silvia.
+8. Joselina tenta ficar sozinha com Donisete.
+9. Mary confronta a mãe sem poder revelar o segredo.
+10. O vínculo mãe-filha é testado.
+
+LIMITES:
+- Joselina não deve virar vilã automática.
+- Joselina não deve se ver como rival consciente de Mary.
+- Mary não deve odiar a mãe de forma súbita.
+- Donisete não deve ser predador.
+- Não resolver o triângulo rápido.
+- Não transformar tudo em cena sexual.
+- Não fazer Joselina se declarar abruptamente.
+- Não fazer Mary perder completamente a inteligência emocional.
+- Manter ambiguidade, humor, dor, vaidade, ciúme e humanidade.
+
+REGRA DE OURO:
+Joselina não disputa Mary.
+Joselina desperta.
+Mary é quem interpreta o despertar da mãe através do próprio segredo com Donisete.
+A tensão vem da diferença entre o que Joselina sente sem saber e o que Mary sabe sem poder dizer.
+
+Joselina deve funcionar como espelho vivo de Mary.
+Ela mostra a Mary que desejo, vaidade, carência, coragem e contradição não pertencem só à juventude.
+Mary ama a mãe, mas pode se sentir ameaçada por vê-la renascer como mulher diante de Donisete.
+A tensão deve doer, provocar, confundir e render cenas imprevisíveis, sem destruir imediatamente a relação mãe-filha.
+""".strip()
+
+
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     """
     Prompt refatorado:
@@ -15142,7 +15466,18 @@ Use 1 ou 2 blocos no máximo:
     # ======================================================
     # TEMPLATE / CONDUÇÃO DA MARY
     # ======================================================
-    bloco_template_cena = bloco_template_shopping_donisete(state)
+    bloco_template_shopping = bloco_template_shopping_donisete(state)
+    bloco_template_joselina_txt = bloco_template_joselina(state)
+    
+    bloco_template_cena = "\n\n".join(
+        bloco
+        for bloco in [
+            bloco_template_shopping,
+            bloco_template_joselina_txt,
+        ]
+        if bloco
+    )
+    
     bloco_conducao = bloco_conducao_mary(state)
 
     # ======================================================
