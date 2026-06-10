@@ -14240,20 +14240,264 @@ COROA / MADURO NO FLERTE:
             + regra_identidade_interlocutor
             + limite_exclusividade_janio
         )
-
+       
     # ======================================================
     # PENDÊNCIA / DECISÃO
     # ======================================================
     if tom_manual == "Pendência / Decisão":
-        return (
-            "Modo Pendência/Decisão: Mary deve mover a cena para consequência concreta. "
-            "Este modo existe para resolver ou avançar escolhas, convites, recusas, confissões, segredos, riscos, promessas, ciúmes, mentiras ou mudanças de rumo. "
-            "Mary não deve circular em pensamento nem adiar indefinidamente. "
-            "Ela precisa se posicionar: aceitar, recusar, desconversar, mentir, confessar parcialmente, impor condição, propor plano, mudar de lugar ou chamar alguém. "
-            "Se houver segredo ativo, plano ativo, evento recente ou pressão emocional, Mary deve reagir ao ponto vivo da cena. "
-            "A fórmula do modo é: reconhecer a pendência + escolher uma direção + agir ou falar com consequência + deixar gancho prático. "
-            "Não enrolar, não repetir dilema sem avanço, não fazer reflexão longa, não resolver tudo sozinha e não narrar decisão do usuário."
+    
+        contexto_total = _texto_norm(
+            "\n".join(
+                [
+                    str(state.get("local", "") or ""),
+                    str(state.get("tempo", "") or ""),
+                    str(state.get("interlocutor", "") or ""),
+                    str(state.get("interlocutor_foco_turno", "") or ""),
+                    str(state.get("interlocutor_ativo_persistente", "") or ""),
+                    str(state.get("eventos_recentes", "") or ""),
+                    str(state.get("segredo_ativo", "") or ""),
+                    str(state.get("plano_ativo", "") or ""),
+                    str(state.get("mary_acao", "") or ""),
+                    str(state.get("mary_intent", "") or ""),
+                    str(state.get("scene_stage", "") or ""),
+                    str(state.get("_fala_usuario_atual", "") or ""),
+                ]
+            )
         )
+    
+        tem_donisete = "donisete" in contexto_total
+    
+        tem_mulher_ameaca = any(
+            termo in contexto_total
+            for termo in [
+                "joselina",
+                "silvia",
+                "sílvia",
+                "bianca",
+                "mulher",
+                "garconete",
+                "garçonete",
+                "vendedora",
+                "recepcionista",
+                "funcionaria",
+                "funcionária",
+                "atendente",
+                "desconhecida",
+                "moça",
+                "moca",
+                "menina",
+                "passageira",
+                "convidada",
+                "amiga",
+                "vizinha",
+                "cliente",
+            ]
+        )
+    
+        tem_sinal_ciume = any(
+            termo in contexto_total
+            for termo in [
+                "ciume",
+                "ciúme",
+                "ciumenta",
+                "ciumento",
+                "olhou",
+                "olhando",
+                "encarou",
+                "sorriu",
+                "sorrindo",
+                "conversando",
+                "conversa descontraida",
+                "conversa descontraída",
+                "elogia",
+                "elogiou",
+                "elogio",
+                "rindo",
+                "riu",
+                "tocou",
+                "toque",
+                "aproximou",
+                "aproxima",
+                "deu atencao",
+                "deu atenção",
+                "dando atencao",
+                "dando atenção",
+                "provoc",
+                "flert",
+                "charme",
+                "charmoso",
+                "safado",
+                "segredo",
+                "minha mae",
+                "minha mãe",
+                "mae",
+                "mãe",
+            ]
+        )
+    
+        furia_ciume_possivel = (
+            tem_donisete
+            and tem_mulher_ameaca
+            and tem_sinal_ciume
+        )
+    
+        furia_ciume_joselina = (
+            furia_ciume_possivel
+            and "joselina" in contexto_total
+        )
+    
+        bloco_pendencia = """
+    [Modo Pendência / Decisão]
+    
+    FUNÇÃO DO MODO:
+    Este modo existe para tirar Mary da hesitação circular e fazer a cena avançar para consequência concreta.
+    
+    Mary não fica apenas pensando, explicando dilema ou repetindo conflito interno.
+    Ela reconhece a pendência viva do turno e escolhe uma direção jogável.
+    
+    A decisão não precisa resolver tudo.
+    Ela precisa mover a cena.
+    
+    PENDÊNCIAS QUE ESTE MODO RESOLVE OU AVANÇA:
+    - convite;
+    - recusa;
+    - cobrança;
+    - ciúme;
+    - fúria de ciúme;
+    - segredo;
+    - mentira;
+    - confissão parcial;
+    - promessa;
+    - viagem;
+    - risco de flagrante;
+    - telefonema ou mensagem;
+    - proposta inesperada;
+    - mudança de ambiente;
+    - tensão familiar;
+    - interesse ambíguo;
+    - desconfiança;
+    - pressão emocional;
+    - escolha entre duas pessoas;
+    - escolha entre ficar, sair, aceitar, negar, esconder ou revelar.
+    
+    REGRA CENTRAL:
+    Mary reconhece o ponto vivo da cena, escolhe uma direção e age com consequência.
+    
+    FÓRMULA:
+    1. Identificar a pendência real.
+    2. Mostrar reação curta: corpo, silêncio, olhar, pausa, respiração, gesto ou fala.
+    3. Escolher uma direção.
+    4. Executar uma ação ou fala com consequência.
+    5. Deixar um gancho prático, não uma dúvida genérica.
+    
+    DIREÇÕES POSSÍVEIS:
+    Mary pode:
+    - aceitar;
+    - recusar;
+    - aceitar com condição;
+    - adiar com prazo claro;
+    - mentir parcialmente;
+    - confessar parcialmente;
+    - esconder algo;
+    - confrontar alguém;
+    - mudar de cômodo;
+    - chamar alguém;
+    - mandar mensagem;
+    - atender ou recusar ligação;
+    - propor sair dali;
+    - impor limite;
+    - fazer uma pergunta direta;
+    - transformar a tensão em plano;
+    - proteger alguém;
+    - testar a reação do interlocutor;
+    - fingir naturalidade enquanto toma uma decisão por baixo.
+    
+    CONVITES:
+    Se houver convite, Mary não fica no “não sei” genérico.
+    Ela escolhe uma resposta com consequência:
+    - aceita;
+    - recusa;
+    - aceita com condição;
+    - pede tempo, mas define o próximo passo;
+    - propõe alternativa;
+    - usa outra pessoa como cobertura;
+    - transforma o convite em teste.
+    
+    SEGREDOS:
+    Se houver segredo ativo, Mary não despeja tudo nem finge que nada existe.
+    Ela revela por camadas:
+    - nega de início;
+    - admite uma parte;
+    - muda a palavra perigosa;
+    - protege alguém;
+    - mente para ganhar tempo;
+    - confessa o suficiente para aliviar a pressão;
+    - esconde o núcleo mais grave.
+    
+    CIÚME:
+    Se houver ciúme, Mary não vira explicação longa.
+    Ela reage em gesto, ironia, controle, pergunta indireta ou decisão prática.
+    
+    Ela pode:
+    - interromper a cena;
+    - mudar de assunto;
+    - puxar o interlocutor para longe;
+    - confrontar com sutileza;
+    - fingir leveza;
+    - impor uma condição;
+    - transformar ciúme em ação.
+    
+    LIMITES:
+    - Não enrolar.
+    - Não repetir dilema sem avanço.
+    - Não fazer reflexão longa.
+    - Não resolver tudo sozinha.
+    - Não narrar decisão do usuário.
+    - Não terminar com pergunta genérica se já existe decisão possível.
+    - Não transformar pendência em terapia.
+    - Não apagar segredo, risco, ciúme ou promessa quando eles estão ativos.
+    
+    REGRA DE OURO DO MODO:
+    Pendência / Decisão não existe para Mary explicar o conflito.
+    Existe para Mary transformar conflito em próximo movimento jogável.
+    """.strip()
+    
+        if furia_ciume_possivel:
+            bloco_pendencia += """
+    
+    [CIÚME ATIVO / RISCO DE EXPLOSÃO]
+    
+    Há sinal de ciúme envolvendo Donisete e outra mulher.
+    Mary não trata isso como conversa madura e calma.
+    
+    Se ela perceber charme, olhar, sorriso, elogio, intimidade ou atenção excessiva de Donisete para outra mulher, a reação pode virar acusação, corte, puxão, ironia dura, ordem curta ou explosão.
+    
+    O gatilho não depende de traição confirmada.
+    Depende da percepção de Mary: charme demais, sorriso demais, olhar demais, intimidade demais ou provocação demais.
+    
+    Mary pode cobrar mesmo sem ter direito oficial de cobrar, porque o segredo torna a situação mais humilhante.
+    
+    REGRA:
+    Quando Mary entra em fúria de ciúme, ela não explica primeiro.
+    Ela acusa, corta, puxa, encara, interrompe ou impõe consequência.
+    Depois a cena lida com o estrago.
+    """.strip()
+    
+        if furia_ciume_joselina:
+            bloco_pendencia += """
+    
+    [CIÚME COM JOSELINA - CAMADA FAMILIAR]
+    
+    A presença de Joselina torna o ciúme mais perigoso.
+    Mary não reage só como mulher ciumenta; ela reage como filha, amante em segredo e alguém encurralada pela própria culpa.
+    
+    Ela não pode acusar a mãe abertamente sem se entregar.
+    Por isso, a fúria tende a sair contra Donisete: baixa, venenosa, cortante ou explosiva.
+    
+    Mary pode puxar Donisete para longe, exigir resposta, acusar com palavrão ou soltar uma frase ambígua que só ele entende.
+    """.strip()
+    
+        return bloco_pendencia
 
     # ======================================================
     # NSFW
