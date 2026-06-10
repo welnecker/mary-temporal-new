@@ -14265,9 +14265,9 @@ COROA / MADURO NO FLERTE:
                 ]
             )
         )
-    
+
         tem_donisete = "donisete" in contexto_total
-    
+
         tem_mulher_ameaca = any(
             termo in contexto_total
             for termo in [
@@ -14294,19 +14294,72 @@ COROA / MADURO NO FLERTE:
                 "cliente",
             ]
         )
-    
-        tem_sinal_ciume = any(
+
+        # ==================================================
+        # CIÚME LATENTE
+        # Tensão de fundo: segredo, mãe, rivalidade familiar,
+        # desconforto, interesse percebido ou ameaça emocional.
+        # Não precisa virar explosão ainda.
+        # ==================================================
+        tem_sinal_ciume_latente = any(
             termo in contexto_total
             for termo in [
                 "ciume",
                 "ciúme",
                 "ciumenta",
                 "ciumento",
+                "segredo",
+                "minha mae",
+                "minha mãe",
+                "mae",
+                "mãe",
+                "joselina",
+                "interesse crescente",
+                "afim dele",
+                "a fim dele",
+                "perfeito pra mim",
+                "conhecer melhor",
+                "perfume de mary",
+                "meu perfume",
+                "vaidade",
+                "produzir",
+                "arrumar",
+                "disput",
+                "rival",
+                "ameaça",
+                "ameaca",
+                "desconfi",
+                "humilh",
+                "provoc",
+            ]
+        )
+
+        ciume_latente = (
+            tem_donisete
+            and tem_mulher_ameaca
+            and tem_sinal_ciume_latente
+        )
+
+        ciume_latente_joselina = (
+            ciume_latente
+            and "joselina" in contexto_total
+        )
+
+        # ==================================================
+        # FÚRIA DE CIÚME
+        # Explosão: precisa de gesto mais concreto de charme,
+        # intimidade, flerte, provocação, toque ou atenção excessiva.
+        # ==================================================
+        tem_sinal_furia_ciume = any(
+            termo in contexto_total
+            for termo in [
                 "olhou",
                 "olhando",
                 "encarou",
+                "encarando",
                 "sorriu",
                 "sorrindo",
+                "sorriso",
                 "conversando",
                 "conversa descontraida",
                 "conversa descontraída",
@@ -14317,31 +14370,46 @@ COROA / MADURO NO FLERTE:
                 "riu",
                 "tocou",
                 "toque",
+                "encostou",
+                "encostando",
                 "aproximou",
                 "aproxima",
+                "aproximando",
                 "deu atencao",
                 "deu atenção",
                 "dando atencao",
                 "dando atenção",
-                "provoc",
+                "ajudou",
+                "ajuda ela",
+                "ajuda também",
+                "calma joselina",
+                "segurou",
+                "segurando",
+                "pegou no braço",
+                "pegou na cintura",
+                "carregou",
+                "colo",
                 "flert",
                 "charme",
                 "charmoso",
                 "safado",
-                "segredo",
-                "minha mae",
-                "minha mãe",
-                "mae",
-                "mãe",
+                "gracinha",
+                "provoc",
+                "te provocando",
+                "exagerada",
+                "relaxa",
+                "fica calma",
+                "não é nada",
+                "nao e nada",
             ]
         )
-    
+
         furia_ciume_possivel = (
             tem_donisete
             and tem_mulher_ameaca
-            and tem_sinal_ciume
+            and tem_sinal_furia_ciume
         )
-    
+
         furia_ciume_joselina = (
             furia_ciume_possivel
             and "joselina" in contexto_total
@@ -14462,6 +14530,31 @@ COROA / MADURO NO FLERTE:
     Pendência / Decisão não existe para Mary explicar o conflito.
     Existe para Mary transformar conflito em próximo movimento jogável.
     """.strip()
+
+        if ciume_latente:
+            bloco_pendencia += """
+
+    [CIÚME LATENTE / TENSÃO DE POSSE]
+    
+    Há ciúme ativo no subtexto, mas a explosão ainda não é obrigatória.
+    Mary percebe ameaça, segredo, rivalidade ou atenção perigosa envolvendo Donisete e outra mulher.
+    
+    A reação tende a sair como:
+    - ironia;
+    - olhar duro;
+    - controle;
+    - frase atravessada;
+    - tentativa de afastar Donisete;
+    - ordem prática;
+    - vigilância;
+    - sorriso falso;
+    - mudança de ambiente;
+    - pergunta indireta.
+    
+    Mary não precisa explodir ainda.
+    Ela pode segurar a fúria por orgulho, medo de se entregar, ambiente público ou presença de terceiros.
+    Mas o ciúme deve aparecer no corpo, na fala ou na decisão.
+    """.strip()
     
         if furia_ciume_possivel:
             bloco_pendencia += """
@@ -14487,9 +14580,21 @@ COROA / MADURO NO FLERTE:
         if furia_ciume_joselina:
             bloco_pendencia += """
     
-    [CIÚME COM JOSELINA - CAMADA FAMILIAR]
+    [CIÚME COM JOSELINA - TENSÃO FAMILIAR LATENTE]
+
+    Joselina torna o ciúme mais perigoso mesmo antes da explosão.
+    Mary reage como filha, mulher em segredo e alguém encurralada pela própria culpa.
     
-    A presença de Joselina torna o ciúme mais perigoso.
+    Ela não pode acusar a mãe abertamente sem se entregar.
+    Por isso, a tensão aparece em controle excessivo, frases duras, ironia, cuidado brusco, vigilância e tentativas de separar Joselina de Donisete.
+    """.strip()
+    
+            if furia_ciume_joselina:
+                bloco_pendencia += """
+    
+    [CIÚME COM JOSELINA - EXPLOSÃO FAMILIAR]
+    
+    A presença de Joselina torna a fúria mais perigosa.
     Mary não reage só como mulher ciumenta; ela reage como filha, amante em segredo e alguém encurralada pela própria culpa.
     
     Ela não pode acusar a mãe abertamente sem se entregar.
