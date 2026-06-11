@@ -15237,7 +15237,7 @@ def bloco_template_reconciliacao(state: dict) -> str:
 
     template = str(state.get("template_cena_atual", "Nenhum") or "Nenhum").strip()
 
-    if template != "Reconciliação":
+    if _texto_norm(template) != _texto_norm("Reconciliação"):
         return ""
 
     tom_manual = str(state.get("tom_manual_da_cena", "") or "").strip()
@@ -16756,6 +16756,9 @@ REGRAS:
     bloco_template_joselina_txt = bloco_template_joselina(state)
     bloco_template_diversao_txt = bloco_template_diversao(state)
     bloco_template_reconciliacao_txt = bloco_template_reconciliacao(state)
+    st.write("DEBUG template_cena_atual:", state.get("template_cena_atual"))
+    st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
+    st.code(bloco_template_cena or "bloco_template_cena vazio")
     
     bloco_template_cena = "\n\n".join(
         bloco
@@ -16824,9 +16827,6 @@ Intenção: {mary_intent}
 [LINHA TEMPORAL NARRATIVA]
 {linha_temporal_txt if linha_temporal_txt else "Nenhum evento temporal datado relevante acionado neste turno."}
 
-[TEMPLATE DA CENA]
-{bloco_template_cena if bloco_template_cena else "Nenhum template específico ativo neste turno."}
-
 [CONDUÇÃO DA MARY]
 {bloco_conducao if bloco_conducao else "Condução especial desativada neste turno."}
 
@@ -16845,6 +16845,9 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 
 [REGRA DO TOM ATUAL]
 {regra_tom_txt}
+
+[TEMPLATE DA CENA - PRIORIDADE DO TURNO]
+{bloco_template_cena if bloco_template_cena else "Nenhum template específico ativo neste turno."}
 
 {bloco_doniseti_avatar}
 
