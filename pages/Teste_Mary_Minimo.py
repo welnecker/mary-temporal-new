@@ -15252,6 +15252,29 @@ def bloco_template_reconciliacao(state: dict) -> str:
         or "sem interlocutor definido"
     ).strip()
 
+    shared_contexto = []
+
+    for mem in (
+        state.get("_shared_memories_prompt", [])
+        or state.get("shared_memories", [])
+        or []
+    ):
+        if isinstance(mem, dict):
+            texto_mem = str(mem.get("memoria", "") or "").strip()
+    
+            ativa = normalizar_bool(mem.get("ativa", True), default=True)
+            ativa_prompt = normalizar_bool(mem.get("ativa_prompt", True), default=True)
+    
+            if texto_mem and ativa and ativa_prompt:
+                shared_contexto.append(texto_mem)
+    
+        elif isinstance(mem, str):
+            texto_mem = mem.strip()
+    
+            if texto_mem:
+                shared_contexto.append(texto_mem)
+    
+    
     contexto_total = _texto_norm(
         "\n".join(
             [
@@ -15263,10 +15286,12 @@ def bloco_template_reconciliacao(state: dict) -> str:
                 str(state.get("eventos_recentes", "") or ""),
                 str(state.get("segredo_ativo", "") or ""),
                 str(state.get("plano_ativo", "") or ""),
+                str(state.get("memorias_ocultas_itens_guardados", "") or ""),
                 str(state.get("mary_acao", "") or ""),
                 str(state.get("mary_intent", "") or ""),
                 str(state.get("scene_stage", "") or ""),
                 str(state.get("_fala_usuario_atual", "") or ""),
+                "\n".join(shared_contexto),
             ]
         )
     )
@@ -15303,7 +15328,27 @@ def bloco_template_reconciliacao(state: dict) -> str:
 
     tem_donisete = "donisete" in contexto_total
     tem_janio = "janio" in contexto_total or "jânio" in contexto_total or "janio doniseti" in contexto_total
-    tem_segredo = "segredo" in contexto_total
+    tem_segredo = any(
+        termo in contexto_total
+        for termo in [
+            "segredo",
+            "segredo ativo",
+            "segredo_ativo",
+            "segredo oculto",
+            "segredo_oculto",
+            "copacabana palace",
+            "sheraton",
+            "encontro intimo",
+            "encontro íntimo",
+            "mary esteve com donisete",
+            "mary e donisete tiveram",
+            "joselina nao sabe",
+            "joselina não sabe",
+            "janio",
+            "jânio",
+            "janio doniseti",
+        ]
+    )
     ambiente_publico = privacidade in ("publico", "público", "social")
     ambiente_privado = privacidade == "privado"
 
