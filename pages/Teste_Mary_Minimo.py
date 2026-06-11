@@ -16651,8 +16651,8 @@ REGRA DE SEGURANÇA:
 Se houver dor real, pânico, recuo, congelamento, medo forte ou pedido claro de parar, o avanço deve parar.
 Medo leve com desejo gera cuidado e conversa; medo real bloqueia avanço.
 """.strip()
-else:
-    bloco_reacendimento_safada = ""
+    else:
+        bloco_reacendimento_safada = ""
 
     return f"""
 [TEMPLATE DE CENA: SAFADA]
