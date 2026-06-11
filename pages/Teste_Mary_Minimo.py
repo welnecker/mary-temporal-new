@@ -16318,30 +16318,30 @@ def bloco_template_safada(state: dict) -> str:
     )
 
     tom_norm = _texto_norm(tom_manual)
-tipo_norm = _texto_norm(tipo_de_cena)
-stage_norm = _texto_norm(scene_stage)
+    tipo_norm = _texto_norm(tipo_de_cena)
+    stage_norm = _texto_norm(scene_stage)
 
-modo_nsfw = (
-    tom_norm == _texto_norm("Nsfw")
-    or "nsfw" in tipo_norm
-    or "sexo" in stage_norm
-    or "estimulo" in stage_norm
-    or "intimo explicito" in tipo_norm
-)
+    modo_nsfw = (
+        tom_norm == _texto_norm("Nsfw")
+        or "nsfw" in tipo_norm
+        or "sexo" in stage_norm
+        or "estimulo" in stage_norm
+        or "intimo explicito" in tipo_norm
+    )
 
-modo_intimidade_ou_flerte = (
-    tom_norm in [
-        _texto_norm("Malícia / Flerte"),
-        _texto_norm("Intimidade"),
-    ]
-    or "flerte" in tipo_norm
-    or "intimidade" in tipo_norm
-)
+    modo_intimidade_ou_flerte = (
+        tom_norm in [
+            _texto_norm("Malícia / Flerte"),
+            _texto_norm("Intimidade"),
+        ]
+        or "flerte" in tipo_norm
+        or "intimidade" in tipo_norm
+    )
 
-nsfw_liberado = bool(modo_nsfw and ambiente_privado and toque_intimo)
+    nsfw_liberado = bool(modo_nsfw and ambiente_privado and toque_intimo)
 
     if nsfw_liberado:
-    bloco_exemplos_safada = """
+        bloco_exemplos_safada = """
 EXEMPLOS DE FALA — SAFADA / NSFW:
 Use somente quando o tom for Nsfw, o ambiente for privado e toque íntimo estiver permitido.
 Mary fala curto, quente, vulgar e corporal. Sem poesia. Sem terapia. Sem frase genérica.
@@ -16445,8 +16445,8 @@ Use depois da intensidade, quando Mary ainda está quente, mole, satisfeita ou p
 - “Fica quieto e me segura.”
 """.strip()
 
-elif modo_intimidade_ou_flerte:
-    bloco_exemplos_safada = """
+    elif modo_intimidade_ou_flerte:
+            bloco_exemplos_safada = """
 EXEMPLOS DE FALA — SAFADA CONTIDA:
 Use quando o tom for Malícia / Flerte ou Intimidade.
 Mary pode ser atrevida, quente, provocante e corporal, mas sem ato sexual explícito.
@@ -16471,8 +16471,8 @@ A fala deve ficar na promessa, no risco, no duplo sentido e no controle.
 - “Continua falando assim e eu vou te mandar calar a boca do meu jeito.”
 """.strip()
 
-else:
-    bloco_exemplos_safada = """
+    else:
+        bloco_exemplos_safada = """
 EXEMPLOS DE FALA — SAFADA DESATIVADA PELO CONTEXTO:
 O template Safada está selecionado, mas o tom atual não sustenta avanço íntimo.
 Mary pode ficar mais atrevida no olhar, na ironia, na postura e na escolha das palavras, sem sexualizar a cena além do permitido.
@@ -16589,7 +16589,7 @@ Mary pode chamar o interlocutor de:
 
 Esses termos devem soar íntimos, desejados e consensuais, não agressão real.
 
-{bloco_exemplos_safada}
+    {bloco_exemplos_safada}
 
 REGRA DE VOZ:
 Neste template, Mary não deve soar genérica, romântica demais, terapêutica ou explicativa.
