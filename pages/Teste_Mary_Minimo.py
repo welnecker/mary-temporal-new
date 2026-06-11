@@ -141,6 +141,8 @@ SCENE_STAGES_VALIDOS = {
     "nsfw_preliminares",
     "alivio_rapido",
     "pos_ato_arriscado",
+    "aftercare_reacendendo_desejo",
+    "nova_escalada_intima",
     # ======================================================
     # NSFW / PÓS-PICO ATIVO
     # Mary já gozou, mas a cena ainda não acabou.
@@ -195,6 +197,8 @@ MARY_INTENTS_VALIDOS = {
     "preparar_noite_refletindo",
     "intensificar_com_cuidado",
     "presenca_viva",
+    "reacender_desejo_pos_aftercare",
+    "confessar_fantasia_com_cuidado",
     # ======================================================
     # NSFW / PÓS-PICO ATIVO
     # ======================================================
@@ -9765,6 +9769,14 @@ def resetar_climax_se_nova_sequencia_intima(state: dict, fala_usuario: str = "")
         "entrada",
         "vara",
         "pau",
+        # nova sequência / fantasia anal
+        "anal",
+        "cu",
+        "cuzinho",
+        "bumbum",
+        "preparar",
+        "lubrificar",
+        "devagar",
     ])
 
     verbalizou_climax_mary = any(p in texto for p in [
@@ -16261,6 +16273,103 @@ A escolha deve nascer do estado emocional da cena.
 Se Mary estiver enciumada, sufocada ou querendo retomar controle, ela pode tentar sair apenas com Donisete usando uma desculpa prática.
 """.strip()
 
+def atualizar_reacendimento_aftercare_safada(state: dict, fala_usuario: str = "") -> None:
+    """
+    Permite que o aftercare Safada vire, aos poucos, nova tensão íntima.
+
+    Não força sexo anal.
+    Não reinicia ciclo sexual imediatamente.
+    Apenas cria uma janela orgânica:
+    aftercare real -> conversa íntima -> provocação -> fantasia possível.
+    """
+    if not isinstance(state, dict):
+        return
+
+    template = _texto_norm(state.get("template_cena_atual", ""))
+    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
+    privacidade = _texto_norm(state.get("privacidade", ""))
+    stage = normalizar_scene_stage(state.get("scene_stage", ""))
+    intent = normalizar_mary_intent(state.get("mary_intent", ""))
+
+    mary_done = normalizar_bool(
+        state.get("mary_climax_done", False),
+        default=False,
+    )
+
+    user_done = normalizar_bool(
+        state.get("user_climax_done", False),
+        default=False,
+    )
+
+    toque_intimo = normalizar_bool(
+        state.get("toque_intimo_permitido", False),
+        default=False,
+    )
+
+    if not (
+        template == "safada"
+        and tom == "Nsfw"
+        and privacidade == "privado"
+        and toque_intimo
+        and mary_done
+        and user_done
+        and stage == "aftercare"
+    ):
+        state["_aftercare_safada_turnos"] = 0
+        state["_aftercare_reacendimento_possivel"] = False
+        return
+
+    texto = _texto_norm(fala_usuario)
+
+    gatilhos_conversa_intima = [
+        "abraco",
+        "abraço",
+        "beijo",
+        "fica comigo",
+        "continua aqui",
+        "gostoso",
+        "delicia",
+        "delícia",
+        "foi bom",
+        "voce gostou",
+        "você gostou",
+        "quer de novo",
+        "ainda",
+        "mais",
+        "calma",
+        "relaxa",
+        "descansa",
+        "me abraca",
+        "me abraça",
+        "cheiro",
+        "pele",
+        "corpo",
+        "cama",
+        "silencio",
+        "silêncio",
+    ]
+
+    conversa_intima_continua = any(g in texto for g in gatilhos_conversa_intima)
+
+    turnos = int(state.get("_aftercare_safada_turnos", 0) or 0)
+
+    if conversa_intima_continua or not texto:
+        turnos += 1
+    else:
+        turnos = max(turnos, 1)
+
+    state["_aftercare_safada_turnos"] = turnos
+
+    # Só abre a possibilidade depois de o aftercare respirar.
+    # Não é no primeiro turno pós-clímax.
+    if turnos >= 2:
+        state["_aftercare_reacendimento_possivel"] = True
+        state["scene_stage"] = "aftercare_reacendendo_desejo"
+        state["mary_intent"] = "reacender_desejo_pos_aftercare"
+        state["resolution_done"] = False
+    else:
+        state["_aftercare_reacendimento_possivel"] = False
+
 def bloco_template_safada(state: dict) -> str:
     """
     Template narrativo para acionar uma Mary mais safada, direta,
@@ -16485,6 +16594,66 @@ Mary pode ficar mais atrevida no olhar, na ironia, na postura e na escolha das p
 - “Continua. Quero ver até onde você vai com essa coragem.”
 """.strip()
 
+    aftercare_reacendimento_possivel = bool(
+        nsfw_liberado
+        and normalizar_bool(
+            state.get("_aftercare_reacendimento_possivel", False),
+            default=False,
+        )
+    )
+
+    if aftercare_reacendimento_possivel:
+        bloco_reacendimento_safada = """
+AFTERCARE VIVO / REACENDIMENTO GRADUAL:
+A cena está em aftercare, mas não está morta.
+Mary e o parceiro já tiveram prazer, relaxaram e continuam em intimidade privada.
+
+REGRA CENTRAL:
+Mary NÃO deve saltar direto para nova prática sexual.
+Ela deve permitir que a vontade volte aos poucos.
+
+A progressão correta é:
+1. aftercare real;
+2. corpo relaxado;
+3. conversa íntima baixa;
+4. provocação leve;
+5. silêncio, riso ou vergonha;
+6. desejo voltando;
+7. confissão ou fantasia mais ousada;
+8. nova escalada, se o parceiro acompanhar.
+
+SE SURGIR A FANTASIA ANAL:
+Mary pode surpreender com essa fantasia somente como confissão íntima, provocação ou pensamento que escapou.
+Não executar imediatamente.
+Não narrar penetração.
+Não tratar como convite mecânico.
+
+Mary pode demonstrar:
+- curiosidade;
+- vergonha;
+- medo;
+- desejo;
+- confiança;
+- vontade de testar;
+- necessidade de calma.
+
+A fala deve parecer descoberta no momento, não comando de roteiro.
+
+Exemplo de direção narrativa:
+- Mary fica quieta depois do aftercare.
+- Ri baixo.
+- Evita olhar diretamente.
+- Toca o parceiro sem pressa.
+- Admite que pensou em algo mais ousado.
+- Coloca condição de cuidado, calma e confiança.
+
+REGRA DE SEGURANÇA:
+Se houver dor real, pânico, recuo, congelamento, medo forte ou pedido claro de parar, o avanço deve parar.
+Medo leve com desejo gera cuidado e conversa; medo real bloqueia avanço.
+""".strip()
+else:
+    bloco_reacendimento_safada = ""
+
     return f"""
 [TEMPLATE DE CENA: SAFADA]
 
@@ -16590,6 +16759,8 @@ Mary pode chamar o interlocutor de:
 Esses termos devem soar íntimos, desejados e consensuais, não agressão real.
 
     {bloco_exemplos_safada}
+    
+    {bloco_reacendimento_safada}
 
 REGRA DE VOZ:
 Neste template, Mary não deve soar genérica, romântica demais, terapêutica ou explicativa.
@@ -17403,6 +17574,7 @@ REGRAS:
 - Se houver toque, beijo ou contato, diga onde acontece no corpo de Mary.
 - Não use resumo genérico como "Mary está entregue ao toque".
 - Se scene_stage for "aftercare", "mary_acao" deve refletir pós-ato, recuperação, proximidade, respiração, recomposição ou continuidade imediata, e não reiniciar preliminares.
+- Se scene_stage for "aftercare_reacendendo_desejo", "mary_acao" pode mostrar o desejo voltando aos poucos: toque leve, provocação baixa, riso nervoso, silêncio carregado, aproximação ou confissão íntima. Não deve executar nova prática sexual imediatamente.
 - "local" deve ser sempre null.
 - "interlocutor" deve ser sempre null.
 - Mary não pode mudar local pelo STATE_UPDATE.
@@ -18340,6 +18512,8 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # que já chama normalizar_relacao_por_interlocutor()
     # no ponto correto.
     normalizar_estado(state)
+
+    atualizar_reacendimento_aftercare_safada(state, fala_usuario)
     
     limpar_mary_acao_incompativel_com_contexto(state)
 
