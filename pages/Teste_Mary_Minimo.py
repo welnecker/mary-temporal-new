@@ -16749,6 +16749,7 @@ REGRAS:
             + "\n\nLeitura atual de Silvia para Mary:\n"
             + str(state.get("leitura_silvia_para_mary", "") or "")
         )
+   
     # ======================================================
     # TEMPLATE / CONDUÇÃO DA MARY
     # ======================================================
@@ -16756,9 +16757,6 @@ REGRAS:
     bloco_template_joselina_txt = bloco_template_joselina(state)
     bloco_template_diversao_txt = bloco_template_diversao(state)
     bloco_template_reconciliacao_txt = bloco_template_reconciliacao(state)
-    st.write("DEBUG template_cena_atual:", state.get("template_cena_atual"))
-    st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
-    st.code(bloco_template_cena or "bloco_template_cena vazio")
     
     bloco_template_cena = "\n\n".join(
         bloco
@@ -16772,6 +16770,11 @@ REGRAS:
     )
     
     bloco_conducao = bloco_conducao_mary(state)
+    
+    with st.expander("🧪 Debug template da cena"):
+        st.write("template_cena_atual:", state.get("template_cena_atual"))
+        st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
+        st.code(bloco_template_cena or "bloco_template_cena vazio")
     # ======================================================
     # PROMPT FINAL
     # ======================================================
