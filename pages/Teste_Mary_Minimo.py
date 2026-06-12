@@ -401,8 +401,8 @@ def normalizar_tom_manual_cena(valor: str) -> str:
 
 OPENROUTER_MODELS = {
      "Gemini 3 Flash Preview": "google/gemini-3-flash-preview",
-     "minimax-minimax-m3": "minimax/minimax-m3",
-     "inclusionai-ring-2.6-1t": "inclusionai/ring-2.6-1t",     
+     "inclusionai-ring-2.6-1t": "inclusionai/ring-2.6-1t",   
+     "minimax-minimax-m3": "minimax/minimax-m3",        
      "google-gemma-4-26b-a4b-it": "google/gemma-4-26b-a4b-it",
      "google-gemma-4-31b-it": "google/gemma-4-31b-it",
      "google-gemini-2.5-flash-lite": "google/gemini-2.5-flash-lite",
