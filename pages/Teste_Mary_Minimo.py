@@ -7435,6 +7435,101 @@ def amor_genuino_com_interlocutor(state: dict) -> bool:
     )
 
 
+def derivar_personagens_presentes(state: dict) -> None:
+    """
+    Deriva personagens presentes/atuantes a partir do campo interlocutor.
+
+    Ex:
+    "Donisete/Joselina" -> ["Mary", "Donisete", "Joselina"]
+
+    Isso evita ter que escrever no Plano ativo a cada cena.
+    """
+    if not isinstance(state, dict):
+        return
+
+    interlocutor_raw = str(state.get("interlocutor", "") or "").strip()
+
+    presentes = ["Mary"]
+
+    if interlocutor_raw:
+        partes = re.split(r"[/,;]+", interlocutor_raw)
+        for p in partes:
+            nome = p.strip()
+            if nome and nome not in presentes:
+                presentes.append(nome)
+
+    state["personagens_presentes"] = presentes
+
+    # Mantém personagens ativos sem incluir Mary, porque Mary é a personagem controlada.
+    state["personagens_ativos"] = [
+        p for p in presentes
+        if _texto_norm(p) != "mary"
+    ]
+
+def detectar_falante_e_ouvinte_turno(state: dict, fala_usuario: str) -> None:
+    """
+    Detecta automaticamente falante e ouvinte quando há múltiplos personagens.
+
+    Ex:
+    'Uahhh!!! Mary já trouxe o pão, Joselina?'
+    -> falante_turno = Donisete
+    -> ouvinte_turno = Joselina
+    """
+    if not isinstance(state, dict):
+        return
+
+    fala = str(fala_usuario or "")
+    fala_norm = _texto_norm(fala)
+
+    presentes = state.get("personagens_presentes", [])
+    if not isinstance(presentes, list):
+        presentes = []
+
+    ativos = [
+        p for p in presentes
+        if _texto_norm(p) != "mary"
+    ]
+
+    falante = str(state.get("interlocutor_foco_turno", "") or "").strip()
+    ouvinte = ""
+
+    # Se a fala chama um personagem pelo nome, esse personagem tende a ser o ouvinte.
+    for nome in ativos:
+        nome_norm = _texto_norm(nome)
+        if nome_norm and nome_norm in fala_norm:
+            ouvinte = nome
+            break
+
+    # Se menciona Mary em terceira pessoa e chama Joselina,
+    # o falante provável é Donisete.
+    menciona_mary_terceira = (
+        "mary" in fala_norm
+        or "ela" in fala_norm
+        or "filha" in fala_norm
+    )
+
+    chama_joselina = "joselina" in fala_norm
+    chama_donisete = "donisete" in fala_norm
+
+    tem_donisete = any(_texto_norm(p) == "donisete" for p in ativos)
+    tem_joselina = any(_texto_norm(p) == "joselina" for p in ativos)
+
+    if tem_donisete and tem_joselina:
+        if menciona_mary_terceira and chama_joselina:
+            falante = "Donisete"
+            ouvinte = "Joselina"
+
+        elif menciona_mary_terceira and chama_donisete:
+            falante = "Joselina"
+            ouvinte = "Donisete"
+
+    state["falante_turno"] = falante
+    state["ouvinte_turno"] = ouvinte
+
+    if falante:
+        state["interlocutor_foco_turno"] = falante
+        state["ultimo_interlocutor_explicito"] = falante
+
 def normalizar_estado(state: dict) -> None:
     """
     Normaliza o estado geral da cena.
@@ -16913,6 +17008,52 @@ Safada é Mary parar de fingir delicadeza quando o desejo já tomou a cena.
 Ela continua consciente, provocante, adulta e dona do próprio ritmo.
 """.strip()
 
+def render_presenca_personagens_para_prompt(state: dict) -> str:
+    if not isinstance(state, dict):
+        return ""
+
+    presentes = state.get("personagens_presentes", [])
+    ativos = state.get("personagens_ativos", [])
+
+    if not isinstance(presentes, list):
+        presentes = []
+
+    if not isinstance(ativos, list):
+        ativos = []
+
+    if len(presentes) <= 1:
+        return ""
+
+    falante = str(state.get("falante_turno", "") or "").strip()
+    ouvinte = str(state.get("ouvinte_turno", "") or "").strip()
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip()
+
+    return f"""
+[GEOMETRIA ATUAL DA CENA]
+
+Personagens presentes:
+{", ".join(presentes)}
+
+Personagens atuantes além de Mary:
+{", ".join(ativos) if ativos else "não informado"}
+
+Falante provável do turno:
+{falante if falante else "não identificado"}
+
+Ouvinte direto provável:
+{ouvinte if ouvinte else "não identificado"}
+
+Interlocutor foco:
+{foco if foco else "não informado"}
+
+REGRA:
+Todos os personagens listados como presentes devem ser considerados na cena, salvo se o turno disser claramente que alguém saiu.
+
+Mary deve reagir ao falante do turno, ao ouvinte direto e à presença dos demais personagens.
+
+Se a fala menciona Mary em terceira pessoa, Mary provavelmente está ouvindo alguém falar sobre ela, não falando por si mesma.
+""".strip()
+
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
     """
@@ -17471,6 +17612,8 @@ REGRAS:
     
     bloco_conducao = bloco_conducao_mary(state)
     
+    bloco_presenca_personagens = render_presenca_personagens_para_prompt(state)
+    
     with st.expander("🧪 Debug template da cena"):
         st.write("template_cena_atual:", state.get("template_cena_atual"))
         st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
@@ -17515,6 +17658,8 @@ Visual atual: {visual_atual}
 Ação atual de Mary: {mary_acao if mary_acao else "Não especificada."}
 Estado físico: {scene_stage}
 Intenção: {mary_intent}
+
+{bloco_presenca_personagens if bloco_presenca_personagens else ""}
 
 [FACTS HUMANOS DA CENA]
 {facts_txt}
@@ -18571,6 +18716,9 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # no ponto correto.
     normalizar_estado(state)
 
+    derivar_personagens_presentes(state)
+    detectar_falante_e_ouvinte_turno(state, fala_usuario)
+
     atualizar_reacendimento_aftercare_safada(state, fala_usuario)
     
     limpar_mary_acao_incompativel_com_contexto(state)
@@ -18630,6 +18778,9 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # a preparação específica de clímax do parceiro.
     # ======================================================
     sincronizar_facts_basicos(state, recalcular_estado=False)
+
+    derivar_personagens_presentes(state)
+    detectar_falante_e_ouvinte_turno(state, fala_usuario)
 
     # Reaplica a preparação específica depois da sincronização,
     # porque sincronizar_facts_basicos pode chamar normalizar_estado()
