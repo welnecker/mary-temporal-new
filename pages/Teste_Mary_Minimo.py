@@ -17845,36 +17845,31 @@ REGRAS:
     bloco_template_safada_txt = bloco_template_safada(state)
     bloco_template_mary_livre_carente_txt = bloco_template_mary_livre_carente(state)
     
-    template_manual = str(
-        state.get("template_cena_atual", "Nenhum") or "Nenhum"
-    ).strip()
-
-    blocos_por_template = {
-        "Shopping com Donisete": bloco_template_shopping,
-        "Joselina": bloco_template_joselina_txt,
-        "Diversão": bloco_template_diversao_txt,
-        "Reconciliação": bloco_template_reconciliacao_txt,
-        "Safada": bloco_template_safada_txt,
-        "Mary livre / carente": bloco_template_mary_livre_carente_txt,
-    }
+    template_efetivo = "Nenhum"
 
     if template_manual != "Nenhum":
         bloco_template_cena = blocos_por_template.get(template_manual, "")
+
+        if bloco_template_cena:
+            template_efetivo = template_manual
+
     else:
-        bloco_template_cena = next(
+        candidatos_auto = [
+            ("Mary livre / carente", bloco_template_mary_livre_carente_txt),
+            ("Shopping com Donisete", bloco_template_shopping),
+            ("Joselina", bloco_template_joselina_txt),
+            ("Diversão", bloco_template_diversao_txt),
+            ("Reconciliação", bloco_template_reconciliacao_txt),
+            ("Safada", bloco_template_safada_txt),
+        ]
+
+        template_efetivo, bloco_template_cena = next(
             (
-                bloco
-                for bloco in [
-                    bloco_template_mary_livre_carente_txt,
-                    bloco_template_shopping,
-                    bloco_template_joselina_txt,
-                    bloco_template_diversao_txt,
-                    bloco_template_reconciliacao_txt,
-                    bloco_template_safada_txt,
-                ]
+                (nome, bloco)
+                for nome, bloco in candidatos_auto
                 if bloco
             ),
-            "",
+            ("Nenhum", ""),
         )
     
     bloco_conducao = bloco_conducao_mary(state)
@@ -17885,6 +17880,7 @@ REGRAS:
         st.write("template_cena_atual:", state.get("template_cena_atual"))
         st.write("template_manual:", template_manual)
         st.write("template entrou no prompt:", bool(bloco_template_cena))
+        st.write("template_efetivo_no_prompt:", template_efetivo)
 
         st.code(bloco_template_shopping or "Shopping retornou vazio")
         st.code(bloco_template_joselina_txt or "Joselina retornou vazio")
@@ -17966,6 +17962,17 @@ Imite o ritmo, a presença e a naturalidade. NÃO copie literalmente.
 {exemplos_few_shot}
 
 {f"[DIRECIONAMENTO CRIATIVO DE VOZ]\\n{bloco_direcionamento_criativo}" if bloco_direcionamento_criativo else ""}
+
+[CONTROLE DE BORDÕES, APELIDOS E VÍCIOS DE FALA]
+Mary pode usar apelidos, ironias e provocações, mas não deve transformar uma palavra em muleta repetitiva.
+Não repetir "cachorro" como bordão.
+Se "cachorro" já apareceu no histórico recente, Mary deve evitar usar de novo neste turno.
+Apelidos só devem entrar quando tiverem impacto humano real na cena, não como fechamento automático de frase.
+Mary deve variar naturalmente: pode usar o nome Donisete, silêncio, olhar, ironia curta ou outra provocação contextual.
+Com Donisete, alternativas possíveis são: "professor", "convencido", "dramático", "senhor superstição", "meu anfitrião", "homem impossível", "metido", ou simplesmente "Donisete".
+Não usar apelido em toda resposta.
+Não terminar falas sempre com provocação.
+A voz de Mary deve parecer viva e espontânea, não presa a bordões.
 
 [REGRA DO TOM ATUAL]
 {regra_tom_txt}
