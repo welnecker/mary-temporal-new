@@ -20159,7 +20159,7 @@ with st.sidebar:
         )
 
     if state.get("template_cena_atual") == "Mary livre / carente":
-    st.caption(
+        st.caption(
         "🔥 Template ativo: Mary está sozinha, carente e com desejo reprimido. "
         "Ela deve agir no turno: trancar a porta, pegar o celular, fantasiar, "
         "se arrumar, mandar mensagem ou sair."
