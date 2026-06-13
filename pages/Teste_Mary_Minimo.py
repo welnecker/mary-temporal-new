@@ -17845,18 +17845,37 @@ REGRAS:
     bloco_template_safada_txt = bloco_template_safada(state)
     bloco_template_mary_livre_carente_txt = bloco_template_mary_livre_carente(state)
     
-    bloco_template_cena = "\n\n".join(
-        bloco
-        for bloco in [
-            bloco_template_shopping,
-            bloco_template_joselina_txt,
-            bloco_template_diversao_txt,
-            bloco_template_reconciliacao_txt,
-            bloco_template_safada_txt,
-            bloco_template_mary_livre_carente_txt,
-        ]
-        if bloco
-    )
+    template_manual = str(
+        state.get("template_cena_atual", "Nenhum") or "Nenhum"
+    ).strip()
+
+    blocos_por_template = {
+        "Shopping com Donisete": bloco_template_shopping,
+        "Joselina": bloco_template_joselina_txt,
+        "Diversão": bloco_template_diversao_txt,
+        "Reconciliação": bloco_template_reconciliacao_txt,
+        "Safada": bloco_template_safada_txt,
+        "Mary livre / carente": bloco_template_mary_livre_carente_txt,
+    }
+
+    if template_manual != "Nenhum":
+        bloco_template_cena = blocos_por_template.get(template_manual, "")
+    else:
+        bloco_template_cena = next(
+            (
+                bloco
+                for bloco in [
+                    bloco_template_mary_livre_carente_txt,
+                    bloco_template_shopping,
+                    bloco_template_joselina_txt,
+                    bloco_template_diversao_txt,
+                    bloco_template_reconciliacao_txt,
+                    bloco_template_safada_txt,
+                ]
+                if bloco
+            ),
+            "",
+        )
     
     bloco_conducao = bloco_conducao_mary(state)
     
@@ -17864,8 +17883,16 @@ REGRAS:
     
     with st.expander("🧪 Debug template da cena"):
         st.write("template_cena_atual:", state.get("template_cena_atual"))
+        st.write("template_manual:", template_manual)
+        st.write("template entrou no prompt:", bool(bloco_template_cena))
+
+        st.code(bloco_template_shopping or "Shopping retornou vazio")
+        st.code(bloco_template_joselina_txt or "Joselina retornou vazio")
+        st.code(bloco_template_diversao_txt or "Diversão retornou vazio")
         st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
+        st.code(bloco_template_safada_txt or "Safada retornou vazio")
         st.code(bloco_template_mary_livre_carente_txt or "Mary livre / carente retornou vazio")
+
         st.code(bloco_template_cena or "bloco_template_cena vazio")
     # ======================================================
     # PROMPT FINAL
