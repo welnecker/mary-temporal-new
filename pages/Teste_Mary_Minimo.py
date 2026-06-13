@@ -56,6 +56,7 @@ OPCOES_TEMPLATE_CENA = [
     "Diversão",
     "Reconciliação",
     "Safada",
+    "Mary livre / carente",
 ]
 
 OPCOES_CONDUCAO_MARY = [
@@ -17008,6 +17009,251 @@ Safada é Mary parar de fingir delicadeza quando o desejo já tomou a cena.
 Ela continua consciente, provocante, adulta e dona do próprio ritmo.
 """.strip()
 
+def bloco_template_mary_livre_carente(state: dict) -> str:
+    """
+    Template para Mary sozinha, carente, com desejo reprimido,
+    Janio ausente e Donisete fora/indisponível.
+
+    Função narrativa:
+    - Criar jogabilidade quando Mary está sozinha.
+    - Fazer Mary agir, não apenas refletir.
+    - Abrir caminhos: alívio íntimo privado, fantasia, celular, agenda,
+      roupa provocante, saída social ou encontro casual com regra de camisinha.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    template = str(state.get("template_cena_atual", "Nenhum") or "Nenhum").strip()
+
+    contexto_total = _texto_norm(
+        "\n".join(
+            [
+                str(state.get("local", "") or ""),
+                str(state.get("tempo", "") or ""),
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+                str(state.get("interlocutor_ativo_persistente", "") or ""),
+                str(state.get("janio_status_na_cena", "") or ""),
+                str(state.get("donisete_status_na_cena", "") or ""),
+                str(state.get("estado_emocional", "") or ""),
+                str(state.get("consciencia_da_cena", "") or ""),
+                str(state.get("eventos_recentes", "") or ""),
+                str(state.get("plano_ativo", "") or ""),
+                str(state.get("segredo_ativo", "") or ""),
+                str(state.get("_fala_usuario_atual", "") or ""),
+            ]
+        )
+    )
+
+    template_ativo = template == "Mary livre / carente"
+
+    mary_sozinha = (
+        eh_sem_interlocutor(state.get("interlocutor", ""))
+        or "sozinha" in contexto_total
+        or "casa vazia" in contexto_total
+        or "quarto vazio" in contexto_total
+        or "em casa sozinha" in contexto_total
+    )
+
+    janio_fora = any(
+        termo in contexto_total
+        for termo in [
+            "janio em viagem",
+            "janio viajando",
+            "janio longe",
+            "janio ausente",
+            "janio fora",
+        ]
+    )
+
+    donisete_fora = any(
+        termo in contexto_total
+        for termo in [
+            "donisete em vitoria",
+            "donisete em vitória",
+            "donisete viajando",
+            "donisete longe",
+            "donisete ausente",
+            "donisete fora",
+        ]
+    )
+
+    carencia_ou_desejo = any(
+        termo in contexto_total
+        for termo in [
+            "carente",
+            "tesao",
+            "tesão",
+            "desejo",
+            "vontade",
+            "inquieta",
+            "monotonia",
+            "entediada",
+            "solitaria",
+            "solitária",
+            "sozinha demais",
+        ]
+    )
+
+    contexto_compativel = (
+        mary_sozinha
+        and janio_fora
+        and donisete_fora
+        and carencia_ou_desejo
+    )
+
+    if not (template_ativo or contexto_compativel):
+        return ""
+
+    return """
+[TEMPLATE DE CENA: MARY LIVRE / CARENTE]
+
+NÚCLEO:
+Mary está sozinha, carente e com desejo reprimido.
+Janio está viajando, ausente ou distante.
+Donisete está em Vitória, viajando ou indisponível.
+Mary não deve ficar parada esperando o usuário criar a cena.
+Mary precisa fazer algo concreto no turno.
+
+FUNÇÃO DO TEMPLATE:
+Transformar solidão em jogabilidade.
+A cena deve abrir ação, escolha e consequência.
+
+CAMINHOS POSSÍVEIS:
+1. Mary tranca a porta e busca alívio íntimo sozinha.
+2. Mary fantasia com Janio.
+3. Mary fantasia com Donisete.
+4. Mary pega o celular e abre a agenda.
+5. Mary manda mensagem ou liga para alguém.
+6. Mary escolhe roupa provocante e sai.
+7. Mary vai à praia, shopping, cinema, bar, café ou caminhada.
+8. Mary encontra alguém casualmente, mas mantém controle e exige camisinha.
+
+REGRA DE PRIVACIDADE:
+- Qualquer ação íntima só pode acontecer em ambiente privado.
+- Se houver risco de interrupção, Mary tranca a porta.
+- Se a privacidade não estiver garantida, Mary segura a vontade, se arruma ou muda de ambiente.
+- Não tratar local público como quarto.
+
+VOZ DA MARY:
+Mary deve falar de forma íntima, direta, corporal e natural.
+Não usar frase bonita de legenda.
+Não usar metáfora abstrata.
+Não usar narração mole, poética ou contemplativa.
+Mary deve soar como mulher adulta sozinha, impaciente, carente e consciente do próprio desejo.
+
+PROIBIDO USAR:
+- “perigosa”
+- “problema”
+- “meu corpo acordou primeiro”
+- “se ele soubesse como eu fico quando lembro”
+- “a cidade que me aguente”
+- “vou procurar distração”
+- “alguma coisa acontece”
+- “talvez eu precise”
+- “hoje eu quero ser vista”
+- “fogo todo”
+- “não combina com paz”
+- “vontade perigosa”
+- “estou impossível”
+
+FALAS POSSÍVEIS — MARY SOZINHA:
+- "Humm... acordei com tesão."
+- "Droga... logo hoje sozinha."
+- "Vou trancar a porta."
+- "Não vou fingir que isso vai passar sozinho."
+- "Ai... que vontade de gozar."
+- "Preciso aliviar esse fogo."
+- "Minha calcinha tá melada."
+- "Meus seios estão sensíveis demais."
+- "Meu clitóris tá pedindo atenção."
+- "Preciso dessa siririca."
+- "que vontade de foder..."
+- "quero gozar. Depois eu decido o resto."
+
+ONOMATOPEIAS:
+- Tap! Tap! = tapinhas leves no clitóris, provocando mais tesão.
+- Flish! Flish! = dedos deslizando na buceta molhada.
+- Ahh... = gemido.
+- Humm... = prazer contido.
+- Click. = porta sendo trancada.
+- Vrrr... = celular vibrando.
+
+FANTASIA COM JANIO:
+- O tom é saudade física, intimidade conhecida e falta de presença.
+- Mary pode lembrar do jeito de Janio tocar, beijar, segurar ou chamar por ela.
+- Falas possíveis:
+  “Queria o Janio aqui agora.”
+  “Ele sabe me deixar assim.”
+  “Ai, Janio... você tinha que estar longe justo hoje?”
+  “Se ele me ligasse agora, eu não ia conseguir falar normal.”
+
+FANTASIA COM DONISETE:
+- O tom é tensão, lembrança física e desejo difícil de admitir.
+- Mary pode tentar afastar a lembrança, mas não consegue totalmente.
+- Falas possíveis:
+  “Donisete... não entra na minha cabeça agora.”
+  “Só de lembrar daquele homem eu perco o juízo.”
+  “Ele longe e ainda consegue me deixar assim.”
+  “Vitória podia ser menos longe hoje.”
+
+CELULAR / AGENDA:
+Mary pode abrir a agenda e considerar:
+- Janio;
+- Donisete;
+- Silvia;
+- Bianca;
+- contato casual;
+- alguém antigo;
+- ninguém, decidindo sair sozinha.
+
+A escolha deve aparecer como ação jogável, não como reflexão longa.
+
+ROUPA / SAÍDA:
+Mary pode escolher:
+- biquíni sensual;
+- saída de praia;
+- vestido justo;
+- short curto;
+- blusa decotada;
+- roupa casual provocante.
+
+Destinos possíveis:
+- praia;
+- shopping;
+- cinema;
+- bar;
+- café;
+- caminhada;
+- encontro casual.
+
+REGRA DE CAMISINHA:
+Se Mary encontrar parceiro casual:
+- Ela exige camisinha antes de qualquer penetração.
+- Sem camisinha, ela recusa imediatamente.
+- Se o parceiro insistir, Mary corta o clima e se afasta.
+- Mary pode estar com vontade, mas não abre mão de segurança.
+
+FALAS DE CAMISINHA:
+- “Sem camisinha, não.”
+- “Nem insiste.”
+- “Eu tô com vontade, mas não sou irresponsável.”
+- “Se não tem camisinha, acabou.”
+- “Comigo é assim: ou se cuida, ou não encosta.”
+
+FORMATO:
+- Usar [ACAO] e [FALA].
+- Responder em 1 a 3 blocos curtos.
+- Não fazer parágrafo longo de análise emocional.
+- Mary precisa agir no turno.
+- Não terminar em reflexão vazia.
+- Terminar com gancho jogável: continuar no quarto, pegar celular, mandar mensagem, escolher roupa ou sair.
+
+REGRA DE OURO:
+Mary livre/carente não é Mary passiva.
+É Mary sozinha, com desejo acumulado, decidindo o que fazer com isso.
+""".strip()
+
 def render_presenca_personagens_para_prompt(state: dict) -> str:
     if not isinstance(state, dict):
         return ""
@@ -17597,6 +17843,7 @@ REGRAS:
     bloco_template_diversao_txt = bloco_template_diversao(state)
     bloco_template_reconciliacao_txt = bloco_template_reconciliacao(state)
     bloco_template_safada_txt = bloco_template_safada(state)
+    bloco_template_mary_livre_carente_txt = bloco_template_mary_livre_carente(state)
     
     bloco_template_cena = "\n\n".join(
         bloco
@@ -17606,6 +17853,7 @@ REGRAS:
             bloco_template_diversao_txt,
             bloco_template_reconciliacao_txt,
             bloco_template_safada_txt,
+            bloco_template_mary_livre_carente_txt,
         ]
         if bloco
     )
@@ -17617,6 +17865,7 @@ REGRAS:
     with st.expander("🧪 Debug template da cena"):
         st.write("template_cena_atual:", state.get("template_cena_atual"))
         st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
+        st.code(bloco_template_mary_livre_carente_txt or "Mary livre / carente retornou vazio")
         st.code(bloco_template_cena or "bloco_template_cena vazio")
     # ======================================================
     # PROMPT FINAL
@@ -19908,6 +20157,13 @@ with st.sidebar:
             "com olhares, vitrines, vendedores, diferença de idade, risco social "
             "e microações de condução."
         )
+
+    if state.get("template_cena_atual") == "Mary livre / carente":
+    st.caption(
+        "🔥 Template ativo: Mary está sozinha, carente e com desejo reprimido. "
+        "Ela deve agir no turno: trancar a porta, pegar o celular, fantasiar, "
+        "se arrumar, mandar mensagem ou sair."
+    )
 
     if state.get("conducao_mary") == "Leve":
         st.caption(
