@@ -18094,6 +18094,17 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         "max_tokens": 1800,
     }
 
+    # ======================================================
+    # REASONING EXPLÍCITO APENAS PARA GEMINI 3 FLASH PREVIEW
+    # ======================================================
+    if model == "google/gemini-3-flash-preview":
+        payload["reasoning"] = {
+            "enabled": True
+        }
+    st.session_state["mary_last_reasoning_enabled"] = (
+        "reasoning" in payload
+    )        
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
