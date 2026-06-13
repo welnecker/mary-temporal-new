@@ -17834,7 +17834,7 @@ REGRAS:
             + "\n\nLeitura atual de Silvia para Mary:\n"
             + str(state.get("leitura_silvia_para_mary", "") or "")
         )
-   
+       
     # ======================================================
     # TEMPLATE / CONDUÇÃO DA MARY
     # ======================================================
@@ -17844,8 +17844,22 @@ REGRAS:
     bloco_template_reconciliacao_txt = bloco_template_reconciliacao(state)
     bloco_template_safada_txt = bloco_template_safada(state)
     bloco_template_mary_livre_carente_txt = bloco_template_mary_livre_carente(state)
-    
+
+    template_manual = str(
+        state.get("template_cena_atual", "Nenhum") or "Nenhum"
+    ).strip()
+
+    blocos_por_template = {
+        "Shopping com Donisete": bloco_template_shopping,
+        "Joselina": bloco_template_joselina_txt,
+        "Diversão": bloco_template_diversao_txt,
+        "Reconciliação": bloco_template_reconciliacao_txt,
+        "Safada": bloco_template_safada_txt,
+        "Mary livre / carente": bloco_template_mary_livre_carente_txt,
+    }
+
     template_efetivo = "Nenhum"
+    bloco_template_cena = ""
 
     if template_manual != "Nenhum":
         bloco_template_cena = blocos_por_template.get(template_manual, "")
@@ -17871,11 +17885,11 @@ REGRAS:
             ),
             ("Nenhum", ""),
         )
-    
+
     bloco_conducao = bloco_conducao_mary(state)
-    
+
     bloco_presenca_personagens = render_presenca_personagens_para_prompt(state)
-    
+
     with st.expander("🧪 Debug template da cena"):
         st.write("template_cena_atual:", state.get("template_cena_atual"))
         st.write("template_manual:", template_manual)
