@@ -4526,7 +4526,69 @@ def ha_acao_para_onomatopeia(state: dict, fala_usuario: str, resposta: str, tipo
                     "superficie macia",
                     "ploft",
                 ],
-            )                              
+            )   
+
+    if tipo == "engasgo_sexual":
+        return _tem_algum(
+            contexto,
+            [
+                "engasga",
+                "engasgar",
+                "engasgando",
+                "engasguei",
+                "engasgada",
+                "engasgo",
+                "garganta",
+                "fundo da garganta",
+                "quase engasgo",
+                "oral",
+                "sexo oral",
+                "chupando",
+                "chupa",
+                "boca",
+                "na boca",
+                "casp",
+            ],
+        )
+
+    if tipo == "engolir_sexual":
+        return _tem_algum(
+            contexto,
+            [
+                "engole",
+                "engolir",
+                "engolindo",
+                "engoli",
+                "saliva",
+                "garganta",
+                "boca",
+                "oral",
+                "sexo oral",
+                "glup",
+            ],
+        )
+
+    if tipo == "folego_sexual":
+        return _tem_algum(
+            contexto,
+            [
+                "toma folego",
+                "toma fôlego",
+                "tomando folego",
+                "tomando fôlego",
+                "recupera o folego",
+                "recupera o fôlego",
+                "puxa o ar",
+                "puxo o ar",
+                "respira fundo",
+                "respiro fundo",
+                "ofegante",
+                "ofega",
+                "ofegando",
+                "sem ar",
+                "arf",
+            ],
+        )    
 
     return False
 
@@ -4614,10 +4676,16 @@ def limpar_onomatopeias_fora_de_contexto(texto: str, state: dict, fala_usuario: 
         "pop": ha_acao_para_onomatopeia(state, fala_usuario, texto, "pop"),
         "plaf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "tapa"),
         "sniff": ha_acao_para_onomatopeia(state, fala_usuario, texto, "cheiro"),
-        # Novas onomatopeias sociais/corporais
+
+        # Onomatopeias sociais/corporais
         "hummf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "abraco"),
         "tchibum": ha_acao_para_onomatopeia(state, fala_usuario, texto, "agua"),
         "ploft": ha_acao_para_onomatopeia(state, fala_usuario, texto, "queda_macia"),
+
+        # Onomatopeias íntimas específicas
+        "casp": ha_acao_para_onomatopeia(state, fala_usuario, texto, "engasgo_sexual"),
+        "glup": ha_acao_para_onomatopeia(state, fala_usuario, texto, "engolir_sexual"),
+        "arf": ha_acao_para_onomatopeia(state, fala_usuario, texto, "folego_sexual"),
     }
 
     for som, permitido in permissoes.items():
@@ -18012,7 +18080,7 @@ A voz de Mary deve parecer viva e espontânea, não presa a bordões.
 {consciencia_cena_txt}
 
 [ONOMATOPEIAS]
-- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP, SNIFF, HUMMF, TCHIBUM ou PLOFT se a ação correspondente estiver acontecendo agora.
+- Só use sons como Smack, PLAF, FLOP, LAMB, CHUP, SLUPT, POP, SNIFF, HUMMF, TCHIBUM, PLOFT, CASP, GLUP ou ARF se a ação correspondente estiver acontecendo agora.
 - Não use onomatopeia como enfeite.
 - Se o usuário usar som no turno atual, Mary reage ao gesto físico correspondente.
 - FLOP só vale para movimento sexual explícito de entra e sai.
@@ -18022,6 +18090,9 @@ A voz de Mary deve parecer viva e espontânea, não presa a bordões.
 - HUMMF só vale para abraço, aperto de corpo, encaixe de abraço ou alguém sendo puxado contra o peito.
 - TCHIBUM só vale para pulo, queda ou mergulho na água.
 - PLOFT só vale para se jogar, cair ou afundar em cama, sofá, colchão, poltrona, almofada ou superfície macia.
+- CASP só vale para engasgo real durante ação íntima/oral, nunca como enfeite.
+- GLUP só vale para engolir saliva, tomar seco ou engolir durante ação íntima/oral.
+- ARF só vale para tomar fôlego, ficar ofegante ou puxar ar durante ação íntima intensa.
 
 [REGRAS CRÍTICAS DE RESPOSTA]
 
