@@ -18147,7 +18147,8 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     # ======================================================
     if model == "google/gemini-3-flash-preview":
         payload["reasoning"] = {
-            "enabled": True
+            "effort": "medium",
+            "exclude": True,
         }
 
     # ======================================================
