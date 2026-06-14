@@ -2018,6 +2018,23 @@ def get_privacidade_por_local(local: str) -> str:
         "lancha afastada",
         "lancha em mar aberto",
         "mar aberto",
+        "carro trancado",
+        "carro fechado",
+        "carro isolado",
+        "carro estacionado em local isolado",
+        "suv trancado",
+        "suv fechado",
+        "suv isolado",
+        "suv estacionado em local isolado",
+        "volvo trancado",
+        "volvo fechado",
+        "volvo isolado",
+        "veículo trancado",
+        "veiculo trancado",
+        "veículo fechado",
+        "veiculo fechado",
+        "garagem fechada",
+        "estacionamento vazio",
     ]
 
     # ======================================================
@@ -2039,6 +2056,15 @@ def get_privacidade_por_local(local: str) -> str:
         "toalete feminino",
         "toalete masculino",
         "lavabo",
+        "suv",
+        "volvo",
+        "veículo",
+        "veiculo",
+        "automóvel",
+        "automovel",
+        "banco de trás",
+        "banco traseiro",
+        "estacionamento",
     ]
 
     # ======================================================
