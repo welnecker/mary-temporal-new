@@ -18983,12 +18983,10 @@ if fala_usuario:
     if fala_usuario:
         with st.chat_message("user", avatar="👤"):
             st.write(fala_usuario)
-       
+
         with st.chat_message("assistant", avatar="🌙"):
-            resposta_final = ""
-        
             with st.spinner("Mary está respondendo..."):
-        
+
                 # ==================================================
                 # GERA RESPOSTA
                 # O motor completo do turno agora está dentro de
@@ -19001,6 +18999,7 @@ if fala_usuario:
                 # - definir_acao_autonoma()
                 # - detectar_climax_usuario()
                 # - sincronizar_facts_basicos()
+                # - atualizar_estado_pos_resposta_climax()
                 # ==================================================
                 resultado = processar_turno(
                     state,
@@ -19015,22 +19014,12 @@ if fala_usuario:
                 resposta_final = str(
                     resultado.get("resposta_final_limpa", "") or ""
                 ).strip()
-                # ==================================================
-                # 6.5) Sincroniza state se Mary verbalizou o próprio pico
-                # ==================================================
-                atualizar_pico_mary_por_contexto(
-                    state,
-                    fala_usuario,
-                    resposta_limpa=resposta_final,
-                )
-                
-                atualizar_estado_pos_resposta_climax(state, resposta_final)
-                sincronizar_facts_basicos(state, recalcular_estado=False)
+
                 resultado["state"] = dict(state)
                 resultado["facts"] = dict(state.get("facts", {}))
-        
+
                 # ==================================================
-                # 7) Salva avaliação do modelo em módulo externo
+                # Salva avaliação do modelo em módulo externo
                 # ==================================================
                 avaliacao_modelo = salvar_model_eval_na_planilha(
                     get_spreadsheet_func=_get_spreadsheet,
@@ -19040,12 +19029,17 @@ if fala_usuario:
                     model=model,
                     resultado=resultado,
                 )
-        
+
                 st.session_state["mary_last_model_eval"] = avaliacao_modelo
-        
-            renderizar_resposta_mary(resposta_final)
-        
-        st.stop()
+
+        # ==================================================
+        # RENDERIZAÇÃO SEGURA
+        # Não renderiza a resposta recém-gerada aqui.
+        # Força rerun para a resposta aparecer pelo history,
+        # evitando mensagem quebrada antes do F5.
+        # ==================================================
+        st.session_state["mary_state_minimo"] = state
+        st.rerun()
 
 if "mary_last_debug" in st.session_state:
     with st.expander("🧪 Última análise técnica", expanded=False):
