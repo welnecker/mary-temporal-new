@@ -9068,14 +9068,30 @@ REGRAS:
 """.strip()
 
 
-def consumir_evento_inesperado_se_usado(state: dict, resposta_gerada: bool = True) -> None:
+def consumir_evento_inesperado_se_usado(
+    state: dict,
+    resposta_gerada: bool = True,
+) -> None:
     """
-    Evita que o mesmo evento inesperado se repita em todos os turnos.
+    Evita que o mesmo evento/surpresa se repita em todos os turnos.
 
     Deve ser chamado depois de processar_turno(), apenas se houve resposta gerada.
     Se a chamada ao modelo falhar, não consome o evento.
+
+    Consome:
+    - disparar_evento_inesperado
+    - evento_inesperado
+    - modo_surpresa
+    - direcao_surpresa
+
+    Motivo:
+    Se modo_surpresa/direcao_surpresa continuarem ativos, o bloco de surpresa
+    entra novamente no prompt no próximo turno e interfere na resposta.
     """
     if not isinstance(state, dict):
+        return
+
+    if not resposta_gerada:
         return
 
     disparar = normalizar_bool(
@@ -9083,9 +9099,32 @@ def consumir_evento_inesperado_se_usado(state: dict, resposta_gerada: bool = Tru
         default=False,
     )
 
-    if resposta_gerada and disparar:
-        state["disparar_evento_inesperado"] = False
-        state["evento_inesperado"] = ""
+    modo_surpresa = normalizar_modo_surpresa(
+        state.get("modo_surpresa", "Desligado")
+    )
+
+    direcao_surpresa = str(
+        state.get("direcao_surpresa", "") or ""
+    ).strip()
+
+    evento_inesperado = str(
+        state.get("evento_inesperado", "") or ""
+    ).strip()
+
+    houve_surpresa = (
+        disparar
+        or modo_surpresa != "Desligado"
+        or bool(direcao_surpresa)
+        or bool(evento_inesperado)
+    )
+
+    if not houve_surpresa:
+        return
+
+    state["disparar_evento_inesperado"] = False
+    state["evento_inesperado"] = ""
+    state["modo_surpresa"] = "Desligado"
+    state["direcao_surpresa"] = ""
 
 def corrigir_relacao_donisete_externo(state: dict) -> None:
     """
@@ -15161,12 +15200,23 @@ def render_prioridades_surpresa_evento_para_prompt(
     - Evitar bloco proibitivo.
     - Ensinar o modelo a usar surpresa como motor de cena.
     - Manter consequência aberta sem deixar Mary passiva.
+    - Evitar que direção genérica invente personagem, nome, profissão ou intenção.
     """
     modo_surpresa = normalizar_modo_surpresa(modo_surpresa)
     direcao_surpresa = str(direcao_surpresa or "").strip()
     evento_inesperado_txt = str(evento_inesperado_txt or "").strip()
 
-    if modo_surpresa == "Desligado" and not evento_inesperado_txt:
+    # ======================================================
+    # SEM SURPRESA ATIVA
+    # ======================================================
+    if modo_surpresa == "Desligado":
+        return ""
+
+    # ======================================================
+    # SURPRESA SEM CONTEÚDO REAL
+    # Evita bloco vazio interferindo no modelo.
+    # ======================================================
+    if not direcao_surpresa and not evento_inesperado_txt:
         return ""
 
     return f"""
@@ -15176,6 +15226,16 @@ Modo surpresa: {modo_surpresa}
 Direção: {direcao_surpresa if direcao_surpresa else "Nenhuma."}
 
 {evento_inesperado_txt}
+
+REGRA CRÍTICA DE INTERPRETAÇÃO:
+- A surpresa deve seguir apenas as informações fornecidas na direção.
+- Se a direção for genérica, Mary só percebe o evento inicial.
+- Não inventar nome, profissão, parentesco, intenção ou identidade de novo personagem se a direção não informar.
+- Se a direção disser apenas "interfone tocando", Mary deve apenas ouvir, olhar, atender com cautela ou hesitar diante do interfone.
+- Não criar automaticamente porteiro, entregador, vizinho, funcionário, técnico, limpador de piscina, visitante ou conhecido sem pista textual.
+- Se a direção disser apenas "mensagem chegando", Mary deve perceber a mensagem, olhar o celular ou hesitar antes de abrir; não inventar remetente sem pista.
+- Se a direção disser apenas "telefone tocando", Mary deve reagir ao toque; não decidir automaticamente quem está ligando.
+- Se a direção trouxer nome ou função, aí sim Mary pode reagir a essa informação específica.
 
 FUNÇÃO DA SURPRESA:
 - A surpresa deve abrir movimento jogável, não virar relatório.
@@ -15210,6 +15270,20 @@ REGRA DE NATURALIDADE:
 - Mary não precisa resolver o evento inteiro no mesmo turno.
 - Mary também não deve ficar parada esperando instrução.
 - O melhor caminho é uma ação curta com consequência aberta.
+- A resposta deve parar em ponto jogável, antes de revelar demais ou resolver a surpresa sozinha.
+
+EXEMPLOS DE DIREÇÃO GENÉRICA:
+- Direção: "interfone tocando"
+  Mary pode olhar para o visor, apertar a toalha, hesitar e atender com cautela.
+  Mary não deve inventar quem é.
+
+- Direção: "mensagem chegando"
+  Mary pode olhar o celular, travar por um segundo e decidir abrir ou esconder.
+  Mary não deve inventar remetente.
+
+- Direção: "barulho na porta"
+  Mary pode se virar, prender a respiração e se aproximar devagar.
+  Mary não deve inventar imediatamente quem está do outro lado.
 """.strip()
 
 def bloco_conducao_mary(state: dict) -> str:
@@ -15897,20 +15971,18 @@ REGRAS:
 
     bloco_presenca_personagens = render_presenca_personagens_para_prompt(state)
 
-    with st.expander("🧪 Debug template da cena"):
-        st.write("template_cena_atual:", state.get("template_cena_atual"))
-        st.write("template_manual:", template_manual)
-        st.write("template entrou no prompt:", bool(bloco_template_cena))
-        st.write("template_efetivo_no_prompt:", template_efetivo)
-
-        st.code(bloco_template_shopping or "Shopping retornou vazio")
-        st.code(bloco_template_joselina_txt or "Joselina retornou vazio")
-        st.code(bloco_template_diversao_txt or "Diversão retornou vazio")
-        st.code(bloco_template_reconciliacao_txt or "Reconciliação retornou vazio")
-        st.code(bloco_template_safada_txt or "Safada retornou vazio")
-        st.code(bloco_template_mary_livre_carente_txt or "Mary livre / carente retornou vazio")
-
-        st.code(bloco_template_cena or "bloco_template_cena vazio")
+    state["_debug_template_cena"] = {
+        "template_cena_atual": state.get("template_cena_atual"),
+        "template_manual": template_manual,
+        "template_entrou_no_prompt": bool(bloco_template_cena),
+        "template_efetivo_no_prompt": template_efetivo,
+        "shopping": bool(bloco_template_shopping),
+        "joselina": bool(bloco_template_joselina_txt),
+        "diversao": bool(bloco_template_diversao_txt),
+        "reconciliacao": bool(bloco_template_reconciliacao_txt),
+        "safada": bool(bloco_template_safada_txt),
+        "mary_livre_carente": bool(bloco_template_mary_livre_carente_txt),
+    }
     # ======================================================
     # PROMPT FINAL
     # ======================================================
@@ -18848,8 +18920,13 @@ with st.sidebar:
         limpar_cache_planilhas()
         st.rerun()
 
-    
+        
     st.divider()
+
+    if state.get("_debug_template_cena"):
+        with st.expander("🧪 Debug template da cena", expanded=False):
+            st.json(state.get("_debug_template_cena", {}))
+    
     with st.expander("🧩 Facts avançados", expanded=False):
         st.json(state.get("facts", {}))
     
@@ -18875,10 +18952,9 @@ with st.sidebar:
     
     with st.expander("🧪 Debug state", expanded=False):
         st.json(state)
-
-
-history = state.get("history", [])
-
+    
+    
+    history = state.get("history", [])
 if not history:
     with st.chat_message("assistant", avatar="🌙"):
         st.write("Estou aqui, Janio. Pode começar a cena do jeito que quiser.")
