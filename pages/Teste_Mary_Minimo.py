@@ -16303,6 +16303,111 @@ def montar_mensagens(state: dict, fala_usuario: str) -> list[dict]:
 
     return mensagens
 
+def resposta_parece_quebrada(texto: str) -> bool:
+    """
+    Detecta resposta truncada/incompleta antes de aceitar o retorno do modelo.
+
+    Uso:
+    - dentro de chamar_openrouter(), depois de extrair content;
+    - opcionalmente dentro de processar_turno(), antes de salvar no history.
+    """
+    texto = str(texto or "").strip()
+
+    if not texto:
+        return True
+
+    # Muito curta para resposta narrativa normal.
+    if len(texto) < 80:
+        return True
+
+    texto_limpo = texto.rstrip()
+    texto_norm = texto_limpo.lower()
+
+    # Termina claramente no meio da frase.
+    finais_ruins = (
+        ",",
+        ";",
+        ":",
+        " e",
+        " de",
+        " da",
+        " do",
+        " das",
+        " dos",
+        " que",
+        " com",
+        " para",
+        " por",
+        " enquanto",
+        " quando",
+        " porque",
+        " sentindo",
+        " vendo",
+        " ouvindo",
+        " contra",
+    )
+
+    if texto_norm.endswith(finais_ruins):
+        return True
+
+    # Aspas ímpares: abriu fala e não fechou.
+    if texto.count('"') % 2 != 0:
+        return True
+
+    # Parênteses/chaves/colchetes abertos sem fechamento.
+    pares = [
+        ("(", ")"),
+        ("{", "}"),
+    ]
+
+    for abre, fecha in pares:
+        if texto.count(abre) > texto.count(fecha):
+            return True
+
+    # Não usar [ e ] aqui, porque [ACAO] e [FALA] são tags normais.
+    # Se quiser checar colchetes, tem que ignorar as tags.
+
+    tem_acao = "[ACAO]" in texto or "[AÇÃO]" in texto
+    tem_fala = "[FALA]" in texto
+
+    # Se só veio ação curta, costuma ser truncamento.
+    if tem_acao and not tem_fala and len(texto) < 500:
+        return True
+
+    # Última palavra é conector/gerúndio típico de corte.
+    palavras = texto_norm.split()
+
+    if palavras:
+        ultima = palavras[-1].strip(".,;:!?\"'“”‘’()")
+
+        conectores_finais = {
+            "com",
+            "de",
+            "da",
+            "do",
+            "das",
+            "dos",
+            "que",
+            "porque",
+            "enquanto",
+            "quando",
+            "sentindo",
+            "vendo",
+            "ouvindo",
+            "contra",
+            "pela",
+            "pelo",
+            "num",
+            "numa",
+            "na",
+            "no",
+        }
+
+        if ultima in conectores_finais:
+            return True
+
+    return False
+
 
 def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     api_key = st.secrets.get("OPENROUTER_API_KEY", "")
