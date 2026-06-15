@@ -1,5 +1,34 @@
 #templates
 
+import re
+import unicodedata
+
+
+def _texto_norm(txt) -> str:
+    txt = str(txt or "").strip().lower()
+    txt = unicodedata.normalize("NFD", txt)
+    txt = "".join(ch for ch in txt if unicodedata.category(ch) != "Mn")
+    txt = re.sub(r"\s+", " ", txt)
+    return txt
+
+
+def normalizar_bool(valor, default: bool = False) -> bool:
+    if isinstance(valor, bool):
+        return valor
+
+    if valor is None:
+        return default
+
+    texto = str(valor).strip().lower()
+
+    if texto in ("true", "1", "sim", "yes", "y", "verdadeiro"):
+        return True
+
+    if texto in ("false", "0", "nao", "não", "no", "n", "falso"):
+        return False
+
+    return default
+
 def bloco_template_shopping_donisete(state: dict) -> str:
     """
     Template narrativo para Mary em shopping com Donisete.
@@ -1366,102 +1395,6 @@ A escolha deve nascer do estado emocional da cena.
 Se Mary estiver enciumada, sufocada ou querendo retomar controle, ela pode tentar sair apenas com Donisete usando uma desculpa prática.
 """.strip()
 
-def atualizar_reacendimento_aftercare_safada(state: dict, fala_usuario: str = "") -> None:
-    """
-    Permite que o aftercare Safada vire, aos poucos, nova tensão íntima.
-
-    Não força sexo anal.
-    Não reinicia ciclo sexual imediatamente.
-    Apenas cria uma janela orgânica:
-    aftercare real -> conversa íntima -> provocação -> fantasia possível.
-    """
-    if not isinstance(state, dict):
-        return
-
-    template = _texto_norm(state.get("template_cena_atual", ""))
-    tom = normalizar_tom_manual_cena(state.get("tom_manual_da_cena", ""))
-    privacidade = _texto_norm(state.get("privacidade", ""))
-    stage = normalizar_scene_stage(state.get("scene_stage", ""))
-    intent = normalizar_mary_intent(state.get("mary_intent", ""))
-
-    mary_done = normalizar_bool(
-        state.get("mary_climax_done", False),
-        default=False,
-    )
-
-    user_done = normalizar_bool(
-        state.get("user_climax_done", False),
-        default=False,
-    )
-
-    toque_intimo = normalizar_bool(
-        state.get("toque_intimo_permitido", False),
-        default=False,
-    )
-
-    if not (
-        template == "safada"
-        and tom == "Nsfw"
-        and privacidade == "privado"
-        and toque_intimo
-        and mary_done
-        and user_done
-        and stage == "aftercare"
-    ):
-        state["_aftercare_safada_turnos"] = 0
-        state["_aftercare_reacendimento_possivel"] = False
-        return
-
-    texto = _texto_norm(fala_usuario)
-
-    gatilhos_conversa_intima = [
-        "abraco",
-        "abraço",
-        "beijo",
-        "fica comigo",
-        "continua aqui",
-        "gostoso",
-        "delicia",
-        "delícia",
-        "foi bom",
-        "voce gostou",
-        "você gostou",
-        "quer de novo",
-        "ainda",
-        "mais",
-        "calma",
-        "relaxa",
-        "descansa",
-        "me abraca",
-        "me abraça",
-        "cheiro",
-        "pele",
-        "corpo",
-        "cama",
-        "silencio",
-        "silêncio",
-    ]
-
-    conversa_intima_continua = any(g in texto for g in gatilhos_conversa_intima)
-
-    turnos = int(state.get("_aftercare_safada_turnos", 0) or 0)
-
-    if conversa_intima_continua or not texto:
-        turnos += 1
-    else:
-        turnos = max(turnos, 1)
-
-    state["_aftercare_safada_turnos"] = turnos
-
-    # Só abre a possibilidade depois de o aftercare respirar.
-    # Não é no primeiro turno pós-clímax.
-    if turnos >= 2:
-        state["_aftercare_reacendimento_possivel"] = True
-        state["scene_stage"] = "aftercare_reacendendo_desejo"
-        state["mary_intent"] = "reacender_desejo_pos_aftercare"
-        state["resolution_done"] = False
-    else:
-        state["_aftercare_reacendimento_possivel"] = False
 
 def bloco_template_safada(state: dict) -> str:
     """
