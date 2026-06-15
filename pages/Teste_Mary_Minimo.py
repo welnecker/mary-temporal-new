@@ -7050,6 +7050,80 @@ def atualizar_interlocutor_ativo(state: dict, fala_usuario: str) -> None:
 
         return ""
 
+    def render_regra_camisinha_parceiro_casual(state: dict) -> str:
+        if not isinstance(state, dict):
+            return ""
+    
+        contexto = _texto_norm(
+            "\n".join([
+                str(state.get("interlocutor", "") or ""),
+                str(state.get("interlocutor_foco_turno", "") or ""),
+                str(state.get("interlocutor_ativo_persistente", "") or ""),
+                str(state.get("relacao", "") or ""),
+                str(state.get("modo_relacional", "") or ""),
+                str(state.get("template_cena_atual", "") or ""),
+                str(state.get("tipo_de_cena", "") or ""),
+                str(state.get("_fala_usuario_atual", "") or ""),
+            ])
+        )
+    
+        parceiro_casual = any(
+            termo in contexto
+            for termo in [
+                "pablo",
+                "piscineiro",
+                "entregador",
+                "porteiro",
+                "vizinho",
+                "funcionario",
+                "funcionário",
+                "desconhecido",
+                "estranho",
+                "casual",
+                "encontro casual",
+            ]
+        )
+    
+        parceiro_fixos = any(
+            termo in contexto
+            for termo in [
+                "janio",
+                "jânio",
+                "janio doniseti",
+                "donisete",
+            ]
+        )
+    
+        # Se for Janio ou Donisete, não ativa automaticamente esta trava.
+        if parceiro_fixos and not parceiro_casual:
+            return ""
+    
+        if not parceiro_casual:
+            return ""
+    
+        return """
+    [REGRA CRÍTICA - PARCEIRO CASUAL / CAMISINHA]
+    
+    Há parceiro casual, estranho, funcionário, visitante ou pessoa sem vínculo íntimo consolidado na cena.
+    
+    REGRA ABSOLUTA:
+    - Antes de qualquer penetração vaginal ou anal, Mary exige camisinha.
+    - Mary não permite penetração sem camisinha.
+    - Mary pode estar excitada, provocante e decidida, mas não fica irresponsável.
+    - Se o parceiro tentar entrar sem camisinha, Mary interrompe imediatamente.
+    - Se não houver camisinha disponível, a cena não avança para penetração.
+    - Mary pode redirecionar para pausa, busca de camisinha, recuo, provocação sem penetração ou encerramento do clima.
+    - Esta regra vence o tom NSFW, o template Safada, o template Mary livre/carente e qualquer escalada física.
+    
+    FALAS POSSÍVEIS:
+    - “Camisinha primeiro.”
+    - “Sem camisinha, não.”
+    - “Nem tenta entrar sem.”
+    - “Eu tô com vontade, mas não sou irresponsável.”
+    - “Se não tem camisinha, acabou.”
+    - “Pega uma camisinha ou para agora.”
+    """.strip()
+
     def campo_tem_multiplos_interlocutores(valor: str) -> bool:
         return any(sep in valor for sep in [",", ";", "/", "|"])
 
@@ -15512,6 +15586,8 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     regra_tom_txt = render_regra_do_tom_para_prompt(tom_manual, facts)
 
+    regra_camisinha_casual_txt = render_regra_camisinha_parceiro_casual(state)
+
     # ======================================================
     # DIRECIONAMENTO CRIATIVO DE VOZ
     # Muleta autoral: inspira vocabulário, subtexto e variação,
@@ -16069,6 +16145,9 @@ A voz de Mary deve parecer viva e espontânea, não presa a bordões.
 
 [REGRA DO TOM ATUAL]
 {regra_tom_txt}
+
+[REGRA CRÍTICA - PARCEIRO CASUAL / CAMISINHA]
+{regra_camisinha_casual_txt if regra_camisinha_casual_txt else "Nenhuma regra de camisinha casual ativa neste turno."}
 
 [TEMPLATE DA CENA - PRIORIDADE DO TURNO]
 {bloco_template_cena if bloco_template_cena else "Nenhum template específico ativo neste turno."}
