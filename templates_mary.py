@@ -1,4 +1,4 @@
-#templates
+# templates
 
 import re
 import unicodedata
@@ -28,6 +28,30 @@ def normalizar_bool(valor, default: bool = False) -> bool:
         return False
 
     return default
+
+
+def eh_sem_interlocutor(valor) -> bool:
+    texto = _texto_norm(valor)
+
+    if not texto:
+        return True
+
+    return texto in {
+        "nenhum",
+        "sem interlocutor",
+        "sem interlocutor definido",
+        "sem interlocutor ativo",
+        "sem interlocutor direto",
+        "sozinha",
+        "sozinho",
+        "ninguem",
+        "ninguém",
+        "n/a",
+        "na",
+        "-",
+        "none",
+        "null",
+    }
 
 def bloco_template_shopping_donisete(state: dict) -> str:
     """
