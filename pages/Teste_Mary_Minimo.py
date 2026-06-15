@@ -16325,7 +16325,9 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     # ======================================================
     # REASONING EXPLÍCITO APENAS PARA GEMINI 3 FLASH PREVIEW
     # ======================================================
-    if model == "google/gemini-3-flash-preview":
+    USAR_REASONING_GEMINI_3_FLASH = False
+
+    if model == "google/gemini-3-flash-preview" and USAR_REASONING_GEMINI_3_FLASH:
         payload["reasoning"] = {
             "effort": "medium",
             "exclude": True,
@@ -16377,6 +16379,14 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         st.session_state["mary_last_openrouter_status"] = status_code
         st.session_state["mary_last_openrouter_raw"] = response.text[:4000]
 
+        st.session_state["mary_last_openrouter_response_debug"] = {
+            "status_code": status_code,
+            "model": model,
+            "finish_reason": None,
+            "content_len": 0,
+            "raw": response.text[:4000],
+        }
+
         raise RuntimeError(
             "OpenRouter retornou resposta não-JSON.\n\n"
             f"HTTP: {status_code}\n"
@@ -16386,6 +16396,16 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
 
     st.session_state["mary_last_openrouter_status"] = status_code
     st.session_state["mary_last_openrouter_raw"] = data
+
+    # Debug inicial da resposta completa.
+    st.session_state["mary_last_openrouter_response_debug"] = {
+        "status_code": status_code,
+        "model": model,
+        "finish_reason": None,
+        "content_len": None,
+        "reasoning_enabled": "reasoning" in payload,
+        "raw": data,
+    }
 
     # ======================================================
     # ERRO HTTP OU ERRO EMBUTIDO NO JSON
@@ -16430,6 +16450,8 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     finish_reason = choice.get("finish_reason")
     st.session_state["mary_last_finish_reason"] = finish_reason
 
+    st.session_state["mary_last_openrouter_response_debug"]["finish_reason"] = finish_reason
+
     message = choice.get("message", {})
 
     if not isinstance(message, dict):
@@ -16439,6 +16461,9 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
         )
 
     content = str(message.get("content", "") or "").strip()
+
+    st.session_state["mary_last_openrouter_response_debug"]["content_len"] = len(content)
+    st.session_state["mary_last_openrouter_response_debug"]["content_preview"] = content[:1000]
 
     if not content:
         st.error("OpenRouter retornou content vazio.")
@@ -16450,6 +16475,53 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
             f"Modelo: {model}\n"
             f"Finish reason: {finish_reason}\n\n"
             f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    # ======================================================
+    # PROTEÇÃO CONTRA RESPOSTA INCOMPLETA PELO FINISH_REASON
+    # ======================================================
+    finish_reason_norm = str(finish_reason or "").strip().lower()
+
+    finish_reason_ok = (
+        not finish_reason_norm
+        or finish_reason_norm in {
+            "stop",
+            "end_turn",
+            "complete",
+            "completed",
+        }
+    )
+
+    if not finish_reason_ok:
+        st.error(f"OpenRouter retornou finish_reason suspeito: {finish_reason}")
+        st.code(json.dumps(data, ensure_ascii=False, indent=2)[:4000])
+
+        raise RuntimeError(
+            "OpenRouter retornou resposta possivelmente incompleta.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n"
+            f"Finish reason: {finish_reason}\n"
+            f"Tamanho do content: {len(content)}\n\n"
+            f"Content parcial:\n{content[:2000]}\n\n"
+            f"Resposta bruta:\n{json.dumps(data, ensure_ascii=False, indent=2)[:4000]}"
+        )
+
+    # ======================================================
+    # PROTEÇÃO TEXTUAL EXTRA CONTRA RESPOSTA TRUNCADA
+    # Mesmo com finish_reason normal, alguns providers podem
+    # devolver content visualmente quebrado.
+    # ======================================================
+    if resposta_parece_quebrada(content):
+        st.error("OpenRouter retornou content com aparência de resposta truncada.")
+        st.code(content[:2000])
+
+        raise RuntimeError(
+            "OpenRouter retornou content aparentemente truncado.\n\n"
+            f"HTTP: {status_code}\n"
+            f"Modelo: {model}\n"
+            f"Finish reason: {finish_reason}\n"
+            f"Tamanho do content: {len(content)}\n\n"
+            f"Content parcial:\n{content[:2000]}"
         )
 
     return content
