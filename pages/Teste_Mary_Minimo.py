@@ -7235,6 +7235,52 @@ def formatar_data_cena(data_obj) -> str:
         return ""
     return data_obj.strftime("%d/%m/%Y")
 
+def render_presenca_personagens_para_prompt(state: dict) -> str:
+    if not isinstance(state, dict):
+        return ""
+
+    presentes = state.get("personagens_presentes", [])
+    ativos = state.get("personagens_ativos", [])
+
+    if not isinstance(presentes, list):
+        presentes = []
+
+    if not isinstance(ativos, list):
+        ativos = []
+
+    if len(presentes) <= 1:
+        return ""
+
+    falante = str(state.get("falante_turno", "") or "").strip()
+    ouvinte = str(state.get("ouvinte_turno", "") or "").strip()
+    foco = str(state.get("interlocutor_foco_turno", "") or "").strip()
+
+    return f"""
+[GEOMETRIA ATUAL DA CENA]
+
+Personagens presentes:
+{", ".join(presentes)}
+
+Personagens atuantes além de Mary:
+{", ".join(ativos) if ativos else "não informado"}
+
+Falante provável do turno:
+{falante if falante else "não identificado"}
+
+Ouvinte direto provável:
+{ouvinte if ouvinte else "não identificado"}
+
+Interlocutor foco:
+{foco if foco else "não informado"}
+
+REGRA:
+Todos os personagens listados como presentes devem ser considerados na cena, salvo se o turno disser claramente que alguém saiu.
+
+Mary deve reagir ao falante do turno, ao ouvinte direto e à presença dos demais personagens.
+
+Se a fala menciona Mary em terceira pessoa, Mary provavelmente está ouvindo alguém falar sobre ela, não falando por si mesma.
+""".strip()
+
 
 def detectar_salto_temporal_na_fala(fala_usuario: str, state: dict) -> dict:
     """
