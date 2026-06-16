@@ -10355,6 +10355,56 @@ def preparar_climax_parceiro_mary(state: dict, fala_usuario: str) -> None:
         )
         return
 
+def render_continuidade_estado_atual_para_prompt(state: dict) -> str:
+    """
+    Reforça continuidade narrativa imediata.
+
+    Objetivo:
+    - impedir que o modelo repita o evento já concluído no turno anterior;
+    - fazer mary_acao virar o ponto de partida obrigatório;
+    - resolver conflito entre history e estado atual consolidado.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    mary_acao = str(state.get("mary_acao", "") or "").strip()
+    local = str(state.get("local", "") or "").strip()
+    interlocutor = str(state.get("interlocutor", "") or "").strip()
+    scene_stage = str(state.get("scene_stage", "") or "").strip()
+    mary_intent = str(state.get("mary_intent", "") or "").strip()
+
+    if not mary_acao:
+        return ""
+
+    return f"""
+[CONTINUIDADE IMEDIATA - ESTADO ATUAL VENCE]
+
+Estado físico e narrativo atual de Mary:
+{mary_acao}
+
+Local atual:
+{local if local else "não informado"}
+
+Interlocutor/foco atual:
+{interlocutor if interlocutor else "não informado"}
+
+Scene stage:
+{scene_stage if scene_stage else "não informado"}
+
+Intenção atual de Mary:
+{mary_intent if mary_intent else "não informado"}
+
+REGRA CRÍTICA:
+- A próxima resposta deve continuar a partir do estado físico e narrativo atual de Mary.
+- Não recomeçar a ação anterior.
+- Não repetir evento já concluído no último turno.
+- Se Mary já entrou em um cômodo, não fazê-la entrar de novo.
+- Se Mary já jogou algo fora, deu descarga, guardou, fechou, trancou, lavou ou iniciou uma ação, não repetir essa etapa.
+- O histórico serve para contexto, mas o estado atual consolidado define onde Mary está e o que ela está fazendo agora.
+- Se o usuário enviar apenas som, ruído, respiração, gemido, ronco ou interjeição curta, Mary deve reagir a partir da posição atual, não voltar para a etapa anterior.
+- Avance a microação: reagir, pausar, escutar, olhar, decidir, continuar lavando-se, esconder-se, responder baixo ou mudar de estratégia.
+""".strip()
+
 def render_reacao_climax_parceiro_apos_pico_mary(state: dict) -> str:
     """
     Renderiza a reação de Mary quando o parceiro avisa que vai gozar
@@ -15692,6 +15742,7 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     regra_camisinha_casual_txt = render_regra_camisinha_parceiro_casual(state)
 
+    
     # ======================================================
     # DIRECIONAMENTO CRIATIVO DE VOZ
     # Muleta autoral: inspira vocabulário, subtexto e variação,
@@ -16163,6 +16214,8 @@ REGRAS:
         "safada": bool(bloco_template_safada_txt),
         "mary_livre_carente": bool(bloco_template_mary_livre_carente_txt),
     }
+
+    continuidade_estado_atual_txt = render_continuidade_estado_atual_para_prompt(state)
     # ======================================================
     # PROMPT FINAL
     # ======================================================
@@ -16203,6 +16256,9 @@ Visual atual: {visual_atual}
 Ação atual de Mary: {mary_acao if mary_acao else "Não especificada."}
 Estado físico: {scene_stage}
 Intenção: {mary_intent}
+
+[CONTINUIDADE IMEDIATA - ESTADO ATUAL VENCE]
+{continuidade_estado_atual_txt if continuidade_estado_atual_txt else "Sem estado atual consolidado neste turno."}
 
 {bloco_presenca_personagens if bloco_presenca_personagens else ""}
 
@@ -16339,6 +16395,10 @@ A voz de Mary deve parecer viva e espontânea, não presa a bordões.
 {salto_temporal_txt}
 
 [HISTÓRICO RECENTE]
+O histórico abaixo é contexto, não ponto de reinício.
+Não repetir ações já concluídas.
+Continue a partir de [CONTINUIDADE IMEDIATA - ESTADO ATUAL VENCE].
+
 {historico_txt}
 
 [REGRAS DO STATE_UPDATE]
