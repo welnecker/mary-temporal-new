@@ -15383,78 +15383,181 @@ Sempre deixe espaço para o usuário responder.
     return ""
 
 def render_regra_camisinha_parceiro_casual(state: dict) -> str:
-        if not isinstance(state, dict):
-            return ""
-    
-        contexto = _texto_norm(
-            "\n".join([
-                str(state.get("interlocutor", "") or ""),
-                str(state.get("interlocutor_foco_turno", "") or ""),
-                str(state.get("interlocutor_ativo_persistente", "") or ""),
-                str(state.get("relacao", "") or ""),
-                str(state.get("modo_relacional", "") or ""),
-                str(state.get("template_cena_atual", "") or ""),
-                str(state.get("tipo_de_cena", "") or ""),
-                str(state.get("_fala_usuario_atual", "") or ""),
-            ])
-        )
-    
-        parceiro_casual = any(
+    """
+    Regra global de preservativo.
+
+    Princípio:
+    - Camisinha é obrigatória com qualquer parceiro sexual.
+    - Exceção explícita: Janio Doniseti e Donisete.
+    - Não tenta adivinhar se o parceiro é casual por profissão/nome.
+    - Se houver parceiro sexual diferente de Janio Doniseti ou Donisete,
+      a trava entra.
+    """
+    if not isinstance(state, dict):
+        return ""
+
+    contexto = _texto_norm(
+        "\n".join([
+            str(state.get("interlocutor", "") or ""),
+            str(state.get("interlocutor_foco_turno", "") or ""),
+            str(state.get("interlocutor_ativo_persistente", "") or ""),
+            str(state.get("ultimo_interlocutor_explicito", "") or ""),
+            str(state.get("relacao", "") or ""),
+            str(state.get("modo_relacional", "") or ""),
+            str(state.get("template_cena_atual", "") or ""),
+            str(state.get("tipo_de_cena", "") or ""),
+            str(state.get("scene_stage", "") or ""),
+            str(state.get("mary_intent", "") or ""),
+            str(state.get("segredo_ativo", "") or ""),
+            str(state.get("plano_ativo", "") or ""),
+            str(state.get("_fala_usuario_atual", "") or ""),
+            "\n".join(
+                str(m.get("content", "") or "")
+                for m in (state.get("history", []) or [])[-6:]
+                if isinstance(m, dict)
+            ),
+        ])
+    )
+
+    tipo_de_cena = _texto_norm(state.get("tipo_de_cena", ""))
+    scene_stage = _texto_norm(state.get("scene_stage", ""))
+    mary_intent = _texto_norm(state.get("mary_intent", ""))
+
+    # ======================================================
+    # Só ativa em contexto de possível relação sexual.
+    # Não precisa aparecer em flerte social comum.
+    # ======================================================
+    contexto_sexual = (
+        tipo_de_cena == "nsfw"
+        or "sexo" in scene_stage
+        or "estimulo" in scene_stage
+        or "pre_pico" in scene_stage
+        or "pico" in scene_stage
+        or "climax" in mary_intent
+        or any(
             termo in contexto
             for termo in [
-                "pablo",
-                "piscineiro",
-                "entregador",
-                "porteiro",
-                "vizinho",
-                "funcionario",
-                "funcionário",
-                "desconhecido",
-                "estranho",
-                "casual",
-                "encontro casual",
+                "meter",
+                "penetrar",
+                "penetração",
+                "penetracao",
+                "entrar",
+                "gozar dentro",
+                "gozar em mim",
+                "gozar na minha",
+                "gozar na buceta",
+                "sem camisinha",
+                "camisinha",
+                "de quatro",
+                "montar",
+                "pau",
+                "rola",
+                "buceta",
+                "xoxota",
+                "transar",
+                "foder",
+                "sexo",
             ]
         )
-    
-        parceiro_fixos = any(
-            termo in contexto
-            for termo in [
-                "janio",
-                "jânio",
-                "janio doniseti",
-                "donisete",
-            ]
-        )
-    
-        # Se for Janio ou Donisete, não ativa automaticamente esta trava.
-        if parceiro_fixos and not parceiro_casual:
-            return ""
-    
-        if not parceiro_casual:
-            return ""
-    
-        return """
-    [REGRA CRÍTICA - PARCEIRO CASUAL / CAMISINHA]
-    
-    Há parceiro casual, estranho, funcionário, visitante ou pessoa sem vínculo íntimo consolidado na cena.
-    
-    REGRA ABSOLUTA:
-    - Antes de qualquer penetração vaginal ou anal, Mary exige camisinha.
-    - Mary não permite penetração sem camisinha.
-    - Mary pode estar excitada, provocante e decidida, mas não fica irresponsável.
-    - Se o parceiro tentar entrar sem camisinha, Mary interrompe imediatamente.
-    - Se não houver camisinha disponível, a cena não avança para penetração.
-    - Mary pode redirecionar para pausa, busca de camisinha, recuo, provocação sem penetração ou encerramento do clima.
-    - Esta regra vence o tom NSFW, o template Safada, o template Mary livre/carente e qualquer escalada física.
-    
-    FALAS POSSÍVEIS:
-    - “Camisinha primeiro.”
-    - “Sem camisinha, não.”
-    - “Nem tenta entrar sem.”
-    - “Eu tô com vontade, mas não sou irresponsável.”
-    - “Se não tem camisinha, acabou.”
-    - “Pega uma camisinha ou para agora.”
-    """.strip()
+    )
+
+    if not contexto_sexual:
+        return ""
+
+    # ======================================================
+    # EXCEÇÕES EXPLÍCITAS
+    # Com estes dois, a regra global não é imposta automaticamente.
+    # ======================================================
+    janio_presente = any(
+        termo in contexto
+        for termo in [
+            "janio",
+            "jânio",
+            "janio doniseti",
+            "jânio doniseti",
+        ]
+    )
+
+    donisete_presente = any(
+        termo in contexto
+        for termo in [
+            "donisete",
+            "donisete welnecker",
+        ]
+    )
+
+    # ======================================================
+    # Se o contexto sexual envolve claramente APENAS Janio ou Donisete,
+    # não ativa a regra.
+    # ======================================================
+    terceiros_detectados = any(
+        termo in contexto
+        for termo in [
+            "juan",
+            "pablo",
+            "rico",
+            "anthony",
+            "renan",
+            "eliseu",
+            "nando",
+            "filho do donisete",
+            "filho de donisete",
+            "filho dele",
+            "filho do coroa",
+            "piscineiro",
+            "entregador",
+            "porteiro",
+            "vizinho",
+            "funcionario",
+            "funcionário",
+            "rapaz",
+            "garoto",
+            "homem",
+            "desconhecido",
+            "estranho",
+            "casual",
+            "visitante",
+            "motoqueiro",
+            "prestador",
+        ]
+    )
+
+    if (janio_presente or donisete_presente) and not terceiros_detectados:
+        return ""
+
+    return """
+[REGRA CRÍTICA - PRESERVATIVO]
+
+Mary só dispensa camisinha com Janio Doniseti ou Donisete.
+
+Com qualquer outro parceiro sexual, camisinha é obrigatória.
+
+REGRA ABSOLUTA:
+- Antes de qualquer penetração vaginal ou anal, Mary exige camisinha.
+- Mary não permite penetração sem camisinha.
+- Mary pode estar excitada, provocante, curiosa ou decidida, mas não age como irresponsável.
+- Se o parceiro tentar penetrar sem camisinha, Mary interrompe imediatamente.
+- Se não houver camisinha disponível, a cena não avança para penetração.
+- Mary pode redirecionar para pausa, busca de camisinha, provocação sem penetração, recuo ou encerramento do clima.
+- Esta regra vence o tom NSFW, o template Safada, o template Mary livre/carente, o pre_pico_mary e qualquer escalada física.
+
+EXCEÇÕES:
+- Janio Doniseti.
+- Donisete.
+
+Todos os demais nomes, inclusive novos personagens, conhecidos recentes, filhos de personagens, amigos, visitantes, funcionários, prestadores de serviço ou encontros casuais, exigem camisinha.
+
+GATILHOS:
+Se houver fala ou ação sugerindo baixar roupa, abrir roupa, roçar, encaixar, lubrificar, meter, entrar, penetrar, ficar de quatro, montar, começar o ato ou posicionar para entrada, Mary deve exigir camisinha antes de continuar.
+
+FALAS POSSÍVEIS:
+- “Camisinha primeiro.”
+- “Sem camisinha, não.”
+- “Nem tenta entrar sem.”
+- “Eu tô com vontade, mas não sou irresponsável.”
+- “Se não tem camisinha, não vai rolar.”
+- “Pega uma camisinha ou para agora.”
+""".strip()
 
 
 def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
