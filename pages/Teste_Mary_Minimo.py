@@ -16430,31 +16430,36 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     # ======================================================
     # REASONING EXPLÍCITO APENAS PARA GEMINI 3 FLASH PREVIEW
     # ======================================================
-    USAR_REASONING_GEMINI_3_FLASH = False
+    # Use True para testar reasoning novamente.
+    # Recomendado: começar com "low", não "medium".
+    USAR_REASONING_GEMINI_3_FLASH = True
+    REASONING_EFFORT_GEMINI_3_FLASH = "low"  # "low", "medium" ou "high"
 
-    if model == "google/gemini-3-flash-preview" and USAR_REASONING_GEMINI_3_FLASH:
+    if (
+        model == "google/gemini-3-flash-preview"
+        and USAR_REASONING_GEMINI_3_FLASH
+    ):
         payload["reasoning"] = {
-            "effort": "medium",
+            "effort": REASONING_EFFORT_GEMINI_3_FLASH,
             "exclude": True,
         }
 
     # ======================================================
     # DEBUG DO REASONING / PAYLOAD
     # ======================================================
-    st.session_state["mary_last_reasoning_enabled"] = (
-        "reasoning" in payload
-    )
+    reasoning_payload = payload.get("reasoning")
 
-    st.session_state["mary_last_reasoning_model"] = model
+    st.session_state["mary_last_reasoning_enabled"] = bool(reasoning_payload)
+    st.session_state["mary_last_reasoning_model"] = payload.get("model") or model
 
     st.session_state["mary_last_openrouter_payload_debug"] = {
-        "model": payload.get("model"),
+        "model": payload.get("model") or model,
         "temperature": payload.get("temperature"),
         "top_p": payload.get("top_p"),
         "presence_penalty": payload.get("presence_penalty"),
         "frequency_penalty": payload.get("frequency_penalty"),
         "max_tokens": payload.get("max_tokens"),
-        "reasoning": payload.get("reasoning"),
+        "reasoning": reasoning_payload,
     }
 
     headers = {
@@ -16486,9 +16491,11 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
 
         st.session_state["mary_last_openrouter_response_debug"] = {
             "status_code": status_code,
-            "model": model,
+            "model": payload.get("model") or model,
             "finish_reason": None,
             "content_len": 0,
+            "reasoning_enabled": bool(reasoning_payload),
+            "reasoning": reasoning_payload,
             "raw": response.text[:4000],
         }
 
@@ -16505,10 +16512,11 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
     # Debug inicial da resposta completa.
     st.session_state["mary_last_openrouter_response_debug"] = {
         "status_code": status_code,
-        "model": model,
+        "model": payload.get("model") or model,
         "finish_reason": None,
         "content_len": None,
-        "reasoning_enabled": "reasoning" in payload,
+        "reasoning_enabled": bool(reasoning_payload),
+        "reasoning": reasoning_payload,
         "raw": data,
     }
 
@@ -16554,7 +16562,6 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
 
     finish_reason = choice.get("finish_reason")
     st.session_state["mary_last_finish_reason"] = finish_reason
-
     st.session_state["mary_last_openrouter_response_debug"]["finish_reason"] = finish_reason
 
     message = choice.get("message", {})
@@ -16605,6 +16612,8 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
             "OpenRouter retornou resposta possivelmente incompleta.\n\n"
             f"HTTP: {status_code}\n"
             f"Modelo: {model}\n"
+            f"Reasoning ativo: {bool(reasoning_payload)}\n"
+            f"Reasoning: {reasoning_payload}\n"
             f"Finish reason: {finish_reason}\n"
             f"Tamanho do content: {len(content)}\n\n"
             f"Content parcial:\n{content[:2000]}\n\n"
@@ -16624,6 +16633,8 @@ def chamar_openrouter(mensagens: list[dict], model: str = MODEL_DEFAULT) -> str:
             "OpenRouter retornou content aparentemente truncado.\n\n"
             f"HTTP: {status_code}\n"
             f"Modelo: {model}\n"
+            f"Reasoning ativo: {bool(reasoning_payload)}\n"
+            f"Reasoning: {reasoning_payload}\n"
             f"Finish reason: {finish_reason}\n"
             f"Tamanho do content: {len(content)}\n\n"
             f"Content parcial:\n{content[:2000]}"
@@ -18546,10 +18557,13 @@ with st.sidebar:
     # ======================================================
     # DEBUG REASONING / OPENROUTER
     # ======================================================
-    with st.expander("🧠 Debug reasoning / OpenRouter", expanded=False):
+    with st.expander("🧠 Debug reasoning / payload", expanded=False):
         st.write("Modelo:", st.session_state.get("mary_last_reasoning_model"))
         st.write("Reasoning ativado:", st.session_state.get("mary_last_reasoning_enabled"))
         st.json(st.session_state.get("mary_last_openrouter_payload_debug", {}))
+    
+    with st.expander("📦 Debug resposta OpenRouter", expanded=False):
+        st.json(st.session_state.get("mary_last_openrouter_response_debug", {}))
 
     # ======================================================
     # TEMPLATE DA CENA / CONDUÇÃO DA MARY
