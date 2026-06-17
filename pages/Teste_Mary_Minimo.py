@@ -9669,6 +9669,408 @@ def aplicar_facts_no_state(state: dict, facts: dict) -> None:
     sincronizar_facts_basicos(state, recalcular_estado=False)
 
 
+def selecionar_shareds_prioritarias_do_turno(
+    shared_memories: list[dict],
+    state: dict,
+    fala_usuario: str,
+    limite: int = 5,
+) -> list[dict]:
+    """
+    Seleciona shared memories que devem ter prioridade factual no turno atual.
+
+    Objetivo:
+    - quando a fala do usuário pergunta sobre origem, memória, verdade, data,
+      como aconteceu, quem fez, onde foi, primeira vez etc.,
+      memórias shared relacionadas devem vencer history recente;
+    - evitar fusão indevida entre memórias semanticamente parecidas;
+    - priorizar a entidade-alvo do turno: Juan, Donisete, Janio, Joselina etc.;
+    - evitar que uma memória de Donisete responda pergunta sobre Juan, por exemplo.
+    """
+
+    if not isinstance(shared_memories, list):
+        return []
+
+    texto_fala = _texto_norm(str(fala_usuario or ""))
+
+    texto_contexto = _texto_norm(
+        "\n".join([
+            str(state.get("interlocutor", "") or ""),
+            str(state.get("interlocutor_foco_turno", "") or ""),
+            str(state.get("ultimo_interlocutor_explicito", "") or ""),
+            str(state.get("eventos_recentes", "") or ""),
+            str(state.get("segredo_ativo", "") or ""),
+            str(state.get("plano_ativo", "") or ""),
+        ])
+    )
+
+    texto_turno = _texto_norm(
+        "\n".join([
+            texto_fala,
+            texto_contexto,
+        ])
+    )
+
+    if not texto_turno:
+        return []
+
+    # ======================================================
+    # 1) GATILHOS DE FACTUALIDADE
+    # Só acionamos shared prioritária quando o usuário pede
+    # verdade, memória, origem, sequência factual, data etc.
+    # ======================================================
+    gatilhos_factualidade = [
+        "como conheceu",
+        "como voce conheceu",
+        "como você conheceu",
+        "como aconteceu",
+        "o que aconteceu",
+        "me diga a verdade",
+        "fala a verdade",
+        "verdade",
+        "memoria real",
+        "memória real",
+        "traga da sua memoria",
+        "traga da sua memória",
+        "primeira vez",
+        "quando conheceu",
+        "onde conheceu",
+        "quem era",
+        "quem foi",
+        "detalhes",
+        "explica",
+        "me conta",
+        "lembra",
+        "recorda",
+        "sem inventar",
+        "não inventa",
+        "nao inventa",
+        "realmente",
+        "de verdade",
+    ]
+
+    turno_exige_fato = _tem_algum(texto_turno, gatilhos_factualidade)
+
+    if not turno_exige_fato:
+        return []
+
+    # ======================================================
+    # 2) ENTIDADES DO TURNO
+    # Entidade que aparece na fala do usuário vale mais do que
+    # entidade que aparece apenas no contexto.
+    # ======================================================
+    nomes_personagens = [
+        "juan",
+        "donisete",
+        "janio",
+        "jânio",
+        "joselina",
+        "silvia",
+        "sílvia",
+        "bianca",
+        "rico",
+        "ricardo",
+        "anthony",
+        "renan",
+        "nando",
+        "mary",
+    ]
+
+    entidades_fala = []
+    entidades_contexto = []
+
+    for nome in nomes_personagens:
+        nome_norm = _texto_norm(nome)
+
+        if nome_norm in texto_fala:
+            entidades_fala.append(nome_norm)
+
+        elif nome_norm in texto_contexto:
+            entidades_contexto.append(nome_norm)
+
+    # Entidades explícitas na fala do usuário são alvo principal.
+    # Se não houver, usamos o contexto.
+    entidades_alvo = entidades_fala or entidades_contexto
+
+    # Normaliza Janio/Jânio e Silvia/Sílvia para evitar duplicidade.
+    entidades_normalizadas = []
+
+    for ent in entidades_alvo:
+        if ent == "jânio":
+            ent = "janio"
+        if ent == "sílvia":
+            ent = "silvia"
+
+        if ent not in entidades_normalizadas:
+            entidades_normalizadas.append(ent)
+
+    entidades_alvo = entidades_normalizadas
+
+    # ======================================================
+    # 3) TIPO DE PERGUNTA FACTUAL
+    # Ajuda a dar bônus específico para PRIMEIRO_ENCONTRO.
+    # ======================================================
+    pergunta_origem = _tem_algum(
+        texto_fala,
+        [
+            "como conheceu",
+            "como voce conheceu",
+            "como você conheceu",
+            "primeira vez",
+            "quando conheceu",
+            "onde conheceu",
+        ],
+    )
+
+    pergunta_verdade = _tem_algum(
+        texto_fala,
+        [
+            "verdade",
+            "memoria real",
+            "memória real",
+            "traga da sua memoria",
+            "traga da sua memória",
+            "sem inventar",
+            "não inventa",
+            "nao inventa",
+            "de verdade",
+            "realmente",
+        ],
+    )
+
+    palavras_turno = set(
+        p for p in texto_turno.split()
+        if len(p) >= 4
+    )
+
+    candidatos = []
+
+    for mem in shared_memories:
+        if not isinstance(mem, dict):
+            continue
+
+        ativa = normalizar_bool(mem.get("ativa", True), default=True)
+        ativa_prompt = normalizar_bool(mem.get("ativa_prompt", False), default=False)
+
+        if not ativa:
+            continue
+
+        memoria = str(mem.get("memoria", "") or "").strip()
+        if not memoria:
+            continue
+
+        memoria_norm = _texto_norm(memoria)
+
+        palavras_memoria = set(
+            p for p in memoria_norm.split()
+            if len(p) >= 4
+        )
+
+        intersecao = palavras_turno.intersection(palavras_memoria)
+
+        peso = safe_int(mem.get("peso", 0), 0)
+
+        score = 0
+
+        # ==================================================
+        # BASE
+        # ==================================================
+        score += peso * 3
+
+        if ativa_prompt:
+            score += 10
+
+        score += len(intersecao) * 3
+
+        # ==================================================
+        # TAGS FORTES
+        # ==================================================
+        tem_fato_fixo = "[fato_fixo]" in memoria_norm
+        tem_prioridade_alta = "[prioridade_alta]" in memoria_norm
+        tem_segredo_ativo = "[segredo_ativo]" in memoria_norm
+        tem_primeiro_encontro = "[primeiro_encontro]" in memoria_norm
+        tem_presente_cena = "[presente_da_cena]" in memoria_norm
+        tem_data = "[data:" in memoria_norm
+
+        if tem_fato_fixo:
+            score += 35
+
+        if tem_prioridade_alta:
+            score += 35
+
+        if tem_segredo_ativo:
+            # Segredo ativo importa, mas não deve sozinho vencer entidade errada.
+            score += 8
+
+        if tem_primeiro_encontro:
+            score += 20
+
+        if tem_presente_cena:
+            score += 10
+
+        if tem_data:
+            score += 5
+
+        # ==================================================
+        # ENTIDADE-ALVO
+        # Esta é a parte mais importante.
+        # Evita mem_10 / Copacabana vencer pergunta sobre Juan.
+        # ==================================================
+        entidades_memoria = []
+
+        for ent in entidades_alvo:
+            ent_busca = ent
+
+            if ent_busca == "janio":
+                encontrou = ("janio" in memoria_norm) or ("jânio" in memoria_norm)
+            elif ent_busca == "silvia":
+                encontrou = ("silvia" in memoria_norm) or ("sílvia" in memoria_norm)
+            else:
+                encontrou = ent_busca in memoria_norm
+
+            if encontrou:
+                entidades_memoria.append(ent)
+
+        if entidades_alvo:
+            if entidades_memoria:
+                score += len(entidades_memoria) * 35
+            else:
+                # Penalização forte: a memória não fala da entidade perguntada.
+                score -= 80
+
+        # Se a entidade foi citada diretamente na fala do usuário,
+        # a penalização deve ser ainda maior.
+        if entidades_fala and not entidades_memoria:
+            score -= 60
+
+        # ==================================================
+        # PERGUNTA DE ORIGEM / PRIMEIRO ENCONTRO
+        # ==================================================
+        if pergunta_origem and tem_primeiro_encontro:
+            score += 45
+
+        if pergunta_origem and _tem_algum(
+            memoria_norm,
+            [
+                "conheceu",
+                "primeira vez",
+                "chegou",
+                "apareceu",
+                "foi no",
+                "foi na",
+                "para buscar",
+                "buscar seu",
+                "buscar o",
+            ],
+        ):
+            score += 20
+
+        # Se o usuário pediu "memória real", fato fixo deve ganhar força.
+        if pergunta_verdade and tem_fato_fixo:
+            score += 35
+
+        if pergunta_verdade and tem_prioridade_alta:
+            score += 25
+
+        # ==================================================
+        # TERMOS FACTUAIS NA MEMÓRIA
+        # ==================================================
+        termos_fortes_memoria = [
+            "conheceu",
+            "primeira vez",
+            "chegou",
+            "apareceu",
+            "aconteceu",
+            "sugeriu",
+            "não conheceu",
+            "nao conheceu",
+            "foi no",
+            "foi na",
+            "para buscar",
+            "buscar seu",
+            "buscar o",
+        ]
+
+        if _tem_algum(memoria_norm, termos_fortes_memoria):
+            score += 8
+
+        # ==================================================
+        # PENALIZAÇÃO DE FUSÃO INDEVIDA
+        # Se a pergunta é sobre uma entidade específica,
+        # memórias de outro "como conheceu" devem cair.
+        # ==================================================
+        if pergunta_origem and entidades_alvo and not entidades_memoria:
+            if _tem_algum(
+                memoria_norm,
+                [
+                    "conheceu mary",
+                    "mary conheceu",
+                    "primeiro encontro",
+                    "copacabana",
+                    "palace",
+                    "sheraton",
+                ],
+            ):
+                score -= 50
+
+        # Evita que Copacabana/Palace contamine pergunta sobre Juan.
+        if "juan" in entidades_alvo and "juan" not in memoria_norm:
+            if _tem_algum(memoria_norm, ["copacabana", "palace", "sheraton"]):
+                score -= 90
+
+        # Evita que memórias de Donisete contaminem pergunta sobre Juan.
+        if "juan" in entidades_alvo and "donisete" in memoria_norm and "juan" not in memoria_norm:
+            score -= 80
+
+        # ==================================================
+        # CORTE
+        # ==================================================
+        if score <= 0:
+            continue
+
+        candidatos.append((score, mem))
+
+    candidatos.sort(key=lambda item: item[0], reverse=True)
+
+    return [mem for _, mem in candidatos[:limite]]
+
+def render_shareds_prioritarias_para_prompt(
+    shareds_prioritarias: list[dict],
+) -> str:
+    """
+    Renderiza shared memories que devem vencer history neste turno.
+    """
+    if not shareds_prioritarias:
+        return ""
+
+    linhas = [
+        "[SHAREDS PRIORITÁRIAS DO TURNO - MEMÓRIA FACTUAL]",
+        "",
+        "As memórias abaixo têm prioridade factual neste turno.",
+        "Elas NÃO são sugestões narrativas: são fatos dominantes.",
+        "Se houver conflito entre estas memórias, o histórico recente e outras memórias menos específicas, estas memórias vencem.",
+        "Não misture fatos de uma memória prioritária com outra memória de personagem diferente.",
+        "Não transplante local, data ou origem de outra memória para responder esta pergunta.",
+        "Mary deve usar estas memórias como base factual para responder perguntas sobre verdade, origem, como aconteceu, primeira vez, data, lugar ou sequência dos fatos.",
+        "",
+    ]
+    for mem in shareds_prioritarias:
+        mem_id = str(mem.get("id", "") or "").strip()
+        memoria = str(mem.get("memoria", "") or "").strip()
+        peso = str(mem.get("peso", "") or "").strip()
+
+        if not memoria:
+            continue
+
+        cabecalho = f"- {mem_id}" if mem_id else "- memória"
+        if peso:
+            cabecalho += f" | peso: {peso}"
+
+        linhas.append(cabecalho)
+        linhas.append(memoria)
+        linhas.append("")
+
+    return "\n".join(linhas).strip()
+
 def formatar_shared_memories_para_prompt(memories: list[dict], limite: int = 20) -> str:
     if not memories:
         return "Nenhuma memória shared ativa."
@@ -15803,10 +16205,41 @@ def montar_prompt_para_modelo(state: dict, fala_usuario: str) -> str:
 
     state["shared_memories"] = shared_memories_all
     state["_shared_memories_prompt"] = shared_memories_prompt
-
+    
+    # ======================================================
+    # SHAREDS PRIORITÁRIAS DO TURNO
+    # Usadas quando a fala do usuário pede memória real,
+    # verdade, origem, primeira vez, como aconteceu, onde foi,
+    # quem era, etc.
+    #
+    # Importante:
+    # - Não substitui shared_txt.
+    # - Cria um bloco acima das memórias comuns.
+    # - Deve vencer histórico recente quando houver conflito factual.
+    # ======================================================
+    shareds_prioritarias_turno = selecionar_shareds_prioritarias_do_turno(
+        shared_memories=shared_memories_all,
+        state=state,
+        fala_usuario=fala_usuario,
+        limite=5,
+    )
+    
+    state["_shareds_prioritarias_turno"] = shareds_prioritarias_turno
+    
+    shareds_prioritarias_txt = render_shareds_prioritarias_para_prompt(
+        shareds_prioritarias_turno
+    )
+    
     shared_txt = formatar_shared_memories_para_prompt(
         shared_memories_prompt,
         limite=8,
+    )
+    
+    linha_temporal_txt = render_linha_temporal_narrativa_para_prompt(
+        state=state,
+        memories=shared_memories_prompt,
+        fala_usuario=fala_usuario,
+        limite=10,
     )
 
     linha_temporal_txt = render_linha_temporal_narrativa_para_prompt(
@@ -16355,6 +16788,9 @@ Intenção: {mary_intent}
 {orientacao_contexto if orientacao_contexto else "Sem filtro especial neste turno."}
 
 {telefone_txt}
+
+[SHAREDS PRIORITÁRIAS DO TURNO - MEMÓRIA FACTUAL]
+{shareds_prioritarias_txt if shareds_prioritarias_txt else "Nenhuma shared prioritária acionada neste turno."}
 
 [MEMÓRIAS RELEVANTES]
 {shared_txt if shared_txt else "Nenhuma memória shared acionada neste turno."}
