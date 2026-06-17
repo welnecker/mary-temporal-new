@@ -4795,6 +4795,92 @@ def atualizar_pico_mary_por_contexto(
         )
     )
 
+    # ======================================================
+    # PICO DE MARY JÁ NARRADO NA RESPOSTA
+    # ======================================================
+    # Esta função também precisa aceitar o fato quando a própria
+    # resposta da Mary já resolveu o orgasmo.
+    # Sem isso, o state fica preso em pre_pico_mary e repete o pico.
+    resposta_norm = _texto_norm(resposta_limpa)
+
+    negacoes_pico_mary = [
+        "nao gozei",
+        "não gozei",
+        "ainda nao gozei",
+        "ainda não gozei",
+        "quase gozei",
+        "quase gozando",
+        "vou gozar",
+        "vou gozar de novo",
+        "to quase",
+        "tô quase",
+        "estou quase",
+        "sem gozar",
+        "segurei",
+        "segurando",
+    ]
+
+    sinais_pico_mary_concluido = [
+        "eu gozei",
+        "gozei muito",
+        "gozei de novo",
+        "eu estou gozando",
+        "eu to gozando",
+        "eu tô gozando",
+        "estou gozando",
+        "to gozando",
+        "tô gozando",
+        "meu orgasmo",
+        "orgasmo explodiu",
+        "orgasmo explode",
+        "orgasmo pulsar",
+        "orgasmo pulsa",
+        "descarrego tudo",
+        "descarreguei tudo",
+        "meu corpo trava",
+        "meu corpo travou",
+        "minha respiração para",
+        "minha respiracao para",
+        "meu corpo estica inteiro",
+        "meu corpo esticou inteiro",
+        "desabo sentindo o orgasmo",
+        "desabei sentindo o orgasmo",
+        "espasmos",
+    ]
+
+    pico_mary_ja_narrado = (
+        resposta_norm
+        and not _tem_algum(resposta_norm, negacoes_pico_mary)
+        and _tem_algum(resposta_norm, sinais_pico_mary_concluido)
+    )
+
+    if pico_mary_ja_narrado:
+        state["mary_climax_done"] = True
+        state["mary_pre_orgasm_signals"] = False
+        state["force_resolution_now"] = False
+        state["resolution_done"] = True
+
+        # Evita que o próximo turno resolva o mesmo pico de novo.
+        # Se o parceiro ainda não concluiu, Mary continua no pós-pico ativo,
+        # conduzindo ou reagindo ao clímax dele.
+        parceiro_ja_concluiu = normalizar_bool(
+            state.get("user_climax_done", False),
+            default=False,
+        )
+
+        if parceiro_ja_concluiu:
+            state["scene_stage"] = "aftercare"
+            state["mary_intent"] = "desacelerar_com_presenca"
+            state["physical_phase"] = 0
+            state["partner_climax_pending"] = False
+        else:
+            state["scene_stage"] = "pos_pico_mary_com_parceiro_pendente"
+            state["mary_intent"] = "conduzir_climax_do_parceiro"
+            state["physical_phase"] = 6
+            state["partner_climax_pending"] = True
+
+        return
+
     privacidade = _texto_norm(state.get("privacidade", ""))
 
     if privacidade != "privado":
@@ -16416,8 +16502,26 @@ REGRAS:
 - "mary_acao" deve ser curta, concreta e física.
 - Se houver toque, beijo ou contato, diga onde acontece no corpo de Mary.
 - Não use resumo genérico como "Mary está entregue ao toque".
+
+- REGRA CRÍTICA DE CONTINUIDADE:
+  "mary_acao" deve representar o estado FINAL de Mary depois da resposta, não o meio da ação que acabou de acontecer.
+  Não salve Mary presa em um evento que já foi resolvido dentro da própria resposta.
+
+- Se Mary verbalizou, narrou ou demonstrou claramente que chegou ao pico/orgasmo neste turno, "mary_acao" deve refletir o estado imediatamente APÓS o pico, não o pico acontecendo de novo.
+- Não salvar "em pleno orgasmo", "gozando", "quase gozando", "prestes a gozar", "chegando ao pico" ou "à beira do pico" se a resposta já descreveu a descarga do orgasmo.
+- Após orgasmo narrado, prefira uma descrição pós-pico concreta, como:
+  "ofegante sobre o parceiro após gozar, com o corpo trêmulo"
+  "desabada contra o corpo dele tentando recuperar o ar"
+  "trêmula e sensível depois do orgasmo, ainda encaixada nele"
+  "recuperando o fôlego contra o ombro dele depois de gozar"
+  "sensível e ofegante, mantendo-se quieta para não ser ouvida"
+
+- Se Mary ainda NÃO chegou ao pico, mas está perto, "mary_acao" pode indicar pré-pico, tensão, tremor ou perda de controle.
+- Se Mary JÁ chegou ao pico neste turno, não manter "mary_acao" em pré-pico.
+
 - Se scene_stage for "aftercare", "mary_acao" deve refletir pós-ato, recuperação, proximidade, respiração, recomposição ou continuidade imediata, e não reiniciar preliminares.
 - Se scene_stage for "aftercare_reacendendo_desejo", "mary_acao" pode mostrar o desejo voltando aos poucos: toque leve, provocação baixa, riso nervoso, silêncio carregado, aproximação ou confissão íntima. Não deve executar nova prática sexual imediatamente.
+
 - "local" deve ser sempre null.
 - "interlocutor" deve ser sempre null.
 - Mary não pode mudar local pelo STATE_UPDATE.
