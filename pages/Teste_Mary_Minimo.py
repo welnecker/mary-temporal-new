@@ -4848,10 +4848,34 @@ def atualizar_pico_mary_por_contexto(
         "espasmos",
     ]
 
+    fala_norm = _texto_norm(fala_usuario)
+
+    sinais_usuario_confirmou_pico_mary = [
+        "voce gozou",
+        "você gozou",
+        "voce ja gozou",
+        "você já gozou",
+        "ela gozou",
+        "ela ja gozou",
+        "ela já gozou",
+        "mary gozou",
+        "mary ja gozou",
+        "mary já gozou",
+        "gozou gostoso",
+        "gozou muito",
+    ]
+    
     pico_mary_ja_narrado = (
-        resposta_norm
-        and not _tem_algum(resposta_norm, negacoes_pico_mary)
-        and _tem_algum(resposta_norm, sinais_pico_mary_concluido)
+        (
+            resposta_norm
+            and not _tem_algum(resposta_norm, negacoes_pico_mary)
+            and _tem_algum(resposta_norm, sinais_pico_mary_concluido)
+        )
+        or (
+            fala_norm
+            and not _tem_algum(fala_norm, negacoes_pico_mary)
+            and _tem_algum(fala_norm, sinais_usuario_confirmou_pico_mary)
+        )
     )
 
     if pico_mary_ja_narrado:
@@ -5597,36 +5621,26 @@ def atualizar_estado_pos_resposta_climax(state: dict, resposta_final: str) -> No
             state.get("force_resolution_now", False),
             default=False,
         )
-
+    
         if mary_done:
-            # Mary já tinha gozado antes.
-            # Se ela mencionar o pico no aftercare, isso NÃO é tentativa precoce.
             state["mary_climax_done"] = True
-
+    
         elif force_now:
-            # Primeira confirmação válida do pico de Mary.
             mary_done = True
             state["mary_climax_done"] = True
             state["force_resolution_now"] = False
             state["mary_pre_orgasm_signals"] = False
             state["mary_stimulation_turns"] = 0
-
+    
         else:
-            # O modelo tentou resolver o pico cedo demais.
-            # Não confirma no state.
-            mary_done = False
-            state["mary_climax_done"] = False
-            state["resolution_done"] = False
+            # A validação/replanejamento já aconteceu antes.
+            # Se a resposta FINAL ainda verbaliza o pico de Mary,
+            # o state deve aceitar o fato narrativo final.
+            mary_done = True
+            state["mary_climax_done"] = True
             state["force_resolution_now"] = False
-            state["scene_stage"] = "pre_pico_mary"
-            state["mary_intent"] = "sustentar_tensao_intensa"
-            state["mary_pre_orgasm_signals"] = True
-            state["physical_phase"] = max(
-                safe_int(state.get("physical_phase", 4), 4),
-                5,
-            )
-            state["partner_climax_pending"] = False
-            return
+            state["mary_pre_orgasm_signals"] = False
+            state["mary_stimulation_turns"] = 0
 
     # ======================================================
     # 2) CLÍMAX DO PARCEIRO DETECTADO NA RESPOSTA
@@ -10651,25 +10665,31 @@ def resetar_climax_se_nova_sequencia_intima(state: dict, fala_usuario: str = "")
 
     verbalizou_climax_mary = any(p in texto for p in [
         "mary gozou",
+        "mary ja gozou",
+        "mary já gozou",
         "mary esta gozando",
         "mary está gozando",
-        "eu gozei",
-        "estou gozando",
-        "tô gozando",
-        "to gozando",
-        "gozei",
+        "ela gozou",
+        "ela ja gozou",
+        "ela já gozou",
+        "voce gozou",
+        "você gozou",
+        "gozou gostoso",
+        "gozou muito",
     ])
 
     verbalizou_climax_usuario = any(p in texto for p in [
         "eu gozei",
-        "gozei",
+        "eu ja gozei",
+        "eu já gozei",
         "estou gozando",
         "tô gozando",
         "to gozando",
         "vou gozar",
-        "gozando",
-        "explodi",
-        "terminei",
+        "vou gozar gostoso",
+        "vou gozar..ahhh!",
+        "gozei!",
+        "gozei gostoso",
     ])
 
     if cena_intima and ha_estimulo_atual and not verbalizou_climax_mary:
@@ -18231,12 +18251,6 @@ def processar_turno(state: dict, fala_usuario: str, model: str = MODEL_DEFAULT) 
     # Atualiza a progressão física real também com a resposta final.
     # Isso permite que o contador de estímulo considere a continuidade
     # narrada pela própria Mary, não apenas a fala do usuário antes do prompt.
-    atualizar_pico_mary_por_contexto(
-        state,
-        fala_usuario,
-        resposta_limpa=resposta_final_limpa,
-    )
-    
     atualizar_pico_mary_por_contexto(
         state,
         fala_usuario,
